@@ -16,7 +16,7 @@ becomes its own oracle.
 | # | Checkpoint | Done when | Status |
 |---|---|---|---|
 | 0.1 | Repo skeleton | git initialised; `go.mod` = `github.com/onembyte/norn`; Apache-2.0 `LICENSE`; `Makefile` with `test` `vet` `fmt-check` `ci`; package dirs with `doc.go`; CI workflow; `make ci` green; first commit | ✅ |
-| 0.2 | Spec tightened for implementation | `SPEC.md` §4 pins: deterministic-CBOR profile (which RFC 8949 §4.2.1 rules apply, integer/bytes/map encoding), `kid` derivation, signature preimage bytes, `net` encoding; open item on `labels.allowed_ips` resolved; recorded as D-026 | ⬜ |
+| 0.2 | Spec tightened for implementation | `SPEC.md` §4 pins: deterministic-CBOR profile (which RFC 8949 §4.2.1 rules apply, integer/bytes/map encoding), `kid` derivation, signature preimage bytes, `net` encoding; open item on `labels.allowed_ips` resolved; recorded as D-026 | ✅ |
 | 0.3 | Python reference: keys + entry encoding + signing | `contrib/norn-ref/` (pure Python, `cbor2` + `pynacl`); `keys.json` from fixed seeds; one valid entry vector per type, byte-exact `.cbor` + `.json`; a Python self-test that re-verifies every signature | ⬜ |
 | 0.4 | Python reference: replay + rejection vectors | replay state machine per `SPEC.md` §5; 40-entry fixture; `state.json`; one `bad-*.cbor` + `.reason` per reason code; canonical JSON writer pinned | ⬜ |
 | 0.5 | Trust file, fingerprint, receipt vectors | `trust.cbor`/`trust.toml`/`trust.fingerprint`; 256-word list frozen; `receipt.note` (signed note) | ⬜ |
@@ -32,3 +32,4 @@ it and torchwood verifies it — hand-building a tlog in Python adds no assuranc
 
 ## Journal
 - **2026-09-19 · 0.1 repo skeleton** — Go 1.26.4, module `github.com/onembyte/norn`, Apache-2.0, `make ci` (fmt-check / vet / race tests) green on 10 packages, CI matrix ubuntu+macos. Bug found and fixed before the first commit: `fmt-check` used `git ls-files`, which is empty before the first commit, so `gofmt -l` blocked on stdin — now `find | xargs`. Local commit only; GitHub remote not created yet (user decision, see Phase 6).
+- **2026-09-19 · 0.2 spec tightened** — added SPEC §4.0 encoding profile (byte-level contract: integer/bytes/text/map rules, `kid`, entry hash, leaf hash, preimage bytes, `sigs` ordering, field constraints), §5.1 closed reason-code list (16 codes) with the precise signature-counting rule, canonical JSON definition in §12, resolved the `labels` open item (D-026). Corrected §4.1: key ordering is RFC 8949 §4.2.1 (bytewise of encoded key), not RFC 7049 length-first; the < 24-byte-key rule (D-027) makes both agree.

@@ -158,3 +158,15 @@ README is reproducible from `make demos`. Rejected: hand-recorded screencasts.
 Patent grant matters for a security protocol meant to be reimplemented; matches
 Tessera/witness (Apache-2.0) and is compatible with torchwood/wgctrl (BSD-3).
 Rejected: MIT (no patent grant); AGPL (blocks the NetBird/Headscale integrations).
+
+## D-026 · `labels.ip` and `labels.endpoint` are reserved advisory hints (2026-09-19, 0.2)
+Owner mode needs allowed-ips and endpoints from somewhere; signed labels are the
+simplest signed source for static labs and homelabs. They are hints: a control
+plane may override endpoints, never keys. Rejected: first-class `allowed_ips`
+field in `enroll` (would make the log the routing authority, which it is not).
+
+## D-027 · Encoding profile: no null, no negatives, no floats, map keys < 24 bytes (2026-09-19, 0.2)
+Restricting CBOR to this subset makes RFC 8949 §4.2.1 and the older RFC 7049
+key ordering coincide, removes every encoder-specific ambiguity found in CBOR
+libraries, and keeps a decoder small enough to fuzz to the ground. Rejected:
+"whatever cbor2/fxamacker emit by default".

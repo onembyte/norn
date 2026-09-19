@@ -50,6 +50,51 @@ they win:
 
 ## 4. Entries
 
+### 4.0 Encoding profile (normative — the byte-level contract)
+
+All Norn structures (entries, enrollment requests, trust files, canonical state)
+use **RFC 8949 §4.2.1 Core Deterministic Encoding** with these restrictions:
+
+| Rule | Requirement |
+|---|---|
+| Integers | major type 0 only; shortest form; ≤ 2⁶³−1. **No negative integers.** |
+| Floats, tags, `undefined`, indefinite-length items | **forbidden** |
+| `null` | **forbidden** — an OPTIONAL field is *absent*, never `null` |
+| Booleans | allowed (`params.rotate_needs_signer` only) |
+| Byte strings | definite length; fixed sizes where stated (`net` 16, `pk` 32, `sig` 64) |
+| Text strings | definite length; valid UTF-8; every **map key** is a text string of 1–23 bytes |
+| Maps | definite length; keys sorted as §4.1; no duplicate keys; unknown keys → reject |
+| Arrays | definite length |
+
+Derived values:
+
+| Name | Definition |
+|---|---|
+| `kid(pk)` | lowercase hex of `SHA-256(pk)[0:8]` — 16 ASCII chars, as a text string |
+| entry bytes | the full envelope **with** `sigs`, deterministically encoded |
+| `entry_hash` | `SHA-256(entry bytes)` — identity for de-duplication |
+| leaf hash | `SHA-256(0x00 ‖ entry bytes)` (RFC 6962 §2.1) |
+| signature preimage | the 14 ASCII bytes `norn/entry/v1` + `0x0A`, then the envelope encoded **without** the `sigs` key |
+
+`sigs` is an array of maps `{"kid","role","sig"}` sorted by `kid` bytewise, with no
+repeated `kid`. Signing does not change the preimage, so signatures can be added by
+different parties in any order and the result is still canonical.
+
+Field constraints (violations → reason `decode`):
+
+| Field | Constraint |
+|---|---|
+| `device_id` | matches `^[a-z0-9][a-z0-9.-]{0,63}$` |
+| `name`, `reason` | UTF-8, 1–64 / 0–256 bytes |
+| `text` (`note`, `policy`) | UTF-8, ≤ 4096 bytes |
+| `labels` | map text→text; ≤ 32 entries; keys 1–64 bytes; values ≤ 256 bytes |
+| `roots`, `signers` at genesis | arrays of 32-byte `pk`, no duplicates, no key in both; `len(roots) ≥ root_thr ≥ 1`; `len(signers) ≥ signer_thr ≥ 1` |
+| `thr` | uint ≥ 1 and ≤ the size of the set it applies to (checked at replay) |
+
+Reserved label keys (advisory hints for owner mode, D-026): `ip` — comma-separated
+CIDR list used as allowed-ips; `endpoint` — `host:port`. A control plane may
+override endpoints; it can never override keys.
+
 ### 4.1 Envelope
 
 An entry is the deterministic CBOR encoding of:
@@ -66,8 +111,10 @@ An entry is the deterministic CBOR encoding of:
 }
 ```
 
-Map keys MUST be encoded in the order required by RFC 8949 §4.2.1 (length-first,
-then bytewise). Unknown keys MUST cause rejection (this is a *closed* schema).
+Map keys MUST be sorted per RFC 8949 §4.2.1: bytewise lexicographic order of
+their *encoded* form. Because every Norn map key is a text string shorter than 24
+bytes (§4.0), this coincides with "shorter first, then bytewise", and both readings
+give the same bytes. Unknown keys MUST cause rejection (this is a *closed* schema).
 
 ### 4.2 Signature preimage
 
@@ -142,6 +189,34 @@ Replay processes entries by index. For each entry:
    - `note`: 1 valid signer/root signature; no change.
    - Entries whose `expires` < checkpoint time are treated as `revoked` *at evaluation time*, not at replay (so state is clock-independent).
 6. Rejected entries are appended to `state.rejected` with a **fixed reason code**; reason codes are part of the test vectors. Replay never aborts on a rejected entry (only on `bad-genesis`).
+
+### 5.1 Reason codes (closed list; part of the vectors)
+
+| code | meaning |
+|---|---|
+| `decode` | CBOR/profile violation, unknown key, wrong `v`, wrong `net`, field constraint |
+| `unknown-type` | `t` not in §4.3 |
+| `bad-genesis` | index 0 is not `genesis` or its leaf hash ≠ `trust.genesis_hash` (**aborts replay**) |
+| `dup-genesis` | `genesis` at index > 0 |
+| `dup-entry` | `entry_hash` already seen |
+| `after` | `after` > index |
+| `threshold` | fewer valid signatures of the required role than the threshold |
+| `no-device-sig` | `enroll`/`rotate`/self-`revoke` lacks a valid signature by the device key |
+| `dup-id` | `enroll` with a `device_id` that is currently `active` |
+| `dup-wg` | `enroll`/`rotate` with a `wg_pk` that is currently active for another device |
+| `unknown-device` | `rotate`/`revoke` names a `device_id` never enrolled |
+| `not-active` | `rotate`/`revoke` on a device that is already `revoked` |
+| `dup-key` | `signer_add`/`root_add` of a `pk` whose `kid` already exists in either role |
+| `unknown-key` | `signer_remove`/`root_remove` of a `kid` not in that role |
+| `root-invariant` | `root_remove`/`root_thr` would leave `< root_thr` roots or `< 1` root |
+| `bad-thr` | `signer_thr`/`root_thr` value is 0 or exceeds the set size |
+
+Signature counting, precisely: a signature `{kid, role, sig}` is *valid* iff the
+state before this entry maps `kid` to a key **in that role** (for `device`: `kid`
+equals `kid(device_pk)` of the device this entry names — for `enroll`, the
+`device_pk` in the body) and Ed25519 verification of `sig` over the preimage
+succeeds. Invalid signatures are ignored, not fatal; only the count of valid ones
+per role matters.
 
 Replay is a pure function `(trust, entries[]) → state`. Two implementations MUST produce byte-identical canonical JSON of `state` for every vector.
 
@@ -258,13 +333,16 @@ that are not consistent MUST:
 | `trust.cbor` + `trust.toml` + `trust.fingerprint` | the trust file for `log/` |
 | `fork/` | two conflicting cosigned checkpoints + expected evidence output |
 
+**Canonical JSON** (for `state.json`, `.json` mirrors of `.cbor`): object keys sorted,
+no whitespace (`separators=(",",":")`), UTF-8 without escaping non-ASCII, byte
+strings as lowercase hex strings, integers as JSON numbers, booleans as `true`/`false`,
+absent fields absent. Two implementations MUST produce identical bytes.
+
 Cosignature and checkpoint vectors are taken from the C2SP repositories, not reinvented.
 
 ## 13. Open items
 
-- Whether `labels` should be able to carry `allowed_ips` as an *advisory* hint for owner mode (leaning yes; the control plane can override endpoints but never keys).
-
-## 14. Proven-set interface
+- (none as of 0.2; new items are appended here with the checkpoint that raised them)
 
 The verifier hands the enforcer an in-memory proven set and mirrors it to
 `/run/norn/proven.json` (schema in `ENFORCEMENT.md` §9). Modes, backends, the
