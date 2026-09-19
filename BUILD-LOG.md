@@ -55,7 +55,7 @@ and if the spec is silent, that is a defect to record, not a coin to flip.
 | 1.2 | `internal/entry` | envelope, `kid`, preimage, sign/verify, entry and leaf hashes; all 16 entry mirrors reproduced | ✅ |
 | 1.3 | `internal/cjson`, `internal/state` | canonical JSON + state schema; every JSON file in the suite round-trips byte-exact | ✅ |
 | 1.4 | `internal/replay` | every `(index, reason)` in the manifest, `state.json` byte-exact, and all 12 `genesis/` aborts | ✅ |
-| 1.5 | `internal/note`, `internal/trust` | receipt verifies; fingerprint reproduced; all 14 `trust-bad/` rejected | ⬜ |
+| 1.5 | `internal/note`, `internal/trust` | receipt verifies; fingerprint reproduced; all 14 `trust-bad/` rejected | ✅ |
 | 1.6 | Fuzzing | `go test -fuzz` on the decoder and on replay: 1 h each, zero panics | ⬜ |
 | 1.7 | Cross-implementation check | vectors re-exported from Go and diffed against `testdata/vectors` — identical | ⬜ |
 
@@ -209,3 +209,8 @@ residue (low severity) and F10 (§16, deferred to the enrolment CLI by design).
   - **D-043 holds in Go too**: the signature verifier is injectable precisely so a test can stub it, and the test asserts that stubbing *changes the outcome*. It does — a blind replay admits exactly entries 87 and 88, the two forged-signature vectors. That guarantee is now enforced in both implementations rather than asserted in prose.
   - Two spec subtleties the code had to get right and did: the **genesis bootstrap**, where signatures count against the roots in the entry's *own* body because no earlier state exists; and **D-046's ordering**, where the root quorum is checked before the body schema, so an under-signed governance entry with a malformed body is `threshold`.
   - Go: 10 packages, 47 tests, `make ci` + staticcheck + `vectors-check` green.
+- **2026-09-19 · 1.5 `internal/note` + `internal/trust`** — the signed-note framing and the trust anchor, tests first, both green on the first run.
+  - `note`: key ids that bind the **name** (so one key under two names has two ids), verifier keys that **split at most twice** because standard base64 contains `+` — the bug that bit the Python reference in 0.5, caught here by a test that hunts for a key whose encoding actually contains one. The shipped `receipt.note` verifies, and its rebuilt text hashes to `receipt.json`'s `text_sha256`, which pins the signed-text boundary §7 spells out: through the newline ending the last line, excluding the blank separator. Run 2 had to recover that boundary by hashing three candidates; it is now read straight from the prose.
+  - `trust`: parse, validate, canonical re-encode, `origin` derivation, Crockford fingerprint. **Re-encoding reproduces `trust.cbor` byte for byte** — which matters because the fingerprint is taken over those bytes, so a field name or type that differs silently changes it. All **14** damaged anchors refused, each having decoded cleanly first, so the refusal comes from validation rather than the codec.
+  - Two alphabets in one file and they must never be interchanged: RFC 4648 base32 for `origin`, Crockford for the fingerprint. Both are named at their definition sites and the code comments say why.
+  - Go: 12 packages, 61 tests, `make ci` + staticcheck + `vectors-check` green.
