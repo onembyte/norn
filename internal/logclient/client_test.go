@@ -13,6 +13,7 @@ import (
 
 	"github.com/onembyte/norn/internal/note"
 	"github.com/onembyte/norn/internal/replay"
+	"github.com/onembyte/norn/internal/tlog"
 	"github.com/onembyte/norn/internal/tlogstore"
 )
 
@@ -322,5 +323,99 @@ func TestAnAnchorWithoutAGenesisPinIsRefused(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "genesis") {
 		t.Errorf("the error should name what is missing: %v", err)
+	}
+}
+
+// The Phase 2 gate says: flip one byte in a tile, and the verifier refuses.
+// Until 2.10 it did not — the verifier never fetched a hash tile at all, so a
+// log could serve corrupt tiles and the one program guaranteed to be looking
+// said nothing. Every monitor and witness fetching proofs from that log would
+// have got wrong hashes.
+func TestAFlippedByteInAHashTileIsRefused(t *testing.T) {
+	dir, anchor := servedLog(t)
+
+	var tilePath string
+	err := filepath.WalkDir(filepath.Join(dir, "tile"), func(p string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !d.IsDir() && !strings.Contains(p, "entries") && tilePath == "" {
+			tilePath = p
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tilePath == "" {
+		t.Fatal("the served log has no hash tiles")
+	}
+
+	raw, err := os.ReadFile(tilePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Verify(Dir(dir), anchor); err != nil {
+		t.Fatalf("the untouched log must verify first: %v", err)
+	}
+
+	flipped := append([]byte(nil), raw...)
+	flipped[10] ^= 0xff
+	if err := os.WriteFile(tilePath, flipped, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Verify(Dir(dir), anchor); err == nil {
+		t.Fatal("a corrupted hash tile was accepted")
+	}
+}
+
+func TestAMissingHashTileIsRefused(t *testing.T) {
+	dir, anchor := servedLog(t)
+	var tilePath string
+	_ = filepath.WalkDir(filepath.Join(dir, "tile"), func(p string, d os.DirEntry, err error) error {
+		if err == nil && !d.IsDir() && !strings.Contains(p, "entries") && tilePath == "" {
+			tilePath = p
+		}
+		return nil
+	})
+	if tilePath == "" {
+		t.Fatal("the served log has no hash tiles")
+	}
+	if err := os.Remove(tilePath); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Verify(Dir(dir), anchor); err == nil {
+		t.Fatal("a log missing a tile tlog-tiles requires was accepted")
+	}
+}
+
+// The writer and the verifier must agree about what a tile contains, which is
+// why the computation lives in one place.
+func TestTheStoreServesExactlyTheTilesTheTreeImplies(t *testing.T) {
+	dir, anchor := servedLog(t)
+	result, err := Verify(Dir(dir), anchor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tree, err := tlog.Build(result.Served)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tiles, err := tree.Tiles()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tiles) == 0 {
+		t.Fatal("a 90-entry log implies at least one tile")
+	}
+	for _, tile := range tiles {
+		served, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(tile.Path())))
+		if err != nil {
+			t.Errorf("%s: %v", tile.Path(), err)
+			continue
+		}
+		if !bytes.Equal(served, tile.Data) {
+			t.Errorf("%s differs from what the tree implies", tile.Path())
+		}
 	}
 }

@@ -9,6 +9,7 @@
 package logclient
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/binary"
 	"errors"
@@ -120,6 +121,15 @@ func Verify(f Fetcher, anchor Anchor) (*Result, error) {
 		return nil, logErrorf("the served entries do not hash to the advertised head")
 	}
 
+	// The hash tiles must match the tree too. A verifier could skip them --
+	// it rebuilt the tree from the bundles, which is stronger than trusting
+	// tiles -- but then a log serving corrupt tiles would be broken for every
+	// monitor and witness that fetches them, and the one program guaranteed to
+	// be looking would say nothing. `norn verify` is that program.
+	if err := checkTiles(f, tree); err != nil {
+		return nil, err
+	}
+
 	return &Result{Checkpoint: cp, State: replay.Replay(anchor.Anchor, entries), Served: entries}, nil
 }
 
@@ -178,4 +188,25 @@ func decodeBundle(raw []byte) ([][]byte, error) {
 		raw = raw[2+n:]
 	}
 	return out, nil
+}
+
+// checkTiles requires every hash tile the tree implies to be served, and to be
+// the bytes the tree says.
+func checkTiles(f Fetcher, tree *tlog.Tree) error {
+	tiles, err := tree.Tiles()
+	if err != nil {
+		return logErrorf("computing the expected tiles: %v", err)
+	}
+	for _, tile := range tiles {
+		served, err := f.Fetch(tile.Path())
+		if err != nil {
+			return logErrorf("the log does not serve %s, which tlog-tiles requires: %v",
+				tile.Path(), err)
+		}
+		if !bytes.Equal(served, tile.Data) {
+			return logErrorf("the hash tile at %s is not what the entries imply; "+
+				"this log is broken for anyone fetching proofs from it", tile.Path())
+		}
+	}
+	return nil
 }

@@ -1,6 +1,7 @@
 package tlogstore
 
 import (
+	"bytes"
 	"crypto/ed25519"
 	"crypto/sha256"
 	"os"
@@ -198,5 +199,59 @@ func TestTheLayoutIsTheOneWeServe(t *testing.T) {
 		if strings.Contains(name, ".tmp") {
 			t.Errorf("a temporary file survived: %s", name)
 		}
+	}
+}
+
+// The gate asks that a restart lose and reorder nothing, and that checkpoint
+// size stay monotonic. Verifying an untouched log after reopening shows
+// nothing was lost; this shows the log keeps *counting* from where it was.
+// A store that recovered its entries but restarted its size would publish a
+// checkpoint claiming fewer entries than it serves.
+func TestSizeKeepsCountingAcrossARestart(t *testing.T) {
+	dir := t.TempDir()
+	entries := suiteEntries(t)
+
+	store, err := Open(dir, "norn/test", testLogKey(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, raw := range entries[:10] {
+		if _, err := store.Append(raw); err != nil {
+			t.Fatal(err)
+		}
+	}
+	before := store.Checkpoint()
+
+	reopened, err := Open(dir, "norn/test", testLogKey(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := reopened.Size(); got != before.Size {
+		t.Fatalf("reopened at size %d, was %d", got, before.Size)
+	}
+	if reopened.Checkpoint() != before {
+		t.Fatalf("the checkpoint changed across a restart: %+v -> %+v",
+			before, reopened.Checkpoint())
+	}
+
+	index, err := reopened.Append(entries[10])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if index != before.Size {
+		t.Errorf("the entry after a restart landed at index %d, want %d", index, before.Size)
+	}
+	if after := reopened.Checkpoint(); after.Size != before.Size+1 {
+		t.Errorf("size went %d -> %d across a restart and one append",
+			before.Size, after.Size)
+	}
+
+	// And the entries are still in order: entry 0 is still entry 0.
+	first, err := reopened.Entry(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(first, entries[0]) {
+		t.Error("the first entry is not the one that was appended first")
 	}
 }

@@ -76,3 +76,62 @@ func (t *Tree) ConsistencyProof(older int64) (upstream.TreeProof, error) {
 func (t *Tree) Checkpoint(origin string) Checkpoint {
 	return Checkpoint{Origin: origin, Size: t.size, Root: t.Head()}
 }
+
+// Tile is one hash tile the layout requires a log to serve.
+type Tile struct {
+	Level int
+	Index int64
+	Width int
+	Data  []byte // Width hashes, concatenated
+}
+
+// Path is where this tile is served (tlog-tiles).
+func (t Tile) Path() string { return TilePath(t.Level, t.Index, t.Width) }
+
+// Tiles enumerates every hash tile this tree implies, with its contents.
+//
+// The writer publishes these and the verifier checks them against its own
+// tree, so the computation lives here rather than in either: a reader and a
+// writer that each work out "what should be in tile 3" separately are two
+// implementations of one rule, and the second one is the one that is wrong.
+func (t *Tree) Tiles() ([]Tile, error) {
+	var out []Tile
+	size := t.Size()
+	for level := 0; ; level++ {
+		span := int64(1) << (uint(level+1) * TileHeight)
+		count := (size + span/TileWidth - 1) / (span / TileWidth)
+		if count == 0 {
+			return out, nil
+		}
+		for index := int64(0); index < count; index++ {
+			data, width, err := t.tileData(level, index)
+			if err != nil {
+				return nil, err
+			}
+			if width == 0 {
+				continue
+			}
+			out = append(out, Tile{Level: level, Index: index, Width: width, Data: data})
+		}
+		if count == 1 && size <= span/TileWidth {
+			return out, nil
+		}
+	}
+}
+
+// tileData reads one tile's hashes, stopping at the end of the level.
+func (t *Tree) tileData(level int, index int64) ([]byte, int, error) {
+	var out []byte
+	var width int
+	for i := 0; i < TileWidth; i++ {
+		n := index*TileWidth + int64(i)
+		stored := upstream.StoredHashIndex(level*TileHeight, n)
+		hashes, err := t.ReadHashes([]int64{stored})
+		if err != nil {
+			break // past the end of this level
+		}
+		out = append(out, hashes[0][:]...)
+		width++
+	}
+	return out, width, nil
+}

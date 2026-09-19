@@ -190,57 +190,21 @@ func (s *Store) Append(raw []byte) (int64, error) {
 // writeTiles republishes every tile the current size touches. At Norn's scale
 // this is a handful of files; a log large enough for that to matter is a log
 // large enough for Tessera (D-049).
+// writeTiles republishes every tile the current size touches, using the same
+// computation the verifier checks them with (tlog.Tree.Tiles).
 func (s *Store) writeTiles() error {
-	size := s.tree.Size()
-	for level := 0; ; level++ {
-		span := int64(1) << (uint(level+1) * tlog.TileHeight)
-		count := (size + span/tlog.TileWidth - 1) / (span / tlog.TileWidth)
-		if count == 0 {
-			return nil
-		}
-		for index := int64(0); index < count; index++ {
-			data, width, err := s.tileData(level, index, size)
-			if err != nil {
-				return err
-			}
-			if width == 0 {
-				continue
-			}
-			if err := s.writeFile(tlog.TilePath(level, index, width), data); err != nil {
-				return err
-			}
-		}
-		if count == 1 && size <= span/tlog.TileWidth {
-			return nil
+	tiles, err := s.tree.Tiles()
+	if err != nil {
+		return err
+	}
+	for _, tile := range tiles {
+		if err := s.writeFile(tile.Path(), tile.Data); err != nil {
+			return err
 		}
 	}
+	return nil
 }
 
-// tileData collects the hashes of one tile, returning how many it found.
-func (s *Store) tileData(level int, index, size int64) ([]byte, int, error) {
-	var out []byte
-	var width int
-	for i := 0; i < tlog.TileWidth; i++ {
-		n := index*tlog.TileWidth + int64(i)
-		stored := upstream.StoredHashIndex(level*tlog.TileHeight, n)
-		hashes, err := s.tree.ReadHashes([]int64{stored})
-		if err != nil {
-			break // past the end of this level
-		}
-		out = append(out, hashes[0][:]...)
-		width++
-	}
-	return out, width, nil
-}
-
-// writeFile writes atomically: a reader either sees the previous contents or
-// the new ones, never a half-written file.
-//
-// A partial tile or bundle carries its width in its path, so each append would
-// otherwise leave the narrower version behind -- and a reader globbing the .p
-// directory would find several, with no rule for choosing. The same stale-file
-// hazard that once left seven orphans in the vector suite, so the previous
-// partial is removed rather than accumulated.
 func (s *Store) writeFile(rel string, data []byte) error {
 	path := filepath.Join(s.dir, filepath.FromSlash(rel))
 	dir := filepath.Dir(path)
