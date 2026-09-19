@@ -154,14 +154,36 @@ watchdog window for *new* rogue IPs to zero, but is **blind to the swap attack**
 
 ## 9. Interface between verifier and enforcer (→ SPEC §14)
 
-In-process (nornd embeds the verifier). Also serialised to `/run/norn/proven.json`:
+In-process (nornd embeds the verifier). Also serialised to `/run/norn/proven.json`,
+which is how everything *else* finds out — the monitor, Home Assistant, a support
+bundle, an operator with `jq`:
 
 ```
-{ "checkpoint": {"origin": …, "size": N, "root": …, "cosigned_at": T},
-  "degraded": false,
+{ "version": 1,
+  "checkpoint": {"origin": …, "size": N, "root": "<hex>", "cosigned_at": null},
+  "freshness": "fresh" | "degraded" | "hard_stale" | "unknown",
   "devices": [ {"device_id": "…", "wg_pk": "<b64>", "labels": {…}, "expires": 0,
-                "proof": "proof-<id>.bundle"} … ] }
+                "proof": "proofs/<device_id>.bundle", "since_index": N} … ],
+  "written_at_local_clock": T }
 ```
+
+Three things this schema is careful about, each of them a number somebody would
+otherwise act on:
+
+- **`freshness` is a state, not a boolean.** Witness time is the clock (part 5 of
+  `GOSSIP.md`), so with no cosignature there is no clock: the state is `unknown`
+  and a consumer must handle it. A `"degraded": false` would assert that all is
+  well, which is not something a node without witness time can know.
+- **`cosigned_at` is `null` until a witness cosigns**, and `written_at_local_clock`
+  is named for what it is. The local clock is good for noticing a stopped daemon
+  and for nothing else (A11).
+- **Every `proof` names a bundle that is actually written**, beside the file, and
+  each one is checkable by someone holding only `norn.trust` (§8). A `proof` field
+  pointing at nothing would be worse than no field: an alarm would cite evidence
+  that does not exist.
+
+The file is replaced atomically, because it is rewritten every `T_poll` forever
+while something else is reading it.
 
 ## 10. Phase 3 measurement plan
 

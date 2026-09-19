@@ -10,6 +10,7 @@ import (
 	"github.com/onembyte/norn/internal/entry"
 	"github.com/onembyte/norn/internal/logclient"
 	"github.com/onembyte/norn/internal/plainlog"
+	"github.com/onembyte/norn/internal/proven"
 	"github.com/onembyte/norn/internal/state"
 	"github.com/onembyte/norn/internal/trust"
 )
@@ -90,25 +91,28 @@ func printPeers(st *state.State, now time.Time) {
 	}
 	sort.Strings(ids)
 
-	var proven, revoked, expired int
+	// "Proven" has one definition, in internal/proven, because active and
+	// proven differ by exactly an expiry check and two copies of that
+	// difference is how an expired contractor stays in a peer table.
+	var count, revoked, expired int
 	for _, id := range ids {
 		d := st.Devices[id]
 		switch {
 		case d.Status != state.StatusActive:
 			revoked++
-		case d.Expires != 0 && int64(d.Expires) <= now.Unix():
+		case !proven.IsProven(d, now):
 			expired++
 		default:
-			proven++
+			count++
 		}
 	}
-	fmt.Printf("\npeers       %d proven, %d revoked, %d expired\n", proven, revoked, expired)
+	fmt.Printf("\npeers       %d proven, %d revoked, %d expired\n", count, revoked, expired)
 	for _, id := range ids {
 		d := st.Devices[id]
 		marker, note := " ", string(d.Status)
 		switch {
 		case d.Status != state.StatusActive:
-		case d.Expires != 0 && int64(d.Expires) <= now.Unix():
+		case !proven.IsProven(d, now):
 			note = "expired " + time.Unix(int64(d.Expires), 0).Format("2006-01-02")
 		default:
 			marker, note = "*", "proven"

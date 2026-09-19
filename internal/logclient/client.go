@@ -47,6 +47,10 @@ func (d Dir) Fetch(path string) ([]byte, error) {
 type Result struct {
 	Checkpoint tlog.Checkpoint
 	State      *state.State
+	// SignedCheckpoint is the head exactly as the log published it. A parsed
+	// checkpoint is a fact; the note is the *evidence* for it, and a proof
+	// bundle has to carry the evidence (§8.1).
+	SignedCheckpoint string
 	// Served is every entry the log served, in log order. A caller that has
 	// just verified a log usually wants to look something up in it -- an
 	// inclusion check, a proof bundle -- and re-fetching would be asking a
@@ -130,7 +134,8 @@ func Verify(f Fetcher, anchor Anchor) (*Result, error) {
 		return nil, err
 	}
 
-	return &Result{Checkpoint: cp, State: replay.Replay(anchor.Anchor, entries), Served: entries}, nil
+	return &Result{Checkpoint: cp, SignedCheckpoint: string(raw),
+		State: replay.Replay(anchor.Anchor, entries), Served: entries}, nil
 }
 
 // fetchEntries reads entry bundles until it has `size` entries.

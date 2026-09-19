@@ -358,7 +358,7 @@ starting rather than after.
 | 3.1 | `internal/peertable` | the narrow seam Norn touches — peers in, peers out — with a fake that records what a real interface would have been told | ✅ |
 | 3.2 | `internal/reconcile` | observe, owner and watchdog as **pure decisions** over (actual, desired): no I/O, so every case including the A1 swap attack is a unit test | ✅ |
 | 3.3 | `internal/endpoint` | providers that supply endpoints and allowed-ips but are **untrusted for keys**: a key they name that is not proven is dropped and logged | ✅ |
-| 3.4 | `/run/norn/proven.json` | the verifier→enforcer interface of `ENFORCEMENT.md` part 9, written atomically, with its schema pinned | ⬜ |
+| 3.4 | `/run/norn/proven.json` | the verifier→enforcer interface of `ENFORCEMENT.md` part 9, written atomically, with its schema pinned | ✅ |
 | 3.5 | `nornd` | the daemon: verify, reconcile, alarm; **observe is the default** (D-005) and enforcing is opt-in | ⬜ |
 | 3.6 | Fight detection and quarantine | N evictions in W → `CONTROL_PLANE_FIGHT`; `quarantine` fails closed **by choice, never by default** | ⬜ |
 | 3.7 | The wgctrl backend | the real interface behind the same seam, its dependency cost measured, and whatever can be tested without a kernel tested | ⬜ |
@@ -507,3 +507,11 @@ the signer keeps one job — decide, and place the entry in the log.
   - **Hints files are keyed by `device_id`, not by public key**, and that is the point: identity comes from the log, so an adapter has to map its control plane's idea of a peer onto a device the log proves. Doing that mapping in the adapter is what keeps the control plane out of the business of naming keys.
   - No TOML dependency yet: `Static` takes a map, so the `nornd.toml` decision belongs to the daemon that parses it (3.5), not to this package.
   - Go: 34 packages, 306 tests; `go test` and staticcheck green.
+- **3.4 `internal/proven` — the file everything else reads, and the boolean it refuses to be.**
+  - **In `nornd` the verifier and the enforcer share a process, so this file is not how they talk** — it is how the monitor, Home Assistant, a support bundle and an operator with `jq` find out. That makes it an output to be as careful with as a protocol message: a number here that nobody can justify is a number somebody will act on.
+  - **`freshness` is a state, not a boolean.** Part 9 specified `"degraded": false`; that asserts all is well, and with no witness cosignature a node has no clock to know it with (A11). The field is now `fresh | degraded | hard_stale | **unknown**`, `cosigned_at` is `null` until a witness signs, and the local clock is named `written_at_local_clock` so nobody mistakes it for evidence. A test asserts the word `degraded` never appears as a boolean.
+  - **Every `proof` names a bundle that is actually written**, and each is checked in the test under the trust file's log key — checkable by someone holding only `norn.trust`, which is the whole point of §8. A `proof` field pointing at nothing would be worse than no field: an alarm would cite evidence that does not exist.
+  - **"Proven" now has one definition.** Active and proven differ by exactly an expiry check, and `norn status` had its own copy. Two copies of that difference is how an expired contractor's laptop stays in somebody's peer table, so `proven.IsProven` is the only one and status uses it.
+  - **The file is replaced atomically, and a test races 200 reads against 50 rewrites.** It is rewritten every `T_poll` forever while something else reads it; a reader that caught it half-written would see a peer set that never existed.
+  - `logclient.Result` now keeps the **signed** checkpoint, not just the parsed one. A parsed checkpoint is a fact; the note is the evidence for it, and a bundle has to carry evidence.
+  - Go: 35 packages, 313 tests; `go test` and staticcheck green.
