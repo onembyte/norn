@@ -205,3 +205,19 @@ without this, a log operator could re-insert the original `enroll` of a revoked
 device to resurrect it — `after` bounds reordering (`after ≤ index`) but not
 re-insertion further along the log. Rejected: only remembering accepted entries
 (simpler, but leaves that replay window open).
+
+## D-032 · A `rotate` that installs a new identity key must prove possession of it (2026-09-19, 0.7c)
+Was open question D20. When `rotate.body.device_pk` is present the entry MUST
+carry a valid `device` signature from **both** the current and the incoming key.
+Only the device can rotate (the current key must sign), so installing a key it
+does not hold harms only itself — but irrecoverably: it could never rotate again
+without a signer-assisted re-enrolment. The device holds both keys at that
+moment, so the second signature costs nothing, and it matches D-008's
+proof-of-possession rule for `enroll`. Rejected: accepting the new key on the
+current key's word alone (one typo bricks the device).
+
+## D-033 · `bad-thr` is about the value, `root-invariant` about the resulting set (2026-09-19, 0.7c)
+Was open question D11: `root_thr` with `thr > len(roots)` satisfied both
+definitions. `bad-thr` now covers any `signer_thr`/`root_thr` value outside
+`1 … len(set)`; `root-invariant` is reserved for `root_remove` shrinking the set
+below the threshold. Vectors 42 and 25 pin both sides.

@@ -43,17 +43,17 @@ suite clean. Each needs a spec decision **and** a vector.
 
 | # | Question | Agent's choice | Status |
 |---|---|---|---|
-| D11 | `root_thr` with `thr > len(roots)` satisfies both `bad-thr` and `root-invariant` | `bad-thr` | ⬜ |
-| D12 | `revoke` with no authority at all: `threshold` or `no-device-sig`? | `threshold` | ⬜ |
+| D11 ✅ | `root_thr` with `thr > len(roots)` satisfies both codes | **`bad-thr` — D-033**; `root-invariant` reserved for removals. Vector 42. | ✅ |
+| D12 ✅ | `revoke` with no authority at all | **`threshold`**, stated in §5.1. Vector 43. | ✅ |
 | D13 ✅ | Genesis bootstrap unstated | **count against `body.roots`/`body.root_thr`; abort with `bad-genesis`** — written into §5.1, since the procedure had to state it | ✅ |
 | D14 ✅ | Index 0 that fails to *decode* | **`bad-genesis`, abort** — §5.1 entry-0 step 2 | ✅ |
 | D15 ✅ | Do rejected entries enter the `dup-entry` seen-set? | **yes — D-031**, decided during 0.7a because §5.1 step 1 had to state it | ✅ |
 | D16 ✅ | `log_key`: append or replace? | **append**; §5.3 now states the trust file's initial key is deliberately absent from `log_keys` | ✅ |
 | D17 ✅ | Re-enrolment after revoke: prior `labels`/`expires` discarded? | **yes, the record is replaced wholesale** — §5.3 | ✅ |
-| D18 | Unrecognised `role` string: decode error, or silently dropped signature (§5 step 4 says "drop")? | decode error | ⬜ |
-| D19 | Must a zero-signature entry carry `sigs: []` rather than omitting the key? | required | ⬜ |
-| D20 ◐ | `rotate` with a new `device_pk`: may the incoming key also sign? | §5.1 requires the **current** key; vectors 40/41 exercise identity rotation. Whether the incoming key *may additionally* sign is still unstated (0.7c) | ◐ |
-| D21 ◐ | Check order within `enroll`/governance asserted but never tested | order is now **normative** in §5.1's per-type table; vectors still owed (0.7c) | ◐ |
+| D18 ✅ | Unrecognised `role` string | **`decode`** — `role` is a closed enum; §4.0 now distinguishes this from a well-formed signature whose `kid` does not resolve. Vector 44. | ✅ |
+| D19 ✅ | Must a zero-signature entry carry `sigs: []`? | **yes**, `sigs` is mandatory; omitting it is `decode`, an empty array is `threshold`. Vector 45. | ✅ |
+| D20 ✅ | `rotate` with a new `device_pk`: must the incoming key sign? | **yes, required — D-032** (proof of possession). Vectors 40 and 46. | ✅ |
+| D21 ✅ | Check order within `enroll`/governance never tested | normative in §5.1; vectors 47 (device sig before `dup-id`) and 48 (root quorum before the per-type rule) | ✅ |
 
 ## Tier 4 — editorial and process
 

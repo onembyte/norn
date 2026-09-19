@@ -168,6 +168,12 @@ def _h_rotate(state: State, env: dict[str, Any], index: int) -> None:
     if wg_pk in state.active_wg and state.active_wg[wg_pk] != device_id:
         raise Reject("dup-wg")
     new_device_pk = _pk(body, "device_pk") if "device_pk" in body else None
+    # Proof of possession of the incoming identity key (D-032): a device that
+    # installs a key it does not hold can never rotate again without a
+    # signer-assisted re-enrolment. It holds both keys at this moment, so
+    # requiring both signatures costs nothing.
+    if new_device_pk is not None and not _device_signed(env, new_device_pk):
+        raise Reject("no-device-sig")
     state.rotate_device(device_id, wg_pk, new_device_pk)
 
 

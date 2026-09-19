@@ -32,7 +32,8 @@ class SelfRotation(unittest.TestCase):
     def test_rotating_only_the_device_key_is_accepted(self):
         new_id = fixture.KEYS["printer-id2"]
         env = rotate(42, "printer", "printer", device_pk=new_id.public,
-                     signers=[("printer", "device"), ("signer1", "signer"), ("signer3", "signer")])
+                     signers=[("printer", "device"), ("printer-id2", "device"),
+                              ("signer1", "signer"), ("signer3", "signer")])
         state, n = state_of([env])
         self.assertEqual([r for r in state.rejected if r["index"] == n], [])
         self.assertEqual(state.devices["printer"]["device_pk"], new_id.public)

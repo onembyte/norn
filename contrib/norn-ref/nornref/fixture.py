@@ -190,7 +190,7 @@ def _enroll_body(device: str, wg: str | None = None, **extra: Any) -> dict[str, 
 
 
 def log() -> list[LogItem]:
-    """A 42-entry log: valid entries interleaved with one per reason code."""
+    """A 49-entry log: valid entries interleaved with one per reason code."""
     b = _Builder()
     b.add("00-genesis", genesis())
 
@@ -288,8 +288,31 @@ def log() -> list[LogItem]:
     # table), but may never take a key active for another device.
     b.add("40-rotate-device-key-only", b.build("rotate", {
         "device_id": "nas", "wg_pk": WG["nas2"], "device_pk": KEYS["nas-id2"].public},
-        [("nas", "device")] + both))
+        [("nas", "device"), ("nas-id2", "device")] + both))
     b.add("41-bad-dup-wg-rotate", b.build("rotate", {
         "device_id": "printer", "wg_pk": WG["nas2"]},
         [("printer", "device")] + both), "dup-wg")
+
+    # Tier-3 answers, each previously undecided by the prose *and* the vectors.
+    b.add("42-bad-thr-root", b.build("root_thr", {"thr": 99}, roots3), "bad-thr")       # D11
+    b.add("43-bad-revoke-unauthorised", b.build(                                        # D12
+        "revoke", {"device_id": "printer", "reason": "no authority"},
+        [("laptop", "device")]), "threshold")
+    unknown_role = {"v": entry.VERSION, "t": "note", "net": NET, "ts": T0 + 9000,
+                    "after": b.index, "body": {"text": "role outside the enum"}, "sigs": []}
+    entry.sign(unknown_role, KEYS["signer1"], "signer")
+    unknown_role["sigs"][0]["role"] = "admin"
+    b.add_raw("44-bad-unknown-role", cbor.encode(unknown_role), "decode")               # D18
+    b.add_raw("45-bad-missing-sigs", cbor.encode({                                      # D19
+        "v": entry.VERSION, "t": "note", "net": NET, "ts": T0 + 9000, "after": 45,
+        "body": {"text": "no sigs key at all"}}), "decode")
+    b.add("46-bad-rotate-no-new-key-sig", b.build(                                      # D20
+        "rotate", {"device_id": "printer", "wg_pk": WG["printer"],
+                   "device_pk": KEYS["printer-id2"].public},
+        [("printer", "device")] + both), "no-device-sig")
+    b.add("47-bad-order-enroll", b.build(                                               # D21
+        "enroll", {"device_id": "nas", "device_pk": KEYS["nas"].public,
+                   "wg_pk": WG["rogue"]}, both), "no-device-sig")
+    b.add("48-bad-order-governance", b.build(                                           # D21
+        "signer_add", {"pk": KEYS["signer3"].public}, [("root1", "root")]), "threshold")
     return b.items

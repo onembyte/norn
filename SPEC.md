@@ -80,6 +80,13 @@ Derived values:
 repeated `kid`. Signing does not change the preimage, so signatures can be added by
 different parties in any order and the result is still canonical.
 
+The `sigs` key is **mandatory**; an entry with no signatures carries `sigs: []`
+and is rejected later for `threshold`, not for `decode` (D19). `role` is a
+**closed enum** — a value outside `root` / `signer` / `device` is a schema
+violation and rejects the entry with `decode` (D18). This is distinct from §5.1
+step 7, where a *well-formed* signature whose `kid` does not resolve in that role
+is silently not counted.
+
 Field constraints (violations → reason `decode`):
 
 | Field | Constraint |
@@ -139,7 +146,7 @@ verified against the key the `kid` resolves to in the state *before* this entry.
 |---|---|---|
 | `genesis` | `name` (string), `roots` ([pk]), `root_thr` (uint), `signers` ([pk]), `signer_thr` (uint), `params` (§4.5) | ≥ `root_thr` of `roots` |
 | `enroll` | `device_id`, `device_pk` (bytes32 Ed25519), `wg_pk` (bytes32 X25519), `labels` (map string→string, OPTIONAL), `expires` (uint, OPTIONAL) | the device (`device_pk`) **and** ≥ `signer_thr` signers |
-| `rotate` | `device_id`, `wg_pk` (new), `device_pk` (new, OPTIONAL) | the *current* device key; plus ≥ `signer_thr` signers if `params.rotate_needs_signer` |
+| `rotate` | `device_id`, `wg_pk` (new), `device_pk` (new, OPTIONAL) | the *current* device key; **and the incoming `device_pk` too when the body carries one** (proof of possession, D-032); plus ≥ `signer_thr` signers if `params.rotate_needs_signer` |
 | `revoke` | `device_id`, `reason` (string) | ≥ `signer_thr` signers, **or** the device itself, **or** ≥ `root_thr` roots |
 | `signer_add` | `pk` | ≥ `root_thr` roots |
 | `signer_remove` | `kid` | ≥ `root_thr` roots |
@@ -239,7 +246,7 @@ unusable has nothing to verify later entries against.
 | `t` | checks, in order | effect |
 |---|---|---|
 | `enroll` | body fields well-formed (`decode`) · valid `device` signature by `body.device_pk` (`no-device-sig`) · valid `signer` count ≥ `signer_thr` (`threshold`) · `device_id` not currently `active` (`dup-id`) · `wg_pk` not in `active_wg` (`dup-wg`) | add the device `active` |
-| `rotate` | body well-formed (`decode`) · `device_id` known (`unknown-device`) · currently `active` (`not-active`) · valid `device` signature by the device's **current** `device_pk` (`no-device-sig`) · if `params.rotate_needs_signer`, signer count ≥ `signer_thr` (`threshold`) · new `wg_pk` not active **for another device** (`dup-wg`) | replace `wg_pk`, and `device_pk` if the body carries one |
+| `rotate` | body well-formed (`decode`) · `device_id` known (`unknown-device`) · currently `active` (`not-active`) · valid `device` signature by the device's **current** `device_pk` (`no-device-sig`) · if `params.rotate_needs_signer`, signer count ≥ `signer_thr` (`threshold`) · new `wg_pk` not active **for another device** (`dup-wg`) · if the body carries `device_pk`, a valid `device` signature by **that** key as well (`no-device-sig`) | replace `wg_pk`, and `device_pk` if the body carries one |
 | `revoke` | body well-formed (`decode`) · `device_id` known (`unknown-device`) · currently `active` (`not-active`) · authorised by signers, roots **or** the device itself (`threshold`) | `status` = `revoked`, drop from `active_wg` |
 | `signer_add`, `root_add` | `kid(pk)` not already a root or signer (`dup-key`) | add to that role |
 | `signer_remove` | `kid` is a signer (`unknown-key`) | remove. **No quorum invariant** — removing a compromised signer key MUST always be possible, including the last one (D-028). A network left with fewer signers than `signer_thr` cannot enrol until roots add one; that is recoverable, an unremovable stolen key is not. |
@@ -278,7 +285,7 @@ Entries whose `expires` is earlier than the checkpoint time are treated as
 | `not-active` | `rotate`/`revoke` on a device that is already `revoked` |
 | `dup-key` | `signer_add`/`root_add` of a `pk` whose `kid` already exists in either role |
 | `unknown-key` | `signer_remove`/`root_remove` of a `kid` not in that role |
-| `root-invariant` | `root_remove`/`root_thr` would leave `< root_thr` roots or `< 1` root |
+| `root-invariant` | `root_remove` would leave `< root_thr` roots or `< 1` root. **Removals only** — a `root_thr`/`signer_thr` value outside `1 … len(set)` is `bad-thr`, because the *value* is wrong rather than the resulting set (D11). |
 | `bad-thr` | `signer_thr`/`root_thr` value is 0 or exceeds the set size |
 
 Signature counting, precisely: a signature `{kid, role, sig}` is *valid* iff the
@@ -475,7 +482,7 @@ that are not consistent MUST:
 | `keys.json` | fixed seeds for log, 3 witnesses, 2 roots, 2 signers, 3 devices |
 | `entries/NN-<type>.cbor` + `.json` | one valid entry per type, byte-exact |
 | `entries/bad-*.cbor` + `.reason` | one rejected entry per §5 reason code |
-| `log/` | the replay fixture: 42 entry `.cbor` files, a `.reason` file beside each entry that must be rejected, and `manifest.json` |
+| `log/` | the replay fixture: 49 entry `.cbor` files, a `.reason` file beside each entry that must be rejected, and `manifest.json` |
 | `log/manifest.json` | `{"anchor": {"net", "genesis_hash"}, "entries": [{"index", "name", "reason"}]}` — the replay input and its expected outcome; `reason` is `""` for an entry that must be accepted |
 | `bad-genesis/` | a one-entry log plus `manifest.json` whose anchor pins a different genesis, so replay aborts |
 | `state.json` | canonical replay output for `log/` |
