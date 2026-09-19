@@ -575,3 +575,30 @@ with no key at all is refused rather than silently skipping the step.
 That needs a cosignature, which needs a running witness — Phase 4, the same
 item as 2.6b. Until then Norn verifies *who wrote* the head, not that the head
 was shown to anybody else.
+
+## D-059 · wgctrl, paid for once and fenced in (2026-09-19, 3.5b)
+**Measured: the graph goes 8 → 24.** wgctrl's own requirement list is 18 modules,
+but five of them (x/crypto, x/net, x/sys, x/term, x/text) were already there, so
+the net cost is **16 new modules** — mdlayher's netlink stack, gvisor, wintun,
+and wireguard-go itself. By far the largest jump in the project, and it lands in
+the component that runs on a Pi.
+
+Taken anyway, because the alternative is worse in the way that matters.
+`wgctrl` is what `PLAN.md` and `ENFORCEMENT.md` part 2 already chose, and its
+backend table *is* wgctrl's capability matrix. Writing it ourselves would mean
+hand-rolling **generic netlink** for kernel WireGuard — family resolution,
+nested attributes, dumps — on a machine with no netlink to test against. That
+is the neighbour of D-053's rule: hand-write wire formats, never crypto
+primitives, and **never a kernel protocol you cannot test**. A mis-parsed peer
+list is a security failure, not a formatting bug.
+
+What makes it affordable is that it is **fenced in**, and the fence is tested.
+`internal/wgdev` is the only package that imports it, and `internal/depgraph`
+asserts that `cmd/norn`, `cmd/norn-log`, `internal/reconcile`, `internal/agent`,
+`internal/peertable` and `internal/endpoint` do not — so the CLI stays light,
+the log server stays small, and every enforcement decision including the A1
+swap attack remains a unit test against `peertable.Device` rather than a lab
+run. Rejected: a hand-rolled netlink client (untestable here, and the failure
+mode is silent) · UAPI-only support (would drop kernel WireGuard, which is the
+platform the gate measures) · shelling out to `wg` (parsing a human-readable
+format as an authority, with no way to distinguish absent from empty).

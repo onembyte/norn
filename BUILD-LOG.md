@@ -361,9 +361,9 @@ starting rather than after.
 | 3.4 | `/run/norn/proven.json` | the verifier→enforcer interface of `ENFORCEMENT.md` part 9, written atomically, with its schema pinned | ✅ |
 | 3.5 | `nornd` | the daemon; split | ⬜ |
 | 3.5a | `internal/agent` | one verify-and-reconcile cycle, and the failure semantics of `ENFORCEMENT.md` part 8 — above all, **a failed verification never widens or empties the peer table** | ✅ |
-| 3.5b | `cmd/nornd` | the binary: config, signals, the poll loop, and **observe as the default** (D-005) | ⬜ |
+| 3.5b | `internal/wgdev` | the real interface behind the same seam. **Moved ahead of the daemon:** a `nornd` with nothing to drive cannot be run, and the dependency question had to be answered before a binary depended on the answer | ✅ |
+| 3.5c | `cmd/nornd` | the binary: config, signals, the poll loop, and **observe as the default** (D-005) | ⬜ |
 | 3.6 | Fight detection and quarantine | N evictions in W → `CONTROL_PLANE_FIGHT`; `quarantine` fails closed **by choice, never by default** | ⬜ |
-| 3.7 | The wgctrl backend | the real interface behind the same seam, its dependency cost measured, and whatever can be tested without a kernel tested | ⬜ |
 | 3.8 | Phase 3 gate audit | each line read against what is actually tested, and what the lab still owes | ⬜ |
 
 ## Decision taken — 2.9d: an `enroll` needs a device signature the device cannot make
@@ -526,3 +526,11 @@ the signer keeps one job — decide, and place the entry in the log.
   - **Observe is the default when no mode is set** (D-005), and a missing or unusable trust file means **refuse to start** in every mode — a node that started without an anchor would enforce nothing while looking like it worked.
   - Everything the agent touches is an interface, so these tests substitute a directory for a log and a fake for a kernel. Not one of them needs a WireGuard device.
   - Go: 36 packages, 325 tests; `go test` and staticcheck green.
+- **3.5b `internal/wgdev` — the kernel, paid for once and fenced in (D-059).**
+  - **Reordered before the daemon on purpose:** a `nornd` with nothing to drive cannot be run, and the dependency question had to be answered before a binary depended on the answer.
+  - **The number is bad: 16 new modules**, including gvisor and wintun — wgctrl requires 18, five of which were already present, so the graph goes **8 → 24**. It lands in the component that runs on a Pi. Taken anyway, because the alternative is hand-rolling **generic netlink** — family resolution, nested attributes, dumps — on a machine with no netlink to test against. That is the neighbour of D-053's rule: hand-write wire formats, never crypto primitives, and **never a kernel protocol you cannot test**. A mis-parsed peer list is a security failure, not a formatting bug.
+  - **What makes it affordable is the fence, and the fence is tested.** `internal/depgraph` is an architecture test: `cmd/norn`, `cmd/norn-log`, `internal/reconcile`, `internal/agent`, `internal/peertable` and `internal/endpoint` must not reach a kernel driver. So the CLI stays light, the log server stays small, and **every enforcement decision including the A1 swap attack remains a unit test** rather than a lab run. It also pins the verifier: a verifier needs a log and a trust anchor and nothing else.
+  - **The package is almost entirely conversion, and that is where the bugs live.** Two wgctrl fields are pointers where nil means *leave it alone* — so "the provider gave no endpoint" now reaches the kernel as **nil**, not as a zero endpoint that would take a roaming peer offline. The 3.2 property finally meets the layer that could break it, and is tested there too.
+  - **Allowed-ips are set exactly, never added to** (`ReplaceAllowedIPs`), or a route Norn did not put there would survive a rewrite. A refresh carries **no routes at all** — `UpdateOnly` with the allowed-ips deliberately empty — because refreshing reachability must not touch authority.
+  - A v4 endpoint arrives from the kernel as a 16-byte mapped address and must come back as `192.0.2.1:51820`, not `::ffff:…`. Tested, because a peer table where one address is spelled two ways is a peer table that never converges.
+  - Go: 38 packages, 336 tests; module graph **24**. `go test` and staticcheck green.
