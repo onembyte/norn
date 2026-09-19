@@ -283,3 +283,13 @@ concatenate, duplicate keys resolve last-wins. Those four are vectored, each
 proven isolating by a deliberately permissive decoder in the fixture, and the
 unpatched control they are patches of ships beside them — without a control, a
 negative can be rejected for a fault its author did not intend.
+
+## D-041 · Vector names derive from their index; nothing is addressed by number (2026-09-19, 0.11c)
+Entry names drifted twice: inserting a vector shifts every later index while a
+hard-coded name stays put, so `72-after-below-index` ended up at index 76. Worse,
+one vector fetched the entry to duplicate as `b.items[67]` — a stale number there
+would silently point at an *accepted* entry and quietly turn a `dup-entry` vector
+into something else. Names are now `f"{b.index}-…"`, the duplicate source is
+looked up by the property it needs (`_first_rejected`), and two tests fail the
+build if any name and index disagree. Same lesson as D-040 and the derived file
+counts: assert the property, never the magic number.

@@ -77,9 +77,14 @@ def validate(doc: dict[str, Any]) -> None:
     if not isinstance(doc["name"], str) or not 1 <= len(doc["name"].encode()) <= 64:
         raise TrustError("name must be 1-64 bytes")
     try:
-        note.parse_vkey(doc["log_key"])
+        log_key = note.parse_vkey(doc["log_key"])
     except note.NoteError as exc:
         raise TrustError(f"log_key: {exc}") from exc
+    # The note name binds the key to this network: a checkpoint signed by a key
+    # named for another origin must not verify here (SPEC §9.1).
+    if log_key.name != doc["origin"]:
+        raise TrustError(
+            f"log_key note name {log_key.name!r} does not match origin {doc['origin']!r}")
     if not doc["log_urls"] or not all(isinstance(u, str) and u for u in doc["log_urls"]):
         raise TrustError("log_urls must be a non-empty list of strings")
     if not doc["witnesses"]:

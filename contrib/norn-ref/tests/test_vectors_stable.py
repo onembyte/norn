@@ -93,3 +93,35 @@ class NoOrphans(unittest.TestCase):
         for suffix in (".cbor", ".reason"):
             on_disk = {p.stem for p in (root / "log").glob(f"*{suffix}")}
             self.assertEqual(on_disk - named, set(), f"orphan {suffix} files in log/")
+
+
+class NamesMatchIndices(unittest.TestCase):
+    """Every log entry's name must start with its own index.
+
+    Names drifted twice: a vector inserted earlier shifts every later index
+    while the hard-coded names stay put, leaving `72-after-below-index` sitting
+    at index 76. The names are what a reader sees, so a drifted name is a
+    misleading vector.
+    """
+
+    @staticmethod
+    def _leading_number(name: str) -> int:
+        head = name.split("-", 1)[0]
+        return int(head)  # zero-padded forms like "00-genesis" are fine
+
+    def test_every_name_is_prefixed_by_its_index(self):
+        from nornref import fixture
+
+        for index, item in enumerate(fixture.log()):
+            with self.subTest(index=index):
+                self.assertEqual(self._leading_number(item.name), index,
+                                 f"entry {index} is named {item.name!r}")
+
+    def test_manifest_agrees_with_the_file_names(self):
+        import json
+        root = pathlib.Path(__file__).resolve().parents[3] / "testdata" / "vectors"
+        manifest = json.loads((root / "log" / "manifest.json").read_text())
+        for item in manifest["entries"]:
+            with self.subTest(index=item["index"]):
+                self.assertEqual(self._leading_number(item["name"]), item["index"])
+                self.assertTrue((root / "log" / f"{item['name']}.cbor").exists())

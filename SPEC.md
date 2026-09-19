@@ -547,7 +547,7 @@ in this repository and may be rooted anywhere when the suite is distributed.
 | `keys.json` | every test key: Ed25519 `{seed, public, kid}` by name, X25519 public keys by name, and `net` |
 | `entries/NN-<type>.cbor` | one valid entry per type, canonical bytes |
 | `entries/NN-<type>.json` | mirror: `{entry, entry_hash, leaf_hash, preimage_sha256, size}` where `size` is the byte length of the `.cbor`. The `entry` object mirrors the **CBOR**, so an optional field absent from the entry is absent here too — unlike `state.json`, where §5.3's schema fields are always emitted |
-| `log/NN-<name>.cbor` | the replay fixture, **72 entries** in order. The file names are labels, not the order: **read the sequence from `manifest.json`**, never by globbing and sorting |
+| `log/NN-<name>.cbor` | the replay fixture, **82 entries** in order. The file names are labels, not the order: **read the sequence from `manifest.json`**, never by globbing and sorting |
 | `log/NN-<name>.reason` | beside each entry that must be rejected: its §5.2 reason code |
 | `log/manifest.json` | `{"anchor": {"net", "genesis_hash"}, "entries": [{"index", "name", "reason"}]}` — the replay input and expected outcome; `reason` is `""` for an accepted entry |
 | `state.json` | canonical replay output for `log/` (§5.3) |
@@ -567,29 +567,20 @@ different hat.
 
 | area | positive | negative |
 |---|---|---|
-| §4.0 encoding profile | every entry, and the control (62) | non-shortest integer (56), `null` (57), unsorted keys (58), tag (63), indefinite text (64), indefinite map (65), duplicate key (66) |
+| §4.0 encoding profile | every entry, and the controls (62, 76, 77) | non-shortest integer (56), `null` (57), unsorted map keys (58), tag (63), indefinite text (64), indefinite map (65), duplicate key (66), invalid UTF-8 (78), integer > 2⁶³−1 (79), 24-byte map key (80), unsorted `sigs` (81) |
 | §4.0/§4.3 schemas | labels (2, 50) | malformed `kid` (53), `sigs` omitted (45), `sigs: []` (52), `role` outside the enum (44), unknown envelope key (59), unknown body key (60), `device_id` regex (67, 68), `pk` length (69), `sig` length (70), oversized `text` (71) |
 | §4.2 signatures, hashes, preimage | 16 entry mirrors | wrong `net` (32) |
-| §5 replay, 15 of the 16 reason codes | 72-entry log | 42 rejecting entries |
+| §5 replay, 15 of the 16 reason codes | 82-entry log | 49 rejecting entries |
 | §5 `bad-genesis` | — | `genesis/`; it cannot appear in the log, since it aborts replay |
 | §5.1 check order | — | multi-fault entries 47, 48 |
-| §5.1 genesis | the log's entry 0 | six abort paths in `genesis/` — **not** the decode path |
+| §5.1 genesis | the log's entry 0 | nine abort paths in `genesis/`, including the undecodable entry 0 and the body invariants |
 | §5.2 `bad-thr` | — | both halves: value 0 (61) and value above the set size (19) |
 | §5.3 state, incl. D-028 and `expires` | `state.json`, contractor device (51) | below-threshold `signer_remove` accepted (54) and recovered (55) |
+| §4.4 `after` is a floor | accepted with `after` < index (72) | `after` > index (10) |
+| §5.1 seen set, §4.3 roles | — | repeat of a *rejected* entry (73), partial signer quorum (74), role not matching the key's current role (75) |
 | §7 receipt | `receipt.note` | — |
-| §9 trust file, fingerprint | `trust.cbor` | 10 rejected anchors, `trust-bad/` |
+| §9 trust file, fingerprint | `trust.cbor` | 12 rejected anchors, `trust-bad/`, including a log key named for another origin |
 | §14 canonical JSON | every `.json`; escaping torture (49, 50) | — |
-
-**Vectored only in part** — these MUSTs have no rejecting vector, so an
-implementation that skips the check passes the suite (each was demonstrated by a
-variant that scored a clean pass in the 0.10 conformance run):
-
-| §4.0 map keys of 1–23 bytes · valid UTF-8 · integers ≤ 2⁶³−1 · `sigs` ordering |
-| §5.1 step 1 "added to the seen set, whether or not it is later rejected" |
-| §5.1 `after < index` — every `after` in the fixture equals its own index |
-| §5.1 a signer count strictly between 0 and `signer_thr` |
-| §4.3 "a key counts only for the role it currently holds" |
-| §5.1 genesis step 2 (an entry 0 that fails to decode) and most of step 6 |
 
 **Not vectored, and therefore not binding on a second implementation:**
 

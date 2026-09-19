@@ -19,7 +19,7 @@ DEVICES = ["nas", "laptop", "pi-cam"]
 
 WITNESSES = ["pi", "vps", "friend"]
 
-EXTRA_KEYS = (["signer3", "root4", "logkey", "logkey2", "spare", "printer", "nas-id2", "printer-id2", "escaped", "contractor"]
+EXTRA_KEYS = (["signer3", "root4", "logkey", "logkey2", "spare", "printer", "nas-id2", "printer-id2", "escaped", "contractor", "halfsigned", "labelcap"]
               + [f"witness-{w}" for w in WITNESSES])
 
 KEYS: dict[str, keys.Ed25519] = {
@@ -28,7 +28,7 @@ KEYS: dict[str, keys.Ed25519] = {
 }
 WG: dict[str, bytes] = {
     name: keys.x25519_public(name)
-    for name in DEVICES + ["laptop2", "nas2", "spare", "printer", "rogue", "escaped", "contractor"]
+    for name in DEVICES + ["laptop2", "nas2", "spare", "printer", "rogue", "escaped", "contractor", "halfsigned", "labelcap"]
 }
 
 #: Every canonical-JSON escape rule (SPEC §14.2) in one value: the characters
@@ -199,6 +199,16 @@ from collections import namedtuple  # noqa: E402  (kept next to its only user)
 from . import cbor  # noqa: E402
 
 LogItem = namedtuple("LogItem", "name raw reason")
+
+
+def _first_rejected(builder: "_Builder") -> bytes:
+    """Bytes of the first entry the log already rejected.
+
+    Looked up rather than indexed by number: entry numbers shift whenever a
+    vector is inserted earlier, and a stale index here would silently point at
+    an *accepted* entry, turning a dup-entry vector into something else.
+    """
+    return next(item.raw for item in builder.items if item.reason)
 
 
 class _Builder:
@@ -426,11 +436,40 @@ def log() -> list[LogItem]:
     # A control: the exact entry each encoding negative is a patch of. Without
     # it a reader cannot tell whether a negative is rejected for its one
     # deliberate fault or for something incidental.
-    b.add_raw("62-profile-base", profile_base(), None)
+    b.add_raw(f"{b.index}-profile-base", profile_base(), None)
     for name, raw in profile_negatives():
         b.add_raw(f"{b.index}-bad-{name}", raw, "decode")
     for name, raw in field_negatives():
         b.add_raw(f"{b.index}-bad-{name}", raw, "decode")
+
+    # §4.4: `after` is a floor, not an equality. Every other `after` in this
+    # fixture equals its own index, so a variant demanding equality passed.
+    b.add(f"{b.index}-after-below-index", b.build(
+        "note", {"text": "signed long ago, submitted late"},
+        [("signer1", "signer")], after=5))
+
+    # §5.1 step 1: the seen set records an entry "whether or not it is later
+    # rejected" (D-031). This repeats entry 67, which was itself rejected.
+    b.add_raw(f"{b.index}-bad-repeat-of-rejected", _first_rejected(b), "dup-entry")
+
+    # A signer count strictly between zero and the threshold. The other
+    # `threshold` negatives all carry zero valid signer signatures.
+    b.add(f"{b.index}-bad-one-of-two-signers", b.build("enroll", _enroll_body(
+        "halfsigned", wg="rogue"),
+        [("halfsigned", "device"), ("signer1", "signer")]), "threshold")
+
+    # §4.3: a key counts only for the role it currently holds. This is a valid
+    # signature by a signer key that declares itself `root`.
+    mismatch = entry.new("note", NET, ts=T0 + 9000, after=75,
+                         body={"text": "signer key claiming root"})
+    entry.sign(mismatch, KEYS["signer1"], "root")
+    b.add_raw(f"{b.index}-bad-role-mismatch", entry.encode(mismatch), "threshold")
+
+    # Controls for the last two encoding negatives, which patch a different
+    # base than `profile_base`: a label key exactly at the 23-byte cap, and an
+    # entry with two signatures in the correct kid order.
+    b.add_raw(f"{b.index}-labelcap-base", labelled_base(), None)
+    b.add_raw(f"{b.index}-two-sig-base", two_sig_base(), None)
     return b.items
 
 
@@ -482,6 +521,23 @@ def genesis_aborts() -> list[tuple[str, bytes, "replay.Anchor"]]:
     raw = entry.encode(under)
     cases.append(("06-under-root-threshold", raw, replay.Anchor(NET, entry.leaf_hash(raw))))
 
+    # entry 0 that does not decode at all (SPEC §5.1 entry-0 step 2)
+    raw = b"\xa1\x61t\xf9\x3c\x00"  # a map whose value is a float: outside the profile
+    cases.append(("07-undecodable", raw, replay.Anchor(NET, entry.leaf_hash(raw))))
+
+    # body invariants beyond the threshold check (entry-0 step 6)
+    dup_root = dict(genesis()["body"], roots=[KEYS["root1"].public, KEYS["root1"].public])
+    env = _signed(entry.new("genesis", NET, ts=T0, body=dup_root),
+                  [("root1", "root"), ("root2", "root")])
+    raw = entry.encode(env)
+    cases.append(("08-duplicate-root", raw, replay.Anchor(NET, entry.leaf_hash(raw))))
+
+    overlap = dict(genesis()["body"], signers=[KEYS["root1"].public, KEYS["signer1"].public])
+    env = _signed(entry.new("genesis", NET, ts=T0, body=overlap),
+                  [("root1", "root"), ("root2", "root")])
+    raw = entry.encode(env)
+    cases.append(("09-role-overlap", raw, replay.Anchor(NET, entry.leaf_hash(raw))))
+
     assert good_anchor  # the good anchor is exercised by the log fixture
     return cases
 
@@ -510,6 +566,10 @@ def trust_rejections() -> list[tuple[str, dict[str, Any]]]:
             dict(base["witnesses"][0]), dict(base["witnesses"][0])])),
         ("09-policy-without-quorum", damaged(policy="log x\nwitness pi y\n")),
         ("10-missing-policy", damaged(policy=_REMOVE)),
+        ("11-log-key-name-mismatch",
+         damaged(log_key=note.vkey("someone/else", KEYS["logkey"].public))),
+        ("12-witness-key-unparseable",
+         damaged(witnesses=[dict(base["witnesses"][0], key="nonsense")])),
     ]
 
 
@@ -561,6 +621,58 @@ def _duplicate_key(raw: bytes) -> bytes:
     return bytes([0xA0 | (count + 1)]) + raw[1:at] + pair + raw[at:]
 
 
+def _oversize_map_key(raw: bytes) -> bytes:
+    """Grow a 23-byte label key to 24, past the profile cap.
+
+    A lenient decoder reads a 24-byte text key happily, so only the cap rejects
+    this. The key lives in `labels`, whose values are free-form, rather than in
+    a schema position where a closed-schema check would fire first.
+    """
+    key = "k" * 23
+    definite = cbor.encode(key)
+    assert definite in raw
+    return raw.replace(definite, b"\x78\x18" + key.encode() + b"k", 1)
+
+
+def _invalid_utf8(raw: bytes) -> bytes:
+    """Corrupt one byte inside a text string. Lenient decoders substitute."""
+    definite = cbor.encode("profile probe")
+    assert definite in raw
+    return raw.replace(definite, definite[:2] + b"\xff" + definite[3:], 1)
+
+
+def _integer_too_large(raw: bytes, ts: int) -> bytes:
+    """Re-encode `ts` above 2**63-1. A lenient decoder reads a big int."""
+    needle = cbor.encode("ts") + cbor.encode(ts)
+    assert needle in raw, "ts value not found"
+    return raw.replace(
+        needle, cbor.encode("ts") + b"\x1b\xff\xff\xff\xff\xff\xff\xff\xff", 1)
+
+
+def _unsorted_sigs(raw: bytes) -> bytes:
+    """Swap two signature maps so `sigs` is no longer ordered by kid."""
+    env = cbor.decode(raw)
+    assert len(env["sigs"]) == 2, "needs exactly two signatures"
+    first, second = (cbor.encode(x) for x in env["sigs"])
+    assert first + second in raw
+    return raw.replace(first + second, second + first, 1)
+
+
+def labelled_base() -> bytes:
+    """A valid enrolment carrying a 23-byte label key: the oversize control."""
+    env = entry.new("enroll", NET, ts=T0 + 9000, after=76, body={
+        "device_id": "labelcap", "device_pk": KEYS["labelcap"].public,
+        "wg_pk": WG["labelcap"], "labels": {"k" * 23: "at the cap"}})
+    return entry.encode(_signed(env, [("labelcap", "device"),
+                                      ("signer1", "signer"), ("signer3", "signer")]))
+
+
+def two_sig_base() -> bytes:
+    """A valid note with two signatures: the sigs-ordering control."""
+    env = entry.new("note", NET, ts=T0 + 9000, after=76, body={"text": "profile probe"})
+    return entry.encode(_signed(env, [("signer1", "signer"), ("root1", "root")]))
+
+
 def profile_negatives() -> list[tuple[str, bytes]]:
     base = profile_base()
     return [
@@ -568,6 +680,10 @@ def profile_negatives() -> list[tuple[str, bytes]]:
         ("indefinite-text", _indefinite_text(base, "profile probe")),
         ("indefinite-map", _indefinite_map(base)),
         ("duplicate-map-key", _duplicate_key(base)),
+        ("invalid-utf8", _invalid_utf8(base)),
+        ("integer-too-large", _integer_too_large(base, T0 + 9000)),
+        ("oversize-map-key", _oversize_map_key(labelled_base())),
+        ("unsorted-sigs", _unsorted_sigs(two_sig_base())),
     ]
 
 
@@ -607,7 +723,7 @@ def decode_leniently(raw: bytes) -> dict[str, Any]:
                 pos += 1
                 return out
             chunk = raw[pos:pos + n]; pos += n
-            return chunk if major == 2 else chunk.decode("utf-8")
+            return chunk if major == 2 else chunk.decode("utf-8", errors="replace")
         if major == 4:
             if n == -1:
                 out = []

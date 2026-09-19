@@ -39,20 +39,28 @@ class IsolatingProfileNegatives(unittest.TestCase):
                     if item.name.endswith(f"-bad-{name}"))
 
     def test_a_lenient_decoder_would_see_a_valid_entry(self):
-        """Proves the isolation claim rather than asserting it."""
+        """Proves the isolation claim rather than asserting it.
+
+        Each negative must still look like a well-formed entry of its base's
+        type to a decoder that skips the encoding rules -- otherwise the vector
+        would be rejected for something other than the rule it names.
+        """
         for name, raw in fixture.profile_negatives():
             with self.subTest(case=name):
                 lenient = fixture.decode_leniently(raw)
-                self.assertEqual(lenient["t"], "note")
+                self.assertIn(lenient["t"], entry.TYPES)
                 self.assertEqual(lenient["v"], entry.VERSION)
                 self.assertEqual(lenient["net"], fixture.NET)
-                self.assertIn("sigs", lenient)
+                self.assertTrue(lenient["sigs"], "signatures must survive the patch")
+                self.assertIsInstance(lenient["body"], dict)
 
-    def test_the_unpatched_control_entry_is_accepted(self):
-        """Without this control, a negative could be rejected for a fault its
+    def test_every_control_entry_is_accepted(self):
+        """Without a control, a negative could be rejected for a fault its
         author did not intend and nobody would notice."""
         outcomes = log_outcomes()
-        self.assertIsNone(outcomes["62-profile-base"])
+        for control in [k for k in outcomes if k.endswith(("-profile-base", "-labelcap-base", "-two-sig-base"))]:
+            with self.subTest(control=control):
+                self.assertIsNone(outcomes[control])
 
 
 class FieldConstraintNegatives(unittest.TestCase):

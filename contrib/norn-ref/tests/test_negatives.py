@@ -25,10 +25,23 @@ class GenesisAborts(unittest.TestCase):
             with self.subTest(case=name):
                 self._abort(raw, anchor)
 
-    def test_the_six_cases_are_distinct(self):
-        names = [n for n, _, _ in fixture.genesis_aborts()]
-        self.assertEqual(len(names), len(set(names)))
-        self.assertEqual(len(names), 6)
+    def test_the_cases_are_distinct_and_cover_each_abort_step(self):
+        """Asserts the property, not a count: a count breaks on every addition
+        and teaches nothing when it does."""
+        cases = fixture.genesis_aborts()
+        names = [n for n, _, _ in cases]
+        self.assertEqual(len(names), len(set(names)), "case names must be unique")
+        pairs = [(raw, a.net, a.genesis_hash) for _, raw, a in cases]
+        self.assertEqual(len(pairs), len(set(pairs)),
+                         "each case must differ in its entry or its anchor")
+        good = fixture.log()[0].raw
+        reused = [n for n, raw, _ in cases if raw == good]
+        self.assertEqual(reused, ["01-hash-mismatch"],
+                         "only the anchor-mismatch case may reuse a valid genesis")
+        for step in ("hash-mismatch", "not-genesis", "wrong-net", "after-nonzero",
+                     "root-thr-above-set", "under-root-threshold", "undecodable",
+                     "duplicate-root", "role-overlap"):
+            self.assertTrue(any(step in n for n in names), f"no genesis case for {step}")
 
     def test_aborted_state_is_fully_serialised(self):
         _, raw, anchor = fixture.genesis_aborts()[0]

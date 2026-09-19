@@ -30,7 +30,8 @@ becomes its own oracle.
 | 0.9b-1 | Repair run-2 defects E2–E11 + correct §12.1 | every item closed; `kid`, `sigs` ordering, D-028 and the encoding profile given vectors | ✅ |
 | 0.9b-3 | Remaining vector gaps §12.1 names | genesis abort conditions, non-zero `expires`, trust-file negatives | ✅ |
 | 0.10 | Cold-model gate (run 3) | a *fresh* agent on a *new* copy returns SUFFICIENT or SUFFICIENT WITH GAPS | ✅ **SPEC SUFFICIENT WITH GAPS**, 396/396 |
-| 0.11 | Close the run-3 gaps | the MUSTs §12.1 now admits are unvectored get vectors; the rules that exist only in the vectors get prose | ◐ 0.11a, 0.11b done |
+| 0.11 | Close the run-3 gaps | the MUSTs §12.1 admitted were unvectored now have vectors; the rules that existed only in the vectors now have prose | ✅ |
+| 0.12 | Cold-model gate (run 4) | a *fresh* agent on a *new* copy; the target is now `SPEC SUFFICIENT` outright | ⬜ |
 
 Log fixture (tiles + cosigned checkpoint) moves to Phase 2 where Tessera produces
 it and torchwood verifies it — hand-building a tlog in Python adds no assurance.
@@ -127,3 +128,8 @@ Loop paused here pending that answer.
   - Field-constraint negatives 67–71: `device_id` uppercase and leading-dot, short `pk`, short `sig`, oversized `text` — none of which had a rejecting vector.
   - The new tests first failed with `dup-entry` rather than `decode`, because the negatives now live *in* the log and the tests were appending copies — D-031 doing its job. Rewritten to assert against the log's own outcomes.
   - Log is 72 entries, 185 vector files. 123 Python tests, 11 Go tests, `make ci` green. No existing `.cbor` byte moved.
+- **2026-09-19 · 0.11c — the "vectored only in part" table is now empty.** Every MUST §12.1 admitted was unenforced has a vector: `after` as a **floor** rather than an equality (76 accepted with `after` < index — previously *every* `after` in the fixture equalled its own index, so a variant demanding equality passed); a repeat of a **rejected** entry (77), which is the first vector defending D-031's "whether or not it is later rejected"; a signer count strictly **between** zero and the threshold (78), where every earlier `threshold` negative carried zero valid signatures; a signature whose declared role contradicts its key's current role (79); three more genesis aborts — an undecodable entry 0, duplicate roots, and a key in both roles; four more isolating encoding negatives with their own controls (invalid UTF-8, integer > 2⁶³−1, 24-byte map key, unsorted `sigs`).
+  - **Found while doing it:** §9.1's "the log key's note name MUST equal `origin`" was **not enforced** by the validator — prose with nothing behind it. Now enforced, with the reason recorded (a checkpoint signed by a key named for another origin must not verify here) and vectored as `trust-bad/11`.
+  - **D-041**: vector names now derive from their index, and the duplicate-source entry is looked up by the property it needs rather than by number. Names had drifted twice, and one vector fetched `b.items[67]` — a stale number there would silently point at an *accepted* entry and turn a `dup-entry` vector into something else entirely. Two tests now fail the build on any name/index disagreement.
+  - Along the way my own "lenient" decoder turned out not to be lenient about UTF-8, and the isolation test hard-coded `t == "note"` though two negatives patch a different base. Both fixed — the isolation claim is only worth what the proof of it is worth.
+  - Log is 82 entries, 213 vector files. 134 Python tests, 11 Go tests, `make ci` green.
