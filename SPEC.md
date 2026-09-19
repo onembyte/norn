@@ -61,13 +61,24 @@ the map-key cap below:
 | Rule | Requirement |
 |---|---|
 | Integers | major type 0 only; shortest form; ≤ 2⁶³−1. **No negative integers.** |
-| Floats, tags, `undefined`, indefinite-length items | **forbidden** |
+| Floats, tags, `undefined`, indefinite-length items | **forbidden** (see the note on over-determination below) |
 | `null` | **forbidden** — an OPTIONAL field is *absent*, never `null` |
 | Booleans | allowed (`params.rotate_needs_signer` only) |
 | Byte strings | definite length; fixed sizes where stated (`net` 16, `pk` 32, `sig` 64) |
 | Text strings | definite length; valid UTF-8; every **map key** is a text string of 1–23 bytes |
 | Maps | definite length; keys sorted as §4.1; no duplicate keys; unknown keys → reject |
 | Arrays | definite length |
+
+**A note on testing these rules.** The *type* bans — floats, negative integers,
+`undefined` — are belt-and-braces: no Norn field has a type that would accept
+such a value, so an implementation with a typed model rejects them anyway and a
+vector cannot tell the two reasons apart. The *encoding* bans are the ones that
+bite, because a lenient decoder produces a **valid entry** from them: a
+tag-wrapped value unwraps, an indefinite-length string concatenates, a
+duplicate key resolves last-wins, a non-shortest integer has the same value,
+and an unsorted map has the same contents. Those are the cases the suite
+isolates (`log/63`–`66`), each alongside the unpatched control entry (`62`) it
+is a single-byte-class patch of.
 
 Derived values:
 
@@ -536,7 +547,7 @@ in this repository and may be rooted anywhere when the suite is distributed.
 | `keys.json` | every test key: Ed25519 `{seed, public, kid}` by name, X25519 public keys by name, and `net` |
 | `entries/NN-<type>.cbor` | one valid entry per type, canonical bytes |
 | `entries/NN-<type>.json` | mirror: `{entry, entry_hash, leaf_hash, preimage_sha256, size}` where `size` is the byte length of the `.cbor`. The `entry` object mirrors the **CBOR**, so an optional field absent from the entry is absent here too — unlike `state.json`, where §5.3's schema fields are always emitted |
-| `log/NN-<name>.cbor` | the replay fixture, **62 entries** in order. The file names are labels, not the order: **read the sequence from `manifest.json`**, never by globbing and sorting |
+| `log/NN-<name>.cbor` | the replay fixture, **72 entries** in order. The file names are labels, not the order: **read the sequence from `manifest.json`**, never by globbing and sorting |
 | `log/NN-<name>.reason` | beside each entry that must be rejected: its §5.2 reason code |
 | `log/manifest.json` | `{"anchor": {"net", "genesis_hash"}, "entries": [{"index", "name", "reason"}]}` — the replay input and expected outcome; `reason` is `""` for an accepted entry |
 | `state.json` | canonical replay output for `log/` (§5.3) |
@@ -556,10 +567,10 @@ different hat.
 
 | area | positive | negative |
 |---|---|---|
-| §4.0 encoding profile | every entry | non-shortest integer (56), `null` (57), unsorted map keys (58) — **partial**, see below |
-| §4.0/§4.3 schemas | labels (2, 50) | malformed `kid` (53), `sigs` omitted (45), `sigs: []` (52), `role` outside the enum (44), unknown envelope key (59), unknown body key (60) — **partial**, see below |
+| §4.0 encoding profile | every entry, and the control (62) | non-shortest integer (56), `null` (57), unsorted keys (58), tag (63), indefinite text (64), indefinite map (65), duplicate key (66) |
+| §4.0/§4.3 schemas | labels (2, 50) | malformed `kid` (53), `sigs` omitted (45), `sigs: []` (52), `role` outside the enum (44), unknown envelope key (59), unknown body key (60), `device_id` regex (67, 68), `pk` length (69), `sig` length (70), oversized `text` (71) |
 | §4.2 signatures, hashes, preimage | 16 entry mirrors | wrong `net` (32) |
-| §5 replay, 15 of the 16 reason codes | 62-entry log | 33 rejecting entries |
+| §5 replay, 15 of the 16 reason codes | 72-entry log | 42 rejecting entries |
 | §5 `bad-genesis` | — | `genesis/`; it cannot appear in the log, since it aborts replay |
 | §5.1 check order | — | multi-fault entries 47, 48 |
 | §5.1 genesis | the log's entry 0 | six abort paths in `genesis/` — **not** the decode path |
@@ -573,11 +584,7 @@ different hat.
 implementation that skips the check passes the suite (each was demonstrated by a
 variant that scored a clean pass in the 0.10 conformance run):
 
-| §4.0 forbidden CBOR items: floats, tags, `undefined`, indefinite lengths, negative integers |
-| §4.0 fixed byte lengths for `net` (16), `pk` (32), `sig` (64) in *entries* |
-| §4.0 map keys of 1–23 bytes · valid UTF-8 · integers ≤ 2⁶³−1 |
-| §4.0 `sigs` sorted by `kid` with no repeats |
-| §4.0 `device_id` regex · `name`/`reason`/`text` length caps |
+| §4.0 map keys of 1–23 bytes · valid UTF-8 · integers ≤ 2⁶³−1 · `sigs` ordering |
 | §5.1 step 1 "added to the seen set, whether or not it is later rejected" |
 | §5.1 `after < index` — every `after` in the fixture equals its own index |
 | §5.1 a signer count strictly between 0 and `signer_thr` |

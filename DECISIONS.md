@@ -269,3 +269,17 @@ handlers. `params` is the exception, its keys being the §4.5 parameter names.
 `bad-thr`. The value is a well-formed uint, so nothing about it is a schema
 violation — the `thr` row is removed from §4.0 and `bad-thr` owns it. Both
 halves of the clause are now vectored: 0 (61) and above-the-set-size (19).
+
+## D-040 · Encoding negatives must isolate the rule, and ship with a control (2026-09-19, 0.11b)
+Run 3 observed that the encoding-profile negatives were over-determined: a
+`null` in a typed field is rejected for the type, so the vector never exercises
+the profile rule and an implementation skipping profile checks still passes.
+Two consequences. First, the *type* bans (floats, negative integers,
+`undefined`) are untestable by construction — no Norn field would accept such a
+value — and the spec now says so rather than pretending a vector covers them.
+Second, the *encoding* bans are testable precisely because a lenient decoder
+turns them into a **valid entry**: tag-wrapped values unwrap, indefinite strings
+concatenate, duplicate keys resolve last-wins. Those four are vectored, each
+proven isolating by a deliberately permissive decoder in the fixture, and the
+unpatched control they are patches of ships beside them — without a control, a
+negative can be rejected for a fault its author did not intend.

@@ -422,6 +422,15 @@ def log() -> list[LogItem]:
     # `thr: 0` -- the half of §5.2's bad-thr clause both other vectors miss,
     # since they use 99. A well-formed uint, so it is bad-thr and not decode.
     b.add("61-bad-thr-zero", b.build("signer_thr", {"thr": 0}, roots3), "bad-thr")
+
+    # A control: the exact entry each encoding negative is a patch of. Without
+    # it a reader cannot tell whether a negative is rejected for its one
+    # deliberate fault or for something incidental.
+    b.add_raw("62-profile-base", profile_base(), None)
+    for name, raw in profile_negatives():
+        b.add_raw(f"{b.index}-bad-{name}", raw, "decode")
+    for name, raw in field_negatives():
+        b.add_raw(f"{b.index}-bad-{name}", raw, "decode")
     return b.items
 
 
@@ -505,3 +514,150 @@ def trust_rejections() -> list[tuple[str, dict[str, Any]]]:
 
 
 _REMOVE = object()
+
+
+# -- isolating encoding negatives (SPEC §4.0) ----------------------------
+#
+# A negative that puts a forbidden item where a typed field lives is
+# over-determined: an implementation with strict typing rejects it for the type
+# and never exercises the encoding rule. Every case below decodes to the SAME
+# valid entry under a lenient decoder, so only enforcement of the encoding rule
+# rejects it. `decode_leniently` proves that rather than asserting it.
+
+def profile_base() -> bytes:
+    """A plain, valid note entry: the thing each negative is a patch of."""
+    env = entry.new("note", NET, ts=T0 + 9000, after=62, body={"text": "profile probe"})
+    return entry.encode(_signed(env, [("signer1", "signer")]))
+
+
+def _tag_the_value(raw: bytes, key: str) -> bytes:
+    """Wrap a value in CBOR tag 0. A decoder that unwraps tags sees no change."""
+    needle = cbor.encode(key)
+    at = raw.index(needle) + len(needle)
+    return raw[:at] + b"\xc0" + raw[at:]
+
+
+def _indefinite_text(raw: bytes, value: str) -> bytes:
+    """Re-encode a text string as an indefinite-length chunked string."""
+    body = value.encode("utf-8")
+    definite = cbor.encode(value)
+    chunked = b"\x7f" + cbor.encode(value[:1]) + cbor.encode(value[1:]) + b"\xff"
+    assert definite in raw
+    return raw.replace(definite, chunked, 1)
+
+
+def _indefinite_map(raw: bytes) -> bytes:
+    """Re-encode the envelope map with an indefinite length and a break."""
+    assert raw[0] >> 5 == 5, "expected a definite-length map header"
+    return b"\xbf" + raw[1:] + b"\xff"
+
+
+def _duplicate_key(raw: bytes) -> bytes:
+    """Repeat a key-value pair. Last-wins decoders see an identical entry."""
+    pair = cbor.encode("v") + cbor.encode(entry.VERSION)
+    at = raw.index(pair)
+    count = raw[0] & 0x1F
+    assert count < 23, "map header must stay one byte"
+    return bytes([0xA0 | (count + 1)]) + raw[1:at] + pair + raw[at:]
+
+
+def profile_negatives() -> list[tuple[str, bytes]]:
+    base = profile_base()
+    return [
+        ("tag-wrapped-value", _tag_the_value(base, "ts")),
+        ("indefinite-text", _indefinite_text(base, "profile probe")),
+        ("indefinite-map", _indefinite_map(base)),
+        ("duplicate-map-key", _duplicate_key(base)),
+    ]
+
+
+def decode_leniently(raw: bytes) -> dict[str, Any]:
+    """A permissive CBOR reader: unwraps tags, joins chunks, last key wins.
+
+    Exists only to demonstrate that each negative above is a valid entry to a
+    decoder that skips the encoding rules -- i.e. that the vector tests the rule
+    and nothing else.
+    """
+    pos = 0
+
+    def head() -> tuple[int, int]:
+        nonlocal pos
+        initial = raw[pos]; pos += 1
+        major, extra = initial >> 5, initial & 0x1F
+        if extra < 24:
+            return major, extra
+        if extra == 31:
+            return major, -1
+        size = 1 << (extra - 24)
+        n = int.from_bytes(raw[pos:pos + size], "big"); pos += size
+        return major, n
+
+    def value() -> Any:
+        nonlocal pos
+        major, n = head()
+        if major == 6:
+            return value()
+        if major == 0:
+            return n
+        if major in (2, 3):
+            if n == -1:
+                out = b"" if major == 2 else ""
+                while raw[pos] != 0xFF:
+                    out += value()
+                pos += 1
+                return out
+            chunk = raw[pos:pos + n]; pos += n
+            return chunk if major == 2 else chunk.decode("utf-8")
+        if major == 4:
+            if n == -1:
+                out = []
+                while raw[pos] != 0xFF:
+                    out.append(value())
+                pos += 1
+                return out
+            return [value() for _ in range(n)]
+        if major == 5:
+            out: dict[str, Any] = {}
+            if n == -1:
+                while raw[pos] != 0xFF:
+                    k = value(); out[k] = value()
+                pos += 1
+                return out
+            for _ in range(n):
+                k = value(); out[k] = value()
+            return out
+        if major == 7:
+            return {20: False, 21: True}.get(n)
+        raise ValueError(f"major {major}")
+
+    return value()
+
+
+def field_negatives() -> list[tuple[str, bytes]]:
+    """Field constraints from §4.0 that had no rejecting vector."""
+    def enrol(body: dict[str, Any], signers: list[tuple[str, str]]) -> bytes:
+        env = entry.new("enroll", NET, ts=T0 + 9000, after=62, body=body)
+        return entry.encode(_signed(env, signers))
+
+    both = [("signer1", "signer"), ("signer3", "signer")]
+    ok = {"device_id": "probe", "device_pk": KEYS["spare"].public, "wg_pk": WG["rogue"]}
+    short_pk = entry.new("enroll", NET, ts=T0 + 9000, after=62,
+                         body=dict(ok, device_pk=KEYS["spare"].public[:31]))
+    _signed(short_pk, [("spare", "device")] + both)
+
+    long_note = entry.new("note", NET, ts=T0 + 9000, after=62, body={"text": "x" * 4097})
+    _signed(long_note, [("signer1", "signer")])
+
+    bad_sig = entry.new("note", NET, ts=T0 + 9000, after=62, body={"text": "short sig"})
+    _signed(bad_sig, [("signer1", "signer")])
+    bad_sig["sigs"][0]["sig"] = bad_sig["sigs"][0]["sig"][:63]
+
+    return [
+        ("device_id-uppercase", enrol(dict(ok, device_id="Probe"),
+                                      [("spare", "device")] + both)),
+        ("device_id-leading-dot", enrol(dict(ok, device_id=".probe"),
+                                        [("spare", "device")] + both)),
+        ("pk-length", entry.encode(short_pk)),
+        ("sig-length", cbor.encode(bad_sig)),
+        ("text-too-long", entry.encode(long_note)),
+    ]

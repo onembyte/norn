@@ -30,7 +30,7 @@ becomes its own oracle.
 | 0.9b-1 | Repair run-2 defects E2–E11 + correct §12.1 | every item closed; `kid`, `sigs` ordering, D-028 and the encoding profile given vectors | ✅ |
 | 0.9b-3 | Remaining vector gaps §12.1 names | genesis abort conditions, non-zero `expires`, trust-file negatives | ✅ |
 | 0.10 | Cold-model gate (run 3) | a *fresh* agent on a *new* copy returns SUFFICIENT or SUFFICIENT WITH GAPS | ✅ **SPEC SUFFICIENT WITH GAPS**, 396/396 |
-| 0.11 | Close the run-3 gaps | the MUSTs §12.1 now admits are unvectored get vectors; the rules that exist only in the vectors get prose | ◐ 0.11a done |
+| 0.11 | Close the run-3 gaps | the MUSTs §12.1 now admits are unvectored get vectors; the rules that exist only in the vectors get prose | ◐ 0.11a, 0.11b done |
 
 Log fixture (tiles + cosigned checkpoint) moves to Phase 2 where Tessera produces
 it and torchwood verifies it — hand-building a tlog in Python adds no assurance.
@@ -120,3 +120,10 @@ Loop paused here pending that answer.
   - Vectors 59–61 added (log is 62 entries): unknown envelope key, unknown body key, zero threshold.
   - **Refactor**: the vector-count assertions were hard-coded and had broken on *every* addition while teaching nothing. They now derive from the fixture, so the test still asserts one file per fixture item and stays quiet as the fixture grows.
   - 118 Python tests, 11 Go tests, `make ci` green. No existing `.cbor` byte moved.
+- **2026-09-19 · 0.11b — negative vectors that actually test the rule (D-040).** Run 3's sharpest vector critique was that the encoding negatives were *over-determined*: `57-bad-cbor-null` puts a `null` where a typed `ts`/`after` lives, so any implementation with a typed model rejects it for the type and never exercises the profile rule at all — a decoder skipping every profile check still passed. Acting on that split the rules in two.
+  - The **type** bans (floats, negative integers, `undefined`) are untestable by construction: no Norn field has a type that would accept such a value. §4.0 now says so plainly instead of implying a vector covers them.
+  - The **encoding** bans are testable precisely because a lenient decoder turns them into a *valid entry* — a tag unwraps, an indefinite-length string concatenates, a duplicate key resolves last-wins. Four such vectors added (63–66), and the fixture ships a deliberately permissive decoder that **proves** each one decodes to the same valid note, rather than the test merely asserting it.
+  - Entry **62** is the unpatched control the four are patches of. Without a control, a negative can be rejected for a fault its author never intended and nobody notices.
+  - Field-constraint negatives 67–71: `device_id` uppercase and leading-dot, short `pk`, short `sig`, oversized `text` — none of which had a rejecting vector.
+  - The new tests first failed with `dup-entry` rather than `decode`, because the negatives now live *in* the log and the tests were appending copies — D-031 doing its job. Rewritten to assert against the log's own outcomes.
+  - Log is 72 entries, 185 vector files. 123 Python tests, 11 Go tests, `make ci` green. No existing `.cbor` byte moved.
