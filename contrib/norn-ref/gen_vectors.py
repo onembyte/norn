@@ -67,15 +67,37 @@ def write_log(out: pathlib.Path) -> None:
     }) + "\n")
     write(out / "state.json", replay.replay(anchor, raw).to_json() + "\n")
 
-    # bad-genesis aborts replay, so it needs a log of its own.
-    bad = replay.Anchor(net=fixture.NET, genesis_hash=bytes(32))
-    write(out / "bad-genesis" / "00-genesis.cbor", raw[0])
-    write(out / "bad-genesis" / "manifest.json", canonjson.dumps({
-        "anchor": {"net": bad.net, "genesis_hash": bad.genesis_hash},
-        "comment": "the genesis entry is well-formed but is not the one this anchor pins",
-        "entries": [{"index": 0, "name": "00-genesis", "reason": "bad-genesis"}],
+
+def write_genesis_aborts(out: pathlib.Path) -> None:
+    """Every way entry 0 can abort replay, one single-entry log per case."""
+    index = []
+    for name, raw, anchor in fixture.genesis_aborts():
+        folder = out / "genesis" / name
+        write(folder / "00-genesis.cbor", raw)
+        write(folder / "manifest.json", canonjson.dumps({
+            "anchor": {"net": anchor.net, "genesis_hash": anchor.genesis_hash},
+            "entries": [{"index": 0, "name": "00-genesis", "reason": "bad-genesis"}],
+        }) + "\n")
+        write(folder / "state.json", replay.replay(anchor, [raw]).to_json() + "\n")
+        index.append(name)
+    write(out / "genesis" / "cases.json", canonjson.dumps({
+        "comment": "each subdirectory is a one-entry log whose replay MUST abort "
+                   "with bad-genesis; an abort stops replay, so cases cannot share a log",
+        "cases": index,
     }) + "\n")
-    write(out / "bad-genesis" / "state.json", replay.replay(bad, raw[:1]).to_json() + "\n")
+
+
+def write_trust_rejections(out: pathlib.Path) -> None:
+    """Trust files a verifier MUST refuse (SPEC §9.1)."""
+    cases = []
+    for name, doc in fixture.trust_rejections():
+        write(out / "trust-bad" / f"{name}.cbor", trust.encode(doc))
+        cases.append(name)
+    write(out / "trust-bad" / "cases.json", canonjson.dumps({
+        "comment": "every file here is deterministic CBOR that decodes cleanly but "
+                   "MUST be rejected as a trust anchor; the file name says why",
+        "cases": cases,
+    }) + "\n")
 
 
 def write_trust(out: pathlib.Path) -> None:
@@ -105,6 +127,8 @@ def main(argv: list[str]) -> int:
     write_keys(out)
     write_entries(out)
     write_log(out)
+    write_genesis_aborts(out)
+    write_trust_rejections(out)
     write_trust(out)
     count = sum(1 for _ in out.rglob("*") if _.is_file())
     print(f"wrote {count} files to {out}")

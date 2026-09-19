@@ -17,8 +17,8 @@ HTML-escaping · device signatures matched by `kid` ignoring `role` · governanc
 body-decode before the root threshold · genesis `params` ignored entirely ·
 `signer_remove` enforcing the quorum invariant **D-028 forbids**.
 
-Status: ⬜ open · ◐ partly · ✅ fixed. **E1–E11 closed in 0.9a/0.9b-1**; E12's
-coverage claim is now accurate, with the remaining gaps it names owed by 0.9b-3.
+Status: **all 12 closed** — E1 and the structure linter in 0.9a, E2–E11 and the
+corrected coverage claim in 0.9b-1, the remaining vector gaps in 0.9b-3.
 
 ## Blockers
 
@@ -40,7 +40,7 @@ coverage claim is now accurate, with the remaining gaps it names owed by 0.9b-3.
 | E9 ✅ | **D-028's "MUST always be possible" has no vector defending it.** Vector 21 removes a signer without ever dropping below the threshold, so a variant enforcing the forbidden invariant passes. The one security property the spec argues for at length is untested. | ✅ |
 | E10 ✅ | Trust file: CBOR key is `witnesses`, the TOML rendering uses `[[witness]]`. Anyone building the CBOR from the documented human rendering produces a different key and therefore a different fingerprint. Array order significance and absent-optional rendering are also unstated. | ✅ |
 | E11 ✅ | Smaller: §2 does not name `origin`'s base32 alphabet in a document that uses two · the fingerprint's `-` separator and trailing newline are inferable only from the example · `receipt.json`/entry-mirror schemas undescribed · §12 says `testdata/vectors/` but the suite ships at `vectors/` · replay of an empty log undefined · genesis step 5 (`after` ≠ 0) unvectored. | ✅ |
-| E12 ◐ | **§12.1's coverage declaration is itself inaccurate.** §4's six field-constraint rows have **no** rejecting vector; the encoding profile has **zero** negative vectors, so a decoder skipping all profile enforcement scores 134/134. Two of §5.1's "normative" orderings are unexercised. Genesis has five distinct abort conditions and one vector. `expires` is `0` for every device in every state. §9 is a single positive fixture. | ◐ |
+| E12 ✅ | **§12.1's coverage declaration is itself inaccurate.** §4's six field-constraint rows have **no** rejecting vector; the encoding profile has **zero** negative vectors, so a decoder skipping all profile enforcement scores 134/134. Two of §5.1's "normative" orderings are unexercised. Genesis has five distinct abort conditions and one vector. `expires` is `0` for every device in every state. §9 is a single positive fixture. | ✅ |
 
 ## What run 2 confirmed is sound
 

@@ -28,7 +28,7 @@ becomes its own oracle.
 | 0.8 | Cold-model gate (run 2) | a *fresh* agent, new isolated copy, returns SPEC SUFFICIENT or SPEC SUFFICIENT WITH GAPS | ❌ **FAILED** — SPEC INSUFFICIENT, 12 defects (`SPEC-DEFECTS-2.md`); core (§4, §5) rated sufficient-with-gaps, serialisation absent |
 | 0.9a | Spec structure verified by the build | `internal/specdoc` fails `make ci` on a numbering gap, duplicate, dangling `§N`, empty section, or a missing required section | ✅ |
 | 0.9b-1 | Repair run-2 defects E2–E11 + correct §12.1 | every item closed; `kid`, `sigs` ordering, D-028 and the encoding profile given vectors | ✅ |
-| 0.9b-3 | Remaining vector gaps §12.1 names | genesis abort conditions, non-zero `expires`, trust-file negatives | ⬜ |
+| 0.9b-3 | Remaining vector gaps §12.1 names | genesis abort conditions, non-zero `expires`, trust-file negatives | ✅ |
 | 0.10 | Cold-model gate (run 3) | a *fresh* agent on a *new* copy returns SUFFICIENT or SUFFICIENT WITH GAPS | ⬜ |
 
 Log fixture (tiles + cosigned checkpoint) moves to Phase 2 where Tessera produces
@@ -103,3 +103,6 @@ Loop paused here pending that answer.
   - All 8 test failures on first run were vector 53 doing its job: with one signer left, nothing needing two signer signatures can be appended. Fixed by vectoring the recovery too, rather than weakening the vector.
   - **§12.1 rewritten to be true** — it had claimed §4 and §9 were fully covered when §4's field constraints had no rejecting vector and §9 had no negative fixture at all. It now lists what is vectored, what is not, and who owes it.
   - 101 Python tests, 11 Go tests, `make ci` green. No existing `.cbor` byte moved.
+- **2026-09-19 · 0.9b-3 — the last vector gaps closed; `SPEC-DEFECTS-2.md` at 12/12.** `genesis/` replaces `bad-genesis/` with **all six** abort paths, each a single-entry log with its own anchor and expected state, because an abort stops replay and so the cases cannot share one log: anchor pinning a different genesis · entry 0 not a genesis · a genesis for another network · `after ≠ 0` · `root_thr` above the root set · bootstrap signature shortfall. Previously five of the six were unreachable by any vector. `trust-bad/` adds **ten** trust files that decode cleanly but must be refused — unknown member, wrong version, short `net`, `origin` mismatch, short `genesis_hash`, malformed `log_key`, no witnesses, duplicate witness name, policy without a `quorum` line, missing policy — where §9 previously had a single positive fixture. Entry **51** enrols a contractor with an expiry that survives to the terminal state, so §5.3's `expires` rule finally has a discriminating case; every device in every state had `expires: 0` before.
+  - 109 Python tests, 11 Go tests, `make ci` green. Log is 59 entries; 172 vector files. The only `.cbor` to change was the one `bad-genesis/` file, now superseded.
+  - §12.1's "not vectored" list is down to the four rows that genuinely wait on Phase 2 and Phase 4 — §6 tiles, §8 proof bundles, §10 the verifier loop, §11 fork evidence — each because a hand-rolled tlog would test this implementation against itself.

@@ -1,1 +1,0 @@
-{"anchor":{"genesis_hash":"0000000000000000000000000000000000000000000000000000000000000000","net":"6e6f726e2d746573746e65742d303031"},"comment":"the genesis entry is well-formed but is not the one this anchor pins","entries":[{"index":0,"name":"00-genesis","reason":"bad-genesis"}]}

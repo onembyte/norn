@@ -19,7 +19,7 @@ DEVICES = ["nas", "laptop", "pi-cam"]
 
 WITNESSES = ["pi", "vps", "friend"]
 
-EXTRA_KEYS = (["signer3", "root4", "logkey", "logkey2", "spare", "printer", "nas-id2", "printer-id2", "escaped"]
+EXTRA_KEYS = (["signer3", "root4", "logkey", "logkey2", "spare", "printer", "nas-id2", "printer-id2", "escaped", "contractor"]
               + [f"witness-{w}" for w in WITNESSES])
 
 KEYS: dict[str, keys.Ed25519] = {
@@ -28,7 +28,7 @@ KEYS: dict[str, keys.Ed25519] = {
 }
 WG: dict[str, bytes] = {
     name: keys.x25519_public(name)
-    for name in DEVICES + ["laptop2", "nas2", "spare", "printer", "rogue", "escaped"]
+    for name in DEVICES + ["laptop2", "nas2", "spare", "printer", "rogue", "escaped", "contractor"]
 }
 
 #: Every canonical-JSON escape rule (SPEC §14.2) in one value: the characters
@@ -178,7 +178,7 @@ def _patch_nonshortest(raw: bytes) -> bytes:
 
 def _patch_null(raw: bytes) -> bytes:
     """Replace the `after` value with CBOR null, which the profile forbids."""
-    needle = cbor.encode("after") + cbor.encode(55)
+    needle = cbor.encode("after") + cbor.encode(56)
     assert needle in raw, "after not found"
     return raw.replace(needle, cbor.encode("after") + b"\xf6", 1)
 
@@ -369,37 +369,124 @@ def log() -> list[LogItem]:
         "escaped", labels=UNICODE_LABELS),
         [("escaped", "device")] + both))
 
+    # §5.3's `expires` rule needs a device that actually carries one.
+    b.add("51-enroll-contractor", b.build("enroll", _enroll_body(
+        "contractor", expires=T0 + 7_776_000),
+        [("contractor", "device")] + both))
+
     # E5: `sigs: []` is well-formed but unauthorised -- `threshold`, not `decode`.
-    b.add_raw("51-bad-empty-sigs", cbor.encode({
+    b.add_raw("52-bad-empty-sigs", cbor.encode({
         "v": entry.VERSION, "t": "note", "net": NET, "ts": T0 + 9000,
-        "after": 51, "body": {"text": "well-formed, unsigned"}, "sigs": []}), "threshold")
+        "after": 52, "body": {"text": "well-formed, unsigned"}, "sigs": []}), "threshold")
 
     # E6: a malformed `kid` is a schema violation, not an unresolvable key.
-    bad_kid = entry.new("note", NET, ts=T0 + 9000, after=52, body={"text": "bad kid"})
+    bad_kid = entry.new("note", NET, ts=T0 + 9000, after=53, body={"text": "bad kid"})
     entry.sign(bad_kid, KEYS["signer1"], "signer")
     bad_kid["sigs"][0]["kid"] = "NOTHEX"
-    b.add_raw("52-bad-kid-format", cbor.encode(bad_kid), "decode")
+    b.add_raw("53-bad-kid-format", cbor.encode(bad_kid), "decode")
 
     # E9: defends D-028. This leaves ONE signer while `signer_thr` is 2 -- the
     # network cannot enrol until roots add a signer, and that is the point:
     # removing a compromised signer key must never be blocked. Placed last so it
     # does not starve earlier entries of signatures.
-    b.add("53-signer_remove-below-threshold",
+    b.add("54-signer_remove-below-threshold",
           b.build("signer_remove", {"kid": KEYS["signer3"].id}, roots3))
     # ...and the recovery roots must then perform, which is the other half of
     # the D-028 argument: the degraded state is real but recoverable. Re-adding
     # the same key keeps the fixture's terminal state usable; a real recovery
     # would add a replacement key.
-    b.add("54-signer_add-recover",
+    b.add("55-signer_add-recover",
           b.build("signer_add", {"pk": KEYS["signer3"].public}, roots3))
 
     # E12: the encoding profile had no negative vectors at all, so a decoder
     # that skipped every profile check scored a clean pass. Each of these is a
     # valid entry patched at the byte level to violate exactly one rule.
     base = entry.encode(_signed(entry.new(
-        "note", NET, ts=T0 + 9000, after=55, body={"text": "profile probe"}),
+        "note", NET, ts=T0 + 9000, after=56, body={"text": "profile probe"}),
         [("signer1", "signer")]))
-    b.add_raw("55-bad-cbor-nonshortest", _patch_nonshortest(base), "decode")
-    b.add_raw("56-bad-cbor-null", _patch_null(base), "decode")
-    b.add_raw("57-bad-cbor-unsorted-keys", _patch_unsorted(base), "decode")
+    b.add_raw("56-bad-cbor-nonshortest", _patch_nonshortest(base), "decode")
+    b.add_raw("57-bad-cbor-null", _patch_null(base), "decode")
+    b.add_raw("58-bad-cbor-unsorted-keys", _patch_unsorted(base), "decode")
     return b.items
+
+
+# -- negative fixtures (SPEC §12.1) --------------------------------------
+
+def genesis_aborts() -> list[tuple[str, bytes, "replay.Anchor"]]:
+    """Every distinct way entry 0 can make replay abort with `bad-genesis`.
+
+    Each case is a one-entry log with its own anchor, because an abort stops
+    replay and so cannot share a log with anything else.
+    """
+    from . import replay
+
+    good = entry.encode(genesis())
+    good_anchor = replay.Anchor(NET, entry.leaf_hash(good))
+    cases: list[tuple[str, bytes, replay.Anchor]] = [
+        # the anchor pins a different genesis
+        ("01-hash-mismatch", good, replay.Anchor(NET, bytes(32))),
+    ]
+
+    # entry 0 is not a genesis at all
+    not_genesis = _signed(entry.new("note", NET, ts=T0, after=0,
+                                    body={"text": "index 0 is not a genesis"}),
+                          [("signer1", "signer")])
+    raw = entry.encode(not_genesis)
+    cases.append(("02-not-genesis", raw, replay.Anchor(NET, entry.leaf_hash(raw))))
+
+    # a genesis for another network
+    other = _signed(entry.new("genesis", b"\xff" * 16, ts=T0, body=genesis()["body"]),
+                    [("root1", "root"), ("root2", "root")])
+    raw = entry.encode(other)
+    cases.append(("03-wrong-net", raw, replay.Anchor(NET, entry.leaf_hash(raw))))
+
+    # `after` must be 0 at index 0
+    ahead = genesis(after=7)
+    raw = entry.encode(ahead)
+    cases.append(("04-after-nonzero", raw, replay.Anchor(NET, entry.leaf_hash(raw))))
+
+    # a body that cannot be applied: threshold above the number of roots
+    body = dict(genesis()["body"], root_thr=9)
+    bad_body = _signed(entry.new("genesis", NET, ts=T0, body=body),
+                       [("root1", "root"), ("root2", "root")])
+    raw = entry.encode(bad_body)
+    cases.append(("05-root-thr-above-set", raw, replay.Anchor(NET, entry.leaf_hash(raw))))
+
+    # bootstrap shortfall: root_thr is 2, only one root signed
+    under = _signed(entry.new("genesis", NET, ts=T0, body=genesis()["body"]),
+                    [("root1", "root")])
+    raw = entry.encode(under)
+    cases.append(("06-under-root-threshold", raw, replay.Anchor(NET, entry.leaf_hash(raw))))
+
+    assert good_anchor  # the good anchor is exercised by the log fixture
+    return cases
+
+
+def trust_rejections() -> list[tuple[str, dict[str, Any]]]:
+    """Trust files that MUST be rejected (SPEC §9.1)."""
+    def damaged(**changes: Any) -> dict[str, Any]:
+        doc = trust_file()
+        for key, value in changes.items():
+            if value is _REMOVE:
+                doc.pop(key, None)
+            else:
+                doc[key] = value
+        return doc
+
+    base = trust_file()
+    return [
+        ("01-unknown-key", dict(base, surprise="unexpected member")),
+        ("02-wrong-version", damaged(version=2)),
+        ("03-short-net", damaged(net=b"\x00" * 8)),
+        ("04-origin-mismatch", damaged(origin="norn/wrongorigin")),
+        ("05-short-genesis-hash", damaged(genesis_hash=b"\x00" * 8)),
+        ("06-bad-log-key", damaged(log_key="not-a-verifier-key")),
+        ("07-no-witnesses", damaged(witnesses=[])),
+        ("08-duplicate-witness-name", damaged(witnesses=[
+            dict(base["witnesses"][0]), dict(base["witnesses"][0])])),
+        ("09-policy-without-quorum", damaged(policy="log x\nwitness pi y\n")),
+        ("10-missing-policy", damaged(policy=_REMOVE)),
+    ]
+
+
+_REMOVE = object()

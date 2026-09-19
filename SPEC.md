@@ -528,7 +528,8 @@ in this repository and may be rooted anywhere when the suite is distributed.
 | `log/NN-<name>.reason` | beside each entry that must be rejected: its §5.2 reason code |
 | `log/manifest.json` | `{"anchor": {"net", "genesis_hash"}, "entries": [{"index", "name", "reason"}]}` — the replay input and expected outcome; `reason` is `""` for an accepted entry |
 | `state.json` | canonical replay output for `log/` (§5.3) |
-| `bad-genesis/` | a one-entry log plus `manifest.json` and `state.json`; its anchor pins a different genesis, so replay aborts |
+| `genesis/<NN-case>/` | one single-entry log per way entry 0 can abort, each with its own `manifest.json` and `state.json`; an abort stops replay, so the cases cannot share a log. `cases.json` lists them |
+| `trust-bad/<NN-case>.cbor` | trust files that decode cleanly but MUST be rejected as anchors; the file name says why, `cases.json` lists them |
 | `trust.cbor` · `trust.toml` · `trust.fingerprint` | the trust anchor (§9), authoritative bytes, human rendering, and its fingerprint |
 | `receipt.note` | a submission receipt: the signed note itself (§7) |
 | `receipt.json` | `{comment, origin, leaf_hash, deadline, text_sha256}`, where `text_sha256` is `SHA-256` of the **signed text** — through the newline ending the last text line, excluding the blank separator and the signature lines |
@@ -546,20 +547,18 @@ different hat.
 | §4.0 encoding profile | every entry | non-shortest integer (55), `null` (56), unsorted map keys (57) |
 | §4.0 field constraints | labels (2, 50) | malformed `kid` (52), oversized/mistyped labels (unit-tested), `sigs` omitted (45), `sigs: []` (51), `role` outside the enum (44) |
 | §4.2 signatures, hashes, preimage | 16 entry mirrors | wrong `net` (32) |
-| §5 replay, all 16 reason codes | 58-entry log | 30 rejecting entries |
+| §5 replay, all 16 reason codes | 59-entry log | 30 rejecting entries |
 | §5.1 check order | — | multi-fault entries 47, 48 |
-| §5.3 state, incl. D-028 | `state.json` | below-threshold `signer_remove` accepted (53) and recovered (54) |
+| §5.1 genesis | the log's entry 0 | all six abort paths, `genesis/` |
+| §5.3 state, incl. D-028 and `expires` | `state.json`, contractor device (51) | below-threshold `signer_remove` accepted (54) and recovered (55) |
 | §7 receipt | `receipt.note` | — |
-| §9 trust file, fingerprint | `trust.cbor` | — |
+| §9 trust file, fingerprint | `trust.cbor` | 10 rejected anchors, `trust-bad/` |
 | §14 canonical JSON | every `.json`; escaping torture (49, 50) | — |
 
 **Not vectored, and therefore not binding on a second implementation:**
 
 | area | missing | owed by |
 |---|---|---|
-| §5.1 genesis aborts | only the leaf-hash mismatch is vectored; `t ≠ genesis`, wrong `net`, `after ≠ 0`, malformed body and bootstrap-signature shortfall are not | 0.9b-3 |
-| §5.3 `expires` | no device in any state has a non-zero `expires` | 0.9b-3 |
-| §9 trust file | no negative fixture: unknown key, missing `quorum` line, duplicate witness name, wrong `version` | 0.9b-3 |
 | §6 | tiles, entry bundles with their uint16 length prefixes, a cosigned checkpoint | Phase 2 |
 | §8 | `tlog-proof@v1` bundles | Phase 2 |
 | §10 | the verifier loop over a served log | Phase 2 |
