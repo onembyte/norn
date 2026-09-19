@@ -130,3 +130,38 @@ class StateShape(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DuplicateEntries(unittest.TestCase):
+    """An exact entry may appear in the log at most once, accepted or not.
+
+    Otherwise a log operator could re-insert an old signed entry at a later
+    index to resurrect a revoked device: `after` bounds reordering (after <=
+    index) but not re-insertion further along.
+    """
+
+    def _log(self, extra):
+        items = fixture.log()
+        raw = [i.raw for i in items] + extra
+        return replay.replay(anchor_for(raw), raw)
+
+    def test_a_rejected_entry_cannot_be_replayed_later(self):
+        items = fixture.log()
+        rejected = next(i for i in items if i.reason == "dup-id")
+        state = self._log([rejected.raw])
+        self.assertEqual(state.rejected[-1], {"index": len(items), "reason": "dup-entry"})
+
+    def test_an_accepted_entry_cannot_be_replayed_later(self):
+        items = fixture.log()
+        accepted = next(i for i in items if i.reason is None and i.name.endswith("note-final"))
+        state = self._log([accepted.raw])
+        self.assertEqual(state.rejected[-1], {"index": len(items), "reason": "dup-entry"})
+
+    def test_resurrection_by_replay_is_refused(self):
+        """The concrete attack: re-insert the enrolment of a revoked device."""
+        items = fixture.log()
+        enrol_spare = next(i for i in items if i.name.endswith("enroll-spare"))
+        state = self._log([enrol_spare.raw])
+        self.assertEqual(state.rejected[-1]["reason"], "dup-entry")
+        self.assertEqual(state.devices["spare"]["status"], "revoked")
+        self.assertNotIn(fixture.WG["spare"], state.active_wg)

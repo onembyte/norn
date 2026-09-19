@@ -169,32 +169,92 @@ staleness (part 6) catch. RECOMMENDED for every entry.
 
 ## 5. Replay — the state machine
 
+Replay is the pure function
+
 ```
-state := { roots: {kid→pk}, root_thr, signers: {kid→pk}, signer_thr, log_keys: [{pk, valid_until}], policy_text,
-           devices: {device_id → {device_pk, wg_pk, status: active|revoked, since_index, labels, expires}},
-           active_wg: {wg_pk → device_id}, params, rejected: [ {index, reason} ] }
+replay(anchor, entries[]) → state
 ```
 
-Replay processes entries by index. For each entry:
+where `entries[]` are the raw entry byte strings in log order and **`anchor`** is
+the pair taken from the verifier's trust file (§9):
 
-1. Decode. Any decode error, unknown key, wrong `v`, or `net` ≠ trust-file `net_id` → **reject** (`decode`).
-2. Index 0 MUST be `genesis` and `H(0x00 ‖ bytes)` MUST equal `norn.trust.genesis_hash`; otherwise **abort replay** (`bad-genesis`). Any later `genesis` → reject.
-3. If `after` present and `after` > index → reject (`after`).
-4. Verify every signature (§4.2) against current state; drop signatures from unknown or wrong-role keys; count distinct valid keys per role.
-5. Apply type rules:
-   - `enroll`: `device_id` not currently `active` else reject (`dup-id`); `wg_pk` not in `active_wg` else reject (`dup-wg`); device signature present; signer count ≥ `signer_thr`. → add device `active`, `since_index = index`.
-   - `rotate`: device `active`; signed by current `device_pk`; new `wg_pk` not in `active_wg`. → update keys.
-   - `revoke`: device `active`; authorised per §4.3. → `status = revoked`, remove from `active_wg`.
-   - governance types: root count ≥ `root_thr`; apply; `root_remove`/`root_thr` invariants as in §4.3.
-     `signer_remove` has **no** quorum invariant: removing a compromised signer key MUST
-     always be possible, including the last one (D-028). A network left with fewer
-     signers than `signer_thr` cannot enrol devices until roots add one — recoverable;
-     an unremovable stolen key is not.
-   - `note`: 1 valid signer/root signature; no change.
-   - Entries whose `expires` < checkpoint time are treated as `revoked` *at evaluation time*, not at replay (so state is clock-independent).
-6. Rejected entries are appended to `state.rejected` with a **fixed reason code**; reason codes are part of the test vectors. Replay never aborts on a rejected entry (only on `bad-genesis`).
+| field | type | source |
+|---|---|---|
+| `net` | 16 bytes | `norn.trust.net` |
+| `genesis_hash` | 32 bytes | `norn.trust.genesis_hash` |
 
-### 5.1 Reason codes (closed list; part of the vectors)
+Nothing else is trusted a priori. In particular `state.net` is copied from the
+**anchor**, not from the genesis entry, so a log that fails to produce a genesis
+still yields a state identified with the right network.
+
+### 5.1 Procedure
+
+Entry 0 is handled once, then every later entry runs the same numbered list.
+The order is **normative**: several vectors are simultaneously wrong in more
+than one way, so the first matching step decides the reason code.
+
+**Entry 0 (genesis).** In order:
+
+1. `entry_hash` is recorded as seen.
+2. Decode per §4.0 and check the envelope per §4.1. Any failure → **abort** (`bad-genesis`).
+3. `t` MUST be `genesis`, and `net` MUST equal `anchor.net` → else **abort** (`bad-genesis`).
+4. `leaf_hash` MUST equal `anchor.genesis_hash` → else **abort** (`bad-genesis`).
+5. `after`, if present, MUST be 0 → else **abort** (`bad-genesis`).
+6. Body checks: `roots` and `signers` are non-empty arrays of distinct 32-byte
+   keys, disjoint from each other; `1 ≤ root_thr ≤ len(roots)`;
+   `1 ≤ signer_thr ≤ len(signers)`; `params`, if present, has only §4.5 keys.
+   Any failure → **abort** (`bad-genesis`).
+7. **Bootstrap:** genesis signatures are counted against the `roots` and
+   `root_thr` *in its own body* — there is no earlier state to resolve them
+   against. Fewer than `root_thr` valid `root` signatures → **abort** (`bad-genesis`).
+8. Otherwise the state is initialised from the body and `size` becomes 1.
+
+"Abort" means replay stops: `rejected` holds exactly `{index: 0, reason: "bad-genesis"}`,
+`size` is 0, and no other field is populated beyond `net`. A log whose entry 0 is
+unusable has nothing to verify later entries against.
+
+**Entries 1…n.** For each, in order:
+
+1. `entry_hash` already seen → reject (`dup-entry`). Every entry that reaches
+   this step is added to the seen set, **whether or not it is later rejected**.
+2. Decode per §4.0 → on failure reject (`decode`).
+3. Envelope check per §4.1: exactly the permitted keys, `v` = 1, `net` =
+   `anchor.net`, well-formed `sigs` → on failure reject (`decode`).
+4. `t` not in §4.3 → reject (`unknown-type`).
+5. `t` = `genesis` → reject (`dup-genesis`).
+6. `after` present and > index → reject (`after`).
+7. Count valid signatures per role (§5.2). For the governance types
+   (`signer_add`, `signer_remove`, `signer_thr`, `root_add`, `root_remove`,
+   `root_thr`, `log_key`, `policy`, `params`): fewer than `root_thr` valid
+   `root` signatures → reject (`threshold`). For `note`: no valid `signer` or
+   `root` signature → reject (`threshold`).
+8. Apply the type rule below. Each rule's checks run in the order written.
+
+| `t` | checks, in order | effect |
+|---|---|---|
+| `enroll` | body fields well-formed (`decode`) · valid `device` signature by `body.device_pk` (`no-device-sig`) · valid `signer` count ≥ `signer_thr` (`threshold`) · `device_id` not currently `active` (`dup-id`) · `wg_pk` not in `active_wg` (`dup-wg`) | add the device `active` |
+| `rotate` | body well-formed (`decode`) · `device_id` known (`unknown-device`) · currently `active` (`not-active`) · valid `device` signature by the device's **current** `device_pk` (`no-device-sig`) · if `params.rotate_needs_signer`, signer count ≥ `signer_thr` (`threshold`) · new `wg_pk` not active **for another device** (`dup-wg`) | replace `wg_pk`, and `device_pk` if the body carries one |
+| `revoke` | body well-formed (`decode`) · `device_id` known (`unknown-device`) · currently `active` (`not-active`) · authorised by signers, roots **or** the device itself (`threshold`) | `status` = `revoked`, drop from `active_wg` |
+| `signer_add`, `root_add` | `kid(pk)` not already a root or signer (`dup-key`) | add to that role |
+| `signer_remove` | `kid` is a signer (`unknown-key`) | remove. **No quorum invariant** — removing a compromised signer key MUST always be possible, including the last one (D-028). A network left with fewer signers than `signer_thr` cannot enrol until roots add one; that is recoverable, an unremovable stolen key is not. |
+| `root_remove` | `kid` is a root (`unknown-key`) · removing it leaves ≥ `root_thr` roots and ≥ 1 root (`root-invariant`) | remove |
+| `signer_thr`, `root_thr` | `1 ≤ thr ≤ len(set)` (`bad-thr`) | set the threshold |
+| `log_key` | `pk` 32 bytes, `overlap` a uint (`decode`) | **append** `{pk, overlap, since_index}` to `log_keys` |
+| `policy` | `text` ≤ 4096 bytes (`decode`) | replace `policy` |
+| `params` | non-empty, only §4.5 keys, each of the right type (`decode`) | **merge** into `params` |
+| `note` | `text` ≤ 4096 bytes (`decode`) | none |
+
+A rejected entry is appended to `state.rejected` as `{index, reason}` and
+changes nothing else. `size` becomes `index + 1` whether the entry was accepted
+or rejected. Replay never aborts after entry 0.
+
+`since_index` records the index of the entry that last **changed the device's
+status**: `enroll` sets it, `revoke` sets it, `rotate` leaves it alone.
+
+Entries whose `expires` is earlier than the checkpoint time are treated as
+`revoked` *at evaluation time*, not at replay, so state stays clock-independent.
+
+### 5.2 Reason codes (closed list; part of the vectors)
 
 | code | meaning |
 |---|---|
@@ -222,7 +282,47 @@ equals `kid(device_pk)` of the device this entry names — for `enroll`, the
 succeeds. Invalid signatures are ignored, not fatal; only the count of valid ones
 per role matters.
 
-Replay is a pure function `(trust, entries[]) → state`. Two implementations MUST produce byte-identical canonical JSON of `state` for every vector.
+### 5.3 Canonical state schema (normative)
+
+Two implementations MUST produce byte-identical canonical JSON (§12) of this
+structure for every vector. Every field below is **always present**, including
+when the entry that produced it omitted the corresponding optional field.
+
+| field | type | meaning |
+|---|---|---|
+| `name` | string | `genesis.body.name`; `""` if replay aborted |
+| `net` | 16 bytes | copied from `anchor.net` |
+| `size` | uint | entries consumed: `last index + 1`, or `0` if replay aborted at entry 0 |
+| `root_thr` | uint | current root threshold; `0` before genesis |
+| `signer_thr` | uint | current signer threshold; `0` before genesis |
+| `roots` | map `kid` → 32 bytes | current root keys |
+| `signers` | map `kid` → 32 bytes | current signer keys |
+| `params` | map | §4.5 defaults, overlaid by `genesis.body.params`, then by each `params` entry |
+| `policy` | string | text of the most recent `policy` entry; `""` if none |
+| `log_keys` | array of `{overlap, pk, since_index}` | one per `log_key` entry, in log order. The trust file's initial log key is **not** listed — it is not in the log. |
+| `devices` | map `device_id` → device | see below |
+| `active_wg` | map `wg_pk` → `device_id` | exactly the `wg_pk` of every `active` device |
+| `rejected` | array of `{index, reason}` | in index order |
+
+A device record:
+
+| field | type | meaning |
+|---|---|---|
+| `device_pk` | 32 bytes | current identity key |
+| `wg_pk` | 32 bytes | current WireGuard key |
+| `status` | `"active"` \| `"revoked"` | |
+| `since_index` | uint | index of the entry that last changed `status` (§5.1) |
+| `labels` | map string → string | `{}` when the enrolment carried none |
+| `expires` | uint | `0` when the enrolment carried none, meaning no expiry |
+
+A device record holds only what its **most recent** `enroll` established:
+re-enrolling a `device_id` after revocation replaces the record wholesale, so
+labels and expiry from the earlier enrolment do not survive.
+
+`active_wg` is derived, not independent: it MUST equal
+`{d.wg_pk: id for id, d in devices if d.status == "active"}`. It is serialised
+because a verifier needs the reverse lookup and a second implementation must be
+shown to agree on it.
 
 ## 6. The log
 
@@ -334,17 +434,31 @@ that are not consistent MUST:
 | `keys.json` | fixed seeds for log, 3 witnesses, 2 roots, 2 signers, 3 devices |
 | `entries/NN-<type>.cbor` + `.json` | one valid entry per type, byte-exact |
 | `entries/bad-*.cbor` + `.reason` | one rejected entry per §5 reason code |
-| `log/` | a full tlog-tiles directory: 40 entries, ≥ 2 partial tiles, checkpoint with 3 cosignatures |
+| `log/` | the replay fixture: 40 entry `.cbor` files, a `.reason` file beside each entry that must be rejected, and `manifest.json` |
+| `log/manifest.json` | `{"anchor": {"net", "genesis_hash"}, "entries": [{"index", "name", "reason"}]}` — the replay input and its expected outcome; `reason` is `""` for an entry that must be accepted |
+| `bad-genesis/` | a one-entry log plus `manifest.json` whose anchor pins a different genesis, so replay aborts |
 | `state.json` | canonical replay output for `log/` |
 | `receipt.note` | one receipt |
 | `proof-<device>.bundle` | one tlog-proof@v1 bundle |
 | `trust.cbor` + `trust.toml` + `trust.fingerprint` | the trust file for `log/` |
 | `fork/` | two conflicting cosigned checkpoints + expected evidence output |
 
-**Canonical JSON** (for `state.json`, `.json` mirrors of `.cbor`): object keys sorted,
-no whitespace (`separators=(",",":")`), UTF-8 without escaping non-ASCII, byte
-strings as lowercase hex strings, integers as JSON numbers, booleans as `true`/`false`,
-absent fields absent. Two implementations MUST produce identical bytes.
+**Canonical JSON** (for `state.json` and the `.json` mirrors of `.cbor` entries):
+
+- object keys sorted by **UTF-8 code point** — plain bytewise on the key string.
+  This is **not** the CBOR map order of §4.1, which sorts by encoded form
+  (length first). The two orders differ, and the difference is visible in every
+  vector: an entry encodes as `t, v, ts, net, body, sigs, after` in CBOR and
+  serialises as `after, body, net, sigs, t, ts, v` in JSON. Implementations MUST
+  keep the two orderings separate.
+- no whitespace: `,` and `:` as separators, nothing else;
+- UTF-8, non-ASCII **not** escaped;
+- byte strings as lowercase hex strings;
+- integers as JSON numbers; booleans as `true`/`false`;
+- a field that the schema defines is always emitted (§5.3); "absent fields
+  absent" governs **entry encoding** (§4.0), not state serialisation.
+
+Two implementations MUST produce identical bytes.
 
 Cosignature and checkpoint vectors are taken from the C2SP repositories, not reinvented.
 

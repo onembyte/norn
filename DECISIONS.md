@@ -196,3 +196,12 @@ The `policy` entry and the trust file now carry actual tlog-policy text built
 from the fixture's log and witness keys, so Go's policy parser is exercised by
 the vectors rather than a placeholder string. Changed `entries/13-policy` and
 `log/28-policy` bytes; no other entry moved.
+
+## D-031 · An exact entry is usable at most once, accepted or rejected (2026-09-19, 0.7a)
+Raised by the cold-model gate as an undecided question (D15). Entry hashes enter
+the `dup-entry` seen-set **before** validation, so a rejected entry cannot be
+re-inserted at a later index to take effect against a changed state. Concretely:
+without this, a log operator could re-insert the original `enroll` of a revoked
+device to resurrect it — `after` bounds reordering (`after ≤ index`) but not
+re-insertion further along the log. Rejected: only remembering accepted entries
+(simpler, but leaves that replay window open).

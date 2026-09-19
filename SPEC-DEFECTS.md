@@ -20,12 +20,12 @@ watching it fail against the vectors.
 
 | # | Defect | Fix | Status |
 |---|---|---|---|
-| D1 | §5's state sketch says `policy_text` and `log_keys: [{pk, valid_until}]`; the real state has `policy` and `{overlap, pk, since_index}`, plus `name`, `net`, `size`, none of which appear anywhere in the spec. §5 demands byte-identical state JSON — unachievable as written. | Publish the canonical state as a **normative field table**, not a sketch. | ⬜ |
-| D2 | §12 says "object keys sorted" without saying which order, in a document whose §4.1 spends two paragraphs establishing *length-first* for CBOR. The JSON vectors use plain bytewise — the opposite convention. Carrying §4.1's order into §12 fails **16/16** entry mirrors. | State plainly: canonical JSON sorts by **UTF-8 code point**, unrelated to the CBOR map order. | ⬜ |
-| D3 | §12 says "absent fields absent", but state renders a device enrolled without labels/expires as `"expires":0,"labels":{}`. | Say that *state* fields are always present with zero values; the absent rule governs *entry* encoding. | ⬜ |
-| D4 | `revoke` moves `since_index`; `rotate` does not. §5 mentions `since_index` only under `enroll`. | Give `since_index` its own rule per type. | ⬜ |
-| D5 | `dup-entry` and `unknown-type` are in the §5.1 table but absent from §5's numbered procedure, and the position is load-bearing: vector 13 is simultaneously `dup-entry`, `dup-id` and `dup-wg`. Checking it where §5's list implies gives `dup-id`. | Fold both into the numbered procedure with explicit precedence. | ⬜ |
-| D6 | Replay's trust anchor is undocumented; the vectors feed it from `log/manifest.json`, a file and shape that appear nowhere in the spec. `state.net` comes from the anchor, not the genesis entry. | Document the anchor input and `manifest.json` in §12. | ⬜ |
+| D1 ✅ | §5's state sketch says `policy_text` and `log_keys: [{pk, valid_until}]`; the real state has `policy` and `{overlap, pk, since_index}`, plus `name`, `net`, `size`, none of which appear anywhere in the spec. §5 demands byte-identical state JSON — unachievable as written. | Publish the canonical state as a **normative field table**, not a sketch. | ⬜ |
+| D2 ✅ | §12 says "object keys sorted" without saying which order, in a document whose §4.1 spends two paragraphs establishing *length-first* for CBOR. The JSON vectors use plain bytewise — the opposite convention. Carrying §4.1's order into §12 fails **16/16** entry mirrors. | State plainly: canonical JSON sorts by **UTF-8 code point**, unrelated to the CBOR map order. | ⬜ |
+| D3 ✅ | §12 says "absent fields absent", but state renders a device enrolled without labels/expires as `"expires":0,"labels":{}`. | Say that *state* fields are always present with zero values; the absent rule governs *entry* encoding. | ⬜ |
+| D4 ✅ | `revoke` moves `since_index`; `rotate` does not. §5 mentions `since_index` only under `enroll`. | Give `since_index` its own rule per type. | ⬜ |
+| D5 ✅ | `dup-entry` and `unknown-type` are in the §5.1 table but absent from §5's numbered procedure, and the position is load-bearing: vector 13 is simultaneously `dup-entry`, `dup-id` and `dup-wg`. Checking it where §5's list implies gives `dup-id`. | Fold both into the numbered procedure with explicit precedence. | ⬜ |
+| D6 ✅ | Replay's trust anchor is undocumented; the vectors feed it from `log/manifest.json`, a file and shape that appear nowhere in the spec. `state.net` comes from the anchor, not the genesis entry. | Document the anchor input and `manifest.json` in §12. | ⬜ |
 
 ## Tier 2 — self-contradictions inside SPEC.md
 
@@ -45,15 +45,15 @@ suite clean. Each needs a spec decision **and** a vector.
 |---|---|---|---|
 | D11 | `root_thr` with `thr > len(roots)` satisfies both `bad-thr` and `root-invariant` | `bad-thr` | ⬜ |
 | D12 | `revoke` with no authority at all: `threshold` or `no-device-sig`? | `threshold` | ⬜ |
-| D13 | Genesis has no "state before" to verify its own signatures against; bootstrap unstated. Failure → `threshold` or `bad-genesis`? Abort? | count against `body.roots`; abort | ⬜ |
-| D14 | Index 0 that fails to *decode*: `decode` or `bad-genesis`? | `bad-genesis`, abort | ⬜ |
-| D15 | Do rejected entries enter the `dup-entry` seen-set? | yes | ⬜ |
-| D16 | `log_key`: append or replace? "both keys valid" implies append, but the trust-file key is never in `state.log_keys` | append | ⬜ |
-| D17 | Re-enrolment after revoke: is the prior record's `labels`/`expires` discarded? | discarded | ⬜ |
+| D13 ✅ | Genesis bootstrap unstated | **count against `body.roots`/`body.root_thr`; abort with `bad-genesis`** — written into §5.1, since the procedure had to state it | ✅ |
+| D14 ✅ | Index 0 that fails to *decode* | **`bad-genesis`, abort** — §5.1 entry-0 step 2 | ✅ |
+| D15 ✅ | Do rejected entries enter the `dup-entry` seen-set? | **yes — D-031**, decided during 0.7a because §5.1 step 1 had to state it | ✅ |
+| D16 ✅ | `log_key`: append or replace? | **append**; §5.3 now states the trust file's initial key is deliberately absent from `log_keys` | ✅ |
+| D17 ✅ | Re-enrolment after revoke: prior `labels`/`expires` discarded? | **yes, the record is replaced wholesale** — §5.3 | ✅ |
 | D18 | Unrecognised `role` string: decode error, or silently dropped signature (§5 step 4 says "drop")? | decode error | ⬜ |
 | D19 | Must a zero-signature entry carry `sigs: []` rather than omitting the key? | required | ⬜ |
 | D20 | `rotate` with a new `device_pk`: may the incoming key also sign? | unstated | ⬜ |
-| D21 | Check order within `enroll` and within governance types is asserted but never tested | — | ⬜ |
+| D21 ◐ | Check order within `enroll`/governance asserted but never tested | order is now **normative** in §5.1's per-type table; vectors still owed (0.7c) | ◐ |
 
 ## Tier 4 — editorial and process
 
@@ -63,7 +63,7 @@ suite clean. Each needs a spec decision **and** a vector.
 | D23 | `genesis_hash` appears as raw hash (§5), base64 (§9), hex (file) and bytes (CBOR) | ⬜ |
 | D24 | §2 doesn't name the base32 alphabet for `origin`; §9 doesn't state Crockford's bit order. §9's worked example is doing normative work by accident. | ⬜ |
 | D25 | §4.0: "the 14 ASCII bytes `norn/entry/v1` + `0x0A`" — the string is 13 bytes; reads as 15 | ⬜ |
-| D26 | `size` counts entries successfully consumed and is never defined (it isn't in the spec at all — D1) | ⬜ |
+| D26 ✅ | `size` never defined | defined in §5.3: `last index + 1`, or `0` if replay aborted at entry 0 | ✅ |
 | D27 | §12 promises vectors that don't exist: `entries/bad-*`, `proof-*.bundle`, `fork/`, and describes `log/` as a tlog-tiles directory with tiles and a checkpoint — it has neither. **§6, §8, §10 and §11 are entirely unexercised.** "Every MUST has, or will have, a test vector" is not true today. | ⬜ |
 | D28 | The `.json` entry-mirror schema is undocumented | ⬜ |
 | D29 | §4.5 `witness_policy` vs `policy` entries: does `genesis.params.witness_policy` seed `state.policy`? Must `genesis.params` be complete? | ⬜ |

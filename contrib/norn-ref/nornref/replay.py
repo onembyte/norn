@@ -324,6 +324,10 @@ def replay(anchor: Anchor, raw_entries: list[bytes]) -> State:
             digest = entry.entry_hash(raw)
             if digest in seen:
                 raise Reject("dup-entry")
+            # Recorded before validation: an exact entry is usable at most once,
+            # accepted or not, so a rejected one cannot be re-inserted later to
+            # take effect against a changed state (SPEC §5.1 step 1, D-031).
+            seen.add(digest)
             env = cbor.decode(raw)
             _check_envelope(env, anchor.net)
             if env["t"] == "genesis":
@@ -337,7 +341,6 @@ def replay(anchor: Anchor, raw_entries: list[bytes]) -> State:
                         or _valid_kids(env, "root", state.roots)):
                     raise Reject("threshold")
             HANDLERS[env["t"]](state, env, index)
-            seen.add(digest)
         except cbor.ProfileError:
             state.rejected.append({"index": index, "reason": "decode"})
         except Reject as exc:
