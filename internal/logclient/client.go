@@ -9,6 +9,7 @@
 package logclient
 
 import (
+	"crypto/sha256"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -76,6 +77,16 @@ func Verify(f Fetcher, anchor Anchor) (*Result, error) {
 	if len(anchor.LogKeys) == 0 {
 		return nil, logErrorf("the anchor carries no log key; §10 requires the " +
 			"checkpoint signature to be checked, and there is nothing to check it against")
+	}
+	// An empty genesis hash would not be lenient -- replay would abort every
+	// log with `bad-genesis` -- but it would be silent: an empty state reads
+	// like a network with no devices rather than like a caller mistake. This
+	// exact slip cost an afternoon in 2.9e-ii, in a test helper whose JSON tag
+	// did not match `genesis_hash`.
+	if len(anchor.GenesisHash) != sha256.Size {
+		return nil, logErrorf("the anchor pins no genesis entry (%d-byte hash); "+
+			"without it a log for any other network would replay to an empty state",
+			len(anchor.GenesisHash))
 	}
 	raw, err := f.Fetch("checkpoint")
 	if err != nil {

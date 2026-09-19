@@ -308,3 +308,19 @@ func TestAnAnchorWithoutALogKeyIsRefused(t *testing.T) {
 		t.Errorf("the error should say what is missing: %v", err)
 	}
 }
+
+// An anchor missing its genesis pin is a caller mistake that reads like a
+// healthy empty network: every entry is refused `bad-genesis`, replay aborts,
+// and the result is a state with no devices and no error. It cost an afternoon
+// in 2.9e-ii, so it is now a refusal.
+func TestAnAnchorWithoutAGenesisPinIsRefused(t *testing.T) {
+	dir, anchor := servedLog(t)
+	anchor.GenesisHash = nil
+	_, err := Verify(Dir(dir), anchor)
+	if err == nil {
+		t.Fatal("verified against an anchor that pins no genesis entry")
+	}
+	if !strings.Contains(err.Error(), "genesis") {
+		t.Errorf("the error should name what is missing: %v", err)
+	}
+}

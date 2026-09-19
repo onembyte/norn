@@ -258,7 +258,7 @@ checkpoint, the design is wrong — so that is a gate line, not an aspiration.
 | 2.9d-ii | `norn sign` | verifies the request, shows what is being signed (UX rule 1), emits the entry; partial signatures for `signer_thr > 1` | ✅ |
 | 2.9e | `norn submit` + receipts | split: the verifier had to check the log's signature first, and there has to be something to submit *to* | ⬜ |
 | 2.9e-i | The verifier checks the log signature | `checkpoint` **is** the signed note, and `norn.trust.log_key` is finally used (§10 step 2) | ✅ |
-| 2.9e-ii | `norn-log` | the `/add` endpoint, receipts, and the static tree — the Phase 2 server `PLAN.md` names and this table never listed | ⬜ |
+| 2.9e-ii | `norn-log` | the `/add` endpoint, receipts, and the static tree — the Phase 2 server `PLAN.md` names and this table never listed | ✅ |
 | 2.9e-iii | `norn submit` | POSTs entry bytes, verifies the receipt under the anchor, keeps it, and waits for inclusion | ⬜ |
 | 2.9f | `norn init` | the genesis ceremony: roots, thresholds, the genesis entry, and the trust file with its fingerprint. Paper (mnemonic) roots are **not** in this slice — they need a wordlist decision (see 2.9f note) | ⬜ |
 | 2.9g | `norn status` | proven peers, checkpoint age, degraded/fork state, and the last five entries in plain words (`ENROLLMENT.md` UX rule 5) | ⬜ |
@@ -402,3 +402,14 @@ the signer keeps one job — decide, and place the entry in the log.
   - **Said out loud in §10 itself:** the witness-policy check is still not implemented. It needs a cosignature, which needs a running witness — Phase 4. Norn verifies *who wrote* the head, not that the head was shown to anybody else, and the spec now says so at the step rather than in a footnote.
   - **A gap in my own subdivision, too:** `cmd/norn-log` is in `PLAN.md`'s file index and its Phase 2 description, and this table never had a row for it. Added as 2.9e-ii.
   - Go: 27 packages, 218 tests. `make ci`, staticcheck and both halves of `vectors-check` green.
+- **2026-09-19 · 2.9e-ii `norn-log` — the one thing a file server cannot do.**
+  - **The read side stays files.** Tiles, bundles and the signed checkpoint are served by `http.FileServer` here and by nginx in the lab; the binary exists for `POST /add` (§7) and because running one process is easier than two. That keeps `PLAN.md`'s gate honest: the verifier's path never needs this program.
+  - **`internal/logserver` is the handler, `cmd/norn-log` is the wiring.** The decision procedure reads as §7 describes it, and the HTTP is around it rather than through it.
+  - **The courtesy check says it is a courtesy.** A submission the log's own replay would reject gets `409` **with the reason code and the word "advisory"** in the body, because §6 says a verifier must not rely on this and an implementer reading a 409 should not be able to mistake it for authority.
+  - **Re-submitting is not an error.** A client whose connection dropped after the append holds an entry in the log and no receipt; answering `dup-entry` would be true and useless. The same bytes get the same treatment and a fresh receipt, and the log does not grow.
+  - **The deadline comes from the network, not from a flag.** `mmd` is read from the log's own replayed state (§4.5), because the length of the promise a receipt makes is a protocol parameter — a log using its own number would be promising something the network never agreed to.
+  - **The wrong key is refused at startup**, not at the first submission: §9.1 binds the log key's note name to the origin, so a key the trust file does not name would sign checkpoints nobody on that network can verify.
+  - **Concurrency is a test, not a comment.** Eight simultaneous submissions all land, the size is exactly right, and the log still verifies end to end — the store appends to a tree *and* rewrites files, so two writers would interleave into something that is not a log.
+  - **A slip worth keeping.** A test helper read the manifest into a field named `GenesisHash` with no JSON tag, and Go matches keys case-insensitively **without ignoring underscores** — so `genesis_hash` never arrived and the anchor pinned nothing. Replay then aborted every entry with `bad-genesis` and returned a state with no devices and **no error**, which reads exactly like a healthy empty network. `logclient.Verify` now refuses an anchor with no genesis pin, so the next person loses a minute instead of an afternoon.
+  - The end-to-end test runs **two binaries over HTTP**: `norn-log` serving, an entry submitted, and `norn verify` reading the result back and naming the new device. That is the lab's shape, minus the lab.
+  - Go: 29 packages, 230 tests. `make ci`, staticcheck and both halves of `vectors-check` green.
