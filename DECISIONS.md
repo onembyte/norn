@@ -229,3 +229,14 @@ type (what supersedes it in-log, D-020). A third, "informational" copy in
 `params` is how two verifiers come to disagree about the witness quorum — the
 very thing guarding the log against a lying operator. Rejected: keeping it
 documented as advisory; advisory copies get read.
+
+## D-035 · SPEC.md structure is verified by the build (2026-09-19, 0.9a)
+Two normative sections were deleted by my own regex splices and neither the
+test suite nor a full conformance run noticed: §14 (0.2, an over-greedy
+three-line substitution ate the heading after the bullet it targeted) and the
+canonical-JSON rules (0.7d, a §12 rewrite spliced between two anchors that
+bracketed more than intended). Vectors cannot catch this — a section with no
+vectors can vanish silently. `internal/specdoc` now parses SPEC.md on every
+`make ci` and fails on a numbering gap, a duplicate number, a dangling `§N`
+reference, an empty section, or the absence of any section named in a required
+manifest. Rejected: "be more careful with sed".

@@ -23,7 +23,7 @@ class Deterministic(unittest.TestCase):
         files = self._generate()
         self.assertIn("keys.json", files)
         self.assertEqual(len([f for f in files if f.startswith("entries/") and f.endswith(".cbor")]), 16)
-        self.assertEqual(len([f for f in files if f.startswith("log/") and f.endswith(".cbor")]), 49)
+        self.assertEqual(len([f for f in files if f.startswith("log/") and f.endswith(".cbor")]), 51)
         self.assertEqual(len([f for f in files if f.endswith(".reason")]), 25)
         self.assertIn("state.json", files)
         for name in ("trust.cbor", "trust.toml", "trust.fingerprint", "receipt.note"):

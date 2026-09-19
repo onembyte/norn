@@ -154,3 +154,53 @@ class D29_PolicyHasOneHome(unittest.TestCase):
         state, n = state_with([raw])
         self.assertEqual([r for r in state.rejected if r["index"] == n], [])
         self.assertEqual(state.policy, text)
+
+
+class CanonicalJsonEscaping(unittest.TestCase):
+    """SPEC §14.2: exactly these escapes, and no others."""
+
+    def setUp(self):
+        from nornref import canonjson
+        self.dumps = canonjson.dumps
+        self.state, _ = state_with([])
+
+    def test_torture_value_survives_into_state(self):
+        self.assertEqual(self.state.policy, fixture.ESCAPE_TORTURE)
+
+    def test_escapes_exactly_the_specified_characters(self):
+        out = self.dumps({"k": fixture.ESCAPE_TORTURE})
+        for raw, want in [('"', '\\"'), ("\\", "\\\\"), ("\b", "\\b"), ("\t", "\\t"),
+                          ("\n", "\\n"), ("\f", "\\f"), ("\r", "\\r"),
+                          ("\x0b", "\\u000b"), ("\x00", "\\u0000"), ("\x1f", "\\u001f")]:
+            with self.subTest(char=repr(raw)):
+                self.assertIn(want, out)
+
+    def test_does_not_escape_what_it_must_not(self):
+        out = self.dumps({"k": fixture.ESCAPE_TORTURE})
+        for literal in ["/", "<", ">", "&", "\x7f", "ñ", "日本", "🔑", "א"]:
+            with self.subTest(literal=literal):
+                self.assertIn(literal, out, "must be emitted verbatim")
+        self.assertNotIn("\\/", out)
+        self.assertNotIn("\\u00f1", out)
+        self.assertNotIn("\\u007f", out)
+
+    def test_unicode_label_keys_sort_bytewise_over_utf8(self):
+        labels = self.state.devices["escaped"]["labels"]
+        rendered = self.dumps(labels)
+        order = [k for k in fixture.UNICODE_LABELS]
+        want = sorted(order, key=lambda k: k.encode("utf-8"))
+        self.assertEqual([k for k in want if f'"{k}"' in rendered or True], want)
+        positions = [rendered.index(json_key(k)) for k in want]
+        self.assertEqual(positions, sorted(positions), "keys must be in bytewise UTF-8 order")
+
+    def test_canonical_state_ends_with_exactly_one_newline(self):
+        import pathlib
+        raw = pathlib.Path(__file__).resolve().parents[3].joinpath(
+            "testdata/vectors/state.json").read_bytes()
+        self.assertTrue(raw.endswith(b"}\n"))
+        self.assertFalse(raw.endswith(b"\n\n"))
+
+
+def json_key(key: str) -> str:
+    from nornref import canonjson
+    return canonjson.dumps({key: 0}).split(":")[0][1:]

@@ -19,7 +19,7 @@ DEVICES = ["nas", "laptop", "pi-cam"]
 
 WITNESSES = ["pi", "vps", "friend"]
 
-EXTRA_KEYS = (["signer3", "root4", "logkey", "logkey2", "spare", "printer", "nas-id2", "printer-id2"]
+EXTRA_KEYS = (["signer3", "root4", "logkey", "logkey2", "spare", "printer", "nas-id2", "printer-id2", "escaped"]
               + [f"witness-{w}" for w in WITNESSES])
 
 KEYS: dict[str, keys.Ed25519] = {
@@ -28,7 +28,26 @@ KEYS: dict[str, keys.Ed25519] = {
 }
 WG: dict[str, bytes] = {
     name: keys.x25519_public(name)
-    for name in DEVICES + ["laptop2", "nas2", "spare", "printer", "rogue"]
+    for name in DEVICES + ["laptop2", "nas2", "spare", "printer", "rogue", "escaped"]
+}
+
+#: Every canonical-JSON escape rule (SPEC §14.2) in one value: the characters
+#: that must be escaped, the ones that must NOT be (/ < > & DEL, non-ASCII),
+#: and multi-byte UTF-8 including an astral-plane character.
+ESCAPE_TORTURE = (
+    'quote" backslash\\ slash/ lt< gt> amp& '
+    'bs\b tab\t lf\n ff\f cr\r '
+    'vt\x0b nul\x00 unit\x1f del\x7f '
+    'ntilde-\u00f1 cjk-\u65e5\u672c emoji-\U0001f511 rtl-\u05d0\n'
+    'quorum home\n'
+)
+
+#: Label keys and values exercising recursive object-key sorting over UTF-8.
+UNICODE_LABELS = {
+    'ip': '10.9.0.42/32',
+    's\u00edtio': 'Bah\u00eda Blanca',
+    '\u8a18\u9332': '\u3066\u3059\u3068',
+    'a<b&c': 'x>y',
 }
 
 ORIGIN = trust.origin_for(NET)
@@ -315,4 +334,12 @@ def log() -> list[LogItem]:
                    "wg_pk": WG["rogue"]}, both), "no-device-sig")
     b.add("48-bad-order-governance", b.build(                                           # D21
         "signer_add", {"pk": KEYS["signer3"].public}, [("root1", "root")]), "threshold")
+
+    # Canonical-JSON escaping (SPEC §14.2). Every escape rule in one value, so a
+    # second implementation cannot pass while disagreeing about `<`, DEL or an
+    # emoji -- none of which appear anywhere else in the suite.
+    b.add("49-policy-escaping", b.build("policy", {"text": ESCAPE_TORTURE}, roots3))
+    b.add("50-enroll-unicode-labels", b.build("enroll", _enroll_body(
+        "escaped", labels=UNICODE_LABELS),
+        [("escaped", "device")] + both))
     return b.items

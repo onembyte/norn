@@ -124,7 +124,7 @@ of the key string itself. Since every Norn map key is 1–23 bytes (§4.0) its h
 is a single byte `0x60 + length`, so this is equivalent to "shorter key first,
 then bytewise" — but it is **not** equivalent to sorting the bare key strings,
 which would order an entry `after, body, net, sigs, t, ts, v` instead of the
-correct `t, v, ts, net, body, sigs, after`. Canonical JSON (§12) does sort bare
+correct `t, v, ts, net, body, sigs, after`. Canonical JSON (§14) does sort bare
 strings; the two orders are independent and MUST NOT be conflated.
 
 Unknown keys MUST cause rejection (this is a *closed* schema).
@@ -301,7 +301,7 @@ per role matters.
 
 ### 5.3 Canonical state schema (normative)
 
-Two implementations MUST produce byte-identical canonical JSON (§12) of this
+Two implementations MUST produce byte-identical canonical JSON (§14) of this
 structure for every vector. Every field below is **always present**, including
 when the entry that produced it omitted the corresponding optional field.
 
@@ -536,6 +536,57 @@ Cosignature and checkpoint vectors are taken from the C2SP repositories, not rei
 The verifier hands the enforcer an in-memory proven set and mirrors it to
 `/run/norn/proven.json` (schema in `ENFORCEMENT.md` §9). Modes, backends, the
 reconciler and failure semantics are normative in `ENFORCEMENT.md`.
+
+## 14. Canonical JSON (normative)
+
+The serialisation used by `state.json` (§5.3) and by the `.json` mirrors of
+entry vectors. §5.3 requires two implementations to produce **byte-identical**
+output, so every rule below is normative; nothing here may be left to a JSON
+library's defaults, because they differ.
+
+### 14.1 Structure
+
+| rule | requirement |
+|---|---|
+| whitespace | none anywhere: `,` between members, `:` between key and value, nothing else |
+| object keys | sorted **ascending, bytewise over the UTF-8 encoding of the bare key string**, applied recursively to every object including `devices`, `labels`, `roots`, `signers`, `active_wg` |
+| byte strings | **lowercase hex**, as a JSON string, never base64 (base64 appears only inside notes, §7) |
+| integers | decimal, no sign, no leading zeroes, no exponent |
+| booleans | `true` / `false` |
+| absent members | a member the schema defines is always emitted (§5.3); see §4.0 for *entry* encoding, where the rule is the opposite |
+| document end | the canonical form is followed by exactly one `0x0A`. A file that omits it does not match |
+
+This key order is **not** the CBOR map order of §4.1, which sorts by encoded
+form. The two are independent and are both normative in their own place.
+
+### 14.2 String escaping
+
+Strings are UTF-8. Exactly these characters are escaped, and no others:
+
+| character | output |
+|---|---|
+| `"` U+0022 | `\"` |
+| `\` U+005C | `\\` |
+| backspace U+0008 | `\b` |
+| tab U+0009 | `\t` |
+| line feed U+000A | `\n` |
+| form feed U+000C | `\f` |
+| carriage return U+000D | `\r` |
+| any other C0 control, U+0000–U+001F | `\u00xx`, **lowercase** hex |
+
+Everything else is emitted verbatim as UTF-8. In particular:
+
+- `/` is **not** escaped;
+- `<`, `>`, `&` are **not** escaped (no HTML-safe escaping);
+- U+007F DEL is **not** escaped — it is not a C0 control;
+- non-ASCII is **not** escaped — no `\uXXXX` for characters above U+007F, and
+  no surrogate pairs. An emoji is four UTF-8 bytes in the output.
+
+These rules are load-bearing rather than cosmetic: `policy` and `note` text is
+free-form UTF-8 up to 4096 bytes and lands verbatim in the canonical state, so
+two implementations disagreeing about `<` or `é` would violate §5.3's MUST on
+the first realistic policy. Vector `log/49-policy-escaping` exercises every row
+of both tables above.
 
 ## 15. Distribution, freshness and gossip
 
