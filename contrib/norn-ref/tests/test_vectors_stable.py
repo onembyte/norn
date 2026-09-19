@@ -23,20 +23,46 @@ class Deterministic(unittest.TestCase):
         self.assertEqual(self._generate(), self._generate())
 
     def test_expected_files_present(self):
+        """Counts are derived from the fixture, never hard-coded.
+
+        Hard-coded totals broke on every vector addition and taught nothing when
+        they did; deriving them means the test still asserts the generator wrote
+        one file per fixture item, and stays quiet when the fixture grows.
+        """
+        from nornref import entry, fixture
+
         files = self._generate()
+        log = fixture.log()
+        rejecting = [item for item in log if item.reason]
+
         self.assertIn("keys.json", files)
-        self.assertEqual(len([f for f in files if f.startswith("entries/") and f.endswith(".cbor")]), 16)
-        self.assertEqual(len([f for f in files if f.startswith("log/") and f.endswith(".cbor")]), 59)
-        self.assertEqual(len([f for f in files if f.endswith(".reason")]), 30)
         self.assertIn("state.json", files)
         for name in ("trust.cbor", "trust.toml", "trust.fingerprint", "receipt.note",
                      "genesis/cases.json", "trust-bad/cases.json"):
             self.assertIn(name, files)
-        self.assertEqual(len([f for f in files if f.startswith("genesis/")
-                              and f.endswith("state.json")]), 6)
-        self.assertEqual(len([f for f in files if f.startswith("trust-bad/")
-                              and f.endswith(".cbor")]), 10)
-        self.assertEqual(len([f for f in files if f.startswith("entries/") and f.endswith(".json")]), 16)
+
+        counts = {
+            "entries/*.cbor": len(fixture.catalogue()),
+            "entries/*.json": len(fixture.catalogue()),
+            "log/*.cbor": len(log),
+            "log/*.reason": len(rejecting),
+            "genesis/*/state.json": len(fixture.genesis_aborts()),
+            "trust-bad/*.cbor": len(fixture.trust_rejections()),
+        }
+        actual = {
+            "entries/*.cbor": self._count(files, "entries/", ".cbor"),
+            "entries/*.json": self._count(files, "entries/", ".json"),
+            "log/*.cbor": self._count(files, "log/", ".cbor"),
+            "log/*.reason": self._count(files, "log/", ".reason"),
+            "genesis/*/state.json": self._count(files, "genesis/", "state.json"),
+            "trust-bad/*.cbor": self._count(files, "trust-bad/", ".cbor"),
+        }
+        self.assertEqual(actual, counts)
+        self.assertEqual(len(entry.TYPES), 14, "a new entry type needs a catalogue vector")
+
+    @staticmethod
+    def _count(files, prefix: str, suffix: str) -> int:
+        return len([f for f in files if f.startswith(prefix) and f.endswith(suffix)])
 
 
 class NoOrphans(unittest.TestCase):

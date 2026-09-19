@@ -83,6 +83,14 @@ Derived values:
 repeated `kid`. Signing does not change the preimage, so signatures can be added by
 different parties in any order and the result is still canonical.
 
+`v`, `t`, `net`, `ts`, `body` and `sigs` are all **mandatory**; only `after` is
+optional. Omitting any mandatory key is `decode`.
+
+**Bodies are closed schemas too**, exactly like the envelope: §4.3's table lists
+every key each type may carry, and a body with an unknown key — or missing a
+required one — is `decode`. `params` is the one type whose permitted keys are
+the §4.5 parameter names rather than a fixed list.
+
 The `sigs` key is **mandatory**; an entry with no signatures carries `sigs: []`
 and is rejected later for `threshold`, not for `decode` (D19). `role` is a
 **closed enum** — a value outside `root` / `signer` / `device` is a schema
@@ -99,7 +107,6 @@ Field constraints (violations → reason `decode`):
 | `text` (`note`, `policy`) | UTF-8, ≤ 4096 bytes |
 | `labels` | map text→text; ≤ 32 entries; keys 1–23 bytes (the map-key cap above — a longer key is unencodable); values ≤ 256 bytes |
 | `roots`, `signers` at genesis | arrays of 32-byte `pk`, no duplicates, no key in both; `len(roots) ≥ root_thr ≥ 1`; `len(signers) ≥ signer_thr ≥ 1` |
-| `thr` | uint ≥ 1 and ≤ the size of the set it applies to (checked at replay) |
 | `kid` (in `sigs`, and in `signer_remove`/`root_remove` bodies) | exactly 16 characters matching `^[0-9a-f]{16}$`. A malformed `kid` is a schema violation (`decode`), **not** a `kid` that merely fails to resolve — that distinction matters because the two produce different reason codes. |
 | `sigs` array | sorted by `kid` and free of repeats (§4.0); an unsorted or repeating array is `decode` |
 
@@ -257,19 +264,24 @@ unusable has nothing to verify later entries against.
    `root` signature → reject (`threshold`).
 8. Apply the type rule below. Each rule's checks run in the order written.
 
+Note the consequence for the governance types: step 7's root-quorum check runs
+**before** step 8, so an under-signed governance entry with a malformed body is
+`threshold`, not `decode`. For `enroll`, `rotate` and `revoke` the signature
+checks live inside step 8, after that rule's own body validation.
+
 | `t` | checks, in order | effect |
 |---|---|---|
 | `enroll` | body fields well-formed (`decode`) · valid `device` signature by `body.device_pk` (`no-device-sig`) · valid `signer` count ≥ `signer_thr` (`threshold`) · `device_id` not currently `active` (`dup-id`) · `wg_pk` not in `active_wg` (`dup-wg`) | add the device `active` |
 | `rotate` | body well-formed (`decode`) · `device_id` known (`unknown-device`) · currently `active` (`not-active`) · valid `device` signature by the device's **current** `device_pk` (`no-device-sig`) · if `params.rotate_needs_signer`, signer count ≥ `signer_thr` (`threshold`) · new `wg_pk` not active **for another device** (`dup-wg`) · if the body carries `device_pk`, a valid `device` signature by **that** key as well (`no-device-sig`) | replace `wg_pk`, and `device_pk` if the body carries one |
 | `revoke` | body well-formed (`decode`) · `device_id` known (`unknown-device`) · currently `active` (`not-active`) · authorised by signers, roots **or** the device itself (`threshold`) | `status` = `revoked`, drop from `active_wg` |
-| `signer_add`, `root_add` | `kid(pk)` not already a root or signer (`dup-key`) | add to that role |
-| `signer_remove` | `kid` is a signer (`unknown-key`) | remove. **No quorum invariant** — removing a compromised signer key MUST always be possible, including the last one (D-028). A network left with fewer signers than `signer_thr` cannot enrol until roots add one; that is recoverable, an unremovable stolen key is not. |
-| `root_remove` | `kid` is a root (`unknown-key`) · removing it leaves ≥ `root_thr` roots and ≥ 1 root (`root-invariant`) | remove |
-| `signer_thr`, `root_thr` | `1 ≤ thr ≤ len(set)` (`bad-thr`) | set the threshold |
-| `log_key` | `pk` 32 bytes, `overlap` a uint (`decode`) | **append** `{pk, overlap, since_index}` to `log_keys` |
-| `policy` | `text` ≤ 4096 bytes (`decode`) | replace `policy` |
-| `params` | non-empty, only §4.5 keys, each of the right type (`decode`) | **merge** into `params` |
-| `note` | `text` ≤ 4096 bytes (`decode`) | none |
+| `signer_add`, `root_add` | body well-formed and closed (`decode`) · `kid(pk)` not already a root or signer (`dup-key`) | add to that role |
+| `signer_remove` | body well-formed and closed (`decode`) · `kid` is a signer (`unknown-key`) | remove. **No quorum invariant** — removing a compromised signer key MUST always be possible, including the last one (D-028). A network left with fewer signers than `signer_thr` cannot enrol until roots add one; that is recoverable, an unremovable stolen key is not. |
+| `root_remove` | body well-formed and closed (`decode`) · `kid` is a root (`unknown-key`) · removing it leaves ≥ `root_thr` roots and ≥ 1 root (`root-invariant`) | remove |
+| `signer_thr`, `root_thr` | body well-formed and closed (`decode`) · `1 ≤ thr ≤ len(set)` (`bad-thr`) | set the threshold |
+| `log_key` | body well-formed and closed (`decode`) · `pk` 32 bytes, `overlap` a uint (`decode`) | **append** `{pk, overlap, since_index}` to `log_keys` |
+| `policy` | body well-formed and closed (`decode`) · `text` ≤ 4096 bytes (`decode`) | replace `policy` |
+| `params` | body well-formed and closed (`decode`) · non-empty, only §4.5 keys, each of the right type (`decode`) | **merge** into `params` |
+| `note` | body well-formed and closed (`decode`) · `text` ≤ 4096 bytes (`decode`) | none |
 
 A rejected entry is appended to `state.rejected` as `{index, reason}` and
 changes nothing else. `size` becomes `index + 1` whether the entry was accepted
@@ -300,7 +312,7 @@ Entries whose `expires` is earlier than the checkpoint time are treated as
 | `dup-key` | `signer_add`/`root_add` of a `pk` whose `kid` already exists in either role |
 | `unknown-key` | `signer_remove`/`root_remove` of a `kid` not in that role |
 | `root-invariant` | `root_remove` would leave `< root_thr` roots or `< 1` root. **Removals only** — a `root_thr`/`signer_thr` value outside `1 … len(set)` is `bad-thr`, because the *value* is wrong rather than the resulting set (D11). |
-| `bad-thr` | `signer_thr`/`root_thr` value is 0 or exceeds the set size |
+| `bad-thr` | a `signer_thr`/`root_thr` value of 0, or one exceeding the size of the set it applies to. This is a **replay** decision, not a schema one: the value is a well-formed uint, so it is never `decode`. |
 
 Signature counting, precisely: a signature `{kid, role, sig}` is *valid* iff the
 state before this entry maps `kid` to a key **in that role** (for `device`: `kid`
@@ -427,9 +439,9 @@ below exists for humans.
 | `origin` | text | MUST equal `norn/` + lowercase unpadded **RFC 4648** base32 of `net` (§2) |
 | `name` | text, 1–64 bytes | human label for the network |
 | `genesis_hash` | 32 bytes | the **leaf hash** `SHA-256(0x00 ‖ entry0)` (§4.0), not the entry hash |
-| `log_key` | text | signed-note verifier key for the log; its note name MUST equal `origin` |
+| `log_key` | text | signed-note verifier key for the log; MUST parse as one, and its note name MUST equal `origin` |
 | `log_urls` | array of text, ≥ 1 | where to fetch checkpoint and tiles |
-| `witnesses` | array of `{name, key, url?}` | `key` is a signed-note verifier key; `name` unique within the file |
+| `witnesses` | array of `{name, key, url?}`, **≥ 1** | `key` is a signed-note verifier key, and MUST parse as one; `name` unique within the file. A file with no witnesses MUST be rejected: with nothing to cosign, the policy's quorum can never be met, so the anchor could never accept a checkpoint. |
 | `policy` | text | verbatim `c2sp.org/tlog-policy`; MUST contain a `quorum` line |
 | `anchor` | `{type, max_lag, mode}`, OPTIONAL | `type` text (`"opentimestamps"`), `max_lag` **uint seconds**, `mode` text (`"advisory"`) |
 
@@ -523,8 +535,8 @@ in this repository and may be rooted anywhere when the suite is distributed.
 |---|---|
 | `keys.json` | every test key: Ed25519 `{seed, public, kid}` by name, X25519 public keys by name, and `net` |
 | `entries/NN-<type>.cbor` | one valid entry per type, canonical bytes |
-| `entries/NN-<type>.json` | mirror: `{entry, entry_hash, leaf_hash, preimage_sha256, size}` where `size` is the byte length of the `.cbor` |
-| `log/NN-<name>.cbor` | the replay fixture, **59 entries** in order. The file names are labels, not the order: **read the sequence from `manifest.json`**, never by globbing and sorting |
+| `entries/NN-<type>.json` | mirror: `{entry, entry_hash, leaf_hash, preimage_sha256, size}` where `size` is the byte length of the `.cbor`. The `entry` object mirrors the **CBOR**, so an optional field absent from the entry is absent here too — unlike `state.json`, where §5.3's schema fields are always emitted |
+| `log/NN-<name>.cbor` | the replay fixture, **62 entries** in order. The file names are labels, not the order: **read the sequence from `manifest.json`**, never by globbing and sorting |
 | `log/NN-<name>.reason` | beside each entry that must be rejected: its §5.2 reason code |
 | `log/manifest.json` | `{"anchor": {"net", "genesis_hash"}, "entries": [{"index", "name", "reason"}]}` — the replay input and expected outcome; `reason` is `""` for an accepted entry |
 | `state.json` | canonical replay output for `log/` (§5.3) |
@@ -545,12 +557,13 @@ different hat.
 | area | positive | negative |
 |---|---|---|
 | §4.0 encoding profile | every entry | non-shortest integer (56), `null` (57), unsorted map keys (58) — **partial**, see below |
-| §4.0 field constraints | labels (2, 50) | malformed `kid` (53), `sigs` omitted (45), `sigs: []` (52), `role` outside the enum (44) — **partial**, see below |
+| §4.0/§4.3 schemas | labels (2, 50) | malformed `kid` (53), `sigs` omitted (45), `sigs: []` (52), `role` outside the enum (44), unknown envelope key (59), unknown body key (60) — **partial**, see below |
 | §4.2 signatures, hashes, preimage | 16 entry mirrors | wrong `net` (32) |
-| §5 replay, 15 of the 16 reason codes | 59-entry log | 30 rejecting entries |
+| §5 replay, 15 of the 16 reason codes | 62-entry log | 33 rejecting entries |
 | §5 `bad-genesis` | — | `genesis/`; it cannot appear in the log, since it aborts replay |
 | §5.1 check order | — | multi-fault entries 47, 48 |
 | §5.1 genesis | the log's entry 0 | six abort paths in `genesis/` — **not** the decode path |
+| §5.2 `bad-thr` | — | both halves: value 0 (61) and value above the set size (19) |
 | §5.3 state, incl. D-028 and `expires` | `state.json`, contractor device (51) | below-threshold `signer_remove` accepted (54) and recovered (55) |
 | §7 receipt | `receipt.note` | — |
 | §9 trust file, fingerprint | `trust.cbor` | 10 rejected anchors, `trust-bad/` |
@@ -565,15 +578,11 @@ variant that scored a clean pass in the 0.10 conformance run):
 | §4.0 map keys of 1–23 bytes · valid UTF-8 · integers ≤ 2⁶³−1 |
 | §4.0 `sigs` sorted by `kid` with no repeats |
 | §4.0 `device_id` regex · `name`/`reason`/`text` length caps |
-| §4.1 "unknown keys MUST cause rejection" — no entry carries an unknown envelope or body key |
 | §5.1 step 1 "added to the seen set, whether or not it is later rejected" |
-| §5.1 `thr: 0` (both `bad-thr` vectors use 99) |
 | §5.1 `after < index` — every `after` in the fixture equals its own index |
 | §5.1 a signer count strictly between 0 and `signer_thr` |
 | §4.3 "a key counts only for the role it currently holds" |
 | §5.1 genesis step 2 (an entry 0 that fails to decode) and most of step 6 |
-| §9.1 the log key's note name MUST equal `origin`; the `witnesses` minimum is not stated at all |
-| §14.1 the entry `.json` mirror's absent-field convention |
 
 **Not vectored, and therefore not binding on a second implementation:**
 

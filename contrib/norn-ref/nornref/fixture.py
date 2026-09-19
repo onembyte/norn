@@ -407,6 +407,21 @@ def log() -> list[LogItem]:
     b.add_raw("56-bad-cbor-nonshortest", _patch_nonshortest(base), "decode")
     b.add_raw("57-bad-cbor-null", _patch_null(base), "decode")
     b.add_raw("58-bad-cbor-unsorted-keys", _patch_unsorted(base), "decode")
+
+    # Closed schemas, envelope and body (SPEC §4.1/§4.3). Run 3 shipped a
+    # variant leaving bodies open and passed the whole suite -- as did this
+    # implementation at the time. Two implementations agreeing by accident is
+    # not a pinned rule.
+    unknown_env = entry.new("note", NET, ts=T0 + 9000, after=59, body={"text": "x"})
+    entry.sign(unknown_env, KEYS["signer1"], "signer")
+    unknown_env["extra"] = 1
+    b.add_raw("59-bad-unknown-envelope-key", cbor.encode(unknown_env), "decode")
+    b.add("60-bad-unknown-body-key", b.build(
+        "note", {"text": "x", "surprise": "extra"}, [("signer1", "signer")]), "decode")
+
+    # `thr: 0` -- the half of §5.2's bad-thr clause both other vectors miss,
+    # since they use 99. A well-formed uint, so it is bad-thr and not decode.
+    b.add("61-bad-thr-zero", b.build("signer_thr", {"thr": 0}, roots3), "bad-thr")
     return b.items
 
 

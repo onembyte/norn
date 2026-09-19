@@ -104,6 +104,37 @@ def _check_envelope(env: Any, net: bytes) -> None:
         raise Reject("unknown-type")
 
 
+#: Per-type body schema (SPEC §4.3): required keys, then optional ones. Bodies
+#: are closed schemas like the envelope, so an unknown key rejects the entry.
+#: `params` is the exception: its keys are the parameter names themselves.
+BODY_KEYS: dict[str, tuple[frozenset[str], frozenset[str]]] = {
+    "genesis": (frozenset({"name", "roots", "root_thr", "signers", "signer_thr"}),
+                frozenset({"params"})),
+    "enroll": (frozenset({"device_id", "device_pk", "wg_pk"}),
+               frozenset({"labels", "expires"})),
+    "rotate": (frozenset({"device_id", "wg_pk"}), frozenset({"device_pk"})),
+    "revoke": (frozenset({"device_id"}), frozenset({"reason"})),
+    "signer_add": (frozenset({"pk"}), frozenset()),
+    "signer_remove": (frozenset({"kid"}), frozenset()),
+    "signer_thr": (frozenset({"thr"}), frozenset()),
+    "root_add": (frozenset({"pk"}), frozenset()),
+    "root_remove": (frozenset({"kid"}), frozenset()),
+    "root_thr": (frozenset({"thr"}), frozenset()),
+    "log_key": (frozenset({"pk", "overlap"}), frozenset()),
+    "policy": (frozenset({"text"}), frozenset()),
+    "note": (frozenset({"text"}), frozenset()),
+    "params": (frozenset(), PARAM_KEYS),
+}
+
+
+def _check_body(entry_type: str, body: dict[str, Any]) -> None:
+    """Reject a body with unknown or missing keys (SPEC §4.3)."""
+    required, optional = BODY_KEYS[entry_type]
+    keys = set(body)
+    if not required <= keys or keys - required - optional:
+        raise Reject("decode")
+
+
 def _device_id(body: dict[str, Any]) -> str:
     value = body.get("device_id")
     if not isinstance(value, str) or not 1 <= len(value) <= 64:
@@ -280,7 +311,7 @@ def _h_policy(state: State, env: dict[str, Any], index: int) -> None:
 
 def _h_params(state: State, env: dict[str, Any], index: int) -> None:
     body = env["body"]
-    if not body or set(body) - PARAM_KEYS:
+    if not body:
         raise Reject("decode")
     for key, value in body.items():
         expected = type(DEFAULT_PARAMS.get(key, ""))
@@ -319,6 +350,9 @@ SELF_AUTHORISED = frozenset({"enroll", "rotate", "revoke"})
 def _apply_genesis(anchor: Anchor, env: dict[str, Any]) -> State:
     """Build the initial state. Raises Reject('bad-genesis') if unusable."""
     body = env["body"]
+    required, optional = BODY_KEYS["genesis"]
+    if not required <= set(body) or set(body) - required - optional:
+        raise Reject("bad-genesis")
     roots, signers = body.get("roots"), body.get("signers")
     root_thr, signer_thr = body.get("root_thr"), body.get("signer_thr")
     if not isinstance(roots, list) or not isinstance(signers, list):
@@ -387,6 +421,7 @@ def replay(anchor: Anchor, raw_entries: list[bytes]) -> State:
                 raise Reject("dup-genesis")
             if env.get("after", 0) > index:
                 raise Reject("after")
+            _check_body(env["t"], env["body"])
             if env["t"] in ROOT_TYPES:
                 _require(len(_valid_kids(env, "root", state.roots)), state.root_thr)
             elif env["t"] == "note":

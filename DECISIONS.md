@@ -253,3 +253,19 @@ the point of a deterministic encoding.
 Was E8, where §4.3 and §5.1 disagreed. Absent `reason` is equivalent to `""`;
 absent `genesis.params` means the §4.5 defaults. Both match the reference
 implementation, which is what the vectors already encode.
+
+## D-038 · Entry bodies are closed schemas, like the envelope (2026-09-19, 0.11a)
+Run 3 shipped a variant that left bodies open to unknown keys and passed the
+whole suite — and so did this implementation at the time, by accident rather
+than by rule. Two implementations agreeing without a rule is not agreement; the
+next one closes them and diverges. Bodies are now closed: §4.3's table is the
+complete key list per type, an unknown or missing key is `decode`, and a
+per-type `BODY_KEYS` registry enforces it in one place rather than in fourteen
+handlers. `params` is the exception, its keys being the §4.5 parameter names.
+
+## D-039 · `thr: 0` is `bad-thr`, never `decode` (2026-09-19, 0.11a)
+§4.0's field table listed `thr ≥ 1` among constraints whose violation is
+`decode`, while deferring it "to replay"; §5.2 called a zero threshold
+`bad-thr`. The value is a well-formed uint, so nothing about it is a schema
+violation — the `thr` row is removed from §4.0 and `bad-thr` owns it. Both
+halves of the clause are now vectored: 0 (61) and above-the-set-size (19).
