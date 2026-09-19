@@ -113,6 +113,11 @@ every key each type may carry, and a body with an unknown key — or missing a
 required one — is `decode`. `params` is the one type whose permitted keys are
 the §4.5 parameter names rather than a fixed list.
 
+CBOR does not canonicalise array order, so the sorted-and-unique requirement on
+`sigs` is a **schema** rule checked during envelope validation (§5.1 step 3),
+not something the encoding profile can enforce. The two layers are distinct and
+a decoder will not catch it.
+
 Each element of `sigs` is itself a **closed map** of exactly `{kid, role, sig}`;
 a fourth key is `decode`. "Well-formed `sigs`" in §5.1 step 3 means precisely:
 that closedness, `kid` matching its field constraint, `role` within the enum,
@@ -594,8 +599,8 @@ this table drifted out of date the moment one was.
 
 | area | positive | negative |
 |---|---|---|
-| §4.0 encoding profile | every entry; controls `profile-base`, `labelcap-base`, `two-sig-base` | `bad-cbor-nonshortest`, `bad-cbor-null`, `bad-cbor-unsorted-keys`, `bad-tag-wrapped-value`, `bad-indefinite-text`, `bad-indefinite-map`, `bad-duplicate-map-key`, `bad-invalid-utf8`, `bad-integer-too-large`, `bad-oversize-map-key`, `bad-unsorted-sigs` |
-| §4.0/§4.3 schemas | `enroll-laptop`, `enroll-unicode-labels` | `bad-kid-format`, `bad-missing-sigs`, `bad-empty-sigs`, `bad-unknown-role`, `bad-unknown-envelope-key`, `bad-unknown-body-key`, `bad-device_id-uppercase`, `bad-device_id-leading-dot`, `bad-pk-length`, `bad-sig-length`, `bad-text-too-long` |
+| §4.0 encoding profile | every entry; controls `profile-base`, `labelcap-base`, `two-sig-base` | `bad-cbor-nonshortest`, `bad-cbor-null`, `bad-cbor-unsorted-keys`, `bad-tag-wrapped-value`, `bad-indefinite-text`, `bad-indefinite-map`, `bad-duplicate-map-key`, `bad-invalid-utf8`, `bad-integer-too-large`, `bad-oversize-map-key` |
+| §4.0/§4.3 schemas | `enroll-laptop`, `enroll-unicode-labels` | `bad-kid-format`, `bad-missing-sigs`, `bad-empty-sigs`, `bad-unknown-role`, `bad-unknown-envelope-key`, `bad-unknown-body-key`, `bad-device_id-uppercase`, `bad-device_id-leading-dot`, `bad-pk-length`, `bad-sig-length`, `bad-text-too-long`, `bad-unsorted-sigs` |
 | §4.2 signatures, hashes, preimage | 16 entry mirrors | **`bad-forged-signer-sig`, `bad-forged-device-sig`** — syntactically perfect signatures that do not verify. Without these an implementation that never calls Ed25519 reproduces the whole manifest |
 | §4.4 `after` is a floor | `after-below-index` | `bad-after` |
 | §5 replay, 15 of the 16 reason codes | the log | 51 rejecting entries |

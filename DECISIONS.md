@@ -348,3 +348,12 @@ text. §4.0 now fixes depth at 8 (the deepest a valid entry can reach is
 `body.labels`) and entry size at 65536 bytes, and the reference enforces both
 with tests, including a truncated length header that must fail without
 allocating.
+
+## D-048 · `sigs` ordering is a schema rule, not an encoding rule (2026-09-19, 1.1)
+Surfaced immediately by the Go implementation: `bad-unsorted-sigs` decodes
+cleanly at the CBOR layer, because CBOR canonicalises *map* key order and says
+nothing about *array* order. The sorted-and-unique requirement on `sigs` is
+therefore enforced during envelope validation (§5.1 step 3), not by the codec.
+§4.0 now says so and §12.1 files the vector under schemas rather than the
+encoding profile. Exactly the kind of gap a second implementation finds by
+existing — the first payoff from starting Phase 1.

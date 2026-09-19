@@ -38,8 +38,26 @@ becomes its own oracle.
 Log fixture (tiles + cosigned checkpoint) moves to Phase 2 where Tessera produces
 it and torchwood verifies it — hand-building a tlog in Python adds no assurance.
 
-## Phase 1 — Core library
-(subdivided when Phase 0 is ✅)
+## Phase 1 — Core library (Go)
+
+Decision after 0.13b: start Phase 1 rather than run a fifth gate. Phase 1 *is* a
+second implementation of §4 and §5, so it surfaces spec gaps as a side effect of
+being useful, and `PLAN.md` already schedules a cold-model gate at Phase 6
+against the frozen spec.
+
+Rule for this phase: the Go code is written **from `SPEC.md`**, and the vectors
+are the oracle. Where Go and the Python reference disagree, the spec decides —
+and if the spec is silent, that is a defect to record, not a coin to flip.
+
+| # | Checkpoint | Done when | Status |
+|---|---|---|---|
+| 1.1 | `internal/cbor` | deterministic encoder + strict decoder; every encoding negative rejected, every valid entry round-trips byte-exact | ✅ |
+| 1.2 | `internal/entry` | envelope, `kid`, preimage, sign/verify, entry and leaf hashes; all 16 entry mirrors reproduced | ⬜ |
+| 1.3 | `internal/state` | state schema + canonical JSON (§14) byte-exact against `state.json` | ⬜ |
+| 1.4 | `internal/replay` | every `(index, reason)` in the manifest, and all 12 `genesis/` aborts | ⬜ |
+| 1.5 | `internal/note`, `internal/trust` | receipt verifies; fingerprint reproduced; all 14 `trust-bad/` rejected | ⬜ |
+| 1.6 | Fuzzing | `go test -fuzz` on the decoder and on replay: 1 h each, zero panics | ⬜ |
+| 1.7 | Cross-implementation check | vectors re-exported from Go and diffed against `testdata/vectors` — identical | ⬜ |
 
 ---
 
@@ -170,3 +188,6 @@ spec gaps as a side effect of being useful.
 Current state: 89-entry log, 235 vector files, 12 genesis aborts, 14 trust
 negatives, 153 Python tests, 15 Go tests, 47 recorded decisions. Open: the F7
 residue (low severity) and F10 (§16, deferred to the enrolment CLI by design).
+- **2026-09-19 · 1.1 `internal/cbor`** — deterministic encoder and strict decoder written from §4.0, tests first. All RFC 8949 examples in the profile, the §4.1 map-key trap, 17 non-canonical/out-of-profile rejections, the depth and size limits including a truncated length header that must fail without allocating, and **every valid entry in the suite round-trips byte-exact** (80+ files across `entries/` and `log/`).
+  - **First payoff from starting Phase 1 → D-048.** My round-trip test skips anything that fails to decode, which would pass with a decoder that rejects nothing — so I added a test naming each encoding negative and requiring it to fail. `bad-unsorted-sigs` did **not** fail, and shouldn't: CBOR canonicalises *map* key order and says nothing about *array* order, so "sigs sorted by kid" is a schema rule enforced at §5.1 step 3, not something a codec can see. §4.0 now states the layering and §12.1 files the vector under schemas. A misclassification the Python reference could never surface, because there the two layers live in one process.
+  - Go: 6 packages, 21 tests, `make ci` + staticcheck green.
