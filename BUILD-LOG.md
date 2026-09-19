@@ -239,7 +239,7 @@ checkpoint, the design is wrong — so that is a gate line, not an aspiration.
 | # | Checkpoint | Done when | Status |
 |---|---|---|---|
 | 2.1 | Ecosystem cross-check | Go's canonical `note` implementation accepts our keys and receipt unchanged, in both directions | ✅ |
-| 2.2 | `internal/tlog` | tile paths, leaf hashing, entry bundles and checkpoints per `tlog-tiles` / `tlog-checkpoint`; §6 gets its first vectors | ⬜ |
+| 2.2 | `internal/tlog` | C2SP tile paths, checkpoints, and a tree with working inclusion and consistency proofs over the suite | ✅ |
 | 2.3 | `norn-log` write path | Tessera POSIX; entries appended, checkpoints issued, size monotonic across restarts | ⬜ |
 | 2.4 | `norn verify` over a served log | fetches tiles + checkpoint from a static directory and reproduces the state | ⬜ |
 | 2.5 | Tamper and restart tests | one flipped byte in a tile → inclusion proof fails and the verifier refuses; restart loses and reorders nothing | ⬜ |
@@ -252,3 +252,9 @@ checkpoint, the design is wrong — so that is a gate line, not an aspiration.
   - key-id derivation matches across 32 name/key combinations — it exposes the id as a `uint32` where we use four bytes, and they agree every time.
   - `PLAN.md` ground rule 3 is "reuse the transparency ecosystem, do not fork it". That was an intention; it is now a test. The unverified-claim note is removed from `SPEC.md` §7, which now states the cross-check instead.
   - **One dependency, three modules in the graph.** The stdlib-only discipline held long enough that the first external package is the one that proves interoperability.
+- **2026-09-19 · 2.2 `internal/tlog`** — the C2SP tiled-log formats, tests first, green on the first run.
+  - **The Merkle mathematics is `x/mod/sumdb/tlog`'s, not mine.** That is ground rule 3, and it is also simple risk management: a hand-rolled Merkle tree is exactly the kind of code that looks correct, passes every test its author thinks to write, and is subtly wrong. What this package adds is the part x/mod does *not* implement — the C2SP path layout, since x/mod uses the sumdb scheme instead.
+  - The chunked path encoding is the classic interop bug in this format: `N` is written as 3-digit groups with `x` on every group but the last, so 1,234,067 is `x001/x234/067`. Tested at 0, 1, 255, 1000, 1234, 1234067, and with partial widths — wrong paths here look plausible and resolve to nothing.
+  - `ParseCheckpoint` refuses anything but the three canonical lines: no trailing-newline omission, no empty origin, no leading zeroes or `+` in the size (Go's `ParseInt` accepts `+42` quite happily), no non-32-byte root, and **no extension lines**, which §6 forbids.
+  - First time §6 and §8 touch real data: a tree over the suite's **91 entries**, with inclusion proofs that verify against the head, a **tampered leaf whose proof stops verifying**, and a consistency proof between sizes 20 and 91. All checked with upstream's verifier rather than my own, so agreement is not self-agreement.
+  - Go: 13 packages, 74 tests, `make ci` + staticcheck + `vectors-check` green.
