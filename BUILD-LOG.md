@@ -253,7 +253,7 @@ checkpoint, the design is wrong — so that is a gate line, not an aspiration.
 | 2.9b-i | The signer seam + ssh-agent (tiers 1/2) | `entry.Sign` takes a `crypto.Signer`, and `internal/sshagent` signs through a **real OpenSSH `ssh-agent`**, with a fake agent for the hostile cases | ✅ |
 | 2.9b-ii | Key file (tier 0) | an **OpenSSH** private key file `ssh-keygen` writes and `ssh-add` loads; the encrypted kind is refused with an answer (D-055) | ✅ |
 | 2.9c | `norn enroll` (device side) | generates the device key, takes or generates the WG key, prints the request as text and QR | ✅ |
-| 2.9d | `norn sign` (admin side) | verifies the request's own signature, shows what is being signed (UX rule 1), emits a signed `enroll` entry; partial signatures for `signer_thr > 1` | ⬜ |
+| 2.9d | `norn sign` (admin side) | verifies the request's own signature, shows what is being signed (UX rule 1), emits a signed `enroll` entry; partial signatures for `signer_thr > 1` | ⏸ **blocked — decision needed, see below** |
 | 2.9e | `norn submit` + receipts | POSTs entry bytes to `<prefix>/add`, verifies the receipt note under the anchor, stores it, and waits for inclusion | ⬜ |
 | 2.9f | `norn init` | the genesis ceremony: roots, thresholds, the genesis entry, and the trust file with its fingerprint. Paper (mnemonic) roots are **not** in this slice — they need a wordlist decision (see 2.9f note) | ⬜ |
 | 2.9g | `norn status` | proven peers, checkpoint age, degraded/fork state, and the last five entries in plain words (`ENROLLMENT.md` UX rule 5) | ⬜ |
@@ -330,3 +330,42 @@ checkpoint, the design is wrong — so that is a gate line, not an aspiration.
   - The summary states plainly what the request does **not** prove: the WireGuard key is X25519, so nothing in the request shows the device holds it (§16.1). A tool that overstates its evidence is the failure this project keeps finding in its own prose.
   - A device enrolling for the first time has no trust file, so `-net` takes an origin (`norn/…`) or 32 hex digits, and `trust.NetFromOrigin` is the new inverse of `OriginFor`, pinned by a round-trip property. `-trust` works too for a device being re-enrolled, and **the two disagreeing is a refusal, not a guess**.
   - Go: 27 packages, 208 tests; module graph 7 → **8**. `make ci`, staticcheck and both halves of `vectors-check` green.
+
+## Decision needed — 2.9d: an `enroll` needs a device signature the device cannot make
+
+**Raised 2026-09-19, before writing a line of `norn sign`.** The loop stops here
+by its own rule: this changes the normative protocol and regenerates the whole
+vector suite, so it is not mine to decide quietly.
+
+**The contradiction.** `SPEC.md` §4.3 requires an `enroll` entry to carry a
+`device` signature, and §4.2 says every signature is over *the entry's*
+preimage — an envelope whose `ts`, `after` and body the **signer** chooses.
+`ENROLLMENT.md` part 3 has the device print one QR and go quiet: it is headless,
+it never sees that envelope, and `norn sign` is supposed to produce a **full**
+`enroll` entry in one step. Both documents cannot be right.
+
+**Why four gate runs and 208 tests missed it.** The fixture holds *every* private
+key, so it signs one envelope as the device and again as a signer:
+`_signed(env, [(device, "device"), ("signer1", "signer")])`. That is a signature
+no real participant could produce, and nothing in a conformance suite can tell
+the difference — the entry is valid either way. **The oracle was able to forge
+consent, so the protocol was never asked to provide it.** The same shape as the
+signature-blind replay of gate run 4, one level up.
+
+Only `enroll` is affected: `rotate` and self-`revoke` are built **by** the
+device, so it signs those envelopes itself.
+
+| # | Option | What it costs |
+|---|---|---|
+| A | **Round trip.** Device → request → signer builds the entry → entry back to the device → device signs → submit. §4.3 unchanged. | Needs a return channel to a headless Pi, which is the thing this design exists to avoid. Kills the Phase 2 gate line "device QR → `norn sign` → submit → active, under 3 minutes". |
+| B | **The device builds the entry.** `norn enroll` emits an `enroll` envelope already signed by the device; the signer appends signer signatures, which is legal because the preimage excludes `sigs`. §4.3/§5.1 unchanged. | An `enroll` can then never carry `after` — the device cannot know the log size — so the §4.4 ordering guard is lost for exactly the entry type that creates an identity. The signer can only accept or reject the device's labels and expiry. §16's request format, specified and vectored in 2.9a, is replaced by a partial entry. |
+| C | **Embed the request (recommended).** The `enroll` body becomes the request bytes verbatim; §5.1's device check becomes "the embedded request decodes, its signature verifies under its own `device_pk`, and its `net` matches the entry's". | Normative change to §4.3, §5.1 and §5.2's wording; every `enroll` vector, `state.json`, `served/` and `proofs/` regenerate; both implementations change. Two or three checkpoints. |
+
+**Why C is the recommendation.** It is not a workaround for A — it is a
+*stronger* guarantee. A device signature over the envelope proves the device saw
+some envelope; an embedded request proves the device consented to **exactly**
+this `device_id`, `device_pk`, `wg_pk`, labels and expiry, and the signer cannot
+alter any of them without destroying the proof. Meanwhile `ts` and `after` stay
+where they belong, with the signer, who is the only party that knows the log.
+The device keeps one job — say what it wants and prove it holds its key — and
+the signer keeps one job — decide, and place the entry in the log.

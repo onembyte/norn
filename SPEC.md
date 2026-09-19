@@ -673,7 +673,14 @@ either here would test this implementation against itself and prove nothing.
 
 ## 13. Open items
 
-- (none as of 0.2; new items are appended here with the checkpoint that raised them)
+- **§4.3/§5.1 `enroll` requires a device signature the device cannot produce (raised 2.9d).**
+  The entry's `ts`, `after` and body are chosen by the **signer**, and the device
+  signature must be over that envelope's preimage (§4.2). In `ENROLLMENT.md`
+  part 3 the device is headless and one-way: it prints a request and is not
+  heard from again, so it never sees the envelope. The two documents cannot
+  both be satisfied. Resolution is pending a decision; see `BUILD-LOG.md` 2.9d.
+  Only `enroll` is affected — `rotate` and self-`revoke` are built **by** the
+  device, which can therefore sign their envelopes itself.
 
 The verifier hands the enforcer an in-memory proven set and mirrors it to
 `/run/norn/proven.json` (schema in `ENFORCEMENT.md` §9). Modes, backends, the
