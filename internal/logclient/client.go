@@ -48,20 +48,43 @@ type Result struct {
 	Entries    int
 }
 
-// Verify fetches a log, checks that the entries it serves really do hash to
-// the head it advertises, and replays them under the anchor.
+// Anchor is everything a verifier is allowed to start from: the network it is
+// for, the genesis entry it pins, and the keys whose signature on a checkpoint
+// it will accept (SPEC §9).
+type Anchor struct {
+	replay.Anchor
+	// LogKeys are signed-note verifier keys. At least one must have signed the
+	// checkpoint. More than one appears during a `log_key` rotation, where old
+	// and new are both valid for `overlap` (`ENROLLMENT.md` part 6).
+	LogKeys []string
+}
+
+// Verify fetches a log, checks that the log operator signed the head, checks
+// that the entries it serves really do hash to that head, and replays them
+// under the anchor.
 //
-// The order matters: integrity BEFORE replay. Replaying first and checking
-// afterwards would mean acting on entries that were never shown to belong to
-// the log -- exactly the trust a transparency log exists to remove.
-func Verify(f Fetcher, anchor replay.Anchor) (*Result, error) {
+// The order matters twice over. The **signature comes first**: an unsigned
+// head is a claim nobody made, and everything below it would be arithmetic
+// about an anonymous document. Then integrity BEFORE replay -- replaying first
+// and checking afterwards would mean acting on entries that were never shown
+// to belong to the log, exactly the trust a transparency log exists to remove.
+//
+// Not yet done here: §10's witness-policy check. A cosignature needs a witness
+// to produce, which is Phase 4; until then this verifies who wrote the head,
+// not that the head was shown to anybody else.
+func Verify(f Fetcher, anchor Anchor) (*Result, error) {
+	if len(anchor.LogKeys) == 0 {
+		return nil, logErrorf("the anchor carries no log key; §10 requires the " +
+			"checkpoint signature to be checked, and there is nothing to check it against")
+	}
 	raw, err := f.Fetch("checkpoint")
 	if err != nil {
 		return nil, logErrorf("fetching the checkpoint: %v", err)
 	}
-	cp, err := tlog.ParseCheckpoint(string(raw))
+	cp, err := tlog.Verify(string(raw), anchor.LogKeys)
 	if err != nil {
-		return nil, err
+		return nil, logErrorf("the checkpoint is not signed by a key this anchor "+
+			"trusts: %v", err)
 	}
 
 	entries, err := fetchEntries(f, cp.Size)
@@ -82,7 +105,7 @@ func Verify(f Fetcher, anchor replay.Anchor) (*Result, error) {
 		return nil, logErrorf("the served entries do not hash to the advertised head")
 	}
 
-	return &Result{Checkpoint: cp, State: replay.Replay(anchor, entries), Entries: len(entries)}, nil
+	return &Result{Checkpoint: cp, State: replay.Replay(anchor.Anchor, entries), Entries: len(entries)}, nil
 }
 
 // fetchEntries reads entry bundles until it has `size` entries.

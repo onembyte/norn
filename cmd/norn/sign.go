@@ -16,7 +16,6 @@ import (
 	"github.com/onembyte/norn/internal/entry"
 	"github.com/onembyte/norn/internal/keyfile"
 	"github.com/onembyte/norn/internal/logclient"
-	"github.com/onembyte/norn/internal/replay"
 	"github.com/onembyte/norn/internal/sshagent"
 	"github.com/onembyte/norn/internal/state"
 	"github.com/onembyte/norn/internal/trust"
@@ -122,8 +121,7 @@ func observedSize(anchor *trust.Trust, location string) (observation, error) {
 	if err != nil {
 		return observation{}, err
 	}
-	result, err := logclient.Verify(fetcher,
-		replay.Anchor{Net: anchor.Net, GenesisHash: anchor.GenesisHash})
+	result, err := logclient.Verify(fetcher, anchorFor(anchor))
 	if err != nil {
 		return observation{}, err
 	}

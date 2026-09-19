@@ -1,6 +1,8 @@
 package tlogstore
 
 import (
+	"crypto/ed25519"
+	"crypto/sha256"
 	"os"
 	"path/filepath"
 	"strings"
@@ -8,6 +10,7 @@ import (
 
 	upstream "golang.org/x/mod/sumdb/tlog"
 
+	"github.com/onembyte/norn/internal/note"
 	"github.com/onembyte/norn/internal/tlog"
 )
 
@@ -15,6 +18,15 @@ import (
 // three properties in particular, because they are the ones a log operator can
 // violate without anyone noticing: entries keep their order, the tree head is
 // reproducible from what is on disk, and size never goes backwards.
+
+// testLogKey is the key these stores sign their checkpoints with. SPEC §6
+// makes the checkpoint a signed note, so a store cannot publish one without a
+// key; deriving it keeps failures reproducible.
+func testLogKey(t *testing.T) ed25519.PrivateKey {
+	t.Helper()
+	seed := sha256.Sum256([]byte("norn/tlogstore-test/log-key"))
+	return ed25519.NewKeyFromSeed(seed[:])
+}
 
 func suiteEntries(t *testing.T) [][]byte {
 	t.Helper()
@@ -35,7 +47,7 @@ func suiteEntries(t *testing.T) [][]byte {
 
 func TestAppendedEntriesReadBackInOrder(t *testing.T) {
 	dir := t.TempDir()
-	store, err := Open(dir, "norn/test")
+	store, err := Open(dir, "norn/test", testLogKey(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,7 +75,7 @@ func TestReopeningReproducesTheSameHead(t *testing.T) {
 	dir := t.TempDir()
 	entries := suiteEntries(t)
 
-	store, err := Open(dir, "norn/test")
+	store, err := Open(dir, "norn/test", testLogKey(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,7 +86,7 @@ func TestReopeningReproducesTheSameHead(t *testing.T) {
 	}
 	before := store.Checkpoint()
 
-	reopened, err := Open(dir, "norn/test")
+	reopened, err := Open(dir, "norn/test", testLogKey(t))
 	if err != nil {
 		t.Fatalf("reopen: %v", err)
 	}
@@ -93,7 +105,7 @@ func TestReopeningReproducesTheSameHead(t *testing.T) {
 
 func TestCheckpointSizeIsMonotonic(t *testing.T) {
 	dir := t.TempDir()
-	store, err := Open(dir, "norn/test")
+	store, err := Open(dir, "norn/test", testLogKey(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +124,7 @@ func TestCheckpointSizeIsMonotonic(t *testing.T) {
 
 func TestTheServedCheckpointParsesAndMatches(t *testing.T) {
 	dir := t.TempDir()
-	store, _ := Open(dir, "norn/test")
+	store, _ := Open(dir, "norn/test", testLogKey(t))
 	for _, raw := range suiteEntries(t)[:5] {
 		if _, err := store.Append(raw); err != nil {
 			t.Fatal(err)
@@ -122,18 +134,24 @@ func TestTheServedCheckpointParsesAndMatches(t *testing.T) {
 	if err != nil {
 		t.Fatalf("a served log has a checkpoint file: %v", err)
 	}
-	parsed, err := tlog.ParseCheckpoint(string(raw))
+	// The file *is* the signed note (§6): it must verify under the log's own
+	// key, and the head it carries must be the head the store holds.
+	public := testLogKey(t).Public().(ed25519.PublicKey)
+	parsed, err := tlog.Verify(string(raw), []string{note.VerifierKey("norn/test", public)})
 	if err != nil {
-		t.Fatalf("the served checkpoint must parse: %v", err)
+		t.Fatalf("the served checkpoint must verify under the log key: %v", err)
 	}
 	if parsed != store.Checkpoint() {
 		t.Errorf("served checkpoint %+v differs from in-memory %+v", parsed, store.Checkpoint())
+	}
+	if _, err := tlog.Verify(string(raw), nil); err == nil {
+		t.Error("a checkpoint verified with no key at all")
 	}
 }
 
 func TestInclusionProofsVerifyAgainstTheServedHead(t *testing.T) {
 	dir := t.TempDir()
-	store, _ := Open(dir, "norn/test")
+	store, _ := Open(dir, "norn/test", testLogKey(t))
 	entries := suiteEntries(t)
 	for _, raw := range entries {
 		if _, err := store.Append(raw); err != nil {
@@ -155,7 +173,7 @@ func TestInclusionProofsVerifyAgainstTheServedHead(t *testing.T) {
 
 func TestTheLayoutIsTheOneWeServe(t *testing.T) {
 	dir := t.TempDir()
-	store, _ := Open(dir, "norn/test")
+	store, _ := Open(dir, "norn/test", testLogKey(t))
 	for _, raw := range suiteEntries(t) {
 		if _, err := store.Append(raw); err != nil {
 			t.Fatal(err)

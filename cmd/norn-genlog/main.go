@@ -51,7 +51,8 @@ func run(root string) error {
 	if err := os.RemoveAll(served); err != nil {
 		return err
 	}
-	store, err := tlogstore.Open(served, origin)
+	key := ed25519.NewKeyFromSeed(logKeySeed[:32])
+	store, err := tlogstore.Open(served, origin, key)
 	if err != nil {
 		return err
 	}
@@ -61,12 +62,11 @@ func run(root string) error {
 		}
 	}
 
-	key := ed25519.NewKeyFromSeed(logKeySeed[:32])
-	signed, err := store.Checkpoint().Sign(key)
+	// `checkpoint` is the signed note itself (§6). There is no unsigned
+	// sibling: a file a verifier is not allowed to believe should not exist
+	// where one might read it by mistake.
+	signed, err := store.SignedCheckpoint()
 	if err != nil {
-		return err
-	}
-	if err := os.WriteFile(filepath.Join(served, "checkpoint.signed"), []byte(signed), 0o644); err != nil {
 		return err
 	}
 

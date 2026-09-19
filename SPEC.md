@@ -599,7 +599,7 @@ A10) cannot grind a substitute trust file with a matching fingerprint.
 loop every T_g or on demand:
   cp := fetch checkpoint (log_urls, then peers)         # part 6
   verify log signature (torchwood VerifyCheckpoint)
-  verify witness policy (ThresholdPolicy / ParsePolicy)
+  verify witness policy (ThresholdPolicy / ParsePolicy)   # NOT YET IMPLEMENTED — Phase 4
   if stored_cp exists:
       require cp.size >= stored_cp.size
       verify consistency proof stored_cp → cp; on failure → FORK (§11)
@@ -644,7 +644,7 @@ suite is checked only against its own author.
 | `state.json` | canonical replay output for `log/` (§5.3) |
 | `genesis/<NN-case>/` | one single-entry log per way entry 0 can abort, each with its own `manifest.json` and `state.json`; an abort stops replay, so the cases cannot share a log. `cases.json` lists them |
 | `trust-bad/<NN-case>.cbor` | trust files that decode cleanly but MUST be rejected as anchors; the file name says why, `cases.json` lists them |
-| `served/` | the fixture's entries as a real **tlog-tiles directory**: `tile/entries/…` bundles, `tile/<L>/…` hashes, an unsigned `checkpoint` and a signed `checkpoint.signed` |
+| `served/` | the fixture's entries as a real **tlog-tiles directory**: `tile/entries/…` bundles, `tile/<L>/…` hashes, and `checkpoint` — which **is** the signed note (§6), not an unsigned file with a signed sibling |
 | `proofs/<device>.bundle` | one §8.1 proof bundle per active device, each proving the entry that made that device active; `cases.json` gives the origin, the log-key seed and the device list |
 | `trust.cbor` · `trust.toml` · `trust.fingerprint` | the trust anchor (§9), authoritative bytes, human rendering, and its fingerprint |
 | `receipt.note` | a submission receipt: the signed note itself (§7) |
@@ -680,7 +680,7 @@ this table drifted out of date the moment one was.
 | §14 canonical JSON | every `.json`; `policy-escaping`, `enroll-unicode-labels` | — |
 | §6 tiles and bundles | `served/`, read back to reproduce `state.json` | forged head, tampered bundle, missing bundle |
 | §8 proof bundles | `proofs/`, one per active device | wrong entry, foreign checkpoint, tampered proof, wrong log key |
-| §10 verifier loop | `served/` verified end to end | wrong anchor aborts and yields no devices |
+| §10 verifier loop, steps 1–4 | `served/` verified end to end, **signature first** | wrong anchor aborts and yields no devices; an unsigned checkpoint, one signed by another key, and one signed under another origin's name are each refused |
 | §16 enrollment requests | `requests/`, four cases including a 64-byte `device_id` and non-ASCII labels | `requests-bad/`, 23 cases across all four layers, including **`forged-signature`** (structurally perfect, signed by another key) and `oversize-label-key` (§4.0's map-key cap) |
 | §16.2 bech32m | the text form of every request | `wrong-hrp`, `plain-bech32` (the same bytes under bech32's constant), `mixed-case`, `corrupt-character`. BIP-350's own vectors are in both implementations' unit tests |
 

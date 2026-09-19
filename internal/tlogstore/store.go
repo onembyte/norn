@@ -14,6 +14,7 @@
 package tlogstore
 
 import (
+	"crypto/ed25519"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -36,20 +37,35 @@ func storeErrorf(format string, args ...any) error {
 type Store struct {
 	dir    string
 	origin string
+	key    ed25519.PrivateKey
 	tree   *tlog.Tree
 	bundle [][]byte // entries of the tile currently being filled
 }
 
 // Open opens or creates a log directory and recovers its state.
-func Open(dir, origin string) (*Store, error) {
+//
+// The key signs every checkpoint this store publishes. SPEC §6 says the
+// checkpoint *is* a signed note, so a store without a key could only publish
+// something no verifier is allowed to believe -- and an unsigned file sitting
+// at `checkpoint` is worse than none, because a verifier that forgot to check
+// would read it happily.
+func Open(dir, origin string, key ed25519.PrivateKey) (*Store, error) {
+	if len(key) != ed25519.PrivateKeySize {
+		return nil, storeErrorf("a log needs its signing key to publish checkpoints (§6)")
+	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
 	}
-	s := &Store{dir: dir, origin: origin, tree: &tlog.Tree{}}
+	s := &Store{dir: dir, origin: origin, key: key, tree: &tlog.Tree{}}
 	if err := s.recover(); err != nil {
 		return nil, err
 	}
 	return s, nil
+}
+
+// SignedCheckpoint is the current head as the note §6 requires.
+func (s *Store) SignedCheckpoint() (string, error) {
+	return s.Checkpoint().Sign(s.key)
 }
 
 // recover rebuilds the tree from the entry bundles on disk. The bundles are the
@@ -161,7 +177,11 @@ func (s *Store) Append(raw []byte) (int64, error) {
 	}
 	// The checkpoint goes last: a crash before it leaves a log whose
 	// advertised size is behind what is on disk, never ahead of it.
-	if err := s.writeFile("checkpoint", []byte(s.Checkpoint().Marshal())); err != nil {
+	signed, err := s.SignedCheckpoint()
+	if err != nil {
+		return 0, err
+	}
+	if err := s.writeFile("checkpoint", []byte(signed)); err != nil {
 		return 0, err
 	}
 	return index, nil

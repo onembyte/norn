@@ -549,3 +549,29 @@ three. Rejected: a round trip to the device (no return channel to a headless
 Pi; kills the under-3-minute gate) · the device building the whole entry (an
 `enroll` could then never carry `after`, losing the ordering guard on exactly
 the entry type that creates an identity).
+
+## D-058 · The checkpoint file *is* the signed note, and the verifier checks it (2026-09-19, 2.9e-i)
+Found while building the submission path: `logclient.Verify` had never used
+`norn.trust.log_key`. It fetched an unsigned `checkpoint` file, rebuilt the tree
+from the served entries, and required them to hash to the head **in that same
+file** — internally consistent, signed by nobody. §10 step 2 says "verify log
+signature", and `tlog.Verify` had existed since 2.6a, unwired.
+
+The tamper tests of 2.5 all passed because they tampered in ways tree
+recomputation catches. What they could not catch: a mirror, a peer serving by
+gossip, or anyone on the transport handing over a log whose head no operator
+ever signed. Without the check, `log_key` was decoration, §11's fork evidence
+had nothing to point at — two conflicting **signed** checkpoints is what makes a
+fork non-repudiable — and G6 held only by accident of the genesis pin.
+
+So: `tlogstore.Open` now takes the log's signing key and writes the **signed
+note** at `checkpoint`. There is no unsigned sibling. A file a verifier is not
+allowed to believe should not exist where somebody might read it by mistake,
+and `checkpoint.signed` was exactly that. `logclient.Anchor` carries the
+verifier keys (plural, for a `log_key` rotation's overlap window), and a Verify
+with no key at all is refused rather than silently skipping the step.
+
+**Still owed, and now written down in §10 itself:** the witness-policy check.
+That needs a cosignature, which needs a running witness — Phase 4, the same
+item as 2.6b. Until then Norn verifies *who wrote* the head, not that the head
+was shown to anybody else.

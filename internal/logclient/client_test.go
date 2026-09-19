@@ -2,12 +2,16 @@ package logclient
 
 import (
 	"bytes"
+	"crypto/ed25519"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/onembyte/norn/internal/note"
 	"github.com/onembyte/norn/internal/replay"
 	"github.com/onembyte/norn/internal/tlogstore"
 )
@@ -56,12 +60,26 @@ func loadFixture(t *testing.T) (replay.Anchor, [][]byte) {
 	return replay.Anchor{Net: net, GenesisHash: genesis}, entries
 }
 
-// servedLog writes the fixture into a tile directory and returns its path.
-func servedLog(t *testing.T) (string, replay.Anchor) {
+// logKey is the key this test's log signs its checkpoints with. It is derived,
+// not random, so a failure is reproducible.
+func logKey(t *testing.T) ed25519.PrivateKey {
 	t.Helper()
-	anchor, entries := loadFixture(t)
+	seed := sha256.Sum256([]byte("norn/logclient-test/log-key"))
+	return ed25519.NewKeyFromSeed(seed[:])
+}
+
+func verifierKey(t *testing.T, key ed25519.PrivateKey, origin string) string {
+	t.Helper()
+	return note.VerifierKey(origin, key.Public().(ed25519.PublicKey))
+}
+
+// servedLog writes the fixture into a tile directory and returns its path.
+func servedLog(t *testing.T) (string, Anchor) {
+	t.Helper()
+	inner, entries := loadFixture(t)
 	dir := t.TempDir()
-	store, err := tlogstore.Open(dir, "norn/test")
+	key := logKey(t)
+	store, err := tlogstore.Open(dir, "norn/test", key)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +88,7 @@ func servedLog(t *testing.T) (string, replay.Anchor) {
 			t.Fatal(err)
 		}
 	}
-	return dir, anchor
+	return dir, Anchor{Anchor: inner, LogKeys: []string{verifierKey(t, key, "norn/test")}}
 }
 
 func TestVerifyOverAServedDirectoryReproducesStateJSON(t *testing.T) {
@@ -183,7 +201,7 @@ func TestSurvivingARestartStillVerifies(t *testing.T) {
 	}
 	// Reopen the store, append nothing, and verify again: a restart must
 	// neither lose entries nor reorder them.
-	if _, err := tlogstore.Open(dir, "norn/test"); err != nil {
+	if _, err := tlogstore.Open(dir, "norn/test", logKey(t)); err != nil {
 		t.Fatal(err)
 	}
 	after, err := Verify(Dir(dir), anchor)
@@ -197,5 +215,96 @@ func TestSurvivingARestartStillVerifies(t *testing.T) {
 	afterJSON, _ := after.State.MarshalCanonical()
 	if !bytes.Equal(beforeJSON, afterJSON) {
 		t.Error("restart changed the replayed state")
+	}
+}
+
+// These four cases are the defect this file exists to keep fixed.
+//
+// Until 2.9e-i the verifier never looked at `norn.trust.log_key`: it parsed an
+// unsigned `checkpoint` file and proved only that the served entries hashed to
+// the head *in that same file*. Internally consistent, signed by nobody. §10
+// step 2 says "verify log signature", and nothing did.
+
+func TestAnUnsignedCheckpointIsRefused(t *testing.T) {
+	dir, anchor := servedLog(t)
+	cp, err := os.ReadFile(filepath.Join(dir, "checkpoint"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The old format: the note's text with its signature lines removed.
+	text, _, err := note.Split(string(cp))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "checkpoint"), []byte(text), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Verify(Dir(dir), anchor); err == nil {
+		t.Fatal("verified a checkpoint nobody signed")
+	}
+}
+
+func TestACheckpointSignedByAnotherKeyIsRefused(t *testing.T) {
+	dir, anchor := servedLog(t)
+
+	seed := sha256.Sum256([]byte("norn/logclient-test/impostor"))
+	impostor := ed25519.NewKeyFromSeed(seed[:])
+	cp, err := os.ReadFile(filepath.Join(dir, "checkpoint"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text, _, err := note.Split(string(cp))
+	if err != nil {
+		t.Fatal(err)
+	}
+	forged, err := note.Sign(text, "norn/test", impostor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "checkpoint"), []byte(forged), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// The tree is untouched, so every entry still hashes to this exact head:
+	// only the signature separates this log from the real one.
+	if _, err := Verify(Dir(dir), anchor); err == nil {
+		t.Fatal("verified a head signed by a key the anchor does not trust")
+	}
+}
+
+func TestACheckpointForAnotherOriginIsRefused(t *testing.T) {
+	dir, anchor := servedLog(t)
+	key := logKey(t)
+	cp, err := os.ReadFile(filepath.Join(dir, "checkpoint"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text, _, err := note.Split(string(cp))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The right key, signing the right bytes, under the wrong name. §9.1 binds
+	// the note name to the origin precisely so this fails.
+	elsewhere, err := note.Sign(text, "norn/elsewhere", key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "checkpoint"), []byte(elsewhere), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Verify(Dir(dir), anchor); err == nil {
+		t.Fatal("verified a checkpoint signed under another origin's name")
+	}
+}
+
+func TestAnAnchorWithoutALogKeyIsRefused(t *testing.T) {
+	dir, anchor := servedLog(t)
+	anchor.LogKeys = nil
+	_, err := Verify(Dir(dir), anchor)
+	if err == nil {
+		t.Fatal("verified with nothing to check the signature against")
+	}
+	if !strings.Contains(err.Error(), "log key") {
+		t.Errorf("the error should say what is missing: %v", err)
 	}
 }

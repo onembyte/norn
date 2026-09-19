@@ -12,6 +12,16 @@ import (
 	"github.com/onembyte/norn/internal/trust"
 )
 
+// anchorFor turns a trust file into what a verifier may start from: the
+// network, the genesis it pins, and the log key whose signature on a
+// checkpoint it will accept (§9, §10).
+func anchorFor(t *trust.Trust) logclient.Anchor {
+	return logclient.Anchor{
+		Anchor:  replay.Anchor{Net: t.Net, GenesisHash: t.GenesisHash},
+		LogKeys: []string{t.LogKey},
+	}
+}
+
 func verifyCmd(args []string) error {
 	fs := newFlagSet("verify")
 	trustPath := fs.String("trust", "", "path to norn.trust (required)")
@@ -39,8 +49,7 @@ func verifyCmd(args []string) error {
 		return err
 	}
 
-	result, err := logclient.Verify(fetcher,
-		replay.Anchor{Net: anchor.Net, GenesisHash: anchor.GenesisHash})
+	result, err := logclient.Verify(fetcher, anchorFor(anchor))
 	if err != nil {
 		return err
 	}
