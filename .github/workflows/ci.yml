@@ -25,5 +25,5 @@ jobs:
         run: python3 -m venv contrib/norn-ref/.venv && contrib/norn-ref/.venv/bin/pip install -q pynacl
       - name: reference unit tests
         run: make ref-test
-      - name: committed vectors match the reference
+      - name: committed vectors match their generators
         run: make vectors-check
