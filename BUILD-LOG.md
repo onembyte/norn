@@ -149,3 +149,24 @@ Loop paused here pending that answer.
   - **D-047**: run 4 had to invent a nesting cap "with no basis in the text". §4.0 now fixes depth at 8 and entry size at 65536 bytes, **and the reference enforces both** — including a truncated length header that must fail without allocating. Stating a limit without enforcing it is the defect class this whole exercise keeps surfacing.
   - Log is 89 entries, 235 vector files, 12 genesis cases, 14 trust negatives. 153 Python tests, 15 Go tests, `make ci` + `make vectors-check` green.
   - **Deferred — F10, §16 enrollment requests have no vectors at all.** §16 is a stub added in plan part 7 describing a bech32m request format that nothing implements yet; vectoring it means designing it properly, which belongs with the enrollment CLI in a later phase, not in Phase 0. §12.1 must say so rather than stay silent.
+
+### Decision point after 0.13b — keep hardening, or start Phase 1?
+
+Four gate runs so far, each a fresh agent on a fresh copy:
+
+| run | verdict | headline finding |
+|---|---|---|
+| 1 | INSUFFICIENT | 29 defects; §5's state sketch named fields that did not exist |
+| 2 | INSUFFICIENT | canonical JSON **did not exist** — I had deleted it with a bad splice |
+| 3 | SUFFICIENT WITH GAPS | 66 `.cbor` files for a 59-entry log: seven orphans from a renumbering |
+| 4 | SUFFICIENT WITH GAPS | **a signature-blind replay passed the entire suite** |
+
+Severity has **not** decreased monotonically — run 4 found the worst defect of
+the four. But Phase 0 has consumed the whole session so far, and Phases 1–7 (the
+Go library, the log server, `nornd`, gossip, the lab, the demos) are the actual
+product. Phase 1 is itself a second implementation of §4 and §5 and will surface
+spec gaps as a side effect of being useful.
+
+Current state: 89-entry log, 235 vector files, 12 genesis aborts, 14 trust
+negatives, 153 Python tests, 15 Go tests, 47 recorded decisions. Open: the F7
+residue (low severity) and F10 (§16, deferred to the enrolment CLI by design).
