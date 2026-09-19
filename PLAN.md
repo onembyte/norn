@@ -141,10 +141,10 @@ Deliverables: `THREAT-MODEL.md`, `LEDGER-OPTIONS.md` with a decision,
 `SPEC.md` v0 with entry formats + verifier rules + first test vectors,
 repo initialised, CI running `go test` + `go vet` + `staticcheck`.
 **PASS when:**
-- [ ] Threat model names ≥ 6 adversaries, and for each: what Norn guarantees, what it explicitly does not.
-- [ ] `LEDGER-OPTIONS.md` compares ≥ 4 architectures on the same criteria and records one decision in `DECISIONS.md`.
-- [ ] `SPEC.md` has byte-exact test vectors for every entry type and for one full replay.
-- [ ] Cold-model gate: a fresh model given only `SPEC.md` + vectors implements an entry verifier that passes all vectors.
+- [x] Threat model names ≥ 6 adversaries, and for each: what Norn guarantees, what it explicitly does not.
+- [x] `LEDGER-OPTIONS.md` compares ≥ 4 architectures on the same criteria and records one decision in `DECISIONS.md`.
+- [x] `SPEC.md` has byte-exact test vectors for every entry type and for one full replay.
+- [ ] Cold-model gate: a fresh model given only `SPEC.md` + vectors implements an entry verifier that passes all vectors. **Runs 1 and 2 both returned SPEC INSUFFICIENT** (`SPEC-DEFECTS.md`, `SPEC-DEFECTS-2.md`, both closed); run 3 pending. Passing the checks was never the bar — the bar is that a second implementer could not reasonably have got it wrong.
 
 ### Phase 1 — Core library (2 weeks)
 `internal/entry`, `internal/state`: encoding, signing, replay, validity rules.
