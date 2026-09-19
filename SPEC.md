@@ -1,7 +1,7 @@
 # Norn — Specification v0 (draft)
 
 Written **2026-09-18** (plan part 4). Status: **draft** — frozen at Phase 6.
-Every MUST in §4, §5, §7 and §9 has a test vector under `testdata/vectors/`; §12.1 lists exactly what is still unvectored.
+§12.1 lists what is vectored and what is not. It does **not** claim every MUST is vectored — several are not, and they are named there.
 
 Norn reuses these specifications verbatim; where they conflict with this document,
 they win:
@@ -524,7 +524,7 @@ in this repository and may be rooted anywhere when the suite is distributed.
 | `keys.json` | every test key: Ed25519 `{seed, public, kid}` by name, X25519 public keys by name, and `net` |
 | `entries/NN-<type>.cbor` | one valid entry per type, canonical bytes |
 | `entries/NN-<type>.json` | mirror: `{entry, entry_hash, leaf_hash, preimage_sha256, size}` where `size` is the byte length of the `.cbor` |
-| `log/NN-<name>.cbor` | the replay fixture, 49 entries in order |
+| `log/NN-<name>.cbor` | the replay fixture, **59 entries** in order. The file names are labels, not the order: **read the sequence from `manifest.json`**, never by globbing and sorting |
 | `log/NN-<name>.reason` | beside each entry that must be rejected: its §5.2 reason code |
 | `log/manifest.json` | `{"anchor": {"net", "genesis_hash"}, "entries": [{"index", "name", "reason"}]}` — the replay input and expected outcome; `reason` is `""` for an accepted entry |
 | `state.json` | canonical replay output for `log/` (§5.3) |
@@ -544,16 +544,36 @@ different hat.
 
 | area | positive | negative |
 |---|---|---|
-| §4.0 encoding profile | every entry | non-shortest integer (55), `null` (56), unsorted map keys (57) |
-| §4.0 field constraints | labels (2, 50) | malformed `kid` (52), oversized/mistyped labels (unit-tested), `sigs` omitted (45), `sigs: []` (51), `role` outside the enum (44) |
+| §4.0 encoding profile | every entry | non-shortest integer (56), `null` (57), unsorted map keys (58) — **partial**, see below |
+| §4.0 field constraints | labels (2, 50) | malformed `kid` (53), `sigs` omitted (45), `sigs: []` (52), `role` outside the enum (44) — **partial**, see below |
 | §4.2 signatures, hashes, preimage | 16 entry mirrors | wrong `net` (32) |
-| §5 replay, all 16 reason codes | 59-entry log | 30 rejecting entries |
+| §5 replay, 15 of the 16 reason codes | 59-entry log | 30 rejecting entries |
+| §5 `bad-genesis` | — | `genesis/`; it cannot appear in the log, since it aborts replay |
 | §5.1 check order | — | multi-fault entries 47, 48 |
-| §5.1 genesis | the log's entry 0 | all six abort paths, `genesis/` |
+| §5.1 genesis | the log's entry 0 | six abort paths in `genesis/` — **not** the decode path |
 | §5.3 state, incl. D-028 and `expires` | `state.json`, contractor device (51) | below-threshold `signer_remove` accepted (54) and recovered (55) |
 | §7 receipt | `receipt.note` | — |
 | §9 trust file, fingerprint | `trust.cbor` | 10 rejected anchors, `trust-bad/` |
 | §14 canonical JSON | every `.json`; escaping torture (49, 50) | — |
+
+**Vectored only in part** — these MUSTs have no rejecting vector, so an
+implementation that skips the check passes the suite (each was demonstrated by a
+variant that scored a clean pass in the 0.10 conformance run):
+
+| §4.0 forbidden CBOR items: floats, tags, `undefined`, indefinite lengths, negative integers |
+| §4.0 fixed byte lengths for `net` (16), `pk` (32), `sig` (64) in *entries* |
+| §4.0 map keys of 1–23 bytes · valid UTF-8 · integers ≤ 2⁶³−1 |
+| §4.0 `sigs` sorted by `kid` with no repeats |
+| §4.0 `device_id` regex · `name`/`reason`/`text` length caps |
+| §4.1 "unknown keys MUST cause rejection" — no entry carries an unknown envelope or body key |
+| §5.1 step 1 "added to the seen set, whether or not it is later rejected" |
+| §5.1 `thr: 0` (both `bad-thr` vectors use 99) |
+| §5.1 `after < index` — every `after` in the fixture equals its own index |
+| §5.1 a signer count strictly between 0 and `signer_thr` |
+| §4.3 "a key counts only for the role it currently holds" |
+| §5.1 genesis step 2 (an entry 0 that fails to decode) and most of step 6 |
+| §9.1 the log key's note name MUST equal `origin`; the `witnesses` minimum is not stated at all |
+| §14.1 the entry `.json` mirror's absent-field convention |
 
 **Not vectored, and therefore not binding on a second implementation:**
 

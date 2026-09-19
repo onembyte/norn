@@ -18,9 +18,34 @@ import hashlib
 from nornref import canonjson, entry, fixture, note, replay, trust
 
 
+#: Every path this run has written, so stale files can be pruned afterwards.
+_written: set[pathlib.Path] = set()
+
+
 def write(path: pathlib.Path, data: bytes | str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(data if isinstance(data, bytes) else data.encode("utf-8"))
+    _written.add(path.resolve())
+
+
+def prune(out: pathlib.Path, keep: set[str]) -> list[pathlib.Path]:
+    """Delete files under `out` that this run did not write.
+
+    Without this, a renumbering leaves orphans that sort *between* live entries,
+    so an implementer globbing the directory loads a different log than the
+    manifest describes. Returns what was removed.
+    """
+    removed = []
+    for path in sorted(out.rglob("*")):
+        if not path.is_file() or path.name in keep:
+            continue
+        if path.resolve() not in _written:
+            path.unlink()
+            removed.append(path)
+    for folder in sorted(out.rglob("*"), reverse=True):
+        if folder.is_dir() and not any(folder.iterdir()):
+            folder.rmdir()
+    return removed
 
 
 def write_keys(out: pathlib.Path) -> None:
@@ -130,6 +155,9 @@ def main(argv: list[str]) -> int:
     write_genesis_aborts(out)
     write_trust_rejections(out)
     write_trust(out)
+    removed = prune(out, keep={"README.md"})
+    for path in removed:
+        print(f"pruned stale {path.relative_to(out)}")
     count = sum(1 for _ in out.rglob("*") if _.is_file())
     print(f"wrote {count} files to {out}")
     return 0
