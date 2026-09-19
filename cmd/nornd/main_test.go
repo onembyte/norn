@@ -1,0 +1,139 @@
+package main
+
+import (
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+func nornd(t *testing.T) string {
+	t.Helper()
+	bin := filepath.Join(t.TempDir(), "nornd")
+	if out, err := exec.Command("go", "build", "-o", bin, ".").CombinedOutput(); err != nil {
+		t.Fatalf("building nornd: %v\n%s", err, out)
+	}
+	return bin
+}
+
+func vectors() string { return filepath.Join("..", "..", "testdata", "vectors") }
+
+func runNornd(t *testing.T, bin string, args ...string) (string, error) {
+	t.Helper()
+	cmd := exec.Command(bin, args...)
+	var out strings.Builder
+	cmd.Stdout, cmd.Stderr = &out, &out
+	err := cmd.Run()
+	return out.String(), err
+}
+
+// Everything unusable is refused before the first cycle, not during it: a
+// daemon that started and then failed would look like it was working.
+func TestRefusalsBeforeTheFirstCycle(t *testing.T) {
+	bin := nornd(t)
+	trustFile := filepath.Join(vectors(), "trust.cbor")
+
+	cases := []struct {
+		why  string
+		args []string
+		says string
+	}{
+		{"no interface", []string{"-trust", trustFile, "-once"}, "-iface is required"},
+		{"no trust file", []string{"-iface", "wg-nonexistent0", "-once"}, "-trust is required"},
+		{"a mode that is not a mode", []string{"-iface", "wg-nonexistent0",
+			"-trust", trustFile, "-mode", "enforce", "-once"}, "not a mode"},
+		{"a poll interval of zero", []string{"-iface", "wg-nonexistent0",
+			"-trust", trustFile, "-poll", "0s", "-once"}, "poll must be between"},
+		{"a trust file that is not there", []string{"-iface", "wg-nonexistent0",
+			"-trust", filepath.Join(t.TempDir(), "absent"), "-once"}, "reading the trust file"},
+	}
+	for _, c := range cases {
+		t.Run(c.why, func(t *testing.T) {
+			out, err := runNornd(t, bin, c.args...)
+			if err == nil {
+				t.Fatalf("started with %s", c.why)
+			}
+			if !strings.Contains(out, c.says) {
+				t.Errorf("the error should mention %q:\n%s", c.says, out)
+			}
+		})
+	}
+}
+
+// An interface that does not exist is a clear failure, not a daemon spinning
+// against nothing.
+func TestAnAbsentInterfaceIsRefused(t *testing.T) {
+	bin := nornd(t)
+	out, err := runNornd(t, bin, "-iface", "norn-not-a-real-iface0",
+		"-trust", filepath.Join(vectors(), "trust.cbor"), "-once")
+	if err == nil {
+		t.Fatalf("started against an interface that does not exist:\n%s", out)
+	}
+	if !strings.Contains(out, "norn-not-a-real-iface0") {
+		t.Errorf("the error should name the interface:\n%s", out)
+	}
+}
+
+func TestAnUnreadableConfigIsRefused(t *testing.T) {
+	bin := nornd(t)
+	path := filepath.Join(t.TempDir(), "nornd.toml")
+	if err := os.WriteFile(path, []byte("interface = \n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, err := runNornd(t, bin, "-config", path, "-once")
+	if err == nil {
+		t.Fatalf("started with an unparseable config:\n%s", out)
+	}
+}
+
+// The config supplies settings and flags override them, so a running node can
+// be overridden without editing a file.
+func TestFlagsOverrideTheConfig(t *testing.T) {
+	bin := nornd(t)
+	path := filepath.Join(t.TempDir(), "nornd.toml")
+	body := "interface = \"from-config0\"\nmode = \"owner\"\ntrust = \"" +
+		filepath.Join(vectors(), "trust.cbor") + "\"\n"
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Both fail (neither interface exists), but the message says which one it
+	// tried -- which is what proves the override happened.
+	out, _ := runNornd(t, bin, "-config", path, "-once")
+	if !strings.Contains(out, "from-config0") {
+		t.Errorf("the config's interface was not used:\n%s", out)
+	}
+	out, _ = runNornd(t, bin, "-config", path, "-iface", "from-flag0", "-once")
+	if !strings.Contains(out, "from-flag0") || strings.Contains(out, "from-config0") {
+		t.Errorf("the flag did not override the config:\n%s", out)
+	}
+}
+
+// The mode must be visible before anything can fail, because "it did not
+// start" and "it started enforcing" are very different things to be wrong
+// about -- and observe being the default is only useful if an operator can see
+// that it is in force.
+func TestTheModeIsAnnouncedEvenWhenStartupFails(t *testing.T) {
+	bin := nornd(t)
+	out, err := runNornd(t, bin, "-iface", "norn-not-a-real-iface0",
+		"-trust", filepath.Join(vectors(), "trust.cbor"), "-once")
+	if err == nil {
+		t.Fatal("expected this to fail")
+	}
+	if !strings.Contains(out, "mode=observe") {
+		t.Errorf("the default mode was not announced:\n%s", out)
+	}
+	if !strings.Contains(out, "write nothing") {
+		t.Errorf("observe mode should say what it will not do:\n%s", out)
+	}
+
+	out, _ = runNornd(t, bin, "-iface", "norn-not-a-real-iface0",
+		"-trust", filepath.Join(vectors(), "trust.cbor"), "-mode", "owner", "-once")
+	if !strings.Contains(out, "mode=owner") {
+		t.Errorf("an enforcing mode must be announced too:\n%s", out)
+	}
+	if strings.Contains(out, "write nothing") {
+		t.Error("owner mode claimed it would write nothing")
+	}
+}

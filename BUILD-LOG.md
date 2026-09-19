@@ -359,10 +359,10 @@ starting rather than after.
 | 3.2 | `internal/reconcile` | observe, owner and watchdog as **pure decisions** over (actual, desired): no I/O, so every case including the A1 swap attack is a unit test | ✅ |
 | 3.3 | `internal/endpoint` | providers that supply endpoints and allowed-ips but are **untrusted for keys**: a key they name that is not proven is dropped and logged | ✅ |
 | 3.4 | `/run/norn/proven.json` | the verifier→enforcer interface of `ENFORCEMENT.md` part 9, written atomically, with its schema pinned | ✅ |
-| 3.5 | `nornd` | the daemon; split | ⬜ |
+| 3.5 | `nornd` | the daemon; split | ✅ |
 | 3.5a | `internal/agent` | one verify-and-reconcile cycle, and the failure semantics of `ENFORCEMENT.md` part 8 — above all, **a failed verification never widens or empties the peer table** | ✅ |
 | 3.5b | `internal/wgdev` | the real interface behind the same seam. **Moved ahead of the daemon:** a `nornd` with nothing to drive cannot be run, and the dependency question had to be answered before a binary depended on the answer | ✅ |
-| 3.5c | `cmd/nornd` | the binary: config, signals, the poll loop, and **observe as the default** (D-005) | ⬜ |
+| 3.5c | `cmd/nornd` | the binary: config, signals, the poll loop, and **observe as the default** (D-005) | ✅ |
 | 3.6 | Fight detection and quarantine | N evictions in W → `CONTROL_PLANE_FIGHT`; `quarantine` fails closed **by choice, never by default** | ⬜ |
 | 3.8 | Phase 3 gate audit | each line read against what is actually tested, and what the lab still owes | ⬜ |
 
@@ -534,3 +534,11 @@ the signer keeps one job — decide, and place the entry in the log.
   - **Allowed-ips are set exactly, never added to** (`ReplaceAllowedIPs`), or a route Norn did not put there would survive a rewrite. A refresh carries **no routes at all** — `UpdateOnly` with the allowed-ips deliberately empty — because refreshing reachability must not touch authority.
   - A v4 endpoint arrives from the kernel as a 16-byte mapped address and must come back as `192.0.2.1:51820`, not `::ffff:…`. Tested, because a peer table where one address is spelled two ways is a peer table that never converges.
   - Go: 38 packages, 336 tests; module graph **24**. `go test` and staticcheck green.
+- **3.5c `cmd/nornd` — a thin binary, and the defaults that are load-bearing.**
+  - **The mode is announced before anything can fail.** An operator reading a startup error should already be able to see which mode was intended, because *"it did not start"* and *"it started enforcing"* are very different things to be wrong about. Observe also says what it will **not** do — "this node will alarm and write nothing" — and a test asserts owner mode never prints that line.
+  - **A near miss is an error, not a fallback.** `-mode enforce`, `-mode Owner`, `-mode watch` are all refused. A misspelling that quietly resolved to observe would be a node not enforcing while its operator believed it was, which is the worst of the three outcomes and the easiest to ship.
+  - **Unknown settings in `nornd.toml` stop the daemon.** A misspelled `mode` that was shrugged off is the same failure through a different door, and `[[peer]]` blocks are rejected outright if they try to carry a `public_key` — keys come from the log, and there is a test named for it.
+  - **A failed cycle logs and the loop continues.** A daemon that exited on a log outage would stop evicting intruders at exactly the moment somebody might be counting on it; 3.5a already guaranteed the peer table survives such a cycle untouched.
+  - **The poll interval is bounded at both ends.** Zero is a busy loop, and a very long one is the eviction window an intruder lives inside — `ENFORCEMENT.md` part 2 calls 200 ms free, and that is the default.
+  - **The binary stays thin on purpose**, so its tests are about wiring and refusals while the behaviour lives in `internal/agent`, tested against a fake interface. Adding `BurntSushi/toml` for `nornd.toml` cost **one module with no transitive dependencies** (graph 24 → 25), and `internal/depgraph` still holds the line that `cmd/norn` and `cmd/norn-log` carry neither it nor a kernel driver.
+  - Go: 38 packages, 347 tests; `go test` and staticcheck green; module graph 25.
