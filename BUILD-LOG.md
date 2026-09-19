@@ -359,7 +359,9 @@ starting rather than after.
 | 3.2 | `internal/reconcile` | observe, owner and watchdog as **pure decisions** over (actual, desired): no I/O, so every case including the A1 swap attack is a unit test | ✅ |
 | 3.3 | `internal/endpoint` | providers that supply endpoints and allowed-ips but are **untrusted for keys**: a key they name that is not proven is dropped and logged | ✅ |
 | 3.4 | `/run/norn/proven.json` | the verifier→enforcer interface of `ENFORCEMENT.md` part 9, written atomically, with its schema pinned | ✅ |
-| 3.5 | `nornd` | the daemon: verify, reconcile, alarm; **observe is the default** (D-005) and enforcing is opt-in | ⬜ |
+| 3.5 | `nornd` | the daemon; split | ⬜ |
+| 3.5a | `internal/agent` | one verify-and-reconcile cycle, and the failure semantics of `ENFORCEMENT.md` part 8 — above all, **a failed verification never widens or empties the peer table** | ✅ |
+| 3.5b | `cmd/nornd` | the binary: config, signals, the poll loop, and **observe as the default** (D-005) | ⬜ |
 | 3.6 | Fight detection and quarantine | N evictions in W → `CONTROL_PLANE_FIGHT`; `quarantine` fails closed **by choice, never by default** | ⬜ |
 | 3.7 | The wgctrl backend | the real interface behind the same seam, its dependency cost measured, and whatever can be tested without a kernel tested | ⬜ |
 | 3.8 | Phase 3 gate audit | each line read against what is actually tested, and what the lab still owes | ⬜ |
@@ -515,3 +517,12 @@ the signer keeps one job — decide, and place the entry in the log.
   - **The file is replaced atomically, and a test races 200 reads against 50 rewrites.** It is rewritten every `T_poll` forever while something else reads it; a reader that caught it half-written would see a peer set that never existed.
   - `logclient.Result` now keeps the **signed** checkpoint, not just the parsed one. A parsed checkpoint is a fact; the note is the evidence for it, and a bundle has to carry evidence.
   - Go: 35 packages, 313 tests; `go test` and staticcheck green.
+- **3.5a `internal/agent` — the cycle, and the failures it is not allowed to turn into outages.**
+  - **The cycle is a method, not a loop.** What is worth testing is what happens when the log is unreachable, when it serves a tampered checkpoint, when somebody else is writing to the table — and as a function call each of those is a test rather than a race against a timer.
+  - **A log going down is an outage of Norn's ability to learn new facts. It is not a reason to disconnect a network.** Tested in all three modes: an unreachable log leaves the peer table byte-for-byte as it was and writes **nothing**. The tempting bug is owner mode "reconciling" against an empty proven set and calling `ReplacePeers` with it — a total outage, caused by the security tool, protecting nobody.
+  - **And an intruder must not be able to wait for the log to go down.** Once something has verified, a later failure keeps enforcing *those* facts: the log is deleted mid-test, a rogue key is injected, and watchdog mode still evicts it. That the facts are older than they look is said out loud (`ENFORCING_ON_STALE_STATE`) rather than left for an operator to infer.
+  - **A tampered checkpoint is not a log outage — it is worse — and the table survives it too.** Appending a line to the signed note makes verification fail; the interface is untouched.
+  - **A failed cycle does not republish `proven.json`.** A stale file would be worse than none, because it would look current.
+  - **Observe is the default when no mode is set** (D-005), and a missing or unusable trust file means **refuse to start** in every mode — a node that started without an anchor would enforce nothing while looking like it worked.
+  - Everything the agent touches is an interface, so these tests substitute a directory for a log and a fake for a kernel. Not one of them needs a WireGuard device.
+  - Go: 36 packages, 325 tests; `go test` and staticcheck green.
