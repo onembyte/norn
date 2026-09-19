@@ -52,7 +52,7 @@ and if the spec is silent, that is a defect to record, not a coin to flip.
 | # | Checkpoint | Done when | Status |
 |---|---|---|---|
 | 1.1 | `internal/cbor` | deterministic encoder + strict decoder; every encoding negative rejected, every valid entry round-trips byte-exact | ✅ |
-| 1.2 | `internal/entry` | envelope, `kid`, preimage, sign/verify, entry and leaf hashes; all 16 entry mirrors reproduced | ⬜ |
+| 1.2 | `internal/entry` | envelope, `kid`, preimage, sign/verify, entry and leaf hashes; all 16 entry mirrors reproduced | ✅ |
 | 1.3 | `internal/state` | state schema + canonical JSON (§14) byte-exact against `state.json` | ⬜ |
 | 1.4 | `internal/replay` | every `(index, reason)` in the manifest, and all 12 `genesis/` aborts | ⬜ |
 | 1.5 | `internal/note`, `internal/trust` | receipt verifies; fingerprint reproduced; all 14 `trust-bad/` rejected | ⬜ |
@@ -191,3 +191,8 @@ residue (low severity) and F10 (§16, deferred to the enrolment CLI by design).
 - **2026-09-19 · 1.1 `internal/cbor`** — deterministic encoder and strict decoder written from §4.0, tests first. All RFC 8949 examples in the profile, the §4.1 map-key trap, 17 non-canonical/out-of-profile rejections, the depth and size limits including a truncated length header that must fail without allocating, and **every valid entry in the suite round-trips byte-exact** (80+ files across `entries/` and `log/`).
   - **First payoff from starting Phase 1 → D-048.** My round-trip test skips anything that fails to decode, which would pass with a decoder that rejects nothing — so I added a test naming each encoding negative and requiring it to fail. `bad-unsorted-sigs` did **not** fail, and shouldn't: CBOR canonicalises *map* key order and says nothing about *array* order, so "sigs sorted by kid" is a schema rule enforced at §5.1 step 3, not something a codec can see. §4.0 now states the layering and §12.1 files the vector under schemas. A misclassification the Python reference could never surface, because there the two layers live in one process.
   - Go: 6 packages, 21 tests, `make ci` + staticcheck green.
+- **2026-09-19 · 1.2 `internal/entry`** — typed envelope model, `kid`, canonical encode, domain-separated preimage, sign/verify, entry and leaf hashes. Written from §3/§4.0–§4.2, tests first, green on the first run against the vectors.
+  - All **16 entry mirrors** reproduced: entry hash, leaf hash, preimage hash and byte length; every entry re-encodes **byte-exact from the typed model**, which is a real round trip rather than a copy of the input. All 21 Ed25519 keys in `keys.json` confirmed to derive from their seeds and to match their recorded `kid`. Every signature in the catalogue verifies.
+  - The model is typed rather than map-shaped, so the compiler enforces what the schema says, and `After` is a pointer — absent is genuinely distinct from zero, as §4.0 requires.
+  - Two layering checks that matter more than the happy path: the envelope-schema negatives (unknown key, missing `sigs`, malformed `kid`, `role` outside the enum, short `sig`, unsorted `sigs`) must be rejected **here**, and a **forged signature must still decode cleanly** — refusing it at the decoder would turn a `threshold` vector into a `decode` one and quietly break the D-043 guarantee.
+  - Go: 7 packages, 29 tests, `make ci` + staticcheck green.
