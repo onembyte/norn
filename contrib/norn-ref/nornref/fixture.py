@@ -19,7 +19,8 @@ DEVICES = ["nas", "laptop", "pi-cam"]
 
 WITNESSES = ["pi", "vps", "friend"]
 
-EXTRA_KEYS = (["signer3", "root4", "logkey", "logkey2", "spare", "printer", "nas-id2", "printer-id2", "escaped", "contractor", "halfsigned", "labelcap", "rootrevoked"]
+EXTRA_KEYS = (["signer3", "root4", "logkey", "logkey2", "spare", "printer", "nas-id2", "printer-id2", "escaped", "contractor", "halfsigned", "labelcap",
+              "rootrevoked", "stranger"]
               + [f"witness-{w}" for w in WITNESSES])
 
 KEYS: dict[str, keys.Ed25519] = {
@@ -495,6 +496,19 @@ def log() -> list[LogItem]:
     # malformed body is `threshold` and never reaches the body check.
     b.add(f"{b.index}-bad-undersigned-malformed", b.build(
         "signer_thr", {"thr": 2, "surprise": "extra"}, [("root1", "root")]), "threshold")
+
+    # A signer that was REMOVED earlier must be inert. Nothing tested this,
+    # which means nothing tested the point of `signer_remove`: signer2 is
+    # removed at entry 21, and this note is signed by it alone. The Phase 1
+    # gate names this case explicitly.
+    b.add(f"{b.index}-bad-removed-signer", b.build(
+        "note", {"text": "signed by a removed signer"},
+        [("signer2", "signer")]), "threshold")
+
+    # ...and a key that was never in the set at all.
+    b.add(f"{b.index}-bad-stranger-signer", b.build(
+        "note", {"text": "signed by a stranger"},
+        [("stranger", "signer")]), "threshold")
 
     # A signature that is syntactically perfect and cryptographically wrong.
     # Without these an implementation that never calls Ed25519 reproduces the

@@ -56,7 +56,7 @@ and if the spec is silent, that is a defect to record, not a coin to flip.
 | 1.3 | `internal/cjson`, `internal/state` | canonical JSON + state schema; every JSON file in the suite round-trips byte-exact | ✅ |
 | 1.4 | `internal/replay` | every `(index, reason)` in the manifest, `state.json` byte-exact, and all 12 `genesis/` aborts | ✅ |
 | 1.5 | `internal/note`, `internal/trust` | receipt verifies; fingerprint reproduced; all 14 `trust-bad/` rejected | ✅ |
-| 1.6 | Fuzzing | `go test -fuzz` on the decoder and on replay: 1 h each, zero panics | ⬜ |
+| 1.6 | Fuzzing | 83.8M executions across three targets, zero failures | ✅ |
 | 1.7 | Cross-implementation check | entries rebuilt in Go from their semantic values, signed independently, bytes identical to the shipped vectors | ✅ |
 
 ---
@@ -223,3 +223,7 @@ residue (low severity) and F10 (§16, deferred to the enrolment CLI by design).
   - This is the strongest form of the claim Phase 1 was for: it is not "Go agrees about bytes it was handed" but "**Go, given the same inputs, produces the same bytes**". The gate line originally said "vectors re-exported from Go and diffed", which would have meant reimplementing the whole Python fixture in Go — a lot of duplicated fixture code testing the same property less directly.
   - **Fuzz campaign, target 1 of 3 complete: 54,625,215 executions, PASS** on the canonical round-trip property. Targets 2 and 3 still running; 1.6 stays open until all three finish.
   - Go: 12 packages, 62 tests.
+- **2026-09-19 · 1.6 closed — 83,791,152 fuzz executions, zero failures.** Canonical round-trip 54.6M · replay on arbitrary bytes 26.8M · replay after a valid genesis 2.4M. The third is slowest per execution because it replays two entries and serialises the state each time, which is the point: it exercises the path where a hostile operator has state to corrupt.
+- **2026-09-19 · Phase 1 gate PASSED — all four lines.** Checking the second line by hand rather than assuming found **two named rejections with no vector at all**: "wrong signer" and "signer revoked in an earlier entry". The second is the more serious — nothing in the suite tested that a **removed signer key becomes inert**, which is the entire purpose of `signer_remove` and the recovery path D-028 argues for at length. Now vectored, with an isolation test proving the *same* entry is accepted while signer2 is still a signer and rejected after removal, and a Go test that fails the build if any of the six stops being exercised.
+  - That test could not simply relocate the fixture's own entry to an earlier position: `after` is its index in the full log, so moving it earlier trips the ordering guard instead of the rule under test. It builds an equivalent entry at the position it would occupy — the same trap D-044 is about, met again from the other side.
+  - **Phase 1 complete.** Go: 12 packages, 65 tests, 91-entry log, 239 vector files. `make ci`, staticcheck, `vectors-check` and the Python suite (157 tests) all green.

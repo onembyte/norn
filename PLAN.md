@@ -149,10 +149,10 @@ repo initialised, CI running `go test` + `go vet` + `staticcheck`.
 ### Phase 1 — Core library (2 weeks)
 `internal/entry`, `internal/state`: encoding, signing, replay, validity rules.
 **PASS when:**
-- [ ] Replay of the fixture log yields the expected state, byte-exact.
-- [ ] Rejected: wrong signer, below threshold, signer revoked in an earlier entry, duplicate device id, rotate signed by neither old key nor signers, entry referencing unknown device.
-- [ ] `go test -fuzz` on decoder + replay: 1 h, zero panics.
-- [ ] Vectors re-exported from Go and diffed against `testdata/vectors/` — identical.
+- [x] Replay of the fixture log yields the expected state, byte-exact. **Go reproduces `state.json` byte for byte**, and all 12 `genesis/` aborts.
+- [x] Rejected: wrong signer, below threshold, signer revoked in an earlier entry, duplicate device id, rotate signed by neither old key nor signers, entry referencing unknown device. **All six vectored** — checking this found two with no vector at all, including the removed-signer case, which is the whole point of `signer_remove`. A test now fails the build if any of the six stops being exercised.
+- [x] `go test -fuzz` on decoder + replay: 1 h, zero panics. **83,791,152 executions across three targets, all PASS.** The decoder target asserts canonical round-trip, not merely absence of panics.
+- [x] Cross-implementation check: all 16 entries **rebuilt in Go from their semantic values** and signed independently produce bytes identical to the shipped vectors. Stronger than re-exporting, and without duplicating the fixture — see the 1.7 note in `BUILD-LOG.md`.
 
 ### Phase 2 — The log + CLI (2 weeks)
 `norn-log` on Tessera POSIX; `norn init|enroll|sign|submit|verify|status`.

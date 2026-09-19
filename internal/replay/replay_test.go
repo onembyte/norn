@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -190,5 +191,49 @@ func TestEmptyLogYieldsTheZeroState(t *testing.T) {
 	}
 	if len(st.Devices) != 0 || len(st.Roots) != 0 {
 		t.Error("an empty log leaves the zero state")
+	}
+}
+
+// The Phase 1 gate names six rejections that must be exercised. Checking that
+// by hand found two with no vector at all -- including "signer revoked in an
+// earlier entry", which is the entire point of signer_remove. This keeps the
+// gate honest from now on.
+func TestTheGatesNamedRejectionsAreAllExercised(t *testing.T) {
+	dir := filepath.Join(vectorRoot(), "log")
+	anchor, entries, m := loadCase(t, dir)
+	st := Replay(anchor, entries)
+
+	reasonAt := map[int]string{}
+	for _, r := range st.Rejected {
+		reasonAt[int(r.Index)] = r.Reason
+	}
+	nameAt := map[int]string{}
+	for _, e := range m.Entries {
+		nameAt[e.Index] = e.Name
+	}
+
+	cases := []struct{ gateName, vectorSuffix, reason string }{
+		{"wrong signer", "bad-stranger-signer", ReasonThreshold},
+		{"below threshold", "bad-one-of-two-signers", ReasonThreshold},
+		{"signer revoked earlier", "bad-removed-signer", ReasonThreshold},
+		{"duplicate device id", "bad-dup-id", ReasonDupID},
+		{"rotate without the required signature", "bad-rotate-no-new-key-sig", ReasonNoDeviceSig},
+		{"entry referencing an unknown device", "bad-unknown-device", ReasonUnknownDevice},
+	}
+	for _, c := range cases {
+		var found bool
+		for index, name := range nameAt {
+			if !strings.HasSuffix(name, c.vectorSuffix) {
+				continue
+			}
+			found = true
+			if reasonAt[index] != c.reason {
+				t.Errorf("%s (%s): reason %q, want %q",
+					c.gateName, name, reasonAt[index], c.reason)
+			}
+		}
+		if !found {
+			t.Errorf("%s: no vector named *-%s", c.gateName, c.vectorSuffix)
+		}
 	}
 }
