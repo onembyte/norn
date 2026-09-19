@@ -1,0 +1,64 @@
+"""Key material for the reference implementation (SPEC.md §3).
+
+Seeds are derived from names so every vector is reproducible from this file
+alone. These are TEST keys: the derivation is deliberately public.
+"""
+
+from __future__ import annotations
+
+import hashlib
+from dataclasses import dataclass
+
+from nacl.signing import SigningKey, VerifyKey
+from nacl.exceptions import BadSignatureError
+
+SEED_PREFIX = b"norn/testvector/v1\n"
+
+
+def kid(public: bytes) -> str:
+    """Key id: lowercase hex of SHA-256(pk)[0:8] (SPEC §4.0)."""
+    return hashlib.sha256(public).digest()[:8].hex()
+
+
+@dataclass(frozen=True)
+class Ed25519:
+    """An Ed25519 keypair. `public` is the 32-byte verify key."""
+
+    seed: bytes
+    public: bytes
+
+    @classmethod
+    def from_seed(cls, seed: bytes) -> "Ed25519":
+        if len(seed) != 32:
+            raise ValueError("seed must be 32 bytes")
+        return cls(seed, bytes(SigningKey(seed).verify_key))
+
+    @classmethod
+    def from_name(cls, name: str) -> "Ed25519":
+        return cls.from_seed(hashlib.sha256(SEED_PREFIX + name.encode("utf-8")).digest())
+
+    @property
+    def id(self) -> str:
+        return kid(self.public)
+
+    def sign(self, message: bytes) -> bytes:
+        return SigningKey(self.seed).sign(message).signature
+
+
+def verify(public: bytes, message: bytes, signature: bytes) -> bool:
+    """Ed25519 verification; False rather than an exception on any failure."""
+    if len(public) != 32 or len(signature) != 64:
+        return False
+    try:
+        VerifyKey(public).verify(message, signature)
+    except (BadSignatureError, ValueError):
+        return False
+    return True
+
+
+def x25519_public(name: str) -> bytes:
+    """A deterministic 32-byte X25519 public key for vectors (WireGuard peer key)."""
+    from nacl.public import PrivateKey
+
+    seed = hashlib.sha256(SEED_PREFIX + b"wg/" + name.encode("utf-8")).digest()
+    return bytes(PrivateKey(seed).public_key)
