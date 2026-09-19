@@ -152,3 +152,48 @@ func TestDecodeDoesNotVerify(t *testing.T) {
 		t.Fatal("Check accepted a forged signature")
 	}
 }
+
+func TestNewValidatesUpFront(t *testing.T) {
+	pub, _ := keypair(t)
+	net := bytes.Repeat([]byte{7}, NetLen)
+	wg := bytes.Repeat([]byte{8}, 32)
+
+	if _, err := New(net, "pi-cam", pub, wg, 1, nil, nil); err != nil {
+		t.Fatalf("a good request was refused: %v", err)
+	}
+	// An empty label map and an absent one must encode identically: a caller
+	// passing an empty map should not sign a different object.
+	withEmpty, err := New(net, "pi-cam", pub, wg, 1, map[string]string{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	withNil, err := New(net, "pi-cam", pub, wg, 1, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err := Preimage(withEmpty)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := Preimage(withNil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(a, b) {
+		t.Error("an empty label map changed the signed bytes")
+	}
+
+	past := uint64(0)
+	for _, bad := range []struct {
+		why string
+		run func() (*Request, error)
+	}{
+		{"uppercase device_id", func() (*Request, error) { return New(net, "Pi-Cam", pub, wg, 1, nil, nil) }},
+		{"short net", func() (*Request, error) { return New(net[:8], "pi-cam", pub, wg, 1, nil, nil) }},
+		{"expires before ts", func() (*Request, error) { return New(net, "pi-cam", pub, wg, 1, nil, &past) }},
+	} {
+		if _, err := bad.run(); err == nil {
+			t.Errorf("New accepted a request with a %s", bad.why)
+		}
+	}
+}

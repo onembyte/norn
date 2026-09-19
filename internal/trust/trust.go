@@ -309,3 +309,26 @@ func (v *bigBits) base32(alphabet string) []byte {
 	}
 	return out
 }
+
+// NetFromOrigin is the inverse of OriginFor.
+//
+// A device enrolling for the first time has no trust file yet -- it imports one
+// only after it has been enrolled -- so the only way it can name its network is
+// the origin string, which is public and printable. Case is accepted either
+// way: base32's alphabet has one case, and an operator reading an origin off a
+// screen should not have to care.
+func NetFromOrigin(origin string) ([]byte, error) {
+	const prefix = "norn/"
+	if !strings.HasPrefix(origin, prefix) {
+		return nil, trustErrorf("an origin starts with %q: %q", prefix, origin)
+	}
+	encoded := strings.ToUpper(strings.TrimPrefix(origin, prefix))
+	net, err := base32.StdEncoding.WithPadding(base32.NoPadding).DecodeString(encoded)
+	if err != nil {
+		return nil, trustErrorf("origin is not base32: %v", err)
+	}
+	if len(net) != netLen {
+		return nil, trustErrorf("origin decodes to %d bytes, want %d", len(net), netLen)
+	}
+	return net, nil
+}

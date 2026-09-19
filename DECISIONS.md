@@ -488,3 +488,30 @@ standard library (0 modules, but invents a format and picks a GPU-friendly KDF
 for key material, which D-029 already refused for a fingerprint) · importing
 `x/crypto/ssh` to read the encrypted kind (five modules for a case whose
 passphrase would sit next to the key).
+
+## D-056 · `rsc.io/qr` for the QR, and the uppercase request form (2026-09-19, 2.9c)
+`ENROLLMENT.md` part 7 rule 4 is binding — any flow needing a second device
+works with a phone camera — and a request is ~250 characters, which nobody
+retypes correctly. **Measured: one module, no transitive dependencies, three
+packages.** The graph goes 7 → 8. Hand-writing a QR encoder would mean
+Reed-Solomon over GF(256), version selection and mask scoring, none of it
+Norn's subject, and — unlike the ssh-agent protocol — there is **no reference
+implementation on this machine to test it against**, so it would be exactly the
+self-agreement this project refuses.
+
+What Norn does own is the part a library cannot check: the quiet zone and the
+light/dark mapping. A code with no quiet zone, or with its modules inverted, is
+a valid QR that no scanner reads. So `Matrix` is built separately from the
+drawing and checked module-for-module against the library's own map, the quiet
+zone is asserted on all four sides, and the terminal colours are written
+explicitly rather than relying on half-blocks, which would invert on a
+light-background terminal.
+
+**The QR carries the uppercase request.** §16.2 allows the uppercase form
+precisely because QR alphanumeric mode has no lowercase letters, and the test
+measures the saving rather than assuming it: the same payload is a strictly
+smaller code in uppercase. The lowercase form is what goes to stdout.
+
+**Honest limit:** no QR *decoder* was available here, so nothing in CI proves a
+phone can read it. That proof is a `PLAN.md` Phase 2 gate line — end-to-end
+enrolment with a phone camera, timed — and it stays open until the lab runs it.

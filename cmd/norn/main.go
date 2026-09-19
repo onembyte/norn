@@ -33,6 +33,7 @@ func main() {
 type command func(args []string) error
 
 var commands = map[string]command{
+	"enroll": enrollCmd,
 	"verify": verifyCmd,
 }
 
@@ -40,6 +41,7 @@ func usage() {
 	fmt.Fprint(os.Stderr, `usage: norn <command> [flags]
 
 commands:
+  enroll   build a signed enrollment request for this device (SPEC §16)
   verify   fetch a log, check it against a trust anchor, and report its state
 
 Run "norn <command> -h" for a command's flags.

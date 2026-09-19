@@ -84,6 +84,24 @@ func (r *Request) toMap(withSig bool) (map[string]any, error) {
 	return m, nil
 }
 
+// New builds an unsigned request, checking the field rules now rather than at
+// signing time, so a caller learns about a bad device_id before it asks a
+// hardware token to touch-confirm anything.
+func New(net []byte, deviceID string, devicePK, wgPK []byte, ts uint64,
+	labels map[string]string, expires *uint64) (*Request, error) {
+	r := &Request{
+		V: Version, TS: ts, Net: net, DeviceID: deviceID,
+		DevicePK: devicePK, WGPK: wgPK, Labels: labels, Expires: expires,
+	}
+	if len(r.Labels) == 0 {
+		r.Labels = nil
+	}
+	if err := r.validate(false); err != nil {
+		return nil, err
+	}
+	return r, nil
+}
+
 // Encode returns the deterministic CBOR form, signature included.
 func Encode(r *Request) ([]byte, error) {
 	m, err := r.toMap(true)
