@@ -25,16 +25,9 @@ func verifyCmd(args []string) error {
 		return fmt.Errorf("-trust is required: a verifier without an anchor verifies nothing")
 	}
 
-	raw, err := os.ReadFile(*trustPath)
-	if err != nil {
-		return fmt.Errorf("reading the trust file: %w", err)
-	}
-	anchor, err := trust.Parse(raw)
+	anchor, err := loadAnchor(*trustPath)
 	if err != nil {
 		return err
-	}
-	if err := anchor.Validate(); err != nil {
-		return fmt.Errorf("the trust file is not a usable anchor: %w", err)
 	}
 
 	location := *logLocation

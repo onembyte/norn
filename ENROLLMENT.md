@@ -92,7 +92,12 @@ with. See `SPEC.md` §16.1.
 
 Threshold signing (`signer_thr > 1`): each `norn sign` appends one signature to the
 entry; the pending inbox (or a pasted blob) carries partials; `norn submit` refuses
-until the threshold is met. Every prompt shows the entry hash and the human summary;
+until the threshold is met. Appending is safe because the preimage excludes `sigs`
+(`SPEC.md` §4.2), so a second signer changes nothing the first one signed — and
+`norn sign` never rewrites `ts` or `after` on an entry that already carries
+signatures, which would invalidate them. It reports progress after every run
+("2 of 2 signer signatures. Ready for `norn submit`"), because a signer who stops
+one signature short has done nothing at all. Every prompt shows the entry hash and the human summary;
 `--yes` exists for signer entries in scripts and **does not exist** for root entries.
 
 ## 4. Rotation, revocation, expiry
