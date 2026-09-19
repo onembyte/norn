@@ -304,3 +304,30 @@ own tests, both in CI; and `internal/specdoc` gained Go-side checks that need no
 Python — no orphan files, every manifest entry has its `.cbor` and a matching
 `.reason`, names agree with indices, and the anchor's `genesis_hash` really is
 the leaf hash of entry 0.
+
+## D-043 · Signature verification must be provably load-bearing (2026-09-19, 0.13a)
+Gate run 4 stubbed Ed25519 verification to return `true` and reproduced the
+entire manifest. Every "bad signature" negative in the suite was detectable
+without cryptography — a *missing* signature, too *few*, one by the *wrong*
+device, a *mislabelled* role. The one thing none of them did was **fail to
+verify**. Two vectors now carry signatures that are syntactically perfect and
+cryptographically wrong, and a test fails the build if stubbing verification
+ever stops changing the outcome. A conformance suite that a signature-blind
+implementation passes is not a conformance suite.
+
+## D-044 · A negative must fail for its own rule, by one of two constructions (2026-09-19, 0.13a)
+Patching a byte inside the signature preimage breaks the signature, so the
+vector is rejected for that instead of the rule it names. Either the patch
+**canonicalises away** (a stripped tag, a joined indefinite string, a resolved
+duplicate key, reordered signatures) and the original signatures still verify,
+or it **cannot** (invalid UTF-8, an oversized integer or map key) and the entry
+must be **re-signed over the patched preimage**. A test asserts one of the two
+holds for every encoding negative, and that no entry's `after` exceeds its own
+index. Three vectors violated this and one had *three* independent faults.
+
+## D-045 · The spec cites vectors by name, never by index (2026-09-19, 0.13a)
+§12.1's coverage table drifted twice, most recently with two different offsets
+in the same table, because inserting a vector renumbers every later one. Names
+are stable under insertion; indices are not. `internal/specdoc` now fails the
+build if a citation stops resolving against the manifest, so the table cannot
+quietly become fiction again.

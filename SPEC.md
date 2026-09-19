@@ -73,12 +73,23 @@ the map-key cap below:
 `undefined` — are belt-and-braces: no Norn field has a type that would accept
 such a value, so an implementation with a typed model rejects them anyway and a
 vector cannot tell the two reasons apart. The *encoding* bans are the ones that
-bite, because a lenient decoder produces a **valid entry** from them: a
-tag-wrapped value unwraps, an indefinite-length string concatenates, a
-duplicate key resolves last-wins, a non-shortest integer has the same value,
-and an unsorted map has the same contents. Those are the cases the suite
-isolates (`log/63`–`66`), each alongside the unpatched control entry (`62`) it
-is a single-byte-class patch of.
+bite, because a lenient decoder produces a **valid entry** from them.
+
+A negative for one of those rules must fail for that rule **and nothing else**,
+which takes care, because the patch usually lands inside the signature
+preimage. Two constructions are used, and one of them must hold for every such
+vector:
+
+1. **The patch canonicalises away.** A stripped tag, a joined indefinite
+   string, a resolved duplicate key, reordered signatures — a lenient decoder
+   lands back on the control entry, so its original signatures still verify.
+2. **The patch cannot canonicalise** — invalid UTF-8, an integer above 2⁶³−1,
+   an oversized map key — so the entry is **re-signed over the patched
+   preimage**. Without this the vector is rejected for its broken signature and
+   the rule it names is never reached.
+
+Each such vector ships beside the unpatched control it is a patch of
+(`profile-base`, `labelcap-base`, `two-sig-base`).
 
 Derived values:
 
@@ -563,24 +574,25 @@ Stated precisely, because a suite that looks complete is worse than one that
 admits its holes, and an inaccurate coverage claim is the same failure wearing a
 different hat.
 
-**Vectored, including negative cases:**
+**Vectored, including negative cases.** Vectors are cited by **name**, never by
+index: indices shift whenever a case is inserted, and every previous edition of
+this table drifted out of date the moment one was.
 
 | area | positive | negative |
 |---|---|---|
-| §4.0 encoding profile | every entry, and the controls (62, 76, 77) | non-shortest integer (56), `null` (57), unsorted map keys (58), tag (63), indefinite text (64), indefinite map (65), duplicate key (66), invalid UTF-8 (78), integer > 2⁶³−1 (79), 24-byte map key (80), unsorted `sigs` (81) |
-| §4.0/§4.3 schemas | labels (2, 50) | malformed `kid` (53), `sigs` omitted (45), `sigs: []` (52), `role` outside the enum (44), unknown envelope key (59), unknown body key (60), `device_id` regex (67, 68), `pk` length (69), `sig` length (70), oversized `text` (71) |
-| §4.2 signatures, hashes, preimage | 16 entry mirrors | wrong `net` (32) |
-| §5 replay, 15 of the 16 reason codes | 82-entry log | 49 rejecting entries |
+| §4.0 encoding profile | every entry; controls `profile-base`, `labelcap-base`, `two-sig-base` | `bad-cbor-nonshortest`, `bad-cbor-null`, `bad-cbor-unsorted-keys`, `bad-tag-wrapped-value`, `bad-indefinite-text`, `bad-indefinite-map`, `bad-duplicate-map-key`, `bad-invalid-utf8`, `bad-integer-too-large`, `bad-oversize-map-key`, `bad-unsorted-sigs` |
+| §4.0/§4.3 schemas | `enroll-laptop`, `enroll-unicode-labels` | `bad-kid-format`, `bad-missing-sigs`, `bad-empty-sigs`, `bad-unknown-role`, `bad-unknown-envelope-key`, `bad-unknown-body-key`, `bad-device_id-uppercase`, `bad-device_id-leading-dot`, `bad-pk-length`, `bad-sig-length`, `bad-text-too-long` |
+| §4.2 signatures, hashes, preimage | 16 entry mirrors | **`bad-forged-signer-sig`, `bad-forged-device-sig`** — syntactically perfect signatures that do not verify. Without these an implementation that never calls Ed25519 reproduces the whole manifest |
+| §4.4 `after` is a floor | `after-below-index` | `bad-after` |
+| §5 replay, 15 of the 16 reason codes | the log | 51 rejecting entries |
 | §5 `bad-genesis` | — | `genesis/`; it cannot appear in the log, since it aborts replay |
-| §5.1 check order | — | multi-fault entries 47, 48 |
-| §5.1 genesis | the log's entry 0 | nine abort paths in `genesis/`, including the undecodable entry 0 and the body invariants |
-| §5.2 `bad-thr` | — | both halves: value 0 (61) and value above the set size (19) |
-| §5.3 state, incl. D-028 and `expires` | `state.json`, contractor device (51) | below-threshold `signer_remove` accepted (54) and recovered (55) |
-| §4.4 `after` is a floor | accepted with `after` < index (72) | `after` > index (10) |
-| §5.1 seen set, §4.3 roles | — | repeat of a *rejected* entry (73), partial signer quorum (74), role not matching the key's current role (75) |
+| §5.1 genesis | the log's entry 0 | nine abort paths in `genesis/` |
+| §5.1 seen set, §4.3 roles | — | `bad-repeat-of-rejected`, `bad-one-of-two-signers`, `bad-role-mismatch` |
+| §5.2 `bad-thr` | — | both halves: `bad-thr-zero` and `bad-thr` (value above the set size) |
+| §5.3 state, incl. D-028 and `expires` | `state.json`, `enroll-contractor` | `signer_remove-below-threshold` accepted, then `signer_add-recover` |
 | §7 receipt | `receipt.note` | — |
-| §9 trust file, fingerprint | `trust.cbor` | 12 rejected anchors, `trust-bad/`, including a log key named for another origin |
-| §14 canonical JSON | every `.json`; escaping torture (49, 50) | — |
+| §9 trust file, fingerprint | `trust.cbor` | 12 rejected anchors in `trust-bad/` |
+| §14 canonical JSON | every `.json`; `policy-escaping`, `enroll-unicode-labels` | — |
 
 **Not vectored, and therefore not binding on a second implementation:**
 

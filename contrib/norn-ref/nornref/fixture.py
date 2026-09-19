@@ -436,8 +436,9 @@ def log() -> list[LogItem]:
     # A control: the exact entry each encoding negative is a patch of. Without
     # it a reader cannot tell whether a negative is rejected for its one
     # deliberate fault or for something incidental.
-    b.add_raw(f"{b.index}-profile-base", profile_base(), None)
-    for name, raw in profile_negatives():
+    base_after = b.index
+    b.add_raw(f"{b.index}-profile-base", profile_base(base_after), None)
+    for name, raw in profile_negatives(base_after):
         b.add_raw(f"{b.index}-bad-{name}", raw, "decode")
     for name, raw in field_negatives():
         b.add_raw(f"{b.index}-bad-{name}", raw, "decode")
@@ -468,8 +469,15 @@ def log() -> list[LogItem]:
     # Controls for the last two encoding negatives, which patch a different
     # base than `profile_base`: a label key exactly at the 23-byte cap, and an
     # entry with two signatures in the correct kid order.
-    b.add_raw(f"{b.index}-labelcap-base", labelled_base(), None)
-    b.add_raw(f"{b.index}-two-sig-base", two_sig_base(), None)
+    b.add_raw(f"{b.index}-labelcap-base", labelled_base(base_after), None)
+    b.add_raw(f"{b.index}-two-sig-base", two_sig_base(base_after), None)
+
+    # A signature that is syntactically perfect and cryptographically wrong.
+    # Without these an implementation that never calls Ed25519 reproduces the
+    # entire manifest (gate run 4 proved it).
+    for name, raw in forged_signature_negatives(b.index):
+        reason = "no-device-sig" if "device" in name else "threshold"
+        b.add_raw(f"{b.index}-bad-{name}", raw, reason)
     return b.items
 
 
@@ -584,9 +592,9 @@ _REMOVE = object()
 # valid entry under a lenient decoder, so only enforcement of the encoding rule
 # rejects it. `decode_leniently` proves that rather than asserting it.
 
-def profile_base() -> bytes:
+def profile_base(after: int) -> bytes:
     """A plain, valid note entry: the thing each negative is a patch of."""
-    env = entry.new("note", NET, ts=T0 + 9000, after=62, body={"text": "profile probe"})
+    env = entry.new("note", NET, ts=T0 + 9000, after=after, body={"text": "profile probe"})
     return entry.encode(_signed(env, [("signer1", "signer")]))
 
 
@@ -658,32 +666,66 @@ def _unsorted_sigs(raw: bytes) -> bytes:
     return raw.replace(first + second, second + first, 1)
 
 
-def labelled_base() -> bytes:
+def labelled_base(after: int) -> bytes:
     """A valid enrolment carrying a 23-byte label key: the oversize control."""
-    env = entry.new("enroll", NET, ts=T0 + 9000, after=76, body={
+    env = entry.new("enroll", NET, ts=T0 + 9000, after=after, body={
         "device_id": "labelcap", "device_pk": KEYS["labelcap"].public,
         "wg_pk": WG["labelcap"], "labels": {"k" * 23: "at the cap"}})
     return entry.encode(_signed(env, [("labelcap", "device"),
                                       ("signer1", "signer"), ("signer3", "signer")]))
 
 
-def two_sig_base() -> bytes:
+def two_sig_base(after: int) -> bytes:
     """A valid note with two signatures: the sigs-ordering control."""
-    env = entry.new("note", NET, ts=T0 + 9000, after=76, body={"text": "profile probe"})
+    env = entry.new("note", NET, ts=T0 + 9000, after=after, body={"text": "profile probe"})
     return entry.encode(_signed(env, [("signer1", "signer"), ("root1", "root")]))
 
 
-def profile_negatives() -> list[tuple[str, bytes]]:
-    base = profile_base()
+def _patched_and_signed(after: int, patch, body: dict[str, Any] | None = None,
+                        kind: str = "note",
+                        signers: list[tuple[str, str]] | None = None) -> bytes:
+    """Apply `patch` to an entry and sign the PATCHED preimage.
+
+    Patching a byte inside the preimage and keeping the original signature
+    makes the vector over-determined: it is then rejected for the broken
+    signature, not for the encoding rule it names. Signing afterwards leaves
+    the rule as the only fault. `patch` is applied identically to the
+    with-signatures and without-signatures encodings, which is safe because it
+    only ever rewrites a value, never a map header.
+    """
+    signers = signers or [("signer1", "signer")]
+    body = body if body is not None else {"text": "profile probe"}
+    env = entry.new(kind, NET, ts=T0 + 9000, after=after, body=body)
+    unsigned = {k: v for k, v in env.items() if k != "sigs"}
+    preimage = entry.PREIMAGE_PREFIX + patch(cbor.encode(unsigned))
+    env["sigs"] = sorted(
+        ({"kid": KEYS[n].id, "role": r, "sig": KEYS[n].sign(preimage)}
+         for n, r in signers),
+        key=lambda sig: sig["kid"])
+    return patch(cbor.encode(env))
+
+
+def profile_negatives(base_after: int) -> list[tuple[str, bytes]]:
+    base = profile_base(base_after)
+    labels = {"k" * 23: "at the cap"}
+    enrol_body = {"device_id": "labelcap", "device_pk": KEYS["labelcap"].public,
+                  "wg_pk": WG["labelcap"], "labels": labels}
+    both = [("signer1", "signer"), ("signer3", "signer")]
     return [
+        # Patches outside the preimage, or that leave it byte-identical: the
+        # original signatures stay valid, so the encoding rule is the only fault.
         ("tag-wrapped-value", _tag_the_value(base, "ts")),
         ("indefinite-text", _indefinite_text(base, "profile probe")),
         ("indefinite-map", _indefinite_map(base)),
         ("duplicate-map-key", _duplicate_key(base)),
-        ("invalid-utf8", _invalid_utf8(base)),
-        ("integer-too-large", _integer_too_large(base, T0 + 9000)),
-        ("oversize-map-key", _oversize_map_key(labelled_base())),
-        ("unsorted-sigs", _unsorted_sigs(two_sig_base())),
+        # Patches inside the preimage: re-signed afterwards (see above).
+        ("invalid-utf8", _patched_and_signed(base_after, _invalid_utf8)),
+        ("integer-too-large", _patched_and_signed(
+            base_after, lambda raw: _integer_too_large(raw, T0 + 9000))),
+        ("oversize-map-key", _patched_and_signed(
+            base_after, _oversize_map_key, body=enrol_body, kind="enroll",
+            signers=[("labelcap", "device")] + both)),
+        ("unsorted-sigs", _unsorted_sigs(two_sig_base(base_after))),
     ]
 
 
@@ -747,6 +789,36 @@ def decode_leniently(raw: bytes) -> dict[str, Any]:
         raise ValueError(f"major {major}")
 
     return value()
+
+
+def forged_signature_negatives(after: int) -> list[tuple[str, bytes]]:
+    """Signatures that are syntactically perfect and cryptographically wrong.
+
+    Without these, an implementation that never calls Ed25519 at all reproduces
+    the whole manifest -- gate run 4 demonstrated exactly that. The kid resolves
+    in the declared role and the signature is 64 bytes, so only verification
+    itself separates these from valid entries.
+    """
+    def forge(sig: dict[str, Any]) -> dict[str, Any]:
+        flipped = bytearray(sig["sig"])
+        flipped[0] ^= 0x01
+        return {**sig, "sig": bytes(flipped)}
+
+    note_env = entry.new("note", NET, ts=T0 + 9000, after=after, body={"text": "forged"})
+    entry.sign(note_env, KEYS["signer1"], "signer")
+    note_env["sigs"] = [forge(note_env["sigs"][0])]
+
+    enrol = entry.new("enroll", NET, ts=T0 + 9000, after=after, body={
+        "device_id": "forged", "device_pk": KEYS["halfsigned"].public,
+        "wg_pk": WG["halfsigned"]})
+    _signed(enrol, [("halfsigned", "device"), ("signer1", "signer"), ("signer3", "signer")])
+    enrol["sigs"] = [forge(s) if s["kid"] == KEYS["halfsigned"].id else s
+                     for s in enrol["sigs"]]
+
+    return [
+        ("forged-signer-sig", cbor.encode(note_env)),
+        ("forged-device-sig", cbor.encode(enrol)),
+    ]
 
 
 def field_negatives() -> list[tuple[str, bytes]]:

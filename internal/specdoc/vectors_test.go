@@ -137,3 +137,64 @@ func hex(b []byte) string {
 	}
 	return string(out)
 }
+
+// TestSpecVectorCitationsResolve guards the failure that broke §12.1 twice:
+// the coverage table cited vectors by index, a later insertion shifted every
+// index, and the citations silently began naming the wrong entries. Citations
+// are by name now, and this fails the build if one stops resolving.
+func TestSpecVectorCitationsResolve(t *testing.T) {
+	root := vectorRoot(t)
+	m := loadManifest(t, filepath.Join(root, "log", "manifest.json"))
+	suffixes := map[string]bool{}
+	for _, e := range m.Entries {
+		if _, rest, ok := strings.Cut(e.Name, "-"); ok {
+			suffixes[rest] = true
+		}
+	}
+
+	spec, err := os.ReadFile(filepath.Join("..", "..", "SPEC.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	section := string(spec)
+	start := strings.Index(section, "### 12.1")
+	end := strings.Index(section, "## 13.")
+	if start < 0 || end < 0 {
+		t.Fatal("§12.1 not found")
+	}
+
+	// §5.2 reason codes share the "bad-" prefix with vector names but are not
+	// vectors; listing them keeps the heuristic honest rather than loose.
+	reasonCodes := map[string]bool{
+		"bad-genesis": true, "bad-thr": true,
+	}
+
+	for _, quoted := range backticked(section[start:end]) {
+		if !strings.HasPrefix(quoted, "bad-") && !strings.HasSuffix(quoted, "-base") {
+			continue
+		}
+		if reasonCodes[quoted] && !suffixes[quoted] {
+			continue
+		}
+		if !suffixes[quoted] {
+			t.Errorf("§12.1 cites vector %q, which no manifest entry matches", quoted)
+		}
+	}
+}
+
+func backticked(text string) []string {
+	var out []string
+	for {
+		i := strings.Index(text, "`")
+		if i < 0 {
+			return out
+		}
+		text = text[i+1:]
+		j := strings.Index(text, "`")
+		if j < 0 {
+			return out
+		}
+		out = append(out, text[:j])
+		text = text[j+1:]
+	}
+}
