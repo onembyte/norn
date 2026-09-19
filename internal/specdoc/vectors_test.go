@@ -3,8 +3,10 @@ package specdoc
 import (
 	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -257,4 +259,37 @@ func looksLikeFingerprint(s string) bool {
 		}
 	}
 	return true
+}
+
+// TestSpecLogSizeIsCurrent guards the third instance of the same failure: a
+// number copied from the suite into SPEC.md and left behind when the suite
+// moved. §12 said the replay fixture was 82 entries while it had been 91 since
+// checkpoint 1.x -- stale in exactly the way the fingerprint example was.
+func TestSpecLogSizeIsCurrent(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join(vectorRoot(t), "log", "manifest.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest struct {
+		Entries []struct{} `json:"entries"`
+	}
+	if err := json.Unmarshal(raw, &manifest); err != nil {
+		t.Fatal(err)
+	}
+
+	spec, err := os.ReadFile(filepath.Join("..", "..", "SPEC.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := fmt.Sprintf("**%d entries**", len(manifest.Entries))
+	if !strings.Contains(string(spec), want) {
+		t.Errorf("SPEC.md §12 does not say %s; the fixture has %d entries and the "+
+			"spec has drifted", want, len(manifest.Entries))
+	}
+	countRE := regexp.MustCompile(`\*\*(\d+) entries\*\*`)
+	for _, m := range countRE.FindAllStringSubmatch(string(spec), -1) {
+		if m[0] != want {
+			t.Errorf("SPEC.md quotes %s, but the fixture has %d entries", m[0], len(manifest.Entries))
+		}
+	}
 }

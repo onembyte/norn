@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 
 	"github.com/onembyte/norn/internal/entry"
+	"github.com/onembyte/norn/internal/fields"
 	"github.com/onembyte/norn/internal/state"
 )
 
@@ -70,49 +71,28 @@ func init() {
 }
 
 const (
-	maxLabels     = 32
-	maxLabelValue = 256
-	maxText       = 4096
-	maxReason     = 256
-	maxName       = 64
+	maxText   = 4096
+	maxReason = 256
+	maxName   = 64
 )
 
 func deviceID(body map[string]any) (string, error) {
-	id, ok := body["device_id"].(string)
-	if !ok || len(id) < 1 || len(id) > 64 {
+	id, err := fields.DeviceID(body["device_id"])
+	if err != nil {
 		return "", rejectWith(ReasonDecode)
-	}
-	for i := 0; i < len(id); i++ {
-		c := id[i]
-		ok := (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')
-		if i > 0 {
-			ok = ok || c == '.' || c == '-'
-		}
-		if !ok {
-			return "", rejectWith(ReasonDecode)
-		}
 	}
 	return id, nil
 }
 
 func labelsOf(body map[string]any) (map[string]string, error) {
-	raw, present := body["labels"]
-	if !present {
-		return map[string]string{}, nil
-	}
-	m, ok := raw.(map[string]any)
-	if !ok || len(m) > maxLabels {
+	labels, err := fields.Labels(body["labels"])
+	if err != nil {
 		return nil, rejectWith(ReasonDecode)
 	}
-	out := make(map[string]string, len(m))
-	for k, v := range m {
-		text, ok := v.(string)
-		if !ok || len(text) > maxLabelValue {
-			return nil, rejectWith(ReasonDecode)
-		}
-		out[k] = text
+	if labels == nil {
+		return map[string]string{}, nil
 	}
-	return out, nil
+	return labels, nil
 }
 
 func hEnroll(r *replayer, st *state.State, env *entry.Envelope, index uint64) error {

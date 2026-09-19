@@ -386,3 +386,36 @@ Who writes the bytes does not matter; whether the bytes are right does.
 Upgrade trigger, recorded so this is falsifiable: adopt Tessera when the log
 outgrows a single directory, needs more than one writer, or needs a cloud
 backend — i.e. when its actual value is being used rather than paid for.
+
+## D-050 · bech32m for the request text form, minus two BIP rules (2026-09-19, 2.9a)
+HRP `norn`, checksum constant `0x2bc830a3`. **Dropped:** BIP-173's 90-character
+limit, which is sized for addresses while a request is ~250 characters — and the
+deviation is asserted narrowly in both implementations, so every *other* invalid
+vector still fails. **Refused:** plain bech32, whose only difference is the
+checksum constant; accepting both would accept the mutation the constant exists
+to catch, and the negative vector proves it with the same payload under the
+other constant. Uppercase is accepted because QR alphanumeric mode has no
+lowercase; mixed case is not. Rejected: base64url (not QR-alphanumeric, no
+checksum) · raw hex (twice the characters) · a Bitcoin bech32 library (a
+dependency for 120 lines, checked against the BIP's own vectors instead).
+
+## D-051 · One module owns the §2/§4.0 field rules (2026-09-19, 2.9a)
+`nornref/fields.py` and `internal/fields`. Entry bodies (§4.3) and enrollment
+requests (§16.1) share `device_id`, `labels`, key-length and uint rules; the
+second copy was about to be written. **Extracting them found a live divergence:**
+the reference accepted a CBOR `true` wherever a uint was required, because
+`isinstance(True, int)` is true in Python, while Go's type switch refused it —
+so the two implementations disagreed about whether `{"expires": true}` is a
+valid `enroll` body. No vector covered it, so nothing failed. Now both refuse,
+and `requests-bad/bool-expires` binds a third implementation to the same answer.
+
+## D-052 · Each vector generator prunes only what it owns (2026-09-19, 2.9a)
+`gen_vectors.py` declares `OWNED` and `FOREIGN` and prunes inside `OWNED` only;
+a path in neither stops the run. Until this checkpoint every `make vectors`
+silently deleted `served/` and `proofs/` — eleven files — because prune removed
+whatever that run had not written, and the two-provenance split of 2.7 had
+reached `vectors-check` without reaching the generator. The Go generator already
+owned its two directories by rebuilding them wholesale. Rejected: a denylist of
+foreign paths (a new foreign directory would be deleted again) · dropping prune
+(it exists because seven orphans from a renumbering survived three conformance
+runs).

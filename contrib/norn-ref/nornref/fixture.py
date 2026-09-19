@@ -906,3 +906,121 @@ def field_negatives() -> list[tuple[str, bytes]]:
         ("sig-length", cbor.encode(bad_sig)),
         ("text-too-long", entry.encode(long_note)),
     ]
+
+
+# -- enrollment requests (SPEC §16) ---------------------------------------
+
+def _request(device: str, key_name: str, wg_name: str, ts_offset: int,
+             **extra: Any) -> dict[str, Any]:
+    from . import enrollreq
+    req = enrollreq.new(net=NET, device_id=device, device_pk=KEYS[key_name].public,
+                        wg_pk=WG[wg_name], ts=T0 + ts_offset, **extra)
+    return enrollreq.sign(req, KEYS[key_name])
+
+
+def enroll_requests() -> list[tuple[str, dict[str, Any]]]:
+    """Requests a signer MUST accept, once it has verified the signature."""
+    return [
+        ("req-minimal", _request("pi-cam", "pi-cam", "pi-cam", 10)),
+        ("req-labelled", _request("laptop", "laptop", "laptop", 20,
+                                  labels={"ip": "10.9.0.11/32", "owner": "franco"},
+                                  expires=T0 + 30 * 86400)),
+        # Mirrors `enroll-unicode-labels`: the text form must survive a label
+        # that is not ASCII, because canonical JSON and CBOR disagree about
+        # what "length" means for one (SPEC §14.2).
+        ("req-unicode", _request("nas", "nas", "nas", 30,
+                                 labels={"site": "buenos-aires ñ", "emoji": "\U0001f512"})),
+        # §2 boundary: 64 bytes is the longest device_id there is.
+        ("req-long-id", _request("d" + "e" * 63, "printer", "printer", 40)),
+    ]
+
+
+def request_negatives() -> list[tuple[str, str, str]]:
+    """(name, text form, why) — every one MUST be refused.
+
+    Returned as text because that is the form a signer is handed: a QR or a
+    pasted string. Structural cases are encoded into a *valid* bech32m wrapper,
+    so the wrapper never masks the rejection the case is about.
+    """
+    from . import bech32m, enrollreq
+
+    def text(req: dict[str, Any]) -> str:
+        return bech32m.encode(enrollreq.HRP, cbor.encode(req))
+
+    def mutate(**over: Any) -> str:
+        req = dict(_request("pi-cam", "pi-cam", "pi-cam", 10))
+        for key, value in over.items():
+            if value is _ABSENT:
+                req.pop(key)
+            else:
+                req[key] = value
+        return text(req)
+
+    good = _request("pi-cam", "pi-cam", "pi-cam", 10)
+    base = cbor.encode(good)
+
+    # A request whose signature is by another key: syntactically perfect and
+    # cryptographically wrong. Without it, a decoder that never calls Ed25519
+    # passes this whole directory -- the lesson of `bad-forged-signer-sig`.
+    forged = dict(good)
+    forged["sig"] = KEYS["nas"].sign(enrollreq.preimage(good))
+
+    cases = [
+        ("unknown-key", mutate(extra=1), "closed schema: an unknown key"),
+        ("missing-sig", mutate(sig=_ABSENT), "unsigned"),
+        ("wrong-version", mutate(v=2), "v is not 1"),
+        ("short-net", mutate(net=NET[:8]), "net is not 16 bytes"),
+        ("uppercase-device-id", mutate(device_id="Pi-Cam"), "§2 forbids uppercase"),
+        ("leading-dash-device-id", mutate(device_id="-cam"), "§2 forbids a leading dash"),
+        ("long-device-id", mutate(device_id="d" + "e" * 64), "65 bytes"),
+        ("short-device-pk", mutate(device_pk=KEYS["pi-cam"].public[:31]), "not 32 bytes"),
+        ("short-wg-pk", mutate(wg_pk=WG["pi-cam"][:31]), "not 32 bytes"),
+        ("short-sig", mutate(sig=good["sig"][:63]), "not 64 bytes"),
+        ("bool-expires", mutate(expires=True), "a CBOR bool where a uint is required"),
+        ("expires-at-ts", mutate(expires=good["ts"]), "expires must be after ts"),
+        ("too-many-labels", mutate(labels={f"k{i}": "v" for i in range(33)}), "over 32 labels"),
+        ("oversize-label", mutate(labels={"ip": "x" * 257}), "label over 256 bytes"),
+        ("non-string-label", mutate(labels={"ip": 1}), "label value is not text"),
+        ("ts-is-text", mutate(ts="now"), "ts is not a uint"),
+        ("unsorted-keys", text_of_unsorted(base), "map keys out of §4.0 order"),
+        ("forged-signature", text(forged), "valid shape, signed by another key"),
+        ("wrong-hrp", bech32m.encode("nrn", base), "the human-readable part is not `norn`"),
+        ("plain-bech32", _as_bech32(enrollreq.HRP, base), "bech32, not bech32m"),
+        ("mixed-case", _mixed_case(text(good)), "mixed case (SPEC §16.2)"),
+        ("corrupt-character", _corrupt(text(good)), "one character changed"),
+    ]
+    return cases
+
+
+_ABSENT = object()
+
+
+def text_of_unsorted(raw: bytes) -> str:
+    """Swap the first two map entries, then wrap in a valid bech32m string."""
+    from . import bech32m, enrollreq
+    head = raw[:1]
+    first = cbor.encode("v") + cbor.encode(1)
+    second = cbor.encode("ts")
+    assert raw[1:].startswith(first + second), "unexpected leading map order"
+    ts_value = cbor.encode(cbor.decode(raw)["ts"])
+    second += ts_value
+    rest = raw[1 + len(first) + len(second):]
+    return bech32m.encode(enrollreq.HRP, head + second + first + rest)
+
+
+def _as_bech32(hrp: str, payload: bytes) -> str:
+    """The same bytes under bech32's checksum constant instead of bech32m's."""
+    from . import bech32m
+    data = bech32m._convertbits(list(payload), 8, 5, pad=True)
+    polymod = bech32m._polymod(bech32m._hrp_expand(hrp) + data + [0] * 6) ^ 1
+    checksum = [(polymod >> 5 * (5 - i)) & 31 for i in range(6)]
+    return hrp + "1" + "".join(bech32m.CHARSET[v] for v in data + checksum)
+
+
+def _mixed_case(text: str) -> str:
+    return text[:8] + text[8:].upper()
+
+
+def _corrupt(text: str) -> str:
+    other = "q" if text[10] != "q" else "p"
+    return text[:10] + other + text[11:]

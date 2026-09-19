@@ -1,0 +1,1 @@
+{"cases":["req-minimal","req-labelled","req-unicode","req-long-id"],"comment":"each case is one enrollment request: .cbor is the request, .txt its bech32m form with a trailing newline, .json its fields and the SHA-256 of its signature preimage"}

@@ -55,9 +55,17 @@ device$  norn trust import  <QR of norn.trust>       # once per device, out of b
 ```
 
 Enrollment request = CBOR `{net, device_id, device_pk, wg_pk, labels, expires, ts}`
-signed by the device key (proof of possession, D-008). `norn sign` verifies that
-signature before showing the prompt, so a request that doesn't own its WG key is
-never even displayed.
+signed by the device key (proof of possession, D-008); the normative format is
+`SPEC.md` §16. `norn sign` verifies that signature **before** showing the prompt,
+so a request whose device key did not sign it is never displayed.
+
+Precisely what that proves, since an earlier draft of this paragraph overclaimed
+it: the signature proves possession of the **device** key and binds `wg_pk` to
+it. It does **not** prove possession of the WireGuard key, which is X25519 and
+by §3 never signs. A device can ask to enrol a WireGuard key it does not hold —
+and gets nothing for it: if the key is already active the entry is refused
+`dup-wg`, and if it is not, the device has enrolled a key it cannot handshake
+with. See `SPEC.md` §16.1.
 
 Threshold signing (`signer_thr > 1`): each `norn sign` appends one signature to the
 entry; the pending inbox (or a pasted blob) carries partials; `norn submit` refuses

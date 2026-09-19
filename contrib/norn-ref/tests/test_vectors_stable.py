@@ -17,6 +17,7 @@ class Deterministic(unittest.TestCase):
             gen_vectors.write_genesis_aborts(out)
             gen_vectors.write_trust_rejections(out)
             gen_vectors.write_trust(out)
+            gen_vectors.write_requests(out)
             return {str(p.relative_to(out)): p.read_bytes() for p in sorted(out.rglob("*")) if p.is_file()}
 
     def test_two_runs_are_identical(self):

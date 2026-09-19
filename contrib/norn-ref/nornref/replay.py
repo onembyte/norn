@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from . import cbor, entry, keys
+from . import cbor, entry, fields, keys
 from .state import DEFAULT_PARAMS, PARAM_KEYS, State
 
 REASONS = (
@@ -64,7 +64,6 @@ def _device_signed(env: dict[str, Any], device_pk: bytes) -> bool:
 
 # -- envelope shape -------------------------------------------------------
 
-_ID_OK = set("abcdefghijklmnopqrstuvwxyz0123456789.-")
 _HEX = set("0123456789abcdef")
 KID_LEN = 16
 
@@ -136,47 +135,34 @@ def _check_body(entry_type: str, body: dict[str, Any]) -> None:
 
 
 def _device_id(body: dict[str, Any]) -> str:
-    value = body.get("device_id")
-    if not isinstance(value, str) or not 1 <= len(value) <= 64:
-        raise Reject("decode")
-    if value[0] not in _ID_OK or value[0] in ".-" or set(value) - _ID_OK:
-        raise Reject("decode")
-    return value
-
-
-MAX_LABELS = 32
-MAX_LABEL_VALUE = 256
+    try:
+        return fields.device_id(body.get("device_id"))
+    except fields.FieldError:
+        raise Reject("decode") from None
 
 
 def _labels(body: dict[str, Any]) -> dict[str, str] | None:
-    """Validate the optional `labels` map (SPEC §4.0 field constraints).
-
-    Key length is already capped at 23 bytes by the codec, so only the count
-    and the values need checking here.
-    """
-    labels = body.get("labels")
-    if labels is None:
-        return None
-    if not isinstance(labels, dict) or len(labels) > MAX_LABELS:
-        raise Reject("decode")
-    for value in labels.values():
-        if not isinstance(value, str) or len(value.encode("utf-8")) > MAX_LABEL_VALUE:
-            raise Reject("decode")
-    return labels
+    """The optional `labels` map (SPEC §4.0 field constraints)."""
+    try:
+        return fields.labels(body.get("labels"))
+    except fields.FieldError:
+        raise Reject("decode") from None
 
 
 def _expires(body: dict[str, Any]) -> int | None:
-    expires = body.get("expires")
-    if expires is not None and not isinstance(expires, int):
-        raise Reject("decode")
-    return expires
+    if "expires" not in body:
+        return None
+    try:
+        return fields.uint(body["expires"], "expires")
+    except fields.FieldError:
+        raise Reject("decode") from None
 
 
 def _pk(body: dict[str, Any], key: str) -> bytes:
-    value = body.get(key)
-    if not isinstance(value, bytes) or len(value) != 32:
-        raise Reject("decode")
-    return value
+    try:
+        return fields.public_key(body.get(key), key)
+    except fields.FieldError:
+        raise Reject("decode") from None
 
 
 # -- handlers -------------------------------------------------------------

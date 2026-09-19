@@ -602,8 +602,8 @@ that are not consistent MUST:
 Paths below are relative to the vector root, which ships as `testdata/vectors/`
 in this repository and may be rooted anywhere when the suite is distributed.
 
-**Two provenances, stated plainly.** The entry, state and trust vectors come
-from the Python reference implementation, and the Go code must match them. The
+**Two provenances, stated plainly.** The entry, state, trust and enrollment-request
+vectors come from the Python reference implementation, and the Go code must match them. The
 `served/` and `proofs/` vectors come from the **Go** implementation instead,
 because producing a tiled log requires one — and they are validated against
 libraries neither implementation wrote: `transparency-dev/formats` parses the
@@ -615,7 +615,7 @@ suite is checked only against its own author.
 | `keys.json` | every test key: Ed25519 `{seed, public, kid}` by name, X25519 public keys by name, and `net` |
 | `entries/NN-<type>.cbor` | one valid entry per type, canonical bytes |
 | `entries/NN-<type>.json` | mirror: `{entry, entry_hash, leaf_hash, preimage_sha256, size}` where `size` is the byte length of the `.cbor`. The `entry` object mirrors the **CBOR**, so an optional field absent from the entry is absent here too — unlike `state.json`, where §5.3's schema fields are always emitted |
-| `log/NN-<name>.cbor` | the replay fixture, **82 entries** in order. The file names are labels, not the order: **read the sequence from `manifest.json`**, never by globbing and sorting |
+| `log/NN-<name>.cbor` | the replay fixture, **91 entries** in order. The file names are labels, not the order: **read the sequence from `manifest.json`**, never by globbing and sorting |
 | `log/NN-<name>.reason` | beside each entry that must be rejected: its §5.2 reason code |
 | `log/manifest.json` | `{"anchor": {"net", "genesis_hash"}, "entries": [{"index", "name", "reason"}]}` — the replay input and expected outcome; `reason` is `""` for an accepted entry |
 | `state.json` | canonical replay output for `log/` (§5.3) |
@@ -625,6 +625,8 @@ suite is checked only against its own author.
 | `proofs/<device>.bundle` | one §8.1 proof bundle per active device, each proving the entry that made that device active; `cases.json` gives the origin, the log-key seed and the device list |
 | `trust.cbor` · `trust.toml` · `trust.fingerprint` | the trust anchor (§9), authoritative bytes, human rendering, and its fingerprint |
 | `receipt.note` | a submission receipt: the signed note itself (§7) |
+| `requests/<name>.cbor` · `.txt` · `.json` | enrollment requests (§16): the request bytes, its bech32m text form, and a mirror `{request, preimage_sha256, text, size}`. `cases.json` lists them |
+| `requests-bad/<name>.txt` | requests that MUST be refused — by the text layer, the CBOR profile, a field rule or signature verification. `cases.json` gives each case's reason |
 | `receipt.json` | `{comment, origin, leaf_hash, deadline, text_sha256}`, where `text_sha256` is `SHA-256` of the **signed text** — through the newline ending the last text line, excluding the blank separator and the signature lines |
 
 ### 12.1 Coverage — what is and is not vectored
@@ -655,6 +657,8 @@ this table drifted out of date the moment one was.
 | §6 tiles and bundles | `served/`, read back to reproduce `state.json` | forged head, tampered bundle, missing bundle |
 | §8 proof bundles | `proofs/`, one per active device | wrong entry, foreign checkpoint, tampered proof, wrong log key |
 | §10 verifier loop | `served/` verified end to end | wrong anchor aborts and yields no devices |
+| §16 enrollment requests | `requests/`, four cases including a 64-byte `device_id` and non-ASCII labels | `requests-bad/`, 22 cases across all four layers, including **`forged-signature`** — structurally perfect, signed by another key |
+| §16.2 bech32m | the text form of every request | `wrong-hrp`, `plain-bech32` (the same bytes under bech32's constant), `mixed-case`, `corrupt-character`. BIP-350's own vectors are in both implementations' unit tests |
 
 **Not vectored, and therefore not binding on a second implementation:**
 
@@ -662,11 +666,10 @@ this table drifted out of date the moment one was.
 |---|---|---|
 | §6 | **cosignatures** on a checkpoint — a witness must run to produce one | Phase 4 |
 | §11 | fork evidence: two conflicting cosigned checkpoints and the expected evidence file | Phase 4 |
-| §16 | enrollment requests — the bech32m form and its domain-separated signature have **no vectors at all**, and nothing implements them yet | with the enrolment CLI |
 
-The Phase 2 and Phase 4 rows wait on Tessera and torchwood producing and
-verifying real tiles: a hand-rolled tlog here would test this implementation
-against itself and prove nothing.
+Both remaining rows wait on a witness **process**, not on a format: a
+cosignature and a fork proof are things a second party produces, and faking
+either here would test this implementation against itself and prove nothing.
 
 ## 13. Open items
 
@@ -736,8 +739,81 @@ normative in `GOSSIP.md`. The policy text in `norn.trust` is verbatim
 
 ## 16. Enrollment requests and key handling
 
-Enrollment request = deterministic CBOR `{net, device_id, device_pk, wg_pk, labels,
-expires, ts}` signed by `device_pk` with domain prefix `"norn/enroll-request/v1\n"`;
-text form is bech32m with HRP `norn`. Signing keys are reached through the ssh-agent
-protocol (Ed25519 only in v0). Trust-file bootstrap and the `log_key`/`policy`
-overlap rules are normative in `ENROLLMENT.md`.
+An **enrollment request** is what a device hands a signer: *this is the name I
+claim, this is the WireGuard key I want in the peer table, and here is a
+signature by my device key.* It is not a log entry, it never appears in the log,
+and nothing in §5 consumes one. It exists so that the `enroll` entry a signer
+builds can carry a `device_pk` the device has demonstrably used, and so that the
+whole exchange fits through a phone camera (`ENROLLMENT.md` part 3).
+
+### 16.1 Request format (normative)
+
+Deterministic CBOR per §4.0. Unknown keys MUST cause rejection — a closed schema,
+exactly as §4.1.
+
+| key | type | required | meaning |
+|---|---|---|---|
+| `v` | uint | ✓ | `1` |
+| `ts` | uint | ✓ | device clock, unix seconds; advisory, as in §4.1 |
+| `net` | bytes16 | ✓ | the network this request is for |
+| `sig` | bytes64 | ✓ | Ed25519 by `device_pk` over the preimage below |
+| `wg_pk` | bytes32 | ✓ | the X25519 WireGuard public key to enrol |
+| `labels` | map text→text | | as `enroll` (§4.3), under the same §4.0 caps |
+| `expires` | uint | | requested expiry, unix seconds; MUST be > `ts` |
+| `device_id` | text | ✓ | a §2 `device_id` |
+| `device_pk` | bytes32 | ✓ | the device's Ed25519 identity key |
+
+The signature preimage is
+
+```
+"norn/enroll-request/v1\n" ‖ CBOR(request with "sig" omitted)
+```
+
+One `sig`, not §4.1's `sigs` array, because a request carries exactly one
+signature and the key that made it is **in the object**: there is no `kid` to
+resolve against any state and nothing to count against a threshold. The domain
+prefix differs from §4.2's, so a device signature over a request can never be
+replayed as a signature over an entry.
+
+**What the signature proves, and what it does not.** It proves possession of the
+private half of `device_pk`, and it binds `device_id`, `wg_pk`, `labels` and
+`expires` to that key. It does **not** prove possession of the WireGuard private
+key: `wg_pk` is X25519, which by §3 never signs. A device can therefore request
+enrolment of a WireGuard key it does not hold. The consequences are bounded and
+worth stating rather than glossing: if that key is already active the resulting
+entry is refused `dup-wg` (§5.2), and if it is not, the requester has enrolled a
+key it cannot complete a handshake with — it has denied service to itself.
+Proving possession of an X25519 key needs a key-exchange round trip and is
+deliberately out of scope for v0.
+
+A consumer MUST validate structure **and** verify `sig` before showing a request
+to a human. `ENROLLMENT.md` part 7 rule 1 is *what you sign is what you see*, and a
+request displayed before its signature is checked is a request an attacker
+chooses the text of.
+
+### 16.2 Text form (normative)
+
+bech32m (BIP-350), HRP `norn`, data = the request bytes regrouped from 8-bit to
+5-bit groups, zero-padded to the next group boundary. A decoder MUST reject a
+payload whose padding is 5 bits or more, or whose padding bits are not zero.
+
+- The checksum constant is `0x2bc830a3`. bech32 (constant `1`) MUST be rejected:
+  the two encodings differ **only** in that constant, so accepting either would
+  accept the very mutation the checksum exists to catch.
+- The canonical form is **lowercase**. An all-uppercase form MUST also be
+  accepted, because QR alphanumeric mode has no lowercase letters and a request
+  is meant to cross a room on a phone screen. Mixed case MUST be rejected.
+- **BIP-173's 90-character limit does not apply.** It is an address-sized bound;
+  a Norn request is ~250 characters. The honest consequence: above 90 characters
+  the BCH code no longer guarantees detection of up to four errors. It remains a
+  strong integrity check, and it is not what protects the request — `sig` is. A
+  corrupted request fails Ed25519 verification, which is the check that decides.
+  The bound that does apply is §4.0's `MAX_ENTRY_BYTES` on the decoded payload.
+
+### 16.3 Key handling
+
+Signing keys are reached through the **ssh-agent protocol** (Ed25519 only in v0),
+so hardware tokens, password-manager agents and software keys all look identical
+to `norn sign`. Tiers, the root ceremony, rotation and the recovery runbooks are
+normative in `ENROLLMENT.md`, as are trust-file bootstrap and the `log_key` /
+`policy` overlap rules.
