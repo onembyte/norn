@@ -364,7 +364,7 @@ starting rather than after.
 | 3.5b | `internal/wgdev` | the real interface behind the same seam. **Moved ahead of the daemon:** a `nornd` with nothing to drive cannot be run, and the dependency question had to be answered before a binary depended on the answer | ✅ |
 | 3.5c | `cmd/nornd` | the binary: config, signals, the poll loop, and **observe as the default** (D-005) | ✅ |
 | 3.6 | Fight detection and quarantine | N evictions in W → `CONTROL_PLANE_FIGHT`; `quarantine` fails closed **by choice, never by default** | ✅ |
-| 3.8 | Phase 3 gate audit | each line read against what is actually tested, and what the lab still owes | ⬜ |
+| 3.8 | Phase 3 gate audit | each line read against what is actually tested, and what the lab still owes | ✅ |
 
 ## Decision taken — 2.9d: an `enroll` needs a device signature the device cannot make
 
@@ -550,3 +550,10 @@ the signer keeps one job — decide, and place the entry in the log.
   - **Quarantine runs a command an operator can read.** `ip link set {iface} down` on Linux, and nothing assumed anywhere else — taking a network down is a break-glass action, so the exact argv is in the config, in the logs, and replaceable with `wg-quick down` or a firewall rule. On a platform with no safe default, Norn says what to configure instead of guessing.
   - **The detector is bounded.** `nornd` runs for months on a Pi and an attacker can mint keys all day, so quiet keys are forgotten and the map is capped at 4 096 — tested by minting more than that.
   - Go: 39 packages, 364 tests; `go test` and staticcheck green.
+- **3.8 the Phase 3 gate audit — no line ticked, and one that was never tested.**
+  - **Every line of this gate is a measurement**: a p99 over a thousand runs, two 24-hour soaks, a real NetBird server, a Tailscale netmap event. None can be ticked here, and saying that is the honest outcome rather than a disappointment. What the audit is *for* is the other half: stating precisely what is proven in software, and finding the lines whose substance was never tested at all.
+  - **One was.** "A `Revoke` entry drops the device within one checkpoint interval." Every enforcement test so far started from a **fixed** proven set — so nothing anywhere showed the peer table *following the log when the log changed underneath it*. The timing belongs to the lab; whether it happens at all did not, and was untested. It is now: a real `revoke`, signed by the fixture's two signers, appended to a real log between two cycles, in **both** enforcing modes. It passed first try — the behaviour was right, the confidence was unearned.
+  - **Three more software halves, written rather than assumed.** Fifty unchanged cycles must produce **zero writes** after the first, because a daemon that rewrites the table every poll could never pass a continuous 24-hour diff — that is what the soak would really be measuring. Twenty-five observe cycles, each with a fresh intruder, must produce **zero writes and an alarm every time**. And an injected key must be gone after **exactly one cycle**, which is what makes the eviction window equal to `T_poll` instead of some multiple of it.
+  - **One line is not started, and says so.** Tailscale observe needs a LocalAPI watcher: `tailscaled` exposes no UAPI socket, so it is a different *source of truth* feeding the same reconciler, not another backend behind `peertable.Device`. It stays unwritten rather than half-written.
+  - Every open line now names what is true and what is missing, in `PLAN.md` itself. Two phases in a row have ended this way, and the pattern is worth naming: **a gate made of measurements cannot be closed by a test suite, but it can be made smaller by one.**
+  - Go: 39 packages, 368 tests; `go test` and staticcheck green.

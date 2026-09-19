@@ -168,13 +168,13 @@ repo initialised, CI running `go test` + `go vet` + `staticcheck`.
 ### Phase 3 — Enforcement agent (2–3 weeks)
 `nornd` observe + enforce on kernel WireGuard; owner mode and watchdog mode — normative in `ENFORCEMENT.md`.
 **PASS when:**
-- [ ] Lab, enforce/watchdog: rogue key added with `wg set` is evicted with p99 < 1 s over 1 000 runs at T_poll = 200 ms; packets that crossed the window are counted and reported.
-- [ ] Lab, enforce/owner: the peer table equals the proven set at all times (continuous diff, 24 h soak, zero divergence).
-- [ ] A `Revoke` entry drops the device within one checkpoint interval.
-- [ ] Observe mode: 24 h soak, zero writes to the interface (verified by diffing `wg showconf` every second).
-- [ ] Zero false removals in the 24 h soak.
-- [ ] Fight test against a real NetBird management server: `CONTROL_PLANE_FIGHT` fires and `quarantine` isolates the host.
-- [ ] Tailscale observe: an unproven peer key in the netmap raises `UNPROVEN_PEER` within 1 s of the LocalAPI event.
+- [ ] Lab, enforce/watchdog: rogue key added with `wg set` is evicted with p99 < 1 s over 1 000 runs at T_poll = 200 ms; packets that crossed the window are counted and reported. **Software half done (audited 3.8):** an injected key is gone after **exactly one cycle**, which is what makes the window equal to `T_poll` rather than some multiple of it. The distribution, and the packets that crossed the window, are measurements — nothing here counts a packet.
+- [ ] Lab, enforce/owner: the peer table equals the proven set at all times (continuous diff, 24 h soak, zero divergence). **Software half done:** the first cycle installs the proven set and **fifty further cycles write nothing** — a daemon that rewrote the table every poll could never pass a continuous diff, so that is the property the soak would really be checking. The soak itself needs a day and an interface.
+- [ ] A `Revoke` entry drops the device within one checkpoint interval. **Software half done, and it was untested until this audit:** every enforcement test started from a fixed proven set, so nothing showed the peer table *following the log when the log changed underneath it*. Now a real `revoke` is appended to a real log between two cycles, in owner and watchdog mode, and the device loses its place. The timing against a checkpoint interval is the lab's.
+- [ ] Observe mode: 24 h soak, zero writes to the interface (verified by diffing `wg showconf` every second). **Software half done:** twenty-five cycles with a different intruder appearing before each one, zero writes, an alarm every time. One quiet cycle proving nothing was the weaker test this replaces.
+- [ ] Zero false removals in the 24 h soak. **Software half done:** across fifty unchanged cycles no proven peer is ever removed, and `internal/reconcile` refuses to plan a removal for a key the log proves. The soak adds real time, a real interface and real churn.
+- [ ] Fight test against a real NetBird management server: `CONTROL_PLANE_FIGHT` fires and `quarantine` isolates the host. **Software half done (3.6):** three evictions of one key inside the window declare a fight exactly once, evictions continue, and `quarantine` runs a configured command once and only when chosen. What needs NetBird is whether a real control plane behaves the way the detector assumes.
+- [ ] Tailscale observe: an unproven peer key in the netmap raises `UNPROVEN_PEER` within 1 s of the LocalAPI event. **Not started.** There is no LocalAPI watcher: `tailscaled` exposes no UAPI socket, so this is a different source of truth feeding the same reconciler, not a backend behind `peertable.Device`. `ENFORCEMENT.md` part 6 places it in the integration work, and it stays unwritten rather than half-written.
 
 ### Phase 4 — Witnesses, gossip, freshness (3 weeks)
 `tlog-witness` submission + `tlog-policy` quorum; self-hosted witnesses on the Pi
