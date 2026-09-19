@@ -33,7 +33,7 @@ becomes its own oracle.
 | 0.11 | Close the run-3 gaps | the MUSTs §12.1 admitted were unvectored now have vectors; the rules that existed only in the vectors now have prose | ✅ |
 | 0.12 | Cold-model gate (run 4) | a *fresh* agent on a *new* copy; the target is now `SPEC SUFFICIENT` outright | ❌ `SUFFICIENT WITH GAPS` — **a signature-blind implementation passed** (`SPEC-DEFECTS-4.md`) |
 | 0.13a | Close F1–F6 | forged-signature vectors; over-determined negatives re-signed; §12.1 cites by name and the build checks it | ✅ |
-| 0.13b | Close F7–F11 | the remaining unpinned readings, over-determined trust and genesis negatives, §16 vectors, prose fixes | ⬜ |
+| 0.13b | Close F7–F11 | F8, F9, F11 closed; F7 mostly; F10 (§16 enrollment requests) deferred — see the note below | ✅ |
 
 Log fixture (tiles + cosigned checkpoint) moves to Phase 2 where Tessera produces
 it and torchwood verifies it — hand-building a tlog in Python adds no assurance.
@@ -141,3 +141,11 @@ Loop paused here pending that answer.
   - **F5: §12.1 cited ~13 wrong vector numbers**, with two different offsets in one table, plus a negative listed as a control. **D-045**: the spec now cites vectors **by name**, and `internal/specdoc` fails the build if a citation stops resolving.
   - Log is 84 entries, 217 vector files. 141 Python tests, 15 Go tests, `make ci` + `make vectors-check` green.
   - F7–F11 remain open in `SPEC-DEFECTS-4.md`: ~20 further unpinned readings, over-determined trust and genesis negatives, and §16 enrollment requests with no vectors at all.
+- **2026-09-19 · 0.13b — F8, F9, F11 closed; F7 mostly.** The sharpest result: **D-046, my reference implementation was on the wrong side of my own spec.** §5.1 states that authorisation (step 7) precedes the type rule (step 8, which begins with the body check), and spells out the consequence — an under-signed governance entry with a malformed body is `threshold`, not `decode`. My implementation checked the body first. Run 4 had flagged exactly this as an unpinned variant and I assumed it was merely unvectored; it was a genuine divergence. Implementation corrected and vectored.
+  - **F7**: `params` merge-vs-replace is now distinguishable — genesis carries a **non-default `mmd`**, so replacing with defaults no longer coincides with merging. `log_key` gets a second rotation, so append-vs-replace is visible. Device-signed `note` → `threshold`; `revoke` by root quorum accepted, a path §4.3 lists and no vector used.
+  - **F8**: trust negatives `13-origin-only` (16-byte `net`, `log_key` renamed to agree with the wrong origin, so only the derivation rule can fire) and `14-missing-name` isolate two MUSTs that previously had only over-determined negatives.
+  - **F9**: three more genesis invariants — duplicate signer, `signer_thr` above the set, empty `roots`.
+  - **F11 prose**: `sigs: []` yields `no-device-sig` for `enroll`/`rotate`, not `threshold` — the old text over-generalised from the one `note` vector; field constraints are `bad-genesis` at index 0; `dup-wg` scope differs between `enroll` (any device) and `rotate` (another device); each `sigs` element is itself a closed map and "well-formed `sigs`" is now defined in one place.
+  - **D-047**: run 4 had to invent a nesting cap "with no basis in the text". §4.0 now fixes depth at 8 and entry size at 65536 bytes, **and the reference enforces both** — including a truncated length header that must fail without allocating. Stating a limit without enforcing it is the defect class this whole exercise keeps surfacing.
+  - Log is 89 entries, 235 vector files, 12 genesis cases, 14 trust negatives. 153 Python tests, 15 Go tests, `make ci` + `make vectors-check` green.
+  - **Deferred — F10, §16 enrollment requests have no vectors at all.** §16 is a stub added in plan part 7 describing a bech32m request format that nothing implements yet; vectoring it means designing it properly, which belongs with the enrollment CLI in a later phase, not in Phase 0. §12.1 must say so rather than stay silent.

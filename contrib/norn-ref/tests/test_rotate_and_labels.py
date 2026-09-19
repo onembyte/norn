@@ -107,7 +107,8 @@ class ParamsDefaults(unittest.TestCase):
         state, _ = state_of([])
         for key, value in DEFAULT_PARAMS.items():
             self.assertIn(key, state.params, f"{key} must always be present")
-        self.assertEqual(state.params["mmd"], 60)
+        self.assertEqual(state.params["mmd"], 45,
+                         "genesis overlays a non-default value onto the §4.5 defaults")
 
 
 if __name__ == "__main__":

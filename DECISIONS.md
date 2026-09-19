@@ -331,3 +331,20 @@ in the same table, because inserting a vector renumbers every later one. Names
 are stable under insertion; indices are not. `internal/specdoc` now fails the
 build if a citation stops resolving against the manifest, so the table cannot
 quietly become fiction again.
+
+## D-046 · The body check runs *after* the authorisation check (2026-09-19, 0.13b)
+§5.1 says step 7 (quorum) precedes step 8 (the type rule, which begins with the
+body check), and spells out the consequence: an under-signed governance entry
+with a malformed body is `threshold`, not `decode`. My reference implementation
+did the opposite — it validated the body first. Gate run 4 predicted exactly
+this divergence as an unpinned variant, and it turned out I was on the wrong
+side of my own spec. Implementation corrected to follow the spec, and vectored.
+
+## D-047 · Resource limits are specified and enforced (2026-09-19, 0.13b)
+Run 4 noted the profile bounds key lengths and integer magnitude but says
+nothing about nesting depth or total size, so a conforming decoder is a trivial
+stack-exhaustion target — and it had to invent a depth cap with no basis in the
+text. §4.0 now fixes depth at 8 (the deepest a valid entry can reach is
+`body.labels`) and entry size at 65536 bytes, and the reference enforces both
+with tests, including a truncated length header that must fail without
+allocating.

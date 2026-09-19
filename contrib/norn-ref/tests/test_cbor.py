@@ -59,3 +59,30 @@ class DecodeStrict(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ResourceLimits(unittest.TestCase):
+    """SPEC §4.0: a decoder must bound its own nesting and input size.
+
+    Neither limit is reachable by a valid entry; they exist so a hostile input
+    cannot exhaust a verifier. A spec that states a limit and an implementation
+    that ignores it is the defect this whole exercise keeps finding.
+    """
+
+    def test_depth_beyond_the_limit_is_rejected(self):
+        deep = b"\x81" * (cbor.MAX_DEPTH + 1) + b"\x00"
+        with self.assertRaises(cbor.ProfileError):
+            cbor.decode(deep)
+
+    def test_depth_at_the_limit_is_accepted(self):
+        ok = b"\x81" * cbor.MAX_DEPTH + b"\x00"
+        self.assertIsInstance(cbor.decode(ok), list)
+
+    def test_input_beyond_the_size_limit_is_rejected(self):
+        with self.assertRaises(cbor.ProfileError):
+            cbor.decode(cbor.encode(b"\x00" * (cbor.MAX_ENTRY_BYTES + 1)))
+
+    def test_a_truncated_length_header_does_not_allocate(self):
+        """A 2**32-byte string header with no payload must fail fast."""
+        with self.assertRaises(cbor.ProfileError):
+            cbor.decode(b"\x5a\xff\xff\xff\xff")

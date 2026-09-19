@@ -421,13 +421,16 @@ def replay(anchor: Anchor, raw_entries: list[bytes]) -> State:
                 raise Reject("dup-genesis")
             if env.get("after", 0) > index:
                 raise Reject("after")
-            _check_body(env["t"], env["body"])
+            # Step 7 -- authorisation -- precedes step 8, and step 8 begins
+            # with the per-type body check. So an under-signed governance entry
+            # with a malformed body is `threshold`, never `decode` (SPEC §5.1).
             if env["t"] in ROOT_TYPES:
                 _require(len(_valid_kids(env, "root", state.roots)), state.root_thr)
             elif env["t"] == "note":
                 if not (_valid_kids(env, "signer", state.signers)
                         or _valid_kids(env, "root", state.roots)):
                     raise Reject("threshold")
+            _check_body(env["t"], env["body"])
             HANDLERS[env["t"]](state, env, index)
         except cbor.ProfileError:
             state.rejected.append({"index": index, "reason": "decode"})

@@ -16,6 +16,12 @@ from typing import Any
 MAX_UINT = 2**63 - 1
 MAX_KEY_LEN = 23
 
+#: Deepest structure the schema allows is an entry's body.labels value, so 8 is
+#: generous. Neither limit below is reachable by a valid entry; they exist so a
+#: hostile input cannot exhaust a verifier (SPEC §4.0).
+MAX_DEPTH = 8
+MAX_ENTRY_BYTES = 65536
+
 _MT_UINT, _MT_BYTES, _MT_TEXT, _MT_ARRAY, _MT_MAP, _MT_SIMPLE = 0, 2, 3, 4, 5, 7
 _FALSE, _TRUE = 20, 21
 
@@ -64,8 +70,11 @@ def encode(value: Any) -> bytes:
 
 class _Decoder:
     def __init__(self, buf: bytes) -> None:
+        if len(buf) > MAX_ENTRY_BYTES:
+            raise ProfileError(f"input exceeds {MAX_ENTRY_BYTES} bytes")
         self.buf = buf
         self.pos = 0
+        self.depth = 0
 
     def take(self, n: int) -> bytes:
         if self.pos + n > len(self.buf):
@@ -90,6 +99,14 @@ class _Decoder:
 
     def value(self) -> Any:
         major, n = self.head()
+        if major in (_MT_ARRAY, _MT_MAP):
+            self.depth += 1
+            if self.depth > MAX_DEPTH:
+                raise ProfileError(f"nesting deeper than {MAX_DEPTH}")
+            try:
+                return self._container(major, n)
+            finally:
+                self.depth -= 1
         if major == _MT_UINT:
             if n > MAX_UINT:
                 raise ProfileError("integer out of profile")
@@ -102,9 +119,18 @@ class _Decoder:
                 return raw.decode("utf-8")
             except UnicodeDecodeError as exc:
                 raise ProfileError("invalid UTF-8") from exc
+        if major == _MT_SIMPLE:
+            if n == _TRUE:
+                return True
+            if n == _FALSE:
+                return False
+            raise ProfileError(f"simple value outside profile: {n}")
+        raise ProfileError(f"major type outside profile: {major}")
+
+    def _container(self, major: int, n: int) -> Any:
         if major == _MT_ARRAY:
             return [self.value() for _ in range(n)]
-        if major == _MT_MAP:
+        if True:
             out: dict[str, Any] = {}
             previous = b""
             for _ in range(n):
@@ -120,13 +146,7 @@ class _Decoder:
                 previous = encoded
                 out[key] = self.value()
             return out
-        if major == _MT_SIMPLE:
-            if n == _TRUE:
-                return True
-            if n == _FALSE:
-                return False
-            raise ProfileError(f"simple value outside profile: {n}")
-        raise ProfileError(f"major type outside profile: {major}")
+        raise AssertionError("unreachable")
 
 
 def decode(raw: bytes) -> Any:

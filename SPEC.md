@@ -113,14 +113,28 @@ every key each type may carry, and a body with an unknown key — or missing a
 required one — is `decode`. `params` is the one type whose permitted keys are
 the §4.5 parameter names rather than a fixed list.
 
-The `sigs` key is **mandatory**; an entry with no signatures carries `sigs: []`
-and is rejected later for `threshold`, not for `decode` (D19). `role` is a
+Each element of `sigs` is itself a **closed map** of exactly `{kid, role, sig}`;
+a fourth key is `decode`. "Well-formed `sigs`" in §5.1 step 3 means precisely:
+that closedness, `kid` matching its field constraint, `role` within the enum,
+`sig` exactly 64 bytes, and the array sorted by `kid` with no repeats.
+
+A decoder MUST bound its own resource use: nesting depth is at most **8** (the
+deepest structure the schema allows is an entry's `body.labels` value), and an
+entry is at most **65536** bytes. Neither limit is reachable by a valid entry;
+they exist so that a hostile input cannot exhaust a verifier.
+
+The `sigs` key is **mandatory**; an entry with no signatures carries `sigs: []`,
+which is well-formed and is rejected later by an authorisation rule rather than
+by `decode`. Which rule depends on the type: `threshold` for `note` and the
+governance types, but **`no-device-sig`** for `enroll` and `rotate`, whose first
+step-8 check is the device signature (§5.1). `role` is a
 **closed enum** — a value outside `root` / `signer` / `device` is a schema
 violation and rejects the entry with `decode` (D18). This is distinct from §5.1
 step 7, where a *well-formed* signature whose `kid` does not resolve in that role
 is silently not counted.
 
-Field constraints (violations → reason `decode`):
+Field constraints (violations → reason `decode` — **except at index 0**, where
+every failure is `bad-genesis` and aborts replay, per §5.1's entry-0 list):
 
 | Field | Constraint |
 |---|---|
@@ -328,7 +342,7 @@ Entries whose `expires` is earlier than the checkpoint time are treated as
 | `threshold` | fewer valid signatures of the required role than the threshold |
 | `no-device-sig` | `enroll`/`rotate` lacks a required valid signature by a device key. **Not `revoke`** — a `revoke` may be authorised by signers, roots *or* the device, so a `revoke` carrying none of the three is `threshold` (§5.1). |
 | `dup-id` | `enroll` with a `device_id` that is currently `active` |
-| `dup-wg` | `enroll`/`rotate` with a `wg_pk` that is currently active for another device |
+| `dup-wg` | a `wg_pk` that is already active. For `enroll` that means active for **any** device — a `device_id` may be reused after revocation, but a live key may not. For `rotate` it means active for **another** device: re-presenting the device's own key is how an identity key rotates alone (D-032). |
 | `unknown-device` | `rotate`/`revoke` names a `device_id` never enrolled |
 | `not-active` | `rotate`/`revoke` on a device that is already `revoked` |
 | `dup-key` | `signer_add`/`root_add` of a `pk` whose `kid` already exists in either role |
@@ -602,6 +616,7 @@ this table drifted out of date the moment one was.
 | §8 | `tlog-proof@v1` bundles | Phase 2 |
 | §10 | the verifier loop over a served log | Phase 2 |
 | §11 | fork evidence: two conflicting cosigned checkpoints and the expected evidence file | Phase 4 |
+| §16 | enrollment requests — the bech32m form and its domain-separated signature have **no vectors at all**, and nothing implements them yet | with the enrolment CLI |
 
 The Phase 2 and Phase 4 rows wait on Tessera and torchwood producing and
 verifying real tiles: a hand-rolled tlog here would test this implementation

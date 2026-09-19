@@ -19,7 +19,7 @@ DEVICES = ["nas", "laptop", "pi-cam"]
 
 WITNESSES = ["pi", "vps", "friend"]
 
-EXTRA_KEYS = (["signer3", "root4", "logkey", "logkey2", "spare", "printer", "nas-id2", "printer-id2", "escaped", "contractor", "halfsigned", "labelcap"]
+EXTRA_KEYS = (["signer3", "root4", "logkey", "logkey2", "spare", "printer", "nas-id2", "printer-id2", "escaped", "contractor", "halfsigned", "labelcap", "rootrevoked"]
               + [f"witness-{w}" for w in WITNESSES])
 
 KEYS: dict[str, keys.Ed25519] = {
@@ -28,7 +28,7 @@ KEYS: dict[str, keys.Ed25519] = {
 }
 WG: dict[str, bytes] = {
     name: keys.x25519_public(name)
-    for name in DEVICES + ["laptop2", "nas2", "spare", "printer", "rogue", "escaped", "contractor", "halfsigned", "labelcap"]
+    for name in DEVICES + ["laptop2", "nas2", "spare", "printer", "rogue", "escaped", "contractor", "halfsigned", "labelcap", "rootrevoked"]
 }
 
 #: Every canonical-JSON escape rule (SPEC §14.2) in one value: the characters
@@ -105,7 +105,10 @@ def genesis(after: int | None = None) -> dict[str, Any]:
         "root_thr": 2,
         "signers": [KEYS[n].public for n in SIGNERS],
         "signer_thr": 1,
-        "params": {"checkpoint_interval": 60, "staleness": 600, "mmd": 60,
+        # `mmd` is deliberately NOT the §4.5 default: without one non-default
+        # value here, a `params` entry that *replaces* rather than merges is
+        # indistinguishable from one that merges (gate run 4, variant 9).
+        "params": {"checkpoint_interval": 60, "staleness": 600, "mmd": 45,
                    "rotate_needs_signer": False},
     })
     return _signed(env, [("root1", "root"), ("root2", "root")])
@@ -472,6 +475,27 @@ def log() -> list[LogItem]:
     b.add_raw(f"{b.index}-labelcap-base", labelled_base(base_after), None)
     b.add_raw(f"{b.index}-two-sig-base", two_sig_base(base_after), None)
 
+    # §5.3: `log_key` APPENDS. With only one rotation in the log, an
+    # implementation that keeps just the latest is indistinguishable.
+    b.add(f"{b.index}-log_key-second", b.build(
+        "log_key", {"pk": KEYS["logkey"].public, "overlap": 604_800}, roots3))
+
+    # §4.3: a `note` needs a signer or a root; a device signature will not do.
+    b.add(f"{b.index}-bad-device-signed-note", b.build(
+        "note", {"text": "signed by a device"}, [("nas-id2", "device")]), "threshold")
+
+    # §4.3 lists roots as an authorisation path for `revoke`; none used it.
+    b.add(f"{b.index}-enroll-rootrevoked", b.build("enroll", _enroll_body(
+        "rootrevoked", wg="rootrevoked"),
+        [("rootrevoked", "device")] + both))
+    b.add(f"{b.index}-revoke-by-roots", b.build(
+        "revoke", {"device_id": "rootrevoked", "reason": "root quorum"}, roots3))
+
+    # §5.1: step 7 precedes step 8, so an under-signed governance entry with a
+    # malformed body is `threshold` and never reaches the body check.
+    b.add(f"{b.index}-bad-undersigned-malformed", b.build(
+        "signer_thr", {"thr": 2, "surprise": "extra"}, [("root1", "root")]), "threshold")
+
     # A signature that is syntactically perfect and cryptographically wrong.
     # Without these an implementation that never calls Ed25519 reproduces the
     # entire manifest (gate run 4 proved it).
@@ -546,6 +570,18 @@ def genesis_aborts() -> list[tuple[str, bytes, "replay.Anchor"]]:
     raw = entry.encode(env)
     cases.append(("09-role-overlap", raw, replay.Anchor(NET, entry.leaf_hash(raw))))
 
+    def bad_body(name: str, **changes: Any) -> None:
+        body = dict(genesis()["body"], **changes)
+        env = _signed(entry.new("genesis", NET, ts=T0, body=body),
+                      [("root1", "root"), ("root2", "root")])
+        raw = entry.encode(env)
+        cases.append((name, raw, replay.Anchor(NET, entry.leaf_hash(raw))))
+
+    bad_body("10-duplicate-signer",
+             signers=[KEYS["signer1"].public, KEYS["signer1"].public])
+    bad_body("11-signer-thr-above-set", signer_thr=9)
+    bad_body("12-empty-roots", roots=[])
+
     assert good_anchor  # the good anchor is exercised by the log fixture
     return cases
 
@@ -578,6 +614,13 @@ def trust_rejections() -> list[tuple[str, dict[str, Any]]]:
          damaged(log_key=note.vkey("someone/else", KEYS["logkey"].public))),
         ("12-witness-key-unparseable",
          damaged(witnesses=[dict(base["witnesses"][0], key="nonsense")])),
+        # Isolated: `net` stays 16 bytes and `log_key` is renamed to agree with
+        # the wrong origin, so ONLY "origin derives from net" can reject this.
+        ("13-origin-only", damaged(
+            origin="norn/aaaaaaaaaaaaaaaaaaaaaaaaaa",
+            log_key=note.vkey("norn/aaaaaaaaaaaaaaaaaaaaaaaaaa", KEYS["logkey"].public))),
+        # Isolated: a missing key that no other rule also catches.
+        ("14-missing-name", damaged(name=_REMOVE)),
     ]
 
 
