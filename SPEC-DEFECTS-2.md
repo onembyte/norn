@@ -17,29 +17,30 @@ HTML-escaping · device signatures matched by `kid` ignoring `role` · governanc
 body-decode before the root threshold · genesis `params` ignored entirely ·
 `signer_remove` enforcing the quorum invariant **D-028 forbids**.
 
-Status: ⬜ open · ✅ fixed.
+Status: ⬜ open · ◐ partly · ✅ fixed. **E1–E11 closed in 0.9a/0.9b-1**; E12's
+coverage claim is now accurate, with the remaining gaps it names owed by 0.9b-3.
 
 ## Blockers
 
 | # | Defect | Status |
 |---|---|---|
 | E1 ✅ | **Canonical JSON did not exist.** §5.3's central MUST cross-referenced §12, a table of filenames, and the document skipped §14 entirely. Byte-string rendering (hex vs base64), the trailing newline, key ordering and **all string escaping** had to be reverse-engineered from `state.json`. Escaping remained undefined even then: an HTML-escaping variant scored 134/134, so two conforming implementations would diverge on the first policy containing `<` or `é`. | ✅ §14 restored and made complete; vectors 49/50 exercise every escape rule |
-| E2 ⬜ | `log_keys[].since_index` is undefined — the only definition of `since_index` in the document is about *devices*. Read off `state.json`. | ⬜ |
-| E3 ⬜ | §5.1's "no other field is populated beyond `net`" is factually wrong: `bad-genesis/state.json` carries the full §4.5 `params` defaults and every field at its zero value. Following the sentence verbatim fails the vector. §5.3 is what actually governs. | ⬜ |
-| E4 ⬜ | `revoke` failure has two reason codes in two normative tables: §5.2's `no-device-sig` row names "self-`revoke`", §5.1 says `threshold`. Vector 43 requires `threshold`. §5.2's row must drop "self-`revoke`". | ⬜ |
+| E2 ✅ | `log_keys[].since_index` is undefined — the only definition of `since_index` in the document is about *devices*. Read off `state.json`. | ✅ |
+| E3 ✅ | §5.1's "no other field is populated beyond `net`" is factually wrong: `bad-genesis/state.json` carries the full §4.5 `params` defaults and every field at its zero value. Following the sentence verbatim fails the vector. §5.3 is what actually governs. | ✅ |
+| E4 ✅ | `revoke` failure has two reason codes in two normative tables: §5.2's `no-device-sig` row names "self-`revoke`", §5.1 says `threshold`. Vector 43 requires `threshold`. §5.2's row must drop "self-`revoke`". | ✅ |
 
 ## Contradictions and gaps
 
 | # | Defect | Status |
 |---|---|---|
-| E5 ⬜ | §4.0 states `sigs: []` → `threshold` (by decision number), but no vector covers it; vector 45 tests the *omitted* key instead. | ⬜ |
-| E6 ⬜ | `kid` has no field constraint: is a malformed `kid` `decode`, or merely unresolvable? Unspecified, unvectored. Same for the reason code earned by an unsorted or duplicate-`kid` `sigs` array. | ⬜ |
-| E7 ⬜ | §4.0 applies the encoding profile — including the 1–23-byte map-key cap — to "canonical state", which **cannot satisfy it**: `active_wg` is keyed by a 32-byte key and `devices` by a `device_id` of up to 64 bytes. | ⬜ |
-| E8 ⬜ | genesis `params` is required in §4.3 and optional in §5.1. Unvectored either way, and the fixture's genesis params are exactly the defaults, so ignoring them entirely still passes. | ⬜ |
-| E9 ⬜ | **D-028's "MUST always be possible" has no vector defending it.** Vector 21 removes a signer without ever dropping below the threshold, so a variant enforcing the forbidden invariant passes. The one security property the spec argues for at length is untested. | ⬜ |
-| E10 ⬜ | Trust file: CBOR key is `witnesses`, the TOML rendering uses `[[witness]]`. Anyone building the CBOR from the documented human rendering produces a different key and therefore a different fingerprint. Array order significance and absent-optional rendering are also unstated. | ⬜ |
-| E11 ⬜ | Smaller: §2 does not name `origin`'s base32 alphabet in a document that uses two · the fingerprint's `-` separator and trailing newline are inferable only from the example · `receipt.json`/entry-mirror schemas undescribed · §12 says `testdata/vectors/` but the suite ships at `vectors/` · replay of an empty log undefined · genesis step 5 (`after` ≠ 0) unvectored. | ⬜ |
-| E12 ⬜ | **§12.1's coverage declaration is itself inaccurate.** §4's six field-constraint rows have **no** rejecting vector; the encoding profile has **zero** negative vectors, so a decoder skipping all profile enforcement scores 134/134. Two of §5.1's "normative" orderings are unexercised. Genesis has five distinct abort conditions and one vector. `expires` is `0` for every device in every state. §9 is a single positive fixture. | ⬜ |
+| E5 ✅ | §4.0 states `sigs: []` → `threshold` (by decision number), but no vector covers it; vector 45 tests the *omitted* key instead. | ✅ |
+| E6 ✅ | `kid` has no field constraint: is a malformed `kid` `decode`, or merely unresolvable? Unspecified, unvectored. Same for the reason code earned by an unsorted or duplicate-`kid` `sigs` array. | ✅ |
+| E7 ✅ | §4.0 applies the encoding profile — including the 1–23-byte map-key cap — to "canonical state", which **cannot satisfy it**: `active_wg` is keyed by a 32-byte key and `devices` by a `device_id` of up to 64 bytes. | ✅ |
+| E8 ✅ | genesis `params` is required in §4.3 and optional in §5.1. Unvectored either way, and the fixture's genesis params are exactly the defaults, so ignoring them entirely still passes. | ✅ |
+| E9 ✅ | **D-028's "MUST always be possible" has no vector defending it.** Vector 21 removes a signer without ever dropping below the threshold, so a variant enforcing the forbidden invariant passes. The one security property the spec argues for at length is untested. | ✅ |
+| E10 ✅ | Trust file: CBOR key is `witnesses`, the TOML rendering uses `[[witness]]`. Anyone building the CBOR from the documented human rendering produces a different key and therefore a different fingerprint. Array order significance and absent-optional rendering are also unstated. | ✅ |
+| E11 ✅ | Smaller: §2 does not name `origin`'s base32 alphabet in a document that uses two · the fingerprint's `-` separator and trailing newline are inferable only from the example · `receipt.json`/entry-mirror schemas undescribed · §12 says `testdata/vectors/` but the suite ships at `vectors/` · replay of an empty log undefined · genesis step 5 (`after` ≠ 0) unvectored. | ✅ |
+| E12 ◐ | **§12.1's coverage declaration is itself inaccurate.** §4's six field-constraint rows have **no** rejecting vector; the encoding profile has **zero** negative vectors, so a decoder skipping all profile enforcement scores 134/134. Two of §5.1's "normative" orderings are unexercised. Genesis has five distinct abort conditions and one vector. `expires` is `0` for every device in every state. §9 is a single positive fixture. | ◐ |
 
 ## What run 2 confirmed is sound
 

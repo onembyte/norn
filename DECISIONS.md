@@ -240,3 +240,16 @@ vectors can vanish silently. `internal/specdoc` now parses SPEC.md on every
 `make ci` and fails on a numbering gap, a duplicate number, a dangling `§N`
 reference, an empty section, or the absence of any section named in a required
 manifest. Rejected: "be more careful with sed".
+
+## D-036 · `kid` is a constrained field: 16 lowercase hex, else `decode` (2026-09-19, 0.9b-1)
+Was open question E6. A malformed `kid` is a schema violation, not a key that
+merely fails to resolve — the two produce different reason codes, so leaving it
+unstated lets two implementations disagree about the same entry. The `sigs`
+array's sorted-and-unique requirement is enforced the same way: accepting an
+unsorted array would give one signature set two canonical forms, which defeats
+the point of a deterministic encoding.
+
+## D-037 · `revoke.reason` and `genesis.params` are OPTIONAL (2026-09-19, 0.9b-1)
+Was E8, where §4.3 and §5.1 disagreed. Absent `reason` is equivalent to `""`;
+absent `genesis.params` means the §4.5 defaults. Both match the reference
+implementation, which is what the vectors already encode.

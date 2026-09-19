@@ -65,6 +65,13 @@ def _device_signed(env: dict[str, Any], device_pk: bytes) -> bool:
 # -- envelope shape -------------------------------------------------------
 
 _ID_OK = set("abcdefghijklmnopqrstuvwxyz0123456789.-")
+_HEX = set("0123456789abcdef")
+KID_LEN = 16
+
+
+def _is_kid(value: Any) -> bool:
+    """A key id is exactly 16 lowercase hex characters (SPEC §4.0)."""
+    return isinstance(value, str) and len(value) == KID_LEN and set(value) <= _HEX
 _ENVELOPE_KEYS = {"v", "t", "net", "ts", "after", "body", "sigs"}
 _REQUIRED_KEYS = {"v", "t", "net", "ts", "body", "sigs"}
 
@@ -80,15 +87,19 @@ def _check_envelope(env: Any, net: bytes) -> None:
         raise Reject("decode")
     if not isinstance(env["sigs"], list):
         raise Reject("decode")
-    seen: set[str] = set()
+    previous = ""
     for sig in env["sigs"]:
         if not isinstance(sig, dict) or set(sig) != {"kid", "role", "sig"}:
             raise Reject("decode")
-        if sig["role"] not in entry.ROLES or len(sig["sig"]) != 64:
+        if sig["role"] not in entry.ROLES or not isinstance(sig["sig"], bytes):
             raise Reject("decode")
-        if sig["kid"] in seen:
+        if len(sig["sig"]) != 64 or not _is_kid(sig["kid"]):
             raise Reject("decode")
-        seen.add(sig["kid"])
+        # Sorted and unique: §4.0 requires it, so accepting an unsorted array
+        # would let the same signature set have two canonical forms.
+        if previous and sig["kid"] <= previous:
+            raise Reject("decode")
+        previous = sig["kid"]
     if env["t"] not in entry.TYPES:
         raise Reject("unknown-type")
 
@@ -202,8 +213,15 @@ def _h_signer_add(state: State, env: dict[str, Any], index: int) -> None:
     state.signers[kid] = public
 
 
+def _kid_field(body: dict[str, Any]) -> str:
+    kid = body.get("kid")
+    if not _is_kid(kid):
+        raise Reject("decode")
+    return kid
+
+
 def _h_signer_remove(state: State, env: dict[str, Any], index: int) -> None:
-    kid = env["body"].get("kid")
+    kid = _kid_field(env["body"])
     if kid not in state.signers:
         raise Reject("unknown-key")
     # Deliberately no quorum invariant here (D-028): removing a compromised
@@ -229,7 +247,7 @@ def _h_root_add(state: State, env: dict[str, Any], index: int) -> None:
 
 
 def _h_root_remove(state: State, env: dict[str, Any], index: int) -> None:
-    kid = env["body"].get("kid")
+    kid = _kid_field(env["body"])
     if kid not in state.roots:
         raise Reject("unknown-key")
     remaining = len(state.roots) - 1

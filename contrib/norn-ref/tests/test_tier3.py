@@ -204,3 +204,42 @@ class CanonicalJsonEscaping(unittest.TestCase):
 def json_key(key: str) -> str:
     from nornref import canonjson
     return canonjson.dumps({key: 0}).split(":")[0][1:]
+
+
+class E6_KidIsAConstrainedField(unittest.TestCase):
+    """A malformed `kid` is a schema violation, not an unresolvable key.
+
+    The two produce different reason codes, so leaving it to chance lets two
+    implementations disagree about the same entry.
+    """
+
+    def _note_with_kid(self, kid):
+        env = entry.new("note", fixture.NET, ts=fixture.T0, after=51, body={"text": "x"})
+        entry.sign(env, fixture.KEYS["signer1"], "signer")
+        env["sigs"][0]["kid"] = kid
+        return cbor.encode(env)
+
+    def test_short_kid_is_decode(self):
+        state, n = state_with([self._note_with_kid("abc")])
+        self.assertEqual(state.rejected[-1], {"index": n, "reason": "decode"})
+
+    def test_uppercase_kid_is_decode(self):
+        state, n = state_with([self._note_with_kid("ABCDEF0123456789")])
+        self.assertEqual(state.rejected[-1], {"index": n, "reason": "decode"})
+
+    def test_wellformed_but_unresolvable_kid_is_not_decode(self):
+        state, n = state_with([self._note_with_kid("0123456789abcdef")])
+        self.assertEqual(state.rejected[-1], {"index": n, "reason": "threshold"})
+
+    def test_malformed_kid_in_a_body_is_decode(self):
+        raw = build("signer_remove", {"kid": "nothex!"}, ROOTS3, after=51)
+        state, n = state_with([raw])
+        self.assertEqual(state.rejected[-1], {"index": n, "reason": "decode"})
+
+    def test_unsorted_sigs_is_decode(self):
+        env = entry.new("note", fixture.NET, ts=fixture.T0, after=51, body={"text": "x"})
+        entry.sign(env, fixture.KEYS["signer1"], "signer")
+        entry.sign(env, fixture.KEYS["root1"], "root")
+        env["sigs"].reverse()
+        state, n = state_with([cbor.encode(env)])
+        self.assertEqual(state.rejected[-1], {"index": n, "reason": "decode"})

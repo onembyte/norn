@@ -166,6 +166,32 @@ def catalogue() -> list[tuple[str, dict[str, Any]]]:
     return out
 
 
+
+# -- byte-level patches that violate exactly one encoding-profile rule --------
+
+def _patch_nonshortest(raw: bytes) -> bytes:
+    """Re-encode the `v` value 1 as 0x1801 instead of 0x01 (RFC 8949 §4.2.1)."""
+    needle = cbor.encode("v") + cbor.encode(1)
+    assert needle in raw, "v:1 not found"
+    return raw.replace(needle, cbor.encode("v") + b"\x18\x01", 1)
+
+
+def _patch_null(raw: bytes) -> bytes:
+    """Replace the `after` value with CBOR null, which the profile forbids."""
+    needle = cbor.encode("after") + cbor.encode(55)
+    assert needle in raw, "after not found"
+    return raw.replace(needle, cbor.encode("after") + b"\xf6", 1)
+
+
+def _patch_unsorted(raw: bytes) -> bytes:
+    """Swap the first two map entries so the keys are no longer in order."""
+    head = raw[:1]
+    first = cbor.encode("t") + cbor.encode("note")
+    second = cbor.encode("v") + cbor.encode(1)
+    assert raw[1:].startswith(first + second), "unexpected leading map order"
+    rest = raw[1 + len(first) + len(second):]
+    return head + second + first + rest
+
 # -- the replay fixture log (SPEC §12) -----------------------------------
 
 from collections import namedtuple  # noqa: E402  (kept next to its only user)
@@ -342,4 +368,38 @@ def log() -> list[LogItem]:
     b.add("50-enroll-unicode-labels", b.build("enroll", _enroll_body(
         "escaped", labels=UNICODE_LABELS),
         [("escaped", "device")] + both))
+
+    # E5: `sigs: []` is well-formed but unauthorised -- `threshold`, not `decode`.
+    b.add_raw("51-bad-empty-sigs", cbor.encode({
+        "v": entry.VERSION, "t": "note", "net": NET, "ts": T0 + 9000,
+        "after": 51, "body": {"text": "well-formed, unsigned"}, "sigs": []}), "threshold")
+
+    # E6: a malformed `kid` is a schema violation, not an unresolvable key.
+    bad_kid = entry.new("note", NET, ts=T0 + 9000, after=52, body={"text": "bad kid"})
+    entry.sign(bad_kid, KEYS["signer1"], "signer")
+    bad_kid["sigs"][0]["kid"] = "NOTHEX"
+    b.add_raw("52-bad-kid-format", cbor.encode(bad_kid), "decode")
+
+    # E9: defends D-028. This leaves ONE signer while `signer_thr` is 2 -- the
+    # network cannot enrol until roots add a signer, and that is the point:
+    # removing a compromised signer key must never be blocked. Placed last so it
+    # does not starve earlier entries of signatures.
+    b.add("53-signer_remove-below-threshold",
+          b.build("signer_remove", {"kid": KEYS["signer3"].id}, roots3))
+    # ...and the recovery roots must then perform, which is the other half of
+    # the D-028 argument: the degraded state is real but recoverable. Re-adding
+    # the same key keeps the fixture's terminal state usable; a real recovery
+    # would add a replacement key.
+    b.add("54-signer_add-recover",
+          b.build("signer_add", {"pk": KEYS["signer3"].public}, roots3))
+
+    # E12: the encoding profile had no negative vectors at all, so a decoder
+    # that skipped every profile check scored a clean pass. Each of these is a
+    # valid entry patched at the byte level to violate exactly one rule.
+    base = entry.encode(_signed(entry.new(
+        "note", NET, ts=T0 + 9000, after=55, body={"text": "profile probe"}),
+        [("signer1", "signer")]))
+    b.add_raw("55-bad-cbor-nonshortest", _patch_nonshortest(base), "decode")
+    b.add_raw("56-bad-cbor-null", _patch_null(base), "decode")
+    b.add_raw("57-bad-cbor-unsorted-keys", _patch_unsorted(base), "decode")
     return b.items

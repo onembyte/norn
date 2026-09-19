@@ -34,7 +34,7 @@ they win:
 | Name | Form | Rule |
 |---|---|---|
 | `net_id` | 16 random bytes | generated at genesis; never changes |
-| `origin` | `norn/<base32-lowercase(net_id) without padding>` | checkpoint origin line; the log key's signed-note name MUST equal it |
+| `origin` | `norn/` + **RFC 4648** base32 of `net_id`, lowercased, padding stripped | checkpoint origin line; the log key's signed-note name MUST equal it. Note this document also uses *Crockford* base32, in §9.3 only — they are different alphabets. |
 | `device_id` | UTF-8 string, 1–64 bytes, `[a-z0-9][a-z0-9.-]*` | unique among `active` devices; MAY be reused after `revoke` |
 
 ## 3. Keys
@@ -52,8 +52,11 @@ they win:
 
 ### 4.0 Encoding profile (normative — the byte-level contract)
 
-All Norn structures (entries, enrollment requests, trust files, canonical state)
-use **RFC 8949 §4.2.1 Core Deterministic Encoding** with these restrictions:
+All Norn **CBOR** structures — entries, enrollment requests and trust files —
+use **RFC 8949 §4.2.1 Core Deterministic Encoding** with these restrictions.
+The canonical *state* is JSON, not CBOR, and is governed by §14 instead; it is
+keyed by `device_id` and by 32-byte WireGuard keys, neither of which would fit
+the map-key cap below:
 
 | Rule | Requirement |
 |---|---|
@@ -97,6 +100,8 @@ Field constraints (violations → reason `decode`):
 | `labels` | map text→text; ≤ 32 entries; keys 1–23 bytes (the map-key cap above — a longer key is unencodable); values ≤ 256 bytes |
 | `roots`, `signers` at genesis | arrays of 32-byte `pk`, no duplicates, no key in both; `len(roots) ≥ root_thr ≥ 1`; `len(signers) ≥ signer_thr ≥ 1` |
 | `thr` | uint ≥ 1 and ≤ the size of the set it applies to (checked at replay) |
+| `kid` (in `sigs`, and in `signer_remove`/`root_remove` bodies) | exactly 16 characters matching `^[0-9a-f]{16}$`. A malformed `kid` is a schema violation (`decode`), **not** a `kid` that merely fails to resolve — that distinction matters because the two produce different reason codes. |
+| `sigs` array | sorted by `kid` and free of repeats (§4.0); an unsorted or repeating array is `decode` |
 
 Reserved label keys (advisory hints for owner mode, D-026): `ip` — comma-separated
 CIDR list used as allowed-ips; `endpoint` — `host:port`. A control plane may
@@ -144,10 +149,10 @@ verified against the key the `kid` resolves to in the state *before* this entry.
 
 | `t` | body | required signatures |
 |---|---|---|
-| `genesis` | `name` (string), `roots` ([pk]), `root_thr` (uint), `signers` ([pk]), `signer_thr` (uint), `params` (§4.5) | ≥ `root_thr` of `roots` |
+| `genesis` | `name` (string), `roots` ([pk]), `root_thr` (uint), `signers` ([pk]), `signer_thr` (uint), `params` (§4.5, **OPTIONAL** — absent means the §4.5 defaults) | ≥ `root_thr` of `roots` |
 | `enroll` | `device_id`, `device_pk` (bytes32 Ed25519), `wg_pk` (bytes32 X25519), `labels` (map string→string, OPTIONAL), `expires` (uint, OPTIONAL) | the device (`device_pk`) **and** ≥ `signer_thr` signers |
 | `rotate` | `device_id`, `wg_pk` (new), `device_pk` (new, OPTIONAL) | the *current* device key; **and the incoming `device_pk` too when the body carries one** (proof of possession, D-032); plus ≥ `signer_thr` signers if `params.rotate_needs_signer` |
-| `revoke` | `device_id`, `reason` (string) | ≥ `signer_thr` signers, **or** the device itself, **or** ≥ `root_thr` roots |
+| `revoke` | `device_id`, `reason` (string, **OPTIONAL** — absent is equivalent to `""`) | ≥ `signer_thr` signers, **or** the device itself, **or** ≥ `root_thr` roots |
 | `signer_add` | `pk` | ≥ `root_thr` roots |
 | `signer_remove` | `kid` | ≥ `root_thr` roots |
 | `signer_thr` | `thr` (uint ≥ 1) | ≥ `root_thr` roots |
@@ -210,6 +215,9 @@ Entry 0 is handled once, then every later entry runs the same numbered list.
 The order is **normative**: several vectors are simultaneously wrong in more
 than one way, so the first matching step decides the reason code.
 
+Replay of an **empty** list of entries yields the zero state of §5.3 with
+`size` 0 and `rejected` empty: there is nothing to reject.
+
 **Entry 0 (genesis).** In order:
 
 1. `entry_hash` is recorded as seen.
@@ -226,8 +234,10 @@ than one way, so the first matching step decides the reason code.
    against. Fewer than `root_thr` valid `root` signatures → **abort** (`bad-genesis`).
 8. Otherwise the state is initialised from the body and `size` becomes 1.
 
-"Abort" means replay stops: `rejected` holds exactly `{index: 0, reason: "bad-genesis"}`,
-`size` is 0, and no other field is populated beyond `net`. A log whose entry 0 is
+"Abort" means replay stops immediately: `rejected` holds exactly
+`{index: 0, reason: "bad-genesis"}` and `size` is 0. The state is still
+serialised in full per §5.3 — every field present, at its zero value, with
+`net` from the anchor and `params` at the §4.5 defaults. A log whose entry 0 is
 unusable has nothing to verify later entries against.
 
 **Entries 1…n.** For each, in order:
@@ -282,7 +292,7 @@ Entries whose `expires` is earlier than the checkpoint time are treated as
 | `dup-entry` | `entry_hash` already seen |
 | `after` | `after` > index |
 | `threshold` | fewer valid signatures of the required role than the threshold |
-| `no-device-sig` | `enroll`/`rotate`/self-`revoke` lacks a valid signature by the device key |
+| `no-device-sig` | `enroll`/`rotate` lacks a required valid signature by a device key. **Not `revoke`** — a `revoke` may be authorised by signers, roots *or* the device, so a `revoke` carrying none of the three is `threshold` (§5.1). |
 | `dup-id` | `enroll` with a `device_id` that is currently `active` |
 | `dup-wg` | `enroll`/`rotate` with a `wg_pk` that is currently active for another device |
 | `unknown-device` | `rotate`/`revoke` names a `device_id` never enrolled |
@@ -316,7 +326,7 @@ when the entry that produced it omitted the corresponding optional field.
 | `signers` | map `kid` → 32 bytes | current signer keys |
 | `params` | map | §4.5 defaults, overlaid by `genesis.body.params`, then by each `params` entry |
 | `policy` | string | text of the most recent `policy` entry; `""` if none |
-| `log_keys` | array of `{overlap, pk, since_index}` | one per `log_key` entry, in log order. The trust file's initial log key is **not** listed — it is not in the log. |
+| `log_keys` | array of `{overlap, pk, since_index}` | one per `log_key` entry, in log order. `since_index` is the **index of that `log_key` entry** — not a log size, not the index from which the key becomes valid. The trust file's initial log key is **not** listed: it is not in the log. |
 | `devices` | map `device_id` → device | see below |
 | `active_wg` | map `wg_pk` → `device_id` | exactly the `wg_pk` of every `active` device |
 | `rejected` | array of `{index, reason}` | in index order |
@@ -449,15 +459,27 @@ key  = "norn-witness/pi+…"
 url  = "http://10.0.0.153:8100"
 ```
 
-Byte strings render as **lowercase hex** in TOML and stay raw bytes in CBOR; no
-field is ever base64 in the trust file.
+Mapping the rendering back to the authoritative CBOR (§9.1):
+
+- each `[[witness]]` TOML table is one element of the CBOR array under the key
+  **`witnesses`** — singular in TOML, plural in CBOR. Array **order is
+  significant**: it is part of the bytes the fingerprint covers, so two files
+  differing only in witness order have different fingerprints;
+- byte strings render as **lowercase hex** in TOML and stay raw bytes in CBOR;
+  no field is ever base64 in the trust file;
+- an absent optional member — a witness `url`, or the whole `anchor` table — is
+  simply **omitted** from the CBOR map (§4.0: OPTIONAL means absent, never `null`).
+
+Building the CBOR from this rendering must reproduce `trust.cbor` byte for byte;
+if it does not, the fingerprint will not match and the file must be rejected.
 
 ### 9.3 Fingerprint
 
 The first **10 bytes** of `SHA-256(CBOR(trust))` — 80 bits — encoded in
 **Crockford base32** (alphabet `0123456789ABCDEFGHJKMNPQRSTVWXYZ`, which omits
 I, L, O and U), most-significant bit first, as 16 characters in four groups of
-four: `ZVGR-QRTN-JY0V-H1Z0` (D-029).
+four joined by `-` (U+002D): `ZVGR-QRTN-JY0V-H1Z0` (D-029). The
+`trust.fingerprint` file holds exactly that string followed by one `0x0A`.
 
 80 bits is chosen so that an attacker who controls the delivery channel (threat
 A10) cannot grind a substitute trust file with a matching fingerprint.
@@ -494,6 +516,9 @@ that are not consistent MUST:
 
 ## 12. Test vectors (deliverable of Phase 0/1)
 
+Paths below are relative to the vector root, which ships as `testdata/vectors/`
+in this repository and may be rooted anywhere when the suite is distributed.
+
 | file | contents |
 |---|---|
 | `keys.json` | every test key: Ed25519 `{seed, public, kid}` by name, X25519 public keys by name, and `net` |
@@ -505,29 +530,44 @@ that are not consistent MUST:
 | `state.json` | canonical replay output for `log/` (§5.3) |
 | `bad-genesis/` | a one-entry log plus `manifest.json` and `state.json`; its anchor pins a different genesis, so replay aborts |
 | `trust.cbor` · `trust.toml` · `trust.fingerprint` | the trust anchor (§9), authoritative bytes, human rendering, and its fingerprint |
-| `receipt.note` · `receipt.json` | a submission receipt (§7) and the values it commits to |
+| `receipt.note` | a submission receipt: the signed note itself (§7) |
+| `receipt.json` | `{comment, origin, leaf_hash, deadline, text_sha256}`, where `text_sha256` is `SHA-256` of the **signed text** — through the newline ending the last text line, excluding the blank separator and the signature lines |
 
-### 12.1 Coverage — what is *not* yet vectored
+### 12.1 Coverage — what is and is not vectored
 
-Stated plainly, because a suite that looks complete is worse than one that admits
-its holes (D27). Fully covered today: **§4** (encoding, hashes, preimages,
-signatures), **§5** (replay, every reason code), **§7** (receipt), **§9** (trust
-file, fingerprint).
+Stated precisely, because a suite that looks complete is worse than one that
+admits its holes, and an inaccurate coverage claim is the same failure wearing a
+different hat.
 
-**Not covered at all**, and therefore not yet binding on a second implementation:
+**Vectored, including negative cases:**
 
-| section | missing vectors | owed by |
+| area | positive | negative |
 |---|---|---|
-| §6 | tiles, entry bundles with their uint16 length prefixes, a signed checkpoint with cosignatures | Phase 2 |
+| §4.0 encoding profile | every entry | non-shortest integer (55), `null` (56), unsorted map keys (57) |
+| §4.0 field constraints | labels (2, 50) | malformed `kid` (52), oversized/mistyped labels (unit-tested), `sigs` omitted (45), `sigs: []` (51), `role` outside the enum (44) |
+| §4.2 signatures, hashes, preimage | 16 entry mirrors | wrong `net` (32) |
+| §5 replay, all 16 reason codes | 58-entry log | 30 rejecting entries |
+| §5.1 check order | — | multi-fault entries 47, 48 |
+| §5.3 state, incl. D-028 | `state.json` | below-threshold `signer_remove` accepted (53) and recovered (54) |
+| §7 receipt | `receipt.note` | — |
+| §9 trust file, fingerprint | `trust.cbor` | — |
+| §14 canonical JSON | every `.json`; escaping torture (49, 50) | — |
+
+**Not vectored, and therefore not binding on a second implementation:**
+
+| area | missing | owed by |
+|---|---|---|
+| §5.1 genesis aborts | only the leaf-hash mismatch is vectored; `t ≠ genesis`, wrong `net`, `after ≠ 0`, malformed body and bootstrap-signature shortfall are not | 0.9b-3 |
+| §5.3 `expires` | no device in any state has a non-zero `expires` | 0.9b-3 |
+| §9 trust file | no negative fixture: unknown key, missing `quorum` line, duplicate witness name, wrong `version` | 0.9b-3 |
+| §6 | tiles, entry bundles with their uint16 length prefixes, a cosigned checkpoint | Phase 2 |
 | §8 | `tlog-proof@v1` bundles | Phase 2 |
 | §10 | the verifier loop over a served log | Phase 2 |
 | §11 | fork evidence: two conflicting cosigned checkpoints and the expected evidence file | Phase 4 |
 
-These come from Tessera and torchwood producing and verifying real tiles, which
-is why they wait for Phase 2 rather than being hand-built here — a hand-rolled
-tlog would test this implementation against itself and prove nothing.
-
-Cosignature and checkpoint vectors are taken from the C2SP repositories, not reinvented.
+The Phase 2 and Phase 4 rows wait on Tessera and torchwood producing and
+verifying real tiles: a hand-rolled tlog here would test this implementation
+against itself and prove nothing.
 
 ## 13. Open items
 
