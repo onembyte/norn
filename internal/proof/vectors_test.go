@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/onembyte/norn/internal/trust"
+
 	"github.com/onembyte/norn/internal/note"
 	"github.com/onembyte/norn/internal/proof"
 	"github.com/onembyte/norn/internal/replay"
@@ -26,19 +28,29 @@ func loadCases(t *testing.T) (string, []string, []string) {
 		t.Skip("served-log vectors not generated")
 	}
 	var meta struct {
-		Origin     string   `json:"origin"`
-		LogKeySeed string   `json:"log_key_seed"`
-		Devices    []string `json:"devices"`
+		Origin  string   `json:"origin"`
+		Devices []string `json:"devices"`
 	}
 	if err := json.Unmarshal(raw, &meta); err != nil {
 		t.Fatal(err)
 	}
-	seed, err := hex.DecodeString(meta.LogKeySeed)
+
+	// The key comes from the shipped trust file, not from a seed repeated in
+	// cases.json. A second copy is a second thing to keep in step, and the two
+	// halves of the suite were signed by different keys for six checkpoints
+	// before anything checked (2.9g).
+	rawTrust, err := os.ReadFile(filepath.Join(root(), "trust.cbor"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	pub := ed25519.NewKeyFromSeed(seed).Public().(ed25519.PublicKey)
-	return meta.Origin, []string{note.VerifierKey(meta.Origin, pub)}, meta.Devices
+	anchor, err := trust.Parse(rawTrust)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if anchor.Origin != meta.Origin {
+		t.Fatalf("the bundles say origin %q, the trust file says %q", meta.Origin, anchor.Origin)
+	}
+	return meta.Origin, []string{anchor.LogKey}, meta.Devices
 }
 
 func TestEveryShippedBundleChecksOut(t *testing.T) {

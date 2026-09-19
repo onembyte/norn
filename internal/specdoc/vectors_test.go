@@ -10,6 +10,10 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/onembyte/norn/internal/proof"
+	"github.com/onembyte/norn/internal/tlog"
+	"github.com/onembyte/norn/internal/trust"
 )
 
 // The committed vectors are the contract between implementations. Nothing used
@@ -290,6 +294,58 @@ func TestSpecLogSizeIsCurrent(t *testing.T) {
 	for _, m := range countRE.FindAllStringSubmatch(string(spec), -1) {
 		if m[0] != want {
 			t.Errorf("SPEC.md quotes %s, but the fixture has %d entries", m[0], len(manifest.Entries))
+		}
+	}
+}
+
+// The suite has two provenances (§12): the reference implementation writes
+// `trust.cbor`, the Go implementation writes `served/` and `proofs/`. Nothing
+// checked that they agreed about the log key -- and until 2.9e-i nothing could
+// have noticed, because no verifier checked a checkpoint signature. They were
+// signed by different keys for six checkpoints.
+func TestTheServedLogIsSignedByTheKeyTheTrustFileNames(t *testing.T) {
+	root := vectorRoot(t)
+	rawTrust, err := os.ReadFile(filepath.Join(root, "trust.cbor"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	anchor, err := trust.Parse(rawTrust)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	checkpoint, err := os.ReadFile(filepath.Join(root, "served", "checkpoint"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cp, err := tlog.Verify(string(checkpoint), []string{anchor.LogKey})
+	if err != nil {
+		t.Fatalf("the served checkpoint does not verify under trust.cbor's log key: %v", err)
+	}
+	if cp.Origin != anchor.Origin {
+		t.Errorf("the served log's origin is %q, the anchor's is %q", cp.Origin, anchor.Origin)
+	}
+
+	// The bundles carry that same checkpoint, so they must check too.
+	names, err := filepath.Glob(filepath.Join(root, "proofs", "*.bundle"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(names) == 0 {
+		t.Fatal("no proof bundles in the suite")
+	}
+	for _, name := range names {
+		raw, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		bundle, err := proof.Decode(raw)
+		if err != nil {
+			t.Fatalf("%s: %v", filepath.Base(name), err)
+		}
+		if err := bundle.Check([]string{anchor.LogKey}); err != nil {
+			t.Errorf("%s does not check under trust.cbor's log key: %v",
+				filepath.Base(name), err)
 		}
 	}
 }

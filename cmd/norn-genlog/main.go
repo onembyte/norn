@@ -25,9 +25,36 @@ import (
 	"github.com/onembyte/norn/internal/tlogstore"
 )
 
-// logKeySeed is a fixed test seed so the vectors are reproducible. It is
-// published deliberately: these are vectors, not a network.
-var logKeySeed = []byte("norn/vector/log-key/v1----------")
+// logKey is the key the shipped `trust.cbor` names as this network's log key.
+//
+// It is read from `keys.json` rather than invented here, and that is the whole
+// point: the suite has two provenances (§12), and until 2.9g the Go half signed
+// its checkpoints with a seed of its own while the reference half's trust file
+// named a different key. Nothing noticed, because no verifier checked a
+// checkpoint signature until 2.9e-i. A suite whose two halves disagree is a
+// suite that cannot be followed.
+func logKey(root string) (ed25519.PrivateKey, error) {
+	raw, err := os.ReadFile(filepath.Join(root, "keys.json"))
+	if err != nil {
+		return nil, err
+	}
+	var keys struct {
+		Ed25519 map[string]struct {
+			Seed string `json:"seed"`
+		} `json:"ed25519"`
+	}
+	if err := json.Unmarshal(raw, &keys); err != nil {
+		return nil, err
+	}
+	seed, err := hex.DecodeString(keys.Ed25519["logkey"].Seed)
+	if err != nil {
+		return nil, err
+	}
+	if len(seed) != ed25519.SeedSize {
+		return nil, fmt.Errorf("keys.json has no usable logkey seed")
+	}
+	return ed25519.NewKeyFromSeed(seed), nil
+}
 
 func main() {
 	if len(os.Args) != 2 {
@@ -51,7 +78,10 @@ func run(root string) error {
 	if err := os.RemoveAll(served); err != nil {
 		return err
 	}
-	key := ed25519.NewKeyFromSeed(logKeySeed[:32])
+	key, err := logKey(root)
+	if err != nil {
+		return err
+	}
 	store, err := tlogstore.Open(served, origin, key)
 	if err != nil {
 		return err
@@ -109,10 +139,12 @@ func run(root string) error {
 	meta := map[string]any{
 		"comment": "the served log and its proof bundles, produced by the Go " +
 			"implementation and validated by upstream libraries; see SPEC 12",
-		"origin":       origin,
-		"log_key_seed": hex.EncodeToString(logKeySeed[:32]),
-		"size":         store.Size(),
-		"devices":      ids,
+		"origin": origin,
+		// Named rather than repeated: the seed lives in keys.json, and a
+		// second copy here is a second thing to keep in step.
+		"log_key": "keys.json ed25519.logkey — the key trust.cbor names",
+		"size":    store.Size(),
+		"devices": ids,
 	}
 	blob, err := json.MarshalIndent(meta, "", "  ")
 	if err != nil {
