@@ -170,3 +170,12 @@ Restricting CBOR to this subset makes RFC 8949 §4.2.1 and the older RFC 7049
 key ordering coincide, removes every encoder-specific ambiguity found in CBOR
 libraries, and keeps a decoder small enough to fuzz to the ground. Rejected:
 "whatever cbor2/fxamacker emit by default".
+
+## D-028 · `signer_remove` has no quorum invariant (2026-09-19, 0.4)
+Found while building the rejection vectors: a symmetric "don't drop below
+threshold" check on `signer_remove` would make the *last* signer key
+unremovable — exactly the key you must be able to remove when it is stolen
+(threat A3). Roots can always `signer_add` afterwards, so the degraded state is
+recoverable. `root_remove`/`root_thr` keep their invariant, because losing the
+root quorum is not recoverable in-log (R5 re-genesis). Rejected: symmetry for
+its own sake.

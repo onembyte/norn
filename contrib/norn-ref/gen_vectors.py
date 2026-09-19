@@ -15,7 +15,7 @@ import sys
 
 import hashlib
 
-from nornref import canonjson, entry, fixture
+from nornref import canonjson, entry, fixture, replay
 
 
 def write(path: pathlib.Path, data: bytes | str) -> None:
@@ -50,10 +50,39 @@ def write_entries(out: pathlib.Path) -> None:
         }) + "\n")
 
 
+def write_log(out: pathlib.Path) -> None:
+    """The replay fixture: the log, its manifest, and the state it produces."""
+    items = fixture.log()
+    raw = [item.raw for item in items]
+    for item in items:
+        write(out / "log" / f"{item.name}.cbor", item.raw)
+        if item.reason:
+            write(out / "log" / f"{item.name}.reason", item.reason + "\n")
+
+    anchor = replay.Anchor(net=fixture.NET, genesis_hash=entry.leaf_hash(raw[0]))
+    write(out / "log" / "manifest.json", canonjson.dumps({
+        "anchor": {"net": anchor.net, "genesis_hash": anchor.genesis_hash},
+        "entries": [{"index": i, "name": it.name, "reason": it.reason or ""}
+                    for i, it in enumerate(items)],
+    }) + "\n")
+    write(out / "state.json", replay.replay(anchor, raw).to_json() + "\n")
+
+    # bad-genesis aborts replay, so it needs a log of its own.
+    bad = replay.Anchor(net=fixture.NET, genesis_hash=bytes(32))
+    write(out / "bad-genesis" / "00-genesis.cbor", raw[0])
+    write(out / "bad-genesis" / "manifest.json", canonjson.dumps({
+        "anchor": {"net": bad.net, "genesis_hash": bad.genesis_hash},
+        "comment": "the genesis entry is well-formed but is not the one this anchor pins",
+        "entries": [{"index": 0, "name": "00-genesis", "reason": "bad-genesis"}],
+    }) + "\n")
+    write(out / "bad-genesis" / "state.json", replay.replay(bad, raw[:1]).to_json() + "\n")
+
+
 def main(argv: list[str]) -> int:
     out = pathlib.Path(argv[1] if len(argv) > 1 else "testdata/vectors")
     write_keys(out)
     write_entries(out)
+    write_log(out)
     count = sum(1 for _ in out.rglob("*") if _.is_file())
     print(f"wrote {count} files to {out}")
     return 0

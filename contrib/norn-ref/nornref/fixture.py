@@ -17,11 +17,24 @@ ROOTS = ["root1", "root2", "root3"]
 SIGNERS = ["signer1", "signer2"]
 DEVICES = ["nas", "laptop", "pi-cam"]
 
+EXTRA_KEYS = ["signer3", "root4", "logkey", "logkey2", "spare", "printer"]
+
 KEYS: dict[str, keys.Ed25519] = {
     name: keys.Ed25519.from_name(name)
-    for name in ROOTS + SIGNERS + DEVICES + ["signer3", "root4", "logkey", "logkey2"]
+    for name in ROOTS + SIGNERS + DEVICES + EXTRA_KEYS
 }
-WG: dict[str, bytes] = {name: keys.x25519_public(name) for name in DEVICES + ["laptop2", "rogue"]}
+WG: dict[str, bytes] = {
+    name: keys.x25519_public(name)
+    for name in DEVICES + ["laptop2", "nas2", "spare", "printer", "rogue"]
+}
+
+POLICY_TEXT = (
+    "log norn+11111111+AAAA\n"
+    "witness pi norn+22222222+BBBB\n"
+    "witness vps norn+33333333+CCCC\n"
+    "group home 2 pi vps\n"
+    "quorum home\n"
+)
 
 
 def _signed(env: dict[str, Any], signers: list[tuple[str, str]]) -> dict[str, Any]:
@@ -97,3 +110,141 @@ def catalogue() -> list[tuple[str, dict[str, Any]]]:
             "text": "quarterly key review completed"}), [("signer1", "signer")])),
     ]
     return out
+
+
+# -- the replay fixture log (SPEC §12) -----------------------------------
+
+from collections import namedtuple  # noqa: E402  (kept next to its only user)
+
+from . import cbor  # noqa: E402
+
+LogItem = namedtuple("LogItem", "name raw reason")
+
+
+class _Builder:
+    """Accumulates a log, assigning each entry `after` = its own index.
+
+    Every entry is appended with the reason it is expected to be rejected for,
+    or None when it must take effect. That expectation is the test oracle.
+    """
+
+    def __init__(self) -> None:
+        self.items: list[LogItem] = []
+
+    @property
+    def index(self) -> int:
+        return len(self.items)
+
+    def add(self, name: str, env: dict[str, Any], reason: str | None = None) -> None:
+        self.items.append(LogItem(name, entry.encode(env), reason))
+
+    def add_raw(self, name: str, raw: bytes, reason: str | None) -> None:
+        self.items.append(LogItem(name, raw, reason))
+
+    def build(self, kind: str, body: dict[str, Any], signers: list[tuple[str, str]],
+              after: int | None = None, ts_offset: int | None = None) -> dict[str, Any]:
+        env = entry.new(kind, NET, ts=T0 + (ts_offset if ts_offset is not None else self.index * 60),
+                        after=self.index if after is None else after, body=body)
+        return _signed(env, signers)
+
+
+def _enroll_body(device: str, wg: str | None = None, **extra: Any) -> dict[str, Any]:
+    body = {"device_id": device, "device_pk": KEYS[device].public, "wg_pk": WG[wg or device]}
+    body.update(extra)
+    return body
+
+
+def log() -> list[LogItem]:
+    """A 40-entry log: valid entries interleaved with one per reason code."""
+    b = _Builder()
+    b.add("00-genesis", genesis())
+
+    b.add("01-enroll-nas", b.build("enroll", _enroll_body("nas"),
+                                   [("nas", "device"), ("signer1", "signer")]))
+    b.add("02-enroll-laptop", b.build("enroll", _enroll_body(
+        "laptop", labels={"ip": "10.9.0.2/32", "endpoint": "192.0.2.10:51820"}),
+        [("laptop", "device"), ("signer1", "signer")]))
+    b.add("03-enroll-pi-cam", b.build("enroll", _enroll_body("pi-cam", expires=T0 + 2_592_000),
+                                      [("pi-cam", "device"), ("signer1", "signer")]))
+
+    b.add("04-bad-dup-id", b.build("enroll", _enroll_body("nas", wg="nas2"),
+                                   [("nas", "device"), ("signer1", "signer")]), "dup-id")
+    b.add("05-bad-dup-wg", b.build("enroll", _enroll_body("spare", wg="nas"),
+                                   [("spare", "device"), ("signer1", "signer")]), "dup-wg")
+    b.add("06-bad-no-device-sig", b.build("enroll", _enroll_body("printer"),
+                                          [("signer1", "signer")]), "no-device-sig")
+    b.add("07-bad-threshold", b.build("enroll", _enroll_body("printer"),
+                                      [("printer", "device")]), "threshold")
+
+    b.add("08-rotate-laptop", b.build("rotate", {"device_id": "laptop", "wg_pk": WG["laptop2"]},
+                                      [("laptop", "device")]))
+    b.add("09-bad-unknown-device", b.build("rotate", {"device_id": "ghost", "wg_pk": WG["rogue"]},
+                                           [("nas", "device")]), "unknown-device")
+    b.add("10-bad-after", b.build("note", {"text": "signed against a future log size"},
+                                  [("signer1", "signer")], after=999), "after")
+
+    b.add("11-revoke-pi-cam", b.build("revoke", {"device_id": "pi-cam", "reason": "decommissioned"},
+                                      [("signer1", "signer")]))
+    b.add("12-bad-not-active", b.build("revoke", {"device_id": "pi-cam", "reason": "again"},
+                                       [("signer1", "signer")]), "not-active")
+    b.add_raw("13-bad-dup-entry", b.items[1].raw, "dup-entry")
+    b.add("14-bad-dup-genesis", genesis(after=14), "dup-genesis")
+
+    bogus = {"v": entry.VERSION, "t": "bogus", "net": NET, "ts": T0, "after": b.index,
+             "body": {"text": "not a real type"}, "sigs": []}
+    entry.sign(bogus, KEYS["signer1"], "signer")
+    b.add_raw("15-bad-unknown-type", cbor.encode(bogus), "unknown-type")
+
+    b.add("16-signer_add-signer3", b.build("signer_add", {"pk": KEYS["signer3"].public},
+                                           [("root1", "root"), ("root2", "root")]))
+    b.add("17-bad-dup-key", b.build("signer_add", {"pk": KEYS["signer3"].public},
+                                    [("root1", "root"), ("root2", "root")]), "dup-key")
+    b.add("18-signer_thr-2", b.build("signer_thr", {"thr": 2},
+                                     [("root1", "root"), ("root2", "root")]))
+    b.add("19-bad-thr", b.build("signer_thr", {"thr": 99},
+                                [("root1", "root"), ("root2", "root")]), "bad-thr")
+    b.add("20-bad-unknown-key", b.build("signer_remove", {"kid": KEYS["root4"].id},
+                                        [("root1", "root"), ("root2", "root")]), "unknown-key")
+    b.add("21-signer_remove-signer2", b.build("signer_remove", {"kid": KEYS["signer2"].id},
+                                              [("root1", "root"), ("root3", "root")]))
+
+    b.add("22-root_add-root4", b.build("root_add", {"pk": KEYS["root4"].public},
+                                       [("root1", "root"), ("root2", "root")]))
+    b.add("23-root_thr-3", b.build("root_thr", {"thr": 3},
+                                   [("root1", "root"), ("root2", "root")]))
+    roots3 = [("root1", "root"), ("root2", "root"), ("root3", "root")]
+    b.add("24-root_remove-root4", b.build("root_remove", {"kid": KEYS["root4"].id}, roots3))
+    b.add("25-bad-root-invariant", b.build("root_remove", {"kid": KEYS["root3"].id}, roots3),
+          "root-invariant")
+    b.add("26-bad-threshold-root", b.build("signer_add", {"pk": KEYS["root4"].public},
+                                           [("root1", "root")]), "threshold")
+
+    b.add("27-log_key", b.build("log_key", {"pk": KEYS["logkey2"].public, "overlap": 2_592_000},
+                                roots3))
+    b.add("28-policy", b.build("policy", {"text": POLICY_TEXT}, roots3))
+    b.add("29-params", b.build("params", {"staleness": 900, "rotate_needs_signer": True}, roots3))
+
+    both = [("signer1", "signer"), ("signer3", "signer")]
+    b.add("30-note", b.build("note", {"text": "quarterly key review completed"},
+                             [("signer1", "signer")]))
+    b.add("31-enroll-printer", b.build("enroll", _enroll_body("printer"),
+                                       [("printer", "device")] + both))
+
+    wrong_net = entry.new("note", b"\xff" * 16, ts=T0, after=32, body={"text": "wrong network"})
+    entry.sign(wrong_net, KEYS["signer1"], "signer")
+    b.add_raw("32-bad-decode-net", entry.encode(wrong_net), "decode")
+
+    b.add("33-enroll-pi-cam-again", b.build("enroll", _enroll_body("pi-cam"),
+                                            [("pi-cam", "device")] + both))
+    b.add("34-bad-rotate-needs-signer", b.build("rotate", {"device_id": "nas", "wg_pk": WG["nas2"]},
+                                                [("nas", "device")]), "threshold")
+    b.add("35-rotate-nas", b.build("rotate", {"device_id": "nas", "wg_pk": WG["nas2"]},
+                                   [("nas", "device")] + both))
+    b.add("36-revoke-self-laptop", b.build("revoke", {"device_id": "laptop", "reason": "lost"},
+                                           [("laptop", "device")]))
+    b.add("37-enroll-spare", b.build("enroll", _enroll_body("spare"),
+                                     [("spare", "device")] + both))
+    b.add("38-note-final", b.build("note", {"text": "end of fixture"}, [("root1", "root")]))
+    b.add("39-revoke-spare", b.build("revoke", {"device_id": "spare", "reason": "returned"},
+                                     [("signer1", "signer"), ("signer3", "signer")]))
+    return b.items

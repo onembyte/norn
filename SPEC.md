@@ -186,6 +186,10 @@ Replay processes entries by index. For each entry:
    - `rotate`: device `active`; signed by current `device_pk`; new `wg_pk` not in `active_wg`. → update keys.
    - `revoke`: device `active`; authorised per §4.3. → `status = revoked`, remove from `active_wg`.
    - governance types: root count ≥ `root_thr`; apply; `root_remove`/`root_thr` invariants as in §4.3.
+     `signer_remove` has **no** quorum invariant: removing a compromised signer key MUST
+     always be possible, including the last one (D-028). A network left with fewer
+     signers than `signer_thr` cannot enrol devices until roots add one — recoverable;
+     an unremovable stolen key is not.
    - `note`: 1 valid signer/root signature; no change.
    - Entries whose `expires` < checkpoint time are treated as `revoked` *at evaluation time*, not at replay (so state is clock-independent).
 6. Rejected entries are appended to `state.rejected` with a **fixed reason code**; reason codes are part of the test vectors. Replay never aborts on a rejected entry (only on `bad-genesis`).
