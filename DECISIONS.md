@@ -357,3 +357,32 @@ therefore enforced during envelope validation (§5.1 step 3), not by the codec.
 §4.0 now says so and §12.1 files the vector under schemas rather than the
 encoding profile. Exactly the kind of gap a second implementation finds by
 existing — the first payoff from starting Phase 1.
+
+## D-049 · The log writes its own POSIX tiles; Tessera is the documented upgrade (2026-09-19, 2.3)
+`PLAN.md` named Tessera for the write path and D-002 cited it as a reason to
+choose Go. Measured before committing to it: `github.com/transparency-dev/tessera`
+pulls **135 modules**, including Google Cloud Spanner, Storage, IAM, monitoring
+and trace, because it ships every driver alongside POSIX. Norn's module graph
+is currently **3**.
+
+Weighed honestly:
+
+- Tessera's value is at scale — batching, durability across replicas, cloud
+  backends. A Norn log is 10¹–10⁶ entries, fully replicated to every node, and
+  serves from a directory.
+- The dependency would land in `norn-log` only, not in `nornd`, so a verifier's
+  supply-chain surface stays small either way. That is the strongest argument
+  for taking it, and it is why this is a close call rather than an obvious one.
+- But `go.sum` and CI are per-module: every contributor and every build fetches
+  all 135 to compile a program that writes a few hundred files.
+
+Decision: `internal/tlogstore` writes the tlog-tiles layout directly, using
+`x/mod/sumdb/tlog` (already a dependency) for the Merkle mathematics, with
+write-then-rename for atomicity. **This does not weaken ground rule 3**, which
+is about the *formats* being interoperable — and that is tested directly in 2.6,
+where an unmodified `transparency-dev/witness` must cosign a Norn checkpoint.
+Who writes the bytes does not matter; whether the bytes are right does.
+
+Upgrade trigger, recorded so this is falsifiable: adopt Tessera when the log
+outgrows a single directory, needs more than one writer, or needs a cloud
+backend — i.e. when its actual value is being used rather than paid for.
