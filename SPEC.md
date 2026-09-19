@@ -430,7 +430,10 @@ norn/receipt/v1
 ```
 
 The note framing is `c2sp.org/signed-note`, restated here so an implementer needs
-nothing else (D22):
+nothing else (D22). These rules are **verified against `golang.org/x/mod/sumdb/note`**,
+the canonical implementation the transparency ecosystem uses: it accepts the
+verifier keys and the receipt this suite ships, unchanged, and opens notes this
+spec's rules produce.
 
 - The **signed text** is everything up to **and including** the newline that ends
   the last text line. It does **not** include the blank separator line.

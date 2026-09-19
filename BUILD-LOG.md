@@ -227,3 +227,28 @@ residue (low severity) and F10 (§16, deferred to the enrolment CLI by design).
 - **2026-09-19 · Phase 1 gate PASSED — all four lines.** Checking the second line by hand rather than assuming found **two named rejections with no vector at all**: "wrong signer" and "signer revoked in an earlier entry". The second is the more serious — nothing in the suite tested that a **removed signer key becomes inert**, which is the entire purpose of `signer_remove` and the recovery path D-028 argues for at length. Now vectored, with an isolation test proving the *same* entry is accepted while signer2 is still a signer and rejected after removal, and a Go test that fails the build if any of the six stops being exercised.
   - That test could not simply relocate the fixture's own entry to an earlier position: `after` is its index in the full log, so moving it earlier trips the ordering guard instead of the rule under test. It builds an equivalent entry at the position it would occupy — the same trap D-044 is about, met again from the other side.
   - **Phase 1 complete.** Go: 12 packages, 65 tests, 91-entry log, 239 vector files. `make ci`, staticcheck, `vectors-check` and the Python suite (157 tests) all green.
+
+
+## Phase 2 — The log + CLI
+
+The first phase with external dependencies. Ground rule 3 of `PLAN.md` is the
+constraint that matters here: **reuse the transparency ecosystem, do not fork
+it.** If an unmodified `transparency-dev/witness` cannot cosign a Norn
+checkpoint, the design is wrong — so that is a gate line, not an aspiration.
+
+| # | Checkpoint | Done when | Status |
+|---|---|---|---|
+| 2.1 | Ecosystem cross-check | Go's canonical `note` implementation accepts our keys and receipt unchanged, in both directions | ✅ |
+| 2.2 | `internal/tlog` | tile paths, leaf hashing, entry bundles and checkpoints per `tlog-tiles` / `tlog-checkpoint`; §6 gets its first vectors | ⬜ |
+| 2.3 | `norn-log` write path | Tessera POSIX; entries appended, checkpoints issued, size monotonic across restarts | ⬜ |
+| 2.4 | `norn verify` over a served log | fetches tiles + checkpoint from a static directory and reproduces the state | ⬜ |
+| 2.5 | Tamper and restart tests | one flipped byte in a tile → inclusion proof fails and the verifier refuses; restart loses and reorders nothing | ⬜ |
+| 2.6 | Witness cosigning | an **unmodified** `transparency-dev/witness` cosigns a Norn checkpoint | ⬜ |
+| 2.7 | §6/§8/§10 vectors | tiles, entry bundles, a cosigned checkpoint and proof bundles enter the suite, closing the rows §12.1 has been owing since 0.7d | ⬜ |
+- **2026-09-19 · 2.1 ecosystem cross-check — the note encodings are the real thing, not merely self-consistent.** Since 0.5 I have been careful to say these were *only* self-consistent: my signer and my verifier agreeing proves I am consistent with myself and nothing more. `golang.org/x/mod/sumdb/note` is the canonical implementation the whole transparency ecosystem uses, and it now checks **both directions**:
+  - it accepts the trust file's **log key and all three witness keys unchanged**;
+  - it **opens the shipped `receipt.note`**, and the text it returns is byte-identical to what our own `Split` returns — so the signed-text boundary agrees, and that text still hashes to `receipt.json`'s `text_sha256`. That boundary is the one gate run 2 had to recover by hashing three candidates;
+  - we verify what it signs, and **it opens what we sign**;
+  - key-id derivation matches across 32 name/key combinations — it exposes the id as a `uint32` where we use four bytes, and they agree every time.
+  - `PLAN.md` ground rule 3 is "reuse the transparency ecosystem, do not fork it". That was an intention; it is now a test. The unverified-claim note is removed from `SPEC.md` §7, which now states the cross-check instead.
+  - **One dependency, three modules in the graph.** The stdlib-only discipline held long enough that the first external package is the one that proves interoperability.
