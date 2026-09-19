@@ -54,7 +54,7 @@ and if the spec is silent, that is a defect to record, not a coin to flip.
 | 1.1 | `internal/cbor` | deterministic encoder + strict decoder; every encoding negative rejected, every valid entry round-trips byte-exact | ✅ |
 | 1.2 | `internal/entry` | envelope, `kid`, preimage, sign/verify, entry and leaf hashes; all 16 entry mirrors reproduced | ✅ |
 | 1.3 | `internal/cjson`, `internal/state` | canonical JSON + state schema; every JSON file in the suite round-trips byte-exact | ✅ |
-| 1.4 | `internal/replay` | every `(index, reason)` in the manifest, and all 12 `genesis/` aborts | ⬜ |
+| 1.4 | `internal/replay` | every `(index, reason)` in the manifest, `state.json` byte-exact, and all 12 `genesis/` aborts | ✅ |
 | 1.5 | `internal/note`, `internal/trust` | receipt verifies; fingerprint reproduced; all 14 `trust-bad/` rejected | ⬜ |
 | 1.6 | Fuzzing | `go test -fuzz` on the decoder and on replay: 1 h each, zero panics | ⬜ |
 | 1.7 | Cross-implementation check | vectors re-exported from Go and diffed against `testdata/vectors` — identical | ⬜ |
@@ -201,3 +201,11 @@ residue (low severity) and F10 (§16, deferred to the enrolment CLI by design).
   - Unit tests are only as good as my reading of §14, so the real check is against the artifacts: **every canonical-JSON file the suite ships** — `state.json`, all 16 entry mirrors, all 12 genesis states, the manifest, the receipt, `keys.json` — is parsed and re-serialised **byte-exact**, trailing newline included.
   - `internal/state` keeps byte strings as lowercase hex, because that is how §14 renders them *and* how `active_wg` is keyed; carrying two representations would only invite them to disagree. Tests assert the §5.3 invariants directly: every field emitted even after an abort at genesis, `active_wg` derivable from the active devices, and zero values **present rather than absent** — with the fixture required to carry devices both with and without an expiry, so the rule has a discriminating case.
   - Go: 9 packages, 42 tests, `make ci` + staticcheck + `vectors-check` green.
+- **2026-09-19 · 1.4 `internal/replay` — a genuine second implementation, agreeing byte for byte.** The §5.1 procedure followed literally, one handler per type, reason codes mapping one-to-one onto §5.2. **Green on the first run:**
+  - every one of the **89 `(index, reason)` outcomes** in the manifest;
+  - **`state.json` reproduced byte for byte** — 13 top-level fields, 8 devices, every label, every rejection, in canonical JSON with its trailing newline;
+  - all **12 genesis cases** abort and match their own `state.json`;
+  - the **empty log** yields the zero state (§5.1's rule, which had no vector until run 4 named it).
+  - **D-043 holds in Go too**: the signature verifier is injectable precisely so a test can stub it, and the test asserts that stubbing *changes the outcome*. It does — a blind replay admits exactly entries 87 and 88, the two forged-signature vectors. That guarantee is now enforced in both implementations rather than asserted in prose.
+  - Two spec subtleties the code had to get right and did: the **genesis bootstrap**, where signatures count against the roots in the entry's *own* body because no earlier state exists; and **D-046's ordering**, where the root quorum is checked before the body schema, so an under-signed governance entry with a malformed body is `threshold`.
+  - Go: 10 packages, 47 tests, `make ci` + staticcheck + `vectors-check` green.
