@@ -221,3 +221,11 @@ Was open question D11: `root_thr` with `thr > len(roots)` satisfied both
 definitions. `bad-thr` now covers any `signer_thr`/`root_thr` value outside
 `1 … len(set)`; `root-invariant` is reserved for `root_remove` shrinking the set
 below the threshold. Vectors 42 and 25 pin both sides.
+
+## D-034 · The witness policy has exactly two homes, never three (2026-09-19, 0.7d)
+Was loose end D29. `params.witness_policy` is removed. The policy lives in
+`norn.trust.policy` (what a node is provisioned with) and in the `policy` entry
+type (what supersedes it in-log, D-020). A third, "informational" copy in
+`params` is how two verifiers come to disagree about the witness quorum — the
+very thing guarding the log against a lying operator. Rejected: keeping it
+documented as advisory; advisory copies get read.

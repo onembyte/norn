@@ -1,7 +1,7 @@
 # Norn — Specification v0 (draft)
 
 Written **2026-09-18** (plan part 4). Status: **draft** — frozen at Phase 6.
-Every MUST here has, or will have, a test vector under `testdata/vectors/`.
+Every MUST in §4, §5, §7 and §9 has a test vector under `testdata/vectors/`; §12.1 lists exactly what is still unvectored.
 
 Norn reuses these specifications verbatim; where they conflict with this document,
 they win:
@@ -74,7 +74,7 @@ Derived values:
 | entry bytes | the full envelope **with** `sigs`, deterministically encoded |
 | `entry_hash` | `SHA-256(entry bytes)` — identity for de-duplication |
 | leaf hash | `SHA-256(0x00 ‖ entry bytes)` (RFC 6962 §2.1) |
-| signature preimage | the 14 ASCII bytes `norn/entry/v1` + `0x0A`, then the envelope encoded **without** the `sigs` key |
+| signature preimage | the 14-byte prefix `norn/entry/v1\n` (13 ASCII characters and one `0x0A`), then the envelope encoded **without** the `sigs` key |
 
 `sigs` is an array of maps `{"kid","role","sig"}` sorted by `kid` bytewise, with no
 repeated `kid`. Signing does not change the preimage, so signatures can be added by
@@ -178,7 +178,11 @@ staleness (part 6) catch. RECOMMENDED for every entry.
 | `staleness` | uint s | 600 | S — checkpoint age before `degraded` |
 | `mmd` | uint s | 60 | max merge delay promised by receipts |
 | `rotate_needs_signer` | bool | false | whether `rotate` needs a signer countersignature |
-| `witness_policy` | string | — | tlog-policy text, informational (the *binding* copy is in `norn.trust`) |
+
+The witness policy is deliberately **not** a parameter (D-034). It has exactly
+two homes: `norn.trust.policy`, which a node is provisioned with, and the
+`policy` entry type, which supersedes it inside the log. A third copy in `params`
+would let two verifiers disagree about the quorum that guards the log.
 
 ## 5. Replay — the state machine
 
@@ -362,6 +366,19 @@ norn/receipt/v1
 <uint deadline unix seconds>       # = now + params.mmd
 ```
 
+The note framing is `c2sp.org/signed-note`, restated here so an implementer needs
+nothing else (D22):
+
+- The **signed text** is everything up to **and including** the newline that ends
+  the last text line. It does **not** include the blank separator line.
+- The text is followed by one blank line, then one signature line per signer.
+- A signature line is `\u2014 ` (em dash U+2014, then one space), the key name, one
+  space, then base64 of `key_id ‖ signature` — 4 + 64 = 68 bytes.
+- `key_id` = `SHA-256(name ‖ 0x0A ‖ alg ‖ pk)[0:4]`, with `alg` = `0x01` for Ed25519.
+  Note that the key id binds the **name**, so the same key under two names has two ids.
+- A verifier key string is `<name>+<key_id as 8 hex digits>+<base64(alg ‖ pk)>`.
+  Split it on `+` **at most twice**: standard base64 contains `+`.
+
 Semantics: *the log promises the entry will be included in a checkpoint of some size
 issued no later than `deadline`.* A receipt whose leaf is absent from every
 checkpoint cosigned after `deadline` is non-repudiable proof of log misbehaviour
@@ -479,34 +496,36 @@ that are not consistent MUST:
 
 | file | contents |
 |---|---|
-| `keys.json` | fixed seeds for log, 3 witnesses, 2 roots, 2 signers, 3 devices |
-| `entries/NN-<type>.cbor` + `.json` | one valid entry per type, byte-exact |
-| `entries/bad-*.cbor` + `.reason` | one rejected entry per §5 reason code |
-| `log/` | the replay fixture: 49 entry `.cbor` files, a `.reason` file beside each entry that must be rejected, and `manifest.json` |
-| `log/manifest.json` | `{"anchor": {"net", "genesis_hash"}, "entries": [{"index", "name", "reason"}]}` — the replay input and its expected outcome; `reason` is `""` for an entry that must be accepted |
-| `bad-genesis/` | a one-entry log plus `manifest.json` whose anchor pins a different genesis, so replay aborts |
-| `state.json` | canonical replay output for `log/` |
-| `receipt.note` | one receipt |
-| `proof-<device>.bundle` | one tlog-proof@v1 bundle |
-| `trust.cbor` + `trust.toml` + `trust.fingerprint` | the trust file for `log/` |
-| `fork/` | two conflicting cosigned checkpoints + expected evidence output |
+| `keys.json` | every test key: Ed25519 `{seed, public, kid}` by name, X25519 public keys by name, and `net` |
+| `entries/NN-<type>.cbor` | one valid entry per type, canonical bytes |
+| `entries/NN-<type>.json` | mirror: `{entry, entry_hash, leaf_hash, preimage_sha256, size}` where `size` is the byte length of the `.cbor` |
+| `log/NN-<name>.cbor` | the replay fixture, 49 entries in order |
+| `log/NN-<name>.reason` | beside each entry that must be rejected: its §5.2 reason code |
+| `log/manifest.json` | `{"anchor": {"net", "genesis_hash"}, "entries": [{"index", "name", "reason"}]}` — the replay input and expected outcome; `reason` is `""` for an accepted entry |
+| `state.json` | canonical replay output for `log/` (§5.3) |
+| `bad-genesis/` | a one-entry log plus `manifest.json` and `state.json`; its anchor pins a different genesis, so replay aborts |
+| `trust.cbor` · `trust.toml` · `trust.fingerprint` | the trust anchor (§9), authoritative bytes, human rendering, and its fingerprint |
+| `receipt.note` · `receipt.json` | a submission receipt (§7) and the values it commits to |
 
-**Canonical JSON** (for `state.json` and the `.json` mirrors of `.cbor` entries):
+### 12.1 Coverage — what is *not* yet vectored
 
-- object keys sorted by **UTF-8 code point** — plain bytewise on the key string.
-  This is **not** the CBOR map order of §4.1, which sorts by encoded form
-  (length first). The two orders differ, and the difference is visible in every
-  vector: an entry encodes as `t, v, ts, net, body, sigs, after` in CBOR and
-  serialises as `after, body, net, sigs, t, ts, v` in JSON. Implementations MUST
-  keep the two orderings separate.
-- no whitespace: `,` and `:` as separators, nothing else;
-- UTF-8, non-ASCII **not** escaped;
-- byte strings as lowercase hex strings;
-- integers as JSON numbers; booleans as `true`/`false`;
-- a field that the schema defines is always emitted (§5.3); "absent fields
-  absent" governs **entry encoding** (§4.0), not state serialisation.
+Stated plainly, because a suite that looks complete is worse than one that admits
+its holes (D27). Fully covered today: **§4** (encoding, hashes, preimages,
+signatures), **§5** (replay, every reason code), **§7** (receipt), **§9** (trust
+file, fingerprint).
 
-Two implementations MUST produce identical bytes.
+**Not covered at all**, and therefore not yet binding on a second implementation:
+
+| section | missing vectors | owed by |
+|---|---|---|
+| §6 | tiles, entry bundles with their uint16 length prefixes, a signed checkpoint with cosignatures | Phase 2 |
+| §8 | `tlog-proof@v1` bundles | Phase 2 |
+| §10 | the verifier loop over a served log | Phase 2 |
+| §11 | fork evidence: two conflicting cosigned checkpoints and the expected evidence file | Phase 4 |
+
+These come from Tessera and torchwood producing and verifying real tiles, which
+is why they wait for Phase 2 rather than being hand-built here — a hand-rolled
+tlog would test this implementation against itself and prove nothing.
 
 Cosignature and checkpoint vectors are taken from the C2SP repositories, not reinvented.
 

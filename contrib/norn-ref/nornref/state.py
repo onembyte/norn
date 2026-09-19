@@ -18,7 +18,10 @@ DEFAULT_PARAMS: dict[str, Any] = {
     "rotate_needs_signer": False,
 }
 
-PARAM_KEYS = frozenset(DEFAULT_PARAMS) | {"witness_policy"}
+#: Exactly the keys of DEFAULT_PARAMS. The witness policy deliberately has one
+#: home only -- the `policy` entry type (D-034) -- because two places to set the
+#: quorum that guards the log is how two verifiers come to disagree about it.
+PARAM_KEYS = frozenset(DEFAULT_PARAMS)
 
 ACTIVE, REVOKED = "active", "revoked"
 

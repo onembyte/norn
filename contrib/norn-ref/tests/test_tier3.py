@@ -129,3 +129,28 @@ class D21_CheckOrderIsNormative(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class D29_PolicyHasOneHome(unittest.TestCase):
+    """`policy` entries are the in-log mechanism; `params.witness_policy` is gone.
+
+    Two places to set one value is how implementations diverge: a verifier
+    reading `params.witness_policy` and one reading `state.policy` would
+    disagree about the witness quorum, which is the thing guarding the log.
+    """
+
+    def test_witness_policy_is_no_longer_a_param(self):
+        from nornref.state import PARAM_KEYS
+        self.assertNotIn("witness_policy", PARAM_KEYS)
+
+    def test_a_params_entry_setting_it_is_rejected(self):
+        raw = build("params", {"witness_policy": "quorum none\n"}, ROOTS3, after=49)
+        state, n = state_with([raw])
+        self.assertEqual(state.rejected[-1], {"index": n, "reason": "decode"})
+
+    def test_policy_entries_still_work(self):
+        text = "log x\nwitness pi y\nquorum pi\n"
+        raw = build("policy", {"text": text}, ROOTS3, after=49)
+        state, n = state_with([raw])
+        self.assertEqual([r for r in state.rejected if r["index"] == n], [])
+        self.assertEqual(state.policy, text)
