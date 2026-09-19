@@ -253,7 +253,9 @@ checkpoint, the design is wrong — so that is a gate line, not an aspiration.
 | 2.9b-i | The signer seam + ssh-agent (tiers 1/2) | `entry.Sign` takes a `crypto.Signer`, and `internal/sshagent` signs through a **real OpenSSH `ssh-agent`**, with a fake agent for the hostile cases | ✅ |
 | 2.9b-ii | Key file (tier 0) | an **OpenSSH** private key file `ssh-keygen` writes and `ssh-add` loads; the encrypted kind is refused with an answer (D-055) | ✅ |
 | 2.9c | `norn enroll` (device side) | generates the device key, takes or generates the WG key, prints the request as text and QR | ✅ |
-| 2.9d | `norn sign` (admin side) | verifies the request's own signature, shows what is being signed (UX rule 1), emits a signed `enroll` entry; partial signatures for `signer_thr > 1` | ⏸ **blocked — decision needed, see below** |
+| 2.9d | `norn sign` (admin side) | decision taken: **option C**, the entry embeds the request. Split | ⬜ |
+| 2.9d-i | `enroll` carries the request (D-057) | §4.3/§5.1 changed, both implementations agree, every enroll vector regenerated, and the forged-consent case is vectored | ✅ |
+| 2.9d-ii | `norn sign` | verifies the request, shows what is being signed (UX rule 1), emits the entry; partial signatures for `signer_thr > 1` | ⬜ |
 | 2.9e | `norn submit` + receipts | POSTs entry bytes to `<prefix>/add`, verifies the receipt note under the anchor, stores it, and waits for inclusion | ⬜ |
 | 2.9f | `norn init` | the genesis ceremony: roots, thresholds, the genesis entry, and the trust file with its fingerprint. Paper (mnemonic) roots are **not** in this slice — they need a wordlist decision (see 2.9f note) | ⬜ |
 | 2.9g | `norn status` | proven peers, checkpoint age, degraded/fork state, and the last five entries in plain words (`ENROLLMENT.md` UX rule 5) | ⬜ |
@@ -331,7 +333,9 @@ checkpoint, the design is wrong — so that is a gate line, not an aspiration.
   - A device enrolling for the first time has no trust file, so `-net` takes an origin (`norn/…`) or 32 hex digits, and `trust.NetFromOrigin` is the new inverse of `OriginFor`, pinned by a round-trip property. `-trust` works too for a device being re-enrolled, and **the two disagreeing is a refusal, not a guess**.
   - Go: 27 packages, 208 tests; module graph 7 → **8**. `make ci`, staticcheck and both halves of `vectors-check` green.
 
-## Decision needed — 2.9d: an `enroll` needs a device signature the device cannot make
+## Decision taken — 2.9d: an `enroll` needs a device signature the device cannot make
+
+**Answered 2026-09-19: option C.** The loop resumed at 2.9d-i.
 
 **Raised 2026-09-19, before writing a line of `norn sign`.** The loop stops here
 by its own rule: this changes the normative protocol and regenerates the whole
@@ -369,3 +373,11 @@ alter any of them without destroying the proof. Meanwhile `ts` and `after` stay
 where they belong, with the signer, who is the only party that knows the log.
 The device keeps one job — say what it wants and prove it holds its key — and
 the signer keeps one job — decide, and place the entry in the log.
+- **2026-09-19 · 2.9d-i `enroll` carries the request (D-057) — the protocol change the blocked checkpoint asked for.**
+  - **What was wrong.** §4.3 required a `device` signature on the `enroll` envelope, and that envelope is built by a **signer**, who chooses `ts` and `after`. The device is headless and one-way: it prints one QR and is never heard from again. The signature the spec demanded was one the device could not make.
+  - **Why four gate runs and 208 tests missed it.** The fixture holds every private key, so it signed one envelope as the device and again as a signer. That is consent no real participant could give, and no conformance suite can tell it from the real thing — the entry is valid either way. **The oracle was able to forge consent, so the protocol was never asked to provide it.** The same shape as gate run 4's signature-blind replay, one level up: there the tests never exercised a signature, here they never exercised *who could produce one*.
+  - **The fix is stronger than what it replaces.** A device signature over an envelope proves the device saw *some* envelope. The embedded request proves it consented to exactly this `device_id`, `device_pk`, `wg_pk`, labels and expiry — and a signer **cannot alter any of them** without destroying the proof, where before it could have restated them freely. `ts` and `after` stay with the signer, the only party that knows the log.
+  - **Consequences taken rather than hidden.** The log is **90 entries, not 91**: §4.0's 23-byte map-key cap moved to `requests-bad/oversize-label-key`, because after this change **no entry body has a free-form map left**, and putting that key anywhere else would let a closed-schema check fire first and hide a missing cap. The field negatives (`bad-device_id-uppercase`, `bad-device_id-leading-dot`, `bad-pk-length`) now sit *inside* the request, wrapped in entries that are well formed and properly signed by two signers — so **an implementation treating `request` as opaque bytes accepts all three**, which is exactly the property they now test.
+  - **The fixture stopped lying.** Every `enroll` in the suite now carries signer signatures only. Leaving the device-role signature in place would have kept working and kept the fiction.
+  - **Three of my own guards fired during the change** and each was right: §12.1's citation test caught a vector name that had moved, the log-size guard caught §12 still saying 91, and staticcheck caught `labelsOf` going dead. The label rules themselves needed no edit at all — `fields` owns them, so labels moving from the entry to the request changed nothing about how they are validated. That is the D-051 extraction paying for itself two checkpoints later.
+  - Go: 27 packages, 209 tests. Python: 196. `make ci`, staticcheck and both halves of `vectors-check` green; module graph 8.

@@ -76,6 +76,12 @@ signed by the device key (proof of possession, D-008); the normative format is
 `SPEC.md` §16. `norn sign` verifies that signature **before** showing the prompt,
 so a request whose device key did not sign it is never displayed.
 
+The signer's entry **embeds that request verbatim** (`SPEC.md` §4.3): the device
+is headless and one-way, so it can never sign the envelope the signer builds,
+and an entry that merely *restated* its claims would let a signer enrol a key
+the device never asked for. The signer chooses `ts` and `after`; it cannot touch
+`device_id`, `device_pk`, `wg_pk`, labels or expiry without destroying the proof.
+
 Precisely what that proves, since an earlier draft of this paragraph overclaimed
 it: the signature proves possession of the **device** key and binds `wg_pk` to
 it. It does **not** prove possession of the WireGuard key, which is X25519 and

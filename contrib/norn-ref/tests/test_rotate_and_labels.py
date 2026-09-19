@@ -70,10 +70,21 @@ class LabelConstraints(unittest.TestCase):
     """SPEC §4.0 constrains labels; replay must actually enforce it."""
 
     def _enroll(self, labels):
-        body = {"device_id": "labelled", "device_pk": fixture.KEYS["spare"].public,
-                "wg_pk": fixture.WG["rogue"], "labels": labels}
-        env = entry.new("enroll", fixture.NET, ts=fixture.T0 + 9000, after=42, body=body)
-        for name, role in (("spare", "device"), ("signer1", "signer"), ("signer3", "signer")):
+        """An enrolment whose request carries these labels (SPEC §4.3).
+
+        The request is built field by field rather than through
+        `enrollreq.new`, because the rejecting cases are exactly the ones a
+        validating constructor refuses to build: they can only come from a
+        hostile or broken device, and replay is what must catch them.
+        """
+        from nornref import cbor, enrollreq
+        request = {"v": 1, "ts": fixture.T0 + 9000, "net": fixture.NET,
+                   "device_id": "labelled", "device_pk": fixture.KEYS["spare"].public,
+                   "wg_pk": fixture.WG["rogue"], "labels": labels}
+        request["sig"] = fixture.KEYS["spare"].sign(enrollreq.preimage(request))
+        env = entry.new("enroll", fixture.NET, ts=fixture.T0 + 9000, after=42,
+                        body={"request": cbor.encode(request)})
+        for name, role in (("signer1", "signer"), ("signer3", "signer")):
             entry.sign(env, fixture.KEYS[name], role)
         return env
 

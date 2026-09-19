@@ -112,12 +112,18 @@ class D20_ProofOfPossessionOnRotate(unittest.TestCase):
 class D21_CheckOrderIsNormative(unittest.TestCase):
     """Entries wrong in two ways at once prove which check runs first."""
 
-    def test_enroll_missing_device_sig_and_duplicating_an_id(self):
-        raw = build("enroll", {"device_id": "nas", "device_pk": fixture.KEYS["nas"].public,
-                               "wg_pk": fixture.WG["rogue"]}, SIGNERS2, after=42)
+    def test_enroll_without_device_consent_and_duplicating_an_id(self):
+        """Consent is checked before `dup-id`, and a signer cannot supply it.
+
+        The request names `nas` but is signed by a signer's key, which is the
+        forgery SPEC §4.3 exists to make impossible: the entry is otherwise
+        perfectly formed and authorised.
+        """
+        body = fixture._enroll_body("nas", wg="rogue", signer="signer1")
+        raw = build("enroll", body, SIGNERS2, after=42)
         state, n = state_with([raw])
         self.assertEqual(state.rejected[-1], {"index": n, "reason": "no-device-sig"},
-                         "device signature is checked before dup-id")
+                         "the request's own signature is checked before dup-id")
 
     def test_governance_under_threshold_and_duplicating_a_key(self):
         raw = build("signer_add", {"pk": fixture.KEYS["signer3"].public},

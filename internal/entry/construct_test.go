@@ -143,6 +143,8 @@ func errMissing(field string) error { return missingField(field) }
 // the mirror becomes bytes again rather than staying text.
 var byteFields = map[string]bool{
 	"device_pk": true, "wg_pk": true, "pk": true, "net": true,
+	// An `enroll` body is the device's request, verbatim (SPEC §4.3).
+	"request": true,
 }
 
 func convertBody(entryType string, body map[string]any) (map[string]any, error) {

@@ -198,7 +198,7 @@ verified against the key the `kid` resolves to in the state *before* this entry.
 | `t` | body | required signatures |
 |---|---|---|
 | `genesis` | `name` (string), `roots` ([pk]), `root_thr` (uint), `signers` ([pk]), `signer_thr` (uint), `params` (§4.5, **OPTIONAL** — absent means the §4.5 defaults) | ≥ `root_thr` of `roots` |
-| `enroll` | `device_id`, `device_pk` (bytes32 Ed25519), `wg_pk` (bytes32 X25519), `labels` (map string→string, OPTIONAL), `expires` (uint, OPTIONAL) | the device (`device_pk`) **and** ≥ `signer_thr` signers |
+| `enroll` | `request` (bytes — a §16 enrollment request, verbatim) | ≥ `signer_thr` signers. The device's consent is the **embedded request**, not a signature on this envelope (§4.3) |
 | `rotate` | `device_id`, `wg_pk` (new), `device_pk` (new, OPTIONAL) | the *current* device key; **and the incoming `device_pk` too when the body carries one** (proof of possession, D-032); plus ≥ `signer_thr` signers if `params.rotate_needs_signer` |
 | `revoke` | `device_id`, `reason` (string, **OPTIONAL** — absent is equivalent to `""`) | ≥ `signer_thr` signers, **or** the device itself, **or** ≥ `root_thr` roots |
 | `signer_add` | `pk` | ≥ `root_thr` roots |
@@ -213,7 +213,30 @@ verified against the key the `kid` resolves to in the state *before* this entry.
 | `policy` | `text` (verbatim tlog-policy) | ≥ `root_thr` roots — replaces witness policy in state |
 
 Signature counting: a key contributes at most once; a key counts only for the role
-it currently holds; a device key counts only for its own `device_id`.
+it currently holds; a device key counts only for its own `device_id` — for
+`enroll` that is the `device_pk` **inside the embedded request** (§4.3).
+
+#### Why `enroll` embeds a request instead of carrying a device signature
+
+Every other entry a device is party to — `rotate`, self-`revoke` — is built **by**
+the device, so it can sign that envelope itself. `enroll` is the exception: the
+envelope is built by a *signer*, who chooses `ts` and `after`, and the device is
+headless and one-way. It prints a request and is never heard from again
+(`ENROLLMENT.md` part 3). A device signature over that envelope would require a
+return channel to the device, which is the thing the design exists to avoid.
+
+So the body is the request itself, byte for byte. This is **stronger** than a
+signature over the envelope, not a substitute for one: a device signature over an
+envelope proves the device saw *some* envelope, while an embedded request proves
+the device consented to exactly this `device_id`, `device_pk`, `wg_pk`, `labels`
+and `expires` — and the signer cannot alter any of them without destroying the
+proof. Meanwhile `ts` and `after` stay with the signer, the only party that knows
+the log. Each side keeps one job: the device says what it wants and proves it
+holds its key; the signer decides, and places the entry in the log.
+
+The request's `ts` is **not** constrained against the entry's. They are two
+clocks in two places, both advisory (§4.1), and a rule relating them would fail
+on skew rather than on misbehaviour.
 
 ### 4.4 `after` — ordering guard
 
@@ -312,7 +335,7 @@ checks live inside step 8, after that rule's own body validation.
 
 | `t` | checks, in order | effect |
 |---|---|---|
-| `enroll` | body fields well-formed (`decode`) · valid `device` signature by `body.device_pk` (`no-device-sig`) · valid `signer` count ≥ `signer_thr` (`threshold`) · `device_id` not currently `active` (`dup-id`) · `wg_pk` not in `active_wg` (`dup-wg`) | add the device `active` |
+| `enroll` | body closed and `request` present · the request decodes under §16.1 and its `net` equals the entry's (`decode`) · the request's signature verifies under its **own** `device_pk` (`no-device-sig`) · valid `signer` count ≥ `signer_thr` (`threshold`) · `device_id` not currently `active` (`dup-id`) · `wg_pk` not in `active_wg` (`dup-wg`) | add the device `active`, with the `device_id`, `device_pk`, `wg_pk`, `labels` and `expires` **from the request** |
 | `rotate` | body well-formed (`decode`) · `device_id` known (`unknown-device`) · currently `active` (`not-active`) · valid `device` signature by the device's **current** `device_pk` (`no-device-sig`) · if `params.rotate_needs_signer`, signer count ≥ `signer_thr` (`threshold`) · new `wg_pk` not active **for another device** (`dup-wg`) · if the body carries `device_pk`, a valid `device` signature by **that** key as well (`no-device-sig`) | replace `wg_pk`, and `device_pk` if the body carries one |
 | `revoke` | body well-formed (`decode`) · `device_id` known (`unknown-device`) · currently `active` (`not-active`) · authorised by signers, roots **or** the device itself (`threshold`) | `status` = `revoked`, drop from `active_wg` |
 | `signer_add`, `root_add` | body well-formed and closed (`decode`) · `kid(pk)` not already a root or signer (`dup-key`) | add to that role |
@@ -345,7 +368,7 @@ Entries whose `expires` is earlier than the checkpoint time are treated as
 | `dup-entry` | `entry_hash` already seen |
 | `after` | `after` > index |
 | `threshold` | fewer valid signatures of the required role than the threshold |
-| `no-device-sig` | `enroll`/`rotate` lacks a required valid signature by a device key. **Not `revoke`** — a `revoke` may be authorised by signers, roots *or* the device, so a `revoke` carrying none of the three is `threshold` (§5.1). |
+| `no-device-sig` | `enroll`/`rotate` lacks a required valid signature by a device key — for `enroll` that is the **embedded request's own** signature (§4.3), for `rotate` a signature on the envelope. **Not `revoke`** — a `revoke` may be authorised by signers, roots *or* the device, so a `revoke` carrying none of the three is `threshold` (§5.1). |
 | `dup-id` | `enroll` with a `device_id` that is currently `active` |
 | `dup-wg` | a `wg_pk` that is already active. For `enroll` that means active for **any** device — a `device_id` may be reused after revocation, but a live key may not. For `rotate` it means active for **another** device: re-presenting the device's own key is how an identity key rotates alone (D-032). |
 | `unknown-device` | `rotate`/`revoke` names a `device_id` never enrolled |
@@ -615,7 +638,7 @@ suite is checked only against its own author.
 | `keys.json` | every test key: Ed25519 `{seed, public, kid}` by name, X25519 public keys by name, and `net` |
 | `entries/NN-<type>.cbor` | one valid entry per type, canonical bytes |
 | `entries/NN-<type>.json` | mirror: `{entry, entry_hash, leaf_hash, preimage_sha256, size}` where `size` is the byte length of the `.cbor`. The `entry` object mirrors the **CBOR**, so an optional field absent from the entry is absent here too — unlike `state.json`, where §5.3's schema fields are always emitted |
-| `log/NN-<name>.cbor` | the replay fixture, **91 entries** in order. The file names are labels, not the order: **read the sequence from `manifest.json`**, never by globbing and sorting |
+| `log/NN-<name>.cbor` | the replay fixture, **90 entries** in order. The file names are labels, not the order: **read the sequence from `manifest.json`**, never by globbing and sorting |
 | `log/NN-<name>.reason` | beside each entry that must be rejected: its §5.2 reason code |
 | `log/manifest.json` | `{"anchor": {"net", "genesis_hash"}, "entries": [{"index", "name", "reason"}]}` — the replay input and expected outcome; `reason` is `""` for an accepted entry |
 | `state.json` | canonical replay output for `log/` (§5.3) |
@@ -641,7 +664,8 @@ this table drifted out of date the moment one was.
 
 | area | positive | negative |
 |---|---|---|
-| §4.0 encoding profile | every entry; controls `profile-base`, `labelcap-base`, `two-sig-base` | `bad-cbor-nonshortest`, `bad-cbor-null`, `bad-cbor-unsorted-keys`, `bad-tag-wrapped-value`, `bad-indefinite-text`, `bad-indefinite-map`, `bad-duplicate-map-key`, `bad-invalid-utf8`, `bad-integer-too-large`, `bad-oversize-map-key` |
+| §4.0 encoding profile | every entry; controls `profile-base`, `labelcap-base`, `two-sig-base` | `bad-cbor-nonshortest`, `bad-cbor-null`, `bad-cbor-unsorted-keys`, `bad-tag-wrapped-value`, `bad-indefinite-text`, `bad-indefinite-map`, `bad-duplicate-map-key`, `bad-invalid-utf8`, `bad-integer-too-large`. The 23-byte map-key cap moved to `requests-bad/oversize-label-key`: since §4.3 put the device's claims in the request, no *entry* body has a free-form map left, and a closed-schema check would fire first on any other key |
+| §4.3 `enroll` embeds the request | every `enroll` in the log; `enroll-unicode-labels`, `enroll-contractor` | **`bad-no-device-sig`** and **`bad-order-enroll`** (a request signed by a *signer*, not the device it names), **`bad-forged-device-sig`** (a request signature of the right shape and wrong), and `bad-device_id-uppercase`, `bad-device_id-leading-dot`, `bad-pk-length` — faults **inside** the request, inside an entry that is otherwise well formed and properly signed, so an implementation treating `request` as opaque bytes accepts all three |
 | §4.0/§4.3 schemas | `enroll-laptop`, `enroll-unicode-labels` | `bad-kid-format`, `bad-missing-sigs`, `bad-empty-sigs`, `bad-unknown-role`, `bad-unknown-envelope-key`, `bad-unknown-body-key`, `bad-device_id-uppercase`, `bad-device_id-leading-dot`, `bad-pk-length`, `bad-sig-length`, `bad-text-too-long`, `bad-unsorted-sigs` |
 | §4.2 signatures, hashes, preimage | 16 entry mirrors | **`bad-forged-signer-sig`, `bad-forged-device-sig`** — syntactically perfect signatures that do not verify. Without these an implementation that never calls Ed25519 reproduces the whole manifest |
 | §4.4 `after` is a floor | `after-below-index` | `bad-after` |
@@ -657,7 +681,7 @@ this table drifted out of date the moment one was.
 | §6 tiles and bundles | `served/`, read back to reproduce `state.json` | forged head, tampered bundle, missing bundle |
 | §8 proof bundles | `proofs/`, one per active device | wrong entry, foreign checkpoint, tampered proof, wrong log key |
 | §10 verifier loop | `served/` verified end to end | wrong anchor aborts and yields no devices |
-| §16 enrollment requests | `requests/`, four cases including a 64-byte `device_id` and non-ASCII labels | `requests-bad/`, 22 cases across all four layers, including **`forged-signature`** — structurally perfect, signed by another key |
+| §16 enrollment requests | `requests/`, four cases including a 64-byte `device_id` and non-ASCII labels | `requests-bad/`, 23 cases across all four layers, including **`forged-signature`** (structurally perfect, signed by another key) and `oversize-label-key` (§4.0's map-key cap) |
 | §16.2 bech32m | the text form of every request | `wrong-hrp`, `plain-bech32` (the same bytes under bech32's constant), `mixed-case`, `corrupt-character`. BIP-350's own vectors are in both implementations' unit tests |
 
 **Not vectored, and therefore not binding on a second implementation:**
@@ -748,8 +772,9 @@ normative in `GOSSIP.md`. The policy text in `norn.trust` is verbatim
 
 An **enrollment request** is what a device hands a signer: *this is the name I
 claim, this is the WireGuard key I want in the peer table, and here is a
-signature by my device key.* It is not a log entry, it never appears in the log,
-and nothing in §5 consumes one. It exists so that the `enroll` entry a signer
+signature by my device key.* It is not a log entry, but it does reach the log:
+an `enroll` entry carries it **verbatim** as its whole body, and that is where
+the device's consent lives (§4.3). It exists so that the `enroll` entry a signer
 builds can carry a `device_pk` the device has demonstrably used, and so that the
 whole exchange fits through a phone camera (`ENROLLMENT.md` part 3).
 

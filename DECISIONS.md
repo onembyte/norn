@@ -515,3 +515,37 @@ smaller code in uppercase. The lowercase form is what goes to stdout.
 **Honest limit:** no QR *decoder* was available here, so nothing in CI proves a
 phone can read it. That proof is a `PLAN.md` Phase 2 gate line — end-to-end
 enrolment with a phone camera, timed — and it stays open until the lab runs it.
+
+## D-057 · An `enroll` entry carries the device's request verbatim (2026-09-19, 2.9d-i)
+Was: §4.3 required a `device` signature on the `enroll` envelope. That envelope
+is built by a **signer**, who picks `ts` and `after`, and the device is headless
+and one-way — it prints one QR and is never heard from again. **The device could
+not produce the signature the spec demanded.** Four cold-model gate runs and 208
+tests missed it because the fixture holds every private key and signed one
+envelope as the device and again as a signer: consent no real participant could
+give, and indistinguishable from the real thing. Answered by the user: option C.
+
+The body is now `request` — the §16 request, byte for byte. §5.1's device check
+becomes "the embedded request decodes, its signature verifies under its **own**
+`device_pk`, and its `net` matches the entry's". No new reason codes: a
+malformed or foreign-network request is `decode`, a request whose signature does
+not verify is `no-device-sig`.
+
+**This is stronger than what it replaces, not a workaround.** A device signature
+over an envelope proves the device saw *some* envelope. An embedded request
+proves it consented to exactly this `device_id`, `device_pk`, `wg_pk`, labels and
+expiry — and a signer cannot alter any of them without destroying the proof,
+where before it could have restated them freely. `ts` and `after` stay with the
+signer, the only party that knows the log. Each side keeps one job.
+
+Consequences taken rather than hidden: the log fixture is 90 entries, not 91,
+because §4.0's 23-byte map-key cap had to move to `requests-bad/` — after this
+change **no entry body has a free-form map left**, and putting the oversize key
+anywhere else would let a closed-schema check fire first and hide a missing cap.
+The field negatives (`bad-device_id-uppercase`, `bad-pk-length`, …) now sit
+*inside* the request, in entries that are otherwise well formed and properly
+signed, so an implementation treating `request` as opaque bytes accepts all
+three. Rejected: a round trip to the device (no return channel to a headless
+Pi; kills the under-3-minute gate) · the device building the whole entry (an
+`enroll` could then never carry `after`, losing the ordering guard on exactly
+the entry type that creates an identity).

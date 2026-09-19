@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from . import cbor, entry, fields, keys
+from . import cbor, enrollreq, entry, fields, keys
 from .state import DEFAULT_PARAMS, PARAM_KEYS, State
 
 REASONS = (
@@ -109,8 +109,9 @@ def _check_envelope(env: Any, net: bytes) -> None:
 BODY_KEYS: dict[str, tuple[frozenset[str], frozenset[str]]] = {
     "genesis": (frozenset({"name", "roots", "root_thr", "signers", "signer_thr"}),
                 frozenset({"params"})),
-    "enroll": (frozenset({"device_id", "device_pk", "wg_pk"}),
-               frozenset({"labels", "expires"})),
+    # The device's consent, verbatim (SPEC §4.3): one field, so a signer
+    # cannot restate a claim the device did not make.
+    "enroll": (frozenset({"request"}), frozenset()),
     "rotate": (frozenset({"device_id", "wg_pk"}), frozenset({"device_pk"})),
     "revoke": (frozenset({"device_id"}), frozenset({"reason"})),
     "signer_add": (frozenset({"pk"}), frozenset()),
@@ -141,12 +142,6 @@ def _device_id(body: dict[str, Any]) -> str:
         raise Reject("decode") from None
 
 
-def _labels(body: dict[str, Any]) -> dict[str, str] | None:
-    """The optional `labels` map (SPEC §4.0 field constraints)."""
-    try:
-        return fields.labels(body.get("labels"))
-    except fields.FieldError:
-        raise Reject("decode") from None
 
 
 def _expires(body: dict[str, Any]) -> int | None:
@@ -168,11 +163,30 @@ def _pk(body: dict[str, Any], key: str) -> bytes:
 # -- handlers -------------------------------------------------------------
 
 def _h_enroll(state: State, env: dict[str, Any], index: int) -> None:
-    body = env["body"]
-    device_id, device_pk, wg_pk = _device_id(body), _pk(body, "device_pk"), _pk(body, "wg_pk")
-    labels, expires = _labels(body), _expires(body)
-    if not _device_signed(env, device_pk):
+    """SPEC §5.1 `enroll`: the device's consent is the embedded request (§4.3).
+
+    The envelope is built by a signer, who chooses `ts` and `after`; the device
+    is headless and one-way and never sees it. So the body carries the §16
+    request verbatim, and what `no-device-sig` means here is that the request's
+    *own* signature does not verify.
+    """
+    raw = env["body"].get("request")
+    if not isinstance(raw, bytes):
+        raise Reject("decode")
+    try:
+        request = enrollreq.decode(raw)
+    except enrollreq.RequestError:
+        raise Reject("decode") from None
+    if request["net"] != env["net"]:
+        raise Reject("decode")
+
+    if not enrollreq.verify(request):
         raise Reject("no-device-sig")
+
+    device_id, device_pk = request["device_id"], request["device_pk"]
+    wg_pk, labels = request["wg_pk"], request.get("labels")
+    expires = request.get("expires")
+
     _require(len(_valid_kids(env, "signer", state.signers)), state.signer_thr)
     if state.active_device(device_id):
         raise Reject("dup-id")

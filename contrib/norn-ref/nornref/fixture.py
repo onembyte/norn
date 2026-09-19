@@ -118,17 +118,9 @@ def genesis(after: int | None = None) -> dict[str, Any]:
 def enroll(device: str, ts_offset: int, after: int | None = None,
            labels: dict[str, str] | None = None, expires: int | None = None,
            signers: list[tuple[str, str]] | None = None) -> dict[str, Any]:
-    body: dict[str, Any] = {
-        "device_id": device,
-        "device_pk": KEYS[device].public,
-        "wg_pk": WG[device],
-    }
-    if labels:
-        body["labels"] = labels
-    if expires is not None:
-        body["expires"] = expires
-    env = entry.new("enroll", NET, ts=T0 + ts_offset, after=after, body=body)
-    return _signed(env, signers or [(device, "device"), ("signer1", "signer")])
+    env = entry.new("enroll", NET, ts=T0 + ts_offset, after=after,
+                    body=_enroll_body(device, labels=labels, expires=expires))
+    return _signed(env, signers or [("signer1", "signer")])
 
 
 def catalogue() -> list[tuple[str, dict[str, Any]]]:
@@ -242,10 +234,34 @@ class _Builder:
         return _signed(env, signers)
 
 
-def _enroll_body(device: str, wg: str | None = None, **extra: Any) -> dict[str, Any]:
-    body = {"device_id": device, "device_pk": KEYS[device].public, "wg_pk": WG[wg or device]}
-    body.update(extra)
-    return body
+def _enroll_body(device: str, wg: str | None = None, signer: str | None = None,
+                 labels: dict[str, str] | None = None, expires: int | None = None,
+                 ts_offset: int = 0) -> dict[str, Any]:
+    """An `enroll` body: the device's request, verbatim (SPEC §4.3).
+
+    The device signs the *request*, never the envelope -- it is headless and
+    one-way and never sees the envelope the signer builds. `signer` names a
+    different key to sign the request with, which is how a forged-consent
+    negative is built.
+    """
+    from . import enrollreq
+    request = enrollreq.new(net=NET, device_id=device, device_pk=KEYS[device].public,
+                            wg_pk=WG[wg or device], ts=T0 + ts_offset,
+                            labels=labels or None, expires=expires)
+    enrollreq.sign(request, KEYS[signer or device], strict=signer is None)
+    return {"request": enrollreq.encode(request)}
+
+
+def _raw_enroll_body(fields: dict[str, Any], signer: str) -> dict[str, Any]:
+    """An enroll body whose request breaks a §16.1 field rule.
+
+    `enrollreq.new` would refuse to build these, which is the point: they can
+    only come from a hostile or broken device, and replay must reject them.
+    """
+    from . import enrollreq
+    request = dict(fields)
+    request["sig"] = KEYS[signer].sign(enrollreq.preimage(request))
+    return {"request": cbor.encode(request)}
 
 
 def log() -> list[LogItem]:
@@ -254,18 +270,19 @@ def log() -> list[LogItem]:
     b.add("00-genesis", genesis())
 
     b.add("01-enroll-nas", b.build("enroll", _enroll_body("nas"),
-                                   [("nas", "device"), ("signer1", "signer")]))
+                                   [("signer1", "signer")]))
     b.add("02-enroll-laptop", b.build("enroll", _enroll_body(
         "laptop", labels={"ip": "10.9.0.2/32", "endpoint": "192.0.2.10:51820"}),
-        [("laptop", "device"), ("signer1", "signer")]))
+        [("signer1", "signer")]))
     b.add("03-enroll-pi-cam", b.build("enroll", _enroll_body("pi-cam", expires=T0 + 2_592_000),
-                                      [("pi-cam", "device"), ("signer1", "signer")]))
+                                      [("signer1", "signer")]))
 
     b.add("04-bad-dup-id", b.build("enroll", _enroll_body("nas", wg="nas2"),
-                                   [("nas", "device"), ("signer1", "signer")]), "dup-id")
+                                   [("signer1", "signer")]), "dup-id")
     b.add("05-bad-dup-wg", b.build("enroll", _enroll_body("spare", wg="nas"),
-                                   [("spare", "device"), ("signer1", "signer")]), "dup-wg")
-    b.add("06-bad-no-device-sig", b.build("enroll", _enroll_body("printer"),
+                                   [("signer1", "signer")]), "dup-wg")
+    b.add("06-bad-no-device-sig", b.build("enroll",
+                                          _enroll_body("printer", signer="spare"),
                                           [("signer1", "signer")]), "no-device-sig")
     b.add("07-bad-threshold", b.build("enroll", _enroll_body("printer"),
                                       [("printer", "device")]), "threshold")
@@ -322,14 +339,14 @@ def log() -> list[LogItem]:
     b.add("30-note", b.build("note", {"text": "quarterly key review completed"},
                              [("signer1", "signer")]))
     b.add("31-enroll-printer", b.build("enroll", _enroll_body("printer"),
-                                       [("printer", "device")] + both))
+                                       both))
 
     wrong_net = entry.new("note", b"\xff" * 16, ts=T0, after=32, body={"text": "wrong network"})
     entry.sign(wrong_net, KEYS["signer1"], "signer")
     b.add_raw("32-bad-decode-net", entry.encode(wrong_net), "decode")
 
     b.add("33-enroll-pi-cam-again", b.build("enroll", _enroll_body("pi-cam"),
-                                            [("pi-cam", "device")] + both))
+                                            both))
     b.add("34-bad-rotate-needs-signer", b.build("rotate", {"device_id": "nas", "wg_pk": WG["nas2"]},
                                                 [("nas", "device")]), "threshold")
     b.add("35-rotate-nas", b.build("rotate", {"device_id": "nas", "wg_pk": WG["nas2"]},
@@ -337,7 +354,7 @@ def log() -> list[LogItem]:
     b.add("36-revoke-self-laptop", b.build("revoke", {"device_id": "laptop", "reason": "lost"},
                                            [("laptop", "device")]))
     b.add("37-enroll-spare", b.build("enroll", _enroll_body("spare"),
-                                     [("spare", "device")] + both))
+                                     both))
     b.add("38-note-final", b.build("note", {"text": "end of fixture"}, [("root1", "root")]))
     b.add("39-revoke-spare", b.build("revoke", {"device_id": "spare", "reason": "returned"},
                                      [("signer1", "signer"), ("signer3", "signer")]))
@@ -368,10 +385,10 @@ def log() -> list[LogItem]:
     b.add("46-bad-rotate-no-new-key-sig", b.build(                                      # D20
         "rotate", {"device_id": "printer", "wg_pk": WG["printer"],
                    "device_pk": KEYS["printer-id2"].public},
-        [("printer", "device")] + both), "no-device-sig")
+        both), "no-device-sig")
     b.add("47-bad-order-enroll", b.build(                                               # D21
-        "enroll", {"device_id": "nas", "device_pk": KEYS["nas"].public,
-                   "wg_pk": WG["rogue"]}, both), "no-device-sig")
+        "enroll", _enroll_body("nas", wg="rogue", signer="signer1"),
+        both), "no-device-sig")
     b.add("48-bad-order-governance", b.build(                                           # D21
         "signer_add", {"pk": KEYS["signer3"].public}, [("root1", "root")]), "threshold")
 
@@ -380,13 +397,12 @@ def log() -> list[LogItem]:
     # emoji -- none of which appear anywhere else in the suite.
     b.add("49-policy-escaping", b.build("policy", {"text": ESCAPE_TORTURE}, roots3))
     b.add("50-enroll-unicode-labels", b.build("enroll", _enroll_body(
-        "escaped", labels=UNICODE_LABELS),
-        [("escaped", "device")] + both))
+        "escaped", labels=UNICODE_LABELS), both))
 
     # §5.3's `expires` rule needs a device that actually carries one.
     b.add("51-enroll-contractor", b.build("enroll", _enroll_body(
         "contractor", expires=T0 + 7_776_000),
-        [("contractor", "device")] + both))
+        both))
 
     # E5: `sigs: []` is well-formed but unauthorised -- `threshold`, not `decode`.
     b.add_raw("52-bad-empty-sigs", cbor.encode({
@@ -461,7 +477,7 @@ def log() -> list[LogItem]:
     # `threshold` negatives all carry zero valid signer signatures.
     b.add(f"{b.index}-bad-one-of-two-signers", b.build("enroll", _enroll_body(
         "halfsigned", wg="rogue"),
-        [("halfsigned", "device"), ("signer1", "signer")]), "threshold")
+        [("signer1", "signer")]), "threshold")
 
     # §4.3: a key counts only for the role it currently holds. This is a valid
     # signature by a signer key that declares itself `root`.
@@ -488,7 +504,7 @@ def log() -> list[LogItem]:
     # §4.3 lists roots as an authorisation path for `revoke`; none used it.
     b.add(f"{b.index}-enroll-rootrevoked", b.build("enroll", _enroll_body(
         "rootrevoked", wg="rootrevoked"),
-        [("rootrevoked", "device")] + both))
+        both))
     b.add(f"{b.index}-revoke-by-roots", b.build(
         "revoke", {"device_id": "rootrevoked", "reason": "root quorum"}, roots3))
 
@@ -724,12 +740,16 @@ def _unsorted_sigs(raw: bytes) -> bytes:
 
 
 def labelled_base(after: int) -> bytes:
-    """A valid enrolment carrying a 23-byte label key: the oversize control."""
-    env = entry.new("enroll", NET, ts=T0 + 9000, after=after, body={
-        "device_id": "labelcap", "device_pk": KEYS["labelcap"].public,
-        "wg_pk": WG["labelcap"], "labels": {"k" * 23: "at the cap"}})
-    return entry.encode(_signed(env, [("labelcap", "device"),
-                                      ("signer1", "signer"), ("signer3", "signer")]))
+    """A valid enrolment whose request carries a 23-byte label key.
+
+    The oversize-key control moved into the request with the labels: after
+    SPEC §4.3 put the device's consent in the body, no *entry* body has a
+    free-form map left, so the cap is exercised where free-form keys still
+    exist. `requests-bad/oversize-label-key` is the rejecting half.
+    """
+    env = entry.new("enroll", NET, ts=T0 + 9000, after=after,
+                    body=_enroll_body("labelcap", labels={"k" * 23: "at the cap"}))
+    return entry.encode(_signed(env, [("signer1", "signer"), ("signer3", "signer")]))
 
 
 def two_sig_base(after: int) -> bytes:
@@ -764,9 +784,6 @@ def _patched_and_signed(after: int, patch, body: dict[str, Any] | None = None,
 
 def profile_negatives(base_after: int) -> list[tuple[str, bytes]]:
     base = profile_base(base_after)
-    labels = {"k" * 23: "at the cap"}
-    enrol_body = {"device_id": "labelcap", "device_pk": KEYS["labelcap"].public,
-                  "wg_pk": WG["labelcap"], "labels": labels}
     both = [("signer1", "signer"), ("signer3", "signer")]
     return [
         # Patches outside the preimage, or that leave it byte-identical: the
@@ -779,9 +796,10 @@ def profile_negatives(base_after: int) -> list[tuple[str, bytes]]:
         ("invalid-utf8", _patched_and_signed(base_after, _invalid_utf8)),
         ("integer-too-large", _patched_and_signed(
             base_after, lambda raw: _integer_too_large(raw, T0 + 9000))),
-        ("oversize-map-key", _patched_and_signed(
-            base_after, _oversize_map_key, body=enrol_body, kind="enroll",
-            signers=[("labelcap", "device")] + both)),
+        # `oversize-map-key` lives in `requests-bad/` now: after SPEC §4.3 put
+        # the device's consent in the body, no *entry* body has a free-form map
+        # left, and the cap has to be tested where a free-form key can still be
+        # written without a closed-schema check firing first.
         ("unsorted-sigs", _unsorted_sigs(two_sig_base(base_after))),
     ]
 
@@ -865,12 +883,17 @@ def forged_signature_negatives(after: int) -> list[tuple[str, bytes]]:
     entry.sign(note_env, KEYS["signer1"], "signer")
     note_env["sigs"] = [forge(note_env["sigs"][0])]
 
-    enrol = entry.new("enroll", NET, ts=T0 + 9000, after=after, body={
-        "device_id": "forged", "device_pk": KEYS["halfsigned"].public,
-        "wg_pk": WG["halfsigned"]})
-    _signed(enrol, [("halfsigned", "device"), ("signer1", "signer"), ("signer3", "signer")])
-    enrol["sigs"] = [forge(s) if s["kid"] == KEYS["halfsigned"].id else s
-                     for s in enrol["sigs"]]
+    # The device's consent is the embedded request (SPEC §4.3), so the forgery
+    # that matters is a request whose signature is the right shape and wrong.
+    from . import enrollreq
+    request = enrollreq.new(net=NET, device_id="forged",
+                            device_pk=KEYS["halfsigned"].public, wg_pk=WG["halfsigned"],
+                            ts=T0 + 9000)
+    enrollreq.sign(request, KEYS["halfsigned"])
+    request["sig"] = bytes(b ^ 0x01 for b in request["sig"])
+    enrol = entry.new("enroll", NET, ts=T0 + 9000, after=after,
+                      body={"request": enrollreq.encode(request)})
+    _signed(enrol, [("signer1", "signer"), ("signer3", "signer")])
 
     return [
         ("forged-signer-sig", cbor.encode(note_env)),
@@ -879,16 +902,20 @@ def forged_signature_negatives(after: int) -> list[tuple[str, bytes]]:
 
 
 def field_negatives() -> list[tuple[str, bytes]]:
-    """Field constraints from §4.0 that had no rejecting vector."""
-    def enrol(body: dict[str, Any], signers: list[tuple[str, str]]) -> bytes:
-        env = entry.new("enroll", NET, ts=T0 + 9000, after=62, body=body)
-        return entry.encode(_signed(env, signers))
+    """Field constraints from §4.0 that had no rejecting vector.
 
-    both = [("signer1", "signer"), ("signer3", "signer")]
-    ok = {"device_id": "probe", "device_pk": KEYS["spare"].public, "wg_pk": WG["rogue"]}
-    short_pk = entry.new("enroll", NET, ts=T0 + 9000, after=62,
-                         body=dict(ok, device_pk=KEYS["spare"].public[:31]))
-    _signed(short_pk, [("spare", "device")] + both)
+    Since SPEC §4.3 moved the device's claims into the embedded request, these
+    are faults *inside* the request: a `device_id` the §2 grammar forbids, a
+    short key. The entry around each one is well formed and properly signed by
+    two signers, so only validating the request itself rejects them -- an
+    implementation that treats `request` as opaque bytes accepts all three.
+    """
+    def enrol(body: dict[str, Any]) -> bytes:
+        env = entry.new("enroll", NET, ts=T0 + 9000, after=62, body=body)
+        return entry.encode(_signed(env, [("signer1", "signer"), ("signer3", "signer")]))
+
+    ok = {"v": 1, "ts": T0 + 9000, "net": NET, "device_id": "probe",
+          "device_pk": KEYS["spare"].public, "wg_pk": WG["rogue"]}
 
     long_note = entry.new("note", NET, ts=T0 + 9000, after=62, body={"text": "x" * 4097})
     _signed(long_note, [("signer1", "signer")])
@@ -898,11 +925,12 @@ def field_negatives() -> list[tuple[str, bytes]]:
     bad_sig["sigs"][0]["sig"] = bad_sig["sigs"][0]["sig"][:63]
 
     return [
-        ("device_id-uppercase", enrol(dict(ok, device_id="Probe"),
-                                      [("spare", "device")] + both)),
-        ("device_id-leading-dot", enrol(dict(ok, device_id=".probe"),
-                                        [("spare", "device")] + both)),
-        ("pk-length", entry.encode(short_pk)),
+        ("device_id-uppercase",
+         enrol(_raw_enroll_body(dict(ok, device_id="Probe"), "spare"))),
+        ("device_id-leading-dot",
+         enrol(_raw_enroll_body(dict(ok, device_id=".probe"), "spare"))),
+        ("pk-length",
+         enrol(_raw_enroll_body(dict(ok, device_pk=KEYS["spare"].public[:31]), "spare"))),
         ("sig-length", cbor.encode(bad_sig)),
         ("text-too-long", entry.encode(long_note)),
     ]
@@ -983,6 +1011,7 @@ def request_negatives() -> list[tuple[str, str, str]]:
         ("non-string-label", mutate(labels={"ip": 1}), "label value is not text"),
         ("ts-is-text", mutate(ts="now"), "ts is not a uint"),
         ("unsorted-keys", text_of_unsorted(base), "map keys out of §4.0 order"),
+        ("oversize-label-key", _oversize_label_key(), "a 24-byte map key, past §4.0's cap"),
         ("forged-signature", text(forged), "valid shape, signed by another key"),
         ("wrong-hrp", bech32m.encode("nrn", base), "the human-readable part is not `norn`"),
         ("plain-bech32", _as_bech32(enrollreq.HRP, base), "bech32, not bech32m"),
@@ -1015,6 +1044,19 @@ def _as_bech32(hrp: str, payload: bytes) -> str:
     polymod = bech32m._polymod(bech32m._hrp_expand(hrp) + data + [0] * 6) ^ 1
     checksum = [(polymod >> 5 * (5 - i)) & 31 for i in range(6)]
     return hrp + "1" + "".join(bech32m.CHARSET[v] for v in data + checksum)
+
+
+def _oversize_label_key() -> str:
+    """A request whose label key is 24 bytes: one past the §4.0 cap.
+
+    A lenient decoder reads a 24-byte text key happily, so only the cap rejects
+    this -- and the key is in `labels`, whose keys are free-form, rather than in
+    a schema position where a closed-schema check would fire first.
+    """
+    from . import bech32m, enrollreq
+    request = _request("labelcap", "labelcap", "labelcap", 10,
+                       labels={"k" * 23: "at the cap"})
+    return bech32m.encode(enrollreq.HRP, _oversize_map_key(enrollreq.encode(request)))
 
 
 def _mixed_case(text: str) -> str:

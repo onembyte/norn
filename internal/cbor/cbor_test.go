@@ -5,7 +5,10 @@ import (
 	"encoding/hex"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/onembyte/norn/internal/bech32m"
 )
 
 // Written from SPEC.md §4.0. The vectors are the oracle: every entry in the
@@ -170,7 +173,10 @@ func TestSuiteEncodingNegativesAreRejected(t *testing.T) {
 		"bad-cbor-nonshortest", "bad-cbor-null", "bad-cbor-unsorted-keys",
 		"bad-tag-wrapped-value", "bad-indefinite-text", "bad-indefinite-map",
 		"bad-duplicate-map-key", "bad-invalid-utf8", "bad-integer-too-large",
-		"bad-oversize-map-key",
+		// Not here either: `bad-oversize-map-key` moved to the request
+		// vectors when SPEC §4.3 put the device's claims inside the request,
+		// because no entry body has a free-form map left to put a 24-byte key
+		// in. TestOversizeMapKeyInARequest covers it.
 		// Not here: `bad-unsorted-sigs`. CBOR does not canonicalise array
 		// order, so "sigs sorted by kid" is a schema rule enforced at replay,
 		// not a profile rule the codec could see.
@@ -211,5 +217,29 @@ func TestSuiteControlsDecode(t *testing.T) {
 		if _, err := Decode(raw); err != nil {
 			t.Errorf("%s: control must decode cleanly, got %v", suffix, err)
 		}
+	}
+}
+
+// TestOversizeMapKeyInARequest keeps §4.0's 23-byte map-key cap under test
+// after the vector that carried it moved.
+//
+// The case lives in `requests-bad/` now: since §4.3 made an `enroll` body the
+// device's request, the only free-form map left in the suite is a request's
+// `labels`. The rule being checked is unchanged -- this codec must refuse the
+// key -- and it matters that the codec refuses it, because a closed-schema
+// check would fire first anywhere else and hide a missing cap.
+func TestOversizeMapKeyInARequest(t *testing.T) {
+	path := filepath.Join("..", "..", "testdata", "vectors", "requests-bad",
+		"oversize-label-key.txt")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, payload, err := bech32m.Decode(strings.TrimSpace(string(raw)))
+	if err != nil {
+		t.Fatalf("the vector is not decodable bech32m: %v", err)
+	}
+	if _, err := Decode(payload); err == nil {
+		t.Error("decoded a 24-byte map key; the §4.0 cap is not enforced")
 	}
 }

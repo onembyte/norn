@@ -1,8 +1,10 @@
 package replay
 
 import (
+	"bytes"
 	"encoding/hex"
 
+	"github.com/onembyte/norn/internal/enrollreq"
 	"github.com/onembyte/norn/internal/entry"
 	"github.com/onembyte/norn/internal/fields"
 	"github.com/onembyte/norn/internal/state"
@@ -17,8 +19,10 @@ var governance = map[string]bool{
 
 // bodySchema is the closed key set per type (§4.3): required, then optional.
 var bodySchema = map[string]struct{ required, optional []string }{
-	"genesis":       {[]string{"name", "roots", "root_thr", "signers", "signer_thr"}, []string{"params"}},
-	"enroll":        {[]string{"device_id", "device_pk", "wg_pk"}, []string{"labels", "expires"}},
+	"genesis": {[]string{"name", "roots", "root_thr", "signers", "signer_thr"}, []string{"params"}},
+	// The device's consent, verbatim (SPEC §4.3): one field, so a signer
+	// cannot restate a claim the device did not make.
+	"enroll":        {[]string{"request"}, nil},
 	"rotate":        {[]string{"device_id", "wg_pk"}, []string{"device_pk"}},
 	"revoke":        {[]string{"device_id"}, []string{"reason"}},
 	"signer_add":    {[]string{"pk"}, nil},
@@ -84,57 +88,52 @@ func deviceID(body map[string]any) (string, error) {
 	return id, nil
 }
 
-func labelsOf(body map[string]any) (map[string]string, error) {
-	labels, err := fields.Labels(body["labels"])
-	if err != nil {
-		return nil, rejectWith(ReasonDecode)
-	}
-	if labels == nil {
-		return map[string]string{}, nil
-	}
-	return labels, nil
-}
-
+// hEnroll applies SPEC §5.1 `enroll`: the device's consent is the embedded
+// request (§4.3), not a signature on this envelope.
+//
+// The envelope is built by a signer, who chooses `ts` and `after`; the device
+// is headless and one-way and never sees it. So `no-device-sig` here means the
+// request's *own* signature does not verify -- and because the request is
+// embedded verbatim, a signer cannot restate a claim the device did not make.
 func hEnroll(r *replayer, st *state.State, env *entry.Envelope, index uint64) error {
-	id, err := deviceID(env.Body)
+	raw, ok := env.Body["request"].([]byte)
+	if !ok {
+		return rejectWith(ReasonDecode)
+	}
+	request, err := enrollreq.Decode(raw)
 	if err != nil {
-		return err
+		return rejectWith(ReasonDecode)
 	}
-	devicePk, err := fieldBytes(env.Body, "device_pk", entry.KeyLen)
-	if err != nil {
-		return err
+	if !bytes.Equal(request.Net, env.Net) {
+		return rejectWith(ReasonDecode)
 	}
-	wgPk, err := fieldBytes(env.Body, "wg_pk", entry.KeyLen)
-	if err != nil {
-		return err
-	}
-	labels, err := labelsOf(env.Body)
-	if err != nil {
-		return err
-	}
-	var expires uint64
-	if _, present := env.Body["expires"]; present {
-		if expires, err = fieldUint(env.Body, "expires"); err != nil {
-			return err
-		}
-	}
-	if !r.deviceSigned(env, devicePk) {
+	if !enrollreq.Verify(request) {
 		return rejectWith(ReasonNoDeviceSig)
 	}
+
 	if r.countRole(st, env, "signer") < st.SignerThr {
 		return rejectWith(ReasonThreshold)
 	}
-	if d, ok := st.Devices[id]; ok && d.Status == state.StatusActive {
+	if d, ok := st.Devices[request.DeviceID]; ok && d.Status == state.StatusActive {
 		return rejectWith(ReasonDupID)
 	}
-	if _, taken := st.ActiveWg[hexOf(wgPk)]; taken {
+	if _, taken := st.ActiveWg[hexOf(request.WGPK)]; taken {
 		return rejectWith(ReasonDupWg)
 	}
-	st.Devices[id] = state.Device{
-		DevicePk: hexOf(devicePk), WgPk: hexOf(wgPk), Status: state.StatusActive,
-		SinceIndex: index, Labels: labels, Expires: expires,
+
+	labels := request.Labels
+	if labels == nil {
+		labels = map[string]string{}
 	}
-	st.ActiveWg[hexOf(wgPk)] = id
+	var expires uint64
+	if request.Expires != nil {
+		expires = *request.Expires
+	}
+	st.Devices[request.DeviceID] = state.Device{
+		DevicePk: hexOf(request.DevicePK), WgPk: hexOf(request.WGPK),
+		Status: state.StatusActive, SinceIndex: index, Labels: labels, Expires: expires,
+	}
+	st.ActiveWg[hexOf(request.WGPK)] = request.DeviceID
 	return nil
 }
 
