@@ -20,7 +20,9 @@ becomes its own oracle.
 | 0.3 | Python reference: keys + entry encoding + signing | `contrib/norn-ref/` (pure Python, `cbor2` + `pynacl`); `keys.json` from fixed seeds; one valid entry vector per type, byte-exact `.cbor` + `.json`; a Python self-test that re-verifies every signature | ✅ |
 | 0.4 | Python reference: replay + rejection vectors | replay state machine per `SPEC.md` §5; 40-entry fixture; `state.json`; one `bad-*.cbor` + `.reason` per reason code; canonical JSON writer pinned | ✅ |
 | 0.5 | Trust file, fingerprint, receipt vectors | `trust.cbor`/`trust.toml`/`trust.fingerprint` (Crockford base32, D-029); `receipt.note` (signed note) | ✅ |
-| 0.6 | Cold-model gate | a fresh model given only `SPEC.md` + `testdata/vectors/` implements an entry verifier that passes all vectors (needs a subagent — confirm with user at this point) | ⬜ |
+| 0.6 | Cold-model gate (run 1) | a fresh model given only `SPEC.md` + `testdata/vectors/` implements an entry verifier that passes all vectors | ❌ **FAILED** — verdict SPEC INSUFFICIENT, 29 defects (`SPEC-DEFECTS.md`) |
+| 0.7 | Repair the spec | every Tier-1 and Tier-2 defect fixed; Tier-3 questions decided and each given a vector; Tier-4 cleaned up; reference implementation and vectors regenerated to match | ⬜ |
+| 0.8 | Cold-model gate (run 2) | a *fresh* agent, new isolated copy, returns SPEC SUFFICIENT or SPEC SUFFICIENT WITH GAPS | ⬜ |
 
 Log fixture (tiles + cosigned checkpoint) moves to Phase 2 where Tessera produces
 it and torchwood verifies it — hand-building a tlog in Python adds no assurance.
@@ -42,7 +44,7 @@ it and torchwood verifies it — hand-building a tlog in Python adds no assuranc
   - **Bug caught by a test**: verifier-key parsing split on every `+`, but standard base64 key data contains `+`. Go's note package splits at most twice; mine now does too, with a regression test that searches for a key whose base64 actually contains a `+`.
   - **Carried to Phase 2**: these note encodings are so far only self-consistent. Phase 2 must cross-check them against Go's `note` package and torchwood — that is the real verification, and it is now a gate line.
 
-### ⛔ Decision needed before 0.6 — the cold-model gate
+### Decision resolved — 0.6 was approved and run (2026-09-19)
 
 0.6 requires giving a **fresh model** only `SPEC.md` + `testdata/vectors/` and
 having it implement an entry verifier that passes every vector. That means
@@ -61,3 +63,9 @@ the Go code exists than after.
 | Skip entirely | `SPEC.md` never independently validated; the "second implementation" claim in `PUBLICATION.md` §7 weakens |
 
 Loop paused here pending that answer.
+- **2026-09-19 · 0.6 cold-model gate — FAILED.** An independent agent got `SPEC.md` + `testdata/vectors/` and nothing else (isolated copy; verified `SPEC.md` contains no reference to the Python reference, and the agent was barred from `~/norn`). It wrote ~2,100 lines of Go, stdlib only, including its own CBOR codec, and passed **227/227** checks — Stage 1 entries 162/162, Stage 2 replay 45/45 with `state.json` byte-identical, Stage 3 notes 20/20. Verdict nonetheless **SPEC INSUFFICIENT**, because several answers were reverse-engineered from the vectors rather than read from the prose.
+  - **The gate is NOT passed.** Passing 227 checks is not the bar; the bar is that a second implementer could not have gotten it wrong. They could.
+  - 29 defects recorded in `SPEC-DEFECTS.md`. Every Tier-1/Tier-2 item was spot-checked against the real files before being accepted — all confirmed. Sharpest three: §5's state sketch names fields that do not exist (`policy_text`, `valid_until`) and omits three that do (`name`, `net`, `size`), while §5 demands byte-identical state JSON; §12 says "keys sorted" in a document that spends two paragraphs establishing the *opposite* order for CBOR, and following §4.1 there breaks 16/16 entry mirrors; `dup-entry` and `unknown-type` are missing from §5's numbered procedure and their position decides vector 13's reason code.
+  - Eleven Tier-3 items are undecided by the prose **and** by the vectors — two honest implementations can diverge on all of them and both pass clean, which is the exact failure a conformance suite exists to prevent.
+  - Confirmed sound: §4.0/§4.1/§4.2 and §5.1's signature-counting paragraph. Stage 1 passed 162/162 on the first run with no reference to any vector.
+  - Next: 0.7 repairs the spec, then 0.8 re-runs the gate with a *fresh* agent on a *new* isolated copy. The Go core library (Phase 1) waits until the spec it would be built from is sound.
