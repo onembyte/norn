@@ -53,7 +53,7 @@ and if the spec is silent, that is a defect to record, not a coin to flip.
 |---|---|---|---|
 | 1.1 | `internal/cbor` | deterministic encoder + strict decoder; every encoding negative rejected, every valid entry round-trips byte-exact | ✅ |
 | 1.2 | `internal/entry` | envelope, `kid`, preimage, sign/verify, entry and leaf hashes; all 16 entry mirrors reproduced | ✅ |
-| 1.3 | `internal/state` | state schema + canonical JSON (§14) byte-exact against `state.json` | ⬜ |
+| 1.3 | `internal/cjson`, `internal/state` | canonical JSON + state schema; every JSON file in the suite round-trips byte-exact | ✅ |
 | 1.4 | `internal/replay` | every `(index, reason)` in the manifest, and all 12 `genesis/` aborts | ⬜ |
 | 1.5 | `internal/note`, `internal/trust` | receipt verifies; fingerprint reproduced; all 14 `trust-bad/` rejected | ⬜ |
 | 1.6 | Fuzzing | `go test -fuzz` on the decoder and on replay: 1 h each, zero panics | ⬜ |
@@ -196,3 +196,8 @@ residue (low severity) and F10 (§16, deferred to the enrolment CLI by design).
   - The model is typed rather than map-shaped, so the compiler enforces what the schema says, and `After` is a pointer — absent is genuinely distinct from zero, as §4.0 requires.
   - Two layering checks that matter more than the happy path: the envelope-schema negatives (unknown key, missing `sigs`, malformed `kid`, `role` outside the enum, short `sig`, unsorted `sigs`) must be rejected **here**, and a **forged signature must still decode cleanly** — refusing it at the decoder would turn a `threshold` vector into a `decode` one and quietly break the D-043 guarantee.
   - Go: 7 packages, 29 tests, `make ci` + staticcheck green.
+- **2026-09-19 · 1.3 `internal/cjson` + `internal/state`** — canonical JSON per §14 and the state schema per §5.3, tests first.
+  - **The standard library is unusable here, and that is the whole point of §14 existing.** Go's `encoding/json` HTML-escapes `<`, `>` and `&`, and emits `\uXXXX` in **uppercase**. §14.2 forbids both. Either would produce a state that no other implementation reproduces while looking perfectly reasonable in a terminal — precisely the divergence run 2 predicted when it showed an HTML-escaping variant passing the whole suite. So `cjson` is hand-written, with the §14.2 escape table as a literal map and everything else emitted verbatim.
+  - Unit tests are only as good as my reading of §14, so the real check is against the artifacts: **every canonical-JSON file the suite ships** — `state.json`, all 16 entry mirrors, all 12 genesis states, the manifest, the receipt, `keys.json` — is parsed and re-serialised **byte-exact**, trailing newline included.
+  - `internal/state` keeps byte strings as lowercase hex, because that is how §14 renders them *and* how `active_wg` is keyed; carrying two representations would only invite them to disagree. Tests assert the §5.3 invariants directly: every field emitted even after an abort at genesis, `active_wg` derivable from the active devices, and zero values **present rather than absent** — with the fixture required to carry devices both with and without an expiry, so the rule has a discriminating case.
+  - Go: 9 packages, 42 tests, `make ci` + staticcheck + `vectors-check` green.
