@@ -1,0 +1,8 @@
+/bin/
+/demo/out/
+/lab/state/
+/contrib/norn-ref/.venv/
+__pycache__/
+*.pyc
+/coverage.out
+.DS_Store

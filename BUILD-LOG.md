@@ -1,0 +1,34 @@
+# Norn — Build Log
+
+One line per sub-checkpoint. A checkpoint is ✅ only when its "done when" is fully
+true, the suite is green, and it is committed. Gates in `PLAN.md` are ticked only
+when every line of the gate is true.
+
+Method (binding): TDD (red → green → refactor), one package = one responsibility,
+dependencies point inward (`cmd/` → `internal/*` → stdlib/crypto), interfaces at
+boundaries only, no package imports a sibling it doesn't need. The **Python
+reference implementation** under `contrib/norn-ref/` is written *from the spec,
+first*, and generates the vectors the Go code must match — so the Go code never
+becomes its own oracle.
+
+## Phase 0 — Threat model, ledger decision, spec skeleton
+
+| # | Checkpoint | Done when | Status |
+|---|---|---|---|
+| 0.1 | Repo skeleton | git initialised; `go.mod` = `github.com/onembyte/norn`; Apache-2.0 `LICENSE`; `Makefile` with `test` `vet` `fmt-check` `ci`; package dirs with `doc.go`; CI workflow; `make ci` green; first commit | ✅ |
+| 0.2 | Spec tightened for implementation | `SPEC.md` §4 pins: deterministic-CBOR profile (which RFC 8949 §4.2.1 rules apply, integer/bytes/map encoding), `kid` derivation, signature preimage bytes, `net` encoding; open item on `labels.allowed_ips` resolved; recorded as D-026 | ⬜ |
+| 0.3 | Python reference: keys + entry encoding + signing | `contrib/norn-ref/` (pure Python, `cbor2` + `pynacl`); `keys.json` from fixed seeds; one valid entry vector per type, byte-exact `.cbor` + `.json`; a Python self-test that re-verifies every signature | ⬜ |
+| 0.4 | Python reference: replay + rejection vectors | replay state machine per `SPEC.md` §5; 40-entry fixture; `state.json`; one `bad-*.cbor` + `.reason` per reason code; canonical JSON writer pinned | ⬜ |
+| 0.5 | Trust file, fingerprint, receipt vectors | `trust.cbor`/`trust.toml`/`trust.fingerprint`; 256-word list frozen; `receipt.note` (signed note) | ⬜ |
+| 0.6 | Cold-model gate | a fresh model given only `SPEC.md` + `testdata/vectors/` implements an entry verifier that passes all vectors (needs a subagent — confirm with user at this point) | ⬜ |
+
+Log fixture (tiles + cosigned checkpoint) moves to Phase 2 where Tessera produces
+it and torchwood verifies it — hand-building a tlog in Python adds no assurance.
+
+## Phase 1 — Core library
+(subdivided when Phase 0 is ✅)
+
+---
+
+## Journal
+- **2026-09-19 · 0.1 repo skeleton** — Go 1.26.4, module `github.com/onembyte/norn`, Apache-2.0, `make ci` (fmt-check / vet / race tests) green on 10 packages, CI matrix ubuntu+macos. Bug found and fixed before the first commit: `fmt-check` used `git ls-files`, which is empty before the first commit, so `gofmt -l` blocked on stdin — now `find | xargs`. Local commit only; GitHub remote not created yet (user decision, see Phase 6).
