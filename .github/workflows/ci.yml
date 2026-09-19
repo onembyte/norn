@@ -6,6 +6,11 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
+    env:
+      # Turn "ssh-agent is not installed" from a skip into a failure: the
+      # agent client is hand-written, and the real-agent tests are what make
+      # that defensible. They must not quietly stop running.
+      NORN_REQUIRE_SSH_AGENT: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5

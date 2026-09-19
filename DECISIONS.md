@@ -419,3 +419,36 @@ owned its two directories by rebuilding them wholesale. Rejected: a denylist of
 foreign paths (a new foreign directory would be deleted again) · dropping prune
 (it exists because seven orphans from a renumbering survived three conformance
 runs).
+
+## D-053 · Norn writes the ssh-agent client, and tests it against a real agent (2026-09-19, 2.9b-i)
+`internal/sshagent` implements the four messages Norn needs — request
+identities, sign — rather than importing `golang.org/x/crypto/ssh/agent`.
+**Measured:** that package brings **five modules** (crypto, net, sys, term,
+text) and the whole SSH transport for a protocol Norn uses four messages of;
+Norn's graph is 7 and its pitch is a NAS and a Pi. Same trade as D-049.
+
+The real objection to hand-writing a wire protocol is that the author can only
+test it against their own fake, which proves nothing — the self-agreement trap
+this project keeps refusing. So the tests drive **OpenSSH's own `ssh-agent`**:
+generate an Ed25519 key with `ssh-keygen`, load it with `ssh-add`, list it,
+sign an entry through it, and verify the result as an ordinary §4.2 signature.
+`NORN_REQUIRE_SSH_AGENT=1` in CI turns "not installed" into a failure so the
+real-agent tests cannot quietly stop running. The fake agent stays for what a
+real one will not do on request: sign with the wrong key, announce a gigabyte,
+answer with the wrong message, claim another algorithm.
+
+**A signature from an agent is verified before it is used.** An agent is a
+separate process, sometimes another vendor's, sometimes hardware; a signature
+that does not verify must fail in the CLI rather than in somebody else's
+replay. Rejected: trusting the agent's answer (a broken agent would then
+publish an invalid entry under the operator's name) · a Norn key store (the
+thing the agent abstraction exists to avoid).
+
+## D-054 · `entry.Sign` takes a `crypto.Signer` (2026-09-19, 2.9b-i)
+Not a new Norn interface: `ed25519.PrivateKey` already satisfies the stdlib
+one, so every existing call site compiled unchanged, and an agent-held key —
+TKey, YubiKey, 1Password — is the same thing to an entry as a key in memory.
+Ed25519 is enforced at the seam: a P-256 signer (Secure Enclave, TPM 2.0, which
+`ENROLLMENT.md` part 1 says are unsupported) is refused with an error rather
+than a panic, and a signer returning the wrong number of bytes leaves the
+envelope untouched instead of writing a malformed `sigs` entry.

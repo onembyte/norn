@@ -21,6 +21,13 @@ signature, so TKey, YubiKey-OpenPGP, software keys and password-manager agents a
 look identical to Norn. `kid` = derived from the agent's public key. No Norn key
 store to secure, no key format to invent.
 
+**Binding, and tested:** Norn **verifies every signature an agent returns** before
+using it (`internal/sshagent`). An agent is a separate process — sometimes another
+vendor's, sometimes a piece of hardware — and a signature that does not verify has
+to fail in the CLI, not in somebody else's replay. Keys of other types in the same
+agent are skipped, not refused: the user's RSA login key living next to a Norn
+signer is the normal case.
+
 ## 2. Root ceremony (homelab, ~10 minutes)
 
 ```

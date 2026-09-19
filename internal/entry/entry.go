@@ -8,7 +8,9 @@
 package entry
 
 import (
+	"crypto"
 	"crypto/ed25519"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -144,15 +146,38 @@ func Preimage(e *Envelope) ([]byte, error) {
 }
 
 // Sign adds one signature in place, keeping `sigs` sorted by kid and unique.
-func Sign(e *Envelope, key ed25519.PrivateKey, role string) error {
+//
+// The key is a crypto.Signer rather than an ed25519.PrivateKey so that a key
+// held by an ssh-agent -- a hardware token, a password manager -- is the same
+// thing to an entry as a key in memory (`ENROLLMENT.md` part 1). ed25519
+// .PrivateKey already satisfies the interface, so an in-memory key is passed
+// exactly as before.
+//
+// What comes back from a signer is checked before it is kept: §3 allows only
+// Ed25519, and a signature of the wrong length is a broken or hostile agent,
+// not a signature. A failure at any point leaves the envelope untouched.
+func Sign(e *Envelope, key crypto.Signer, role string) error {
 	if !Roles[role] {
 		return schemaErrorf("unknown role %q", role)
+	}
+	public, ok := key.Public().(ed25519.PublicKey)
+	if !ok {
+		return schemaErrorf("signing key is %T, and §3 allows only Ed25519", key.Public())
 	}
 	pre, err := Preimage(e)
 	if err != nil {
 		return err
 	}
-	public := key.Public().(ed25519.PublicKey)
+	// crypto.Hash(0) is what pure Ed25519 requires: the message is signed
+	// whole, not pre-hashed.
+	sig, err := key.Sign(rand.Reader, pre, crypto.Hash(0))
+	if err != nil {
+		return fmt.Errorf("the signer refused: %w", err)
+	}
+	if len(sig) != SigLen {
+		return schemaErrorf("the signer returned %d bytes, want %d", len(sig), SigLen)
+	}
+
 	kid := Kid(public)
 	kept := e.Sigs[:0:0]
 	for _, s := range e.Sigs {
@@ -160,7 +185,7 @@ func Sign(e *Envelope, key ed25519.PrivateKey, role string) error {
 			kept = append(kept, s)
 		}
 	}
-	kept = append(kept, Signature{Kid: kid, Role: role, Sig: ed25519.Sign(key, pre)})
+	kept = append(kept, Signature{Kid: kid, Role: role, Sig: sig})
 	sort.Slice(kept, func(i, j int) bool { return kept[i].Kid < kept[j].Kid })
 	e.Sigs = kept
 	return nil
