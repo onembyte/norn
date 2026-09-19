@@ -9,8 +9,10 @@ package trust
 import (
 	"crypto/sha256"
 	"encoding/base32"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/onembyte/norn/internal/cbor"
@@ -331,4 +333,96 @@ func NetFromOrigin(origin string) ([]byte, error) {
 		return nil, trustErrorf("origin decodes to %d bytes, want %d", len(net), netLen)
 	}
 	return net, nil
+}
+
+// ToTOML renders the anchor as §9.2's human-readable form.
+//
+// The CBOR stays authoritative: this exists so an operator can read a trust
+// file, and above all so they can compare the **fingerprint** out of band
+// before trusting it. Its shape is fixed by the suite's `trust.toml`, which the
+// reference implementation produces — so the two renderings are held to the
+// same bytes rather than each to its own author's taste.
+func (t *Trust) ToTOML() (string, error) {
+	fingerprint, err := t.Fingerprint()
+	if err != nil {
+		return "", err
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "# Norn trust file for %s\n", t.Name)
+	fmt.Fprintf(&b, "# fingerprint = %s\n", fingerprint)
+	b.WriteString("# Compare the fingerprint out of band before trusting this file.\n\n")
+	fmt.Fprintf(&b, "version      = %d\n", t.Version)
+	fmt.Fprintf(&b, "net          = %s\n", tomlString(hex.EncodeToString(t.Net)))
+	fmt.Fprintf(&b, "origin       = %s\n", tomlString(t.Origin))
+	fmt.Fprintf(&b, "name         = %s\n", tomlString(t.Name))
+	fmt.Fprintf(&b, "genesis_hash = %s\n", tomlString(hex.EncodeToString(t.GenesisHash)))
+	fmt.Fprintf(&b, "log_key      = %s\n", tomlString(t.LogKey))
+
+	urls := make([]string, 0, len(t.LogURLs))
+	for _, u := range t.LogURLs {
+		urls = append(urls, tomlString(u))
+	}
+	fmt.Fprintf(&b, "log_urls     = [%s]\n", strings.Join(urls, ", "))
+	fmt.Fprintf(&b, "policy       = %s\n", tomlString(t.Policy))
+
+	if t.Anchor != nil {
+		keys := make([]string, 0, len(t.Anchor))
+		for key := range t.Anchor {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		parts := make([]string, 0, len(keys))
+		for _, key := range keys {
+			switch value := t.Anchor[key].(type) {
+			case string:
+				parts = append(parts, fmt.Sprintf("%s = %s", key, tomlString(value)))
+			default:
+				parts = append(parts, fmt.Sprintf("%s = %v", key, value))
+			}
+		}
+		fmt.Fprintf(&b, "anchor       = { %s }\n", strings.Join(parts, ", "))
+	}
+	for _, w := range t.Witnesses {
+		b.WriteString("\n[[witness]]\n")
+		fmt.Fprintf(&b, "name = %s\n", tomlString(w.Name))
+		fmt.Fprintf(&b, "key  = %s\n", tomlString(w.Key))
+		if w.URL != "" {
+			fmt.Fprintf(&b, "url  = %s\n", tomlString(w.URL))
+		}
+	}
+	return b.String(), nil
+}
+
+// tomlString quotes a basic TOML string. The escapes are TOML's own set, not
+// canonical JSON's (§14.2): the two agree on most of it and not on all of it,
+// and conflating them is how a policy with a tab in it stops round-tripping.
+func tomlString(s string) string {
+	var b strings.Builder
+	b.WriteByte('"')
+	for _, r := range s {
+		switch r {
+		case '"':
+			b.WriteString(`\"`)
+		case '\\':
+			b.WriteString(`\\`)
+		case '\b':
+			b.WriteString(`\b`)
+		case '\t':
+			b.WriteString(`\t`)
+		case '\n':
+			b.WriteString(`\n`)
+		case '\f':
+			b.WriteString(`\f`)
+		case '\r':
+			b.WriteString(`\r`)
+		default:
+			if r < 0x20 || r == 0x7f {
+				fmt.Fprintf(&b, `\u%04X`, r)
+				continue
+			}
+			b.WriteRune(r)
+		}
+	}
+	b.WriteByte('"')
+	return b.String()
 }
