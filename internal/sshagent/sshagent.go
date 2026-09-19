@@ -27,6 +27,8 @@ import (
 	"io"
 	"net"
 	"os"
+
+	"github.com/onembyte/norn/internal/sshwire"
 )
 
 // Message numbers from the ssh-agent protocol.
@@ -106,11 +108,11 @@ func (c *Client) Keys() ([]Key, error) {
 
 	var keys []Key
 	for i := uint32(0); i < count; i++ {
-		blob, rest, err := sshString(body)
+		blob, rest, err := sshwire.String(body)
 		if err != nil {
 			return nil, fmt.Errorf("sshagent: identity %d: %w", i, err)
 		}
-		comment, rest, err := sshString(rest)
+		comment, rest, err := sshwire.String(rest)
 		if err != nil {
 			return nil, fmt.Errorf("sshagent: identity %d comment: %w", i, err)
 		}
@@ -163,8 +165,8 @@ func (s *Signer) Sign(_ io.Reader, message []byte, opts crypto.SignerOpts) ([]by
 	}
 
 	request := []byte{msgSignRequest}
-	request = appendString(request, ed25519Blob(s.public))
-	request = appendString(request, message)
+	request = sshwire.AppendString(request, ed25519Blob(s.public))
+	request = sshwire.AppendString(request, message)
 	request = binary.BigEndian.AppendUint32(request, 0) // flags: none for Ed25519
 
 	payload, err := s.client.request(request)
@@ -178,18 +180,18 @@ func (s *Signer) Sign(_ io.Reader, message []byte, opts crypto.SignerOpts) ([]by
 		return nil, fmt.Errorf("sshagent: answer %d to a signing request", payload[0])
 	}
 
-	blob, _, err := sshString(payload[1:])
+	blob, _, err := sshwire.String(payload[1:])
 	if err != nil {
 		return nil, fmt.Errorf("sshagent: signature: %w", err)
 	}
-	algorithm, rest, err := sshString(blob)
+	algorithm, rest, err := sshwire.String(blob)
 	if err != nil {
 		return nil, fmt.Errorf("sshagent: signature algorithm: %w", err)
 	}
 	if string(algorithm) != KeyType {
 		return nil, fmt.Errorf("sshagent: the agent signed with %q, want %q", algorithm, KeyType)
 	}
-	signature, _, err := sshString(rest)
+	signature, _, err := sshwire.String(rest)
 	if err != nil {
 		return nil, fmt.Errorf("sshagent: signature body: %w", err)
 	}
@@ -233,37 +235,18 @@ func (c *Client) readResponse(size []byte) ([]byte, error) {
 	return payload, nil
 }
 
-// -- the protocol's string encoding ---------------------------------------
-
-func appendString(to, value []byte) []byte {
-	to = binary.BigEndian.AppendUint32(to, uint32(len(value)))
-	return append(to, value...)
-}
-
-// sshString splits one length-prefixed string off the front of b.
-func sshString(b []byte) (value, rest []byte, err error) {
-	if len(b) < 4 {
-		return nil, nil, errors.New("truncated length")
-	}
-	length := binary.BigEndian.Uint32(b[:4])
-	if uint64(length) > uint64(len(b)-4) {
-		return nil, nil, fmt.Errorf("length %d runs past the end", length)
-	}
-	return b[4 : 4+length], b[4+length:], nil
-}
-
 func ed25519Blob(public ed25519.PublicKey) []byte {
-	blob := appendString(nil, []byte(KeyType))
-	return appendString(blob, public)
+	blob := sshwire.AppendString(nil, []byte(KeyType))
+	return sshwire.AppendString(blob, public)
 }
 
 // ed25519FromBlob reads a public key blob, reporting whether it is Ed25519.
 func ed25519FromBlob(blob []byte) (ed25519.PublicKey, bool) {
-	algorithm, rest, err := sshString(blob)
+	algorithm, rest, err := sshwire.String(blob)
 	if err != nil || string(algorithm) != KeyType {
 		return nil, false
 	}
-	public, _, err := sshString(rest)
+	public, _, err := sshwire.String(rest)
 	if err != nil || len(public) != ed25519.PublicKeySize {
 		return nil, false
 	}

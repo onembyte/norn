@@ -8,7 +8,7 @@ mobile app in v0.
 
 | Tier | Where the key lives | Ed25519? | Use |
 |---|---|---|---|
-| 0 | encrypted file (`age`-style scrypt passphrase) | ✓ | dev, lab, CI |
+| 0 | an **OpenSSH private key file**, unencrypted, mode 0600 (`ssh-keygen -t ed25519 -N ""`) | ✓ | **device keys** (`nornd` signs `rotate` and self-`revoke` with nobody at the keyboard), lab, CI |
 | 1 | an **ssh-agent** (OpenSSH agent, 1Password/Bitwarden SSH agent, gpg-agent, macOS keychain-backed agent) | ✓ | **signers (default)** |
 | 2 | hardware with **touch**: Tillitis TKey (native Ed25519 signer app, via its agent), YubiKey OpenPGP applet (Ed25519, touch policy on, via gpg-agent) | ✓ | **roots (default)** |
 | 3 | **paper**: 24-word mnemonic → Ed25519 seed, sealed envelope | ✓ | root backups, the third root |
@@ -20,6 +20,16 @@ the raw preimage (§SPEC 4.2); for Ed25519 keys an agent returns a plain Ed25519
 signature, so TKey, YubiKey-OpenPGP, software keys and password-manager agents all
 look identical to Norn. `kid` = derived from the agent's public key. No Norn key
 store to secure, no key format to invent.
+
+**Tier 0 is a file because a daemon cannot type a passphrase.** `nornd` signs
+`rotate` and self-`revoke` at boot with nobody present, so that key lives on disk
+under 0600 — and an encrypted file would not help, since the passphrase would have
+to live beside it. So Norn **refuses** a passphrase-protected key and says what to
+do instead: `ssh-add` it once and let Norn use the agent, which is tier 1. The two
+tiers are **one format**: `ssh-add` loads a key `norn` wrote, unchanged, and that
+is a test, not a claim (`internal/keyfile`). An earlier draft of this table said
+tier 0 was an age-style scrypt file; that would have meant inventing a key format
+and importing a KDF to protect a secret a daemon must read unattended.
 
 **Binding, and tested:** Norn **verifies every signature an agent returns** before
 using it (`internal/sshagent`). An agent is a separate process — sometimes another

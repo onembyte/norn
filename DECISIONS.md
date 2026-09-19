@@ -452,3 +452,39 @@ Ed25519 is enforced at the seam: a P-256 signer (Secure Enclave, TPM 2.0, which
 `ENROLLMENT.md` part 1 says are unsupported) is refused with an error rather
 than a panic, and a signer returning the wrong number of bytes leaves the
 envelope untouched instead of writing a malformed `sigs` entry.
+
+## D-055 · Tier 0 is an OpenSSH private key file, unencrypted, and Norn refuses the encrypted kind (2026-09-19, 2.9b-ii)
+`ENROLLMENT.md` promised an "age-style scrypt" file. Three things were wrong
+with it, and the checkpoint that implemented it is where they surfaced.
+
+**The dependency measurement inverts the obvious answer.** `x/crypto/scrypt`
+alone pulls the **same five modules** as all of `x/crypto/ssh` (crypto, net,
+sys, term, text), because the cost is x/crypto's own `go.mod`, not the package
+imported. So "a small KDF" was never cheaper than "the whole OpenSSH key
+format" — it was the same price for less.
+
+**The promise it breaks.** `ENROLLMENT.md` part 1 says Norn has "no key format
+to invent". An age-style envelope around an Ed25519 seed is a key format, and
+Norn would own it forever. The OpenSSH private-key format already exists, and
+using it means `ssh-keygen` can make a Norn key and `ssh-add` can load one:
+**tier 0 becomes tier 1 with no conversion**, which the tests check by loading a
+Norn-written key into a real agent.
+
+**The threat model it does not fit.** The file exists because `nornd` signs
+`rotate` and self-`revoke` at boot with nobody at the keyboard. A passphrase
+would have to live beside the key, which protects nothing. So encrypted keys are
+**refused**, with an error that names the remedy (`ssh-add`), and a human's
+signer key belongs in an agent — where a passphrase-protected key ends up
+anyway, after one prompt.
+
+Parsing is hand-written against `internal/sshwire`, under the rule D-053 set:
+**hand-write wire formats, never crypto primitives.** Unencrypted
+openssh-key-v1 is pure framing; the encrypted kind needs bcrypt-pbkdf, which is
+exactly the primitive not to hand-roll — and refusing it is what keeps the rule
+intact. Both directions are tested against the real tools, and the three copies
+of the public key inside the file must agree, so a damaged or crafted file
+cannot make Norn sign under an unexpected identity. Rejected: PBKDF2 from the
+standard library (0 modules, but invents a format and picks a GPU-friendly KDF
+for key material, which D-029 already refused for a fingerprint) · importing
+`x/crypto/ssh` to read the encrypted kind (five modules for a case whose
+passphrase would sit next to the key).
