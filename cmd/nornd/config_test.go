@@ -1,8 +1,11 @@
 package main
 
 import (
+	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -144,5 +147,80 @@ func TestPollBounds(t *testing.T) {
 		if _, err := ParsePoll(bad); err == nil {
 			t.Errorf("%q was accepted as a poll interval", bad)
 		}
+	}
+}
+
+func TestFightSettings(t *testing.T) {
+	// The default is alarm: keep evicting, keep alarming, keep the network up.
+	policy, _, _, err := Config{}.FightSettings()
+	if err != nil || policy != "alarm" {
+		t.Fatalf("default policy = %q, %v", policy, err)
+	}
+
+	config := Config{FightPolicy: "quarantine", FightThreshold: 5, FightWindow: "90s"}
+	policy, threshold, window, err := config.FightSettings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if policy != "quarantine" || threshold != 5 || window != 90*time.Second {
+		t.Errorf("settings = %q, %d, %s", policy, threshold, window)
+	}
+
+	for _, bad := range []Config{
+		{FightPolicy: "shutdown"},
+		{FightThreshold: -1},
+		{FightWindow: "soon"},
+		{FightWindow: "0s"},
+	} {
+		if _, _, _, err := bad.FightSettings(); err == nil {
+			t.Errorf("accepted %+v", bad)
+		}
+	}
+}
+
+// Taking a network down is a break-glass action, so an operator must be able
+// to read exactly what will run -- and replace it.
+func TestQuarantineCommandIsExplicitAndSubstituted(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	config := Config{QuarantineCommand: []string{"false", "{iface}", "down"}}
+
+	action, err := config.QuarantineFor("wg0", logger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// `false` exits non-zero, so the error must carry what was run.
+	err = action("a fight")
+	if err == nil {
+		t.Fatal("a failing quarantine command reported success")
+	}
+	if !strings.Contains(err.Error(), "wg0") {
+		t.Errorf("the error should name the command that ran: %v", err)
+	}
+
+	ok, err := Config{QuarantineCommand: []string{"true"}}.QuarantineFor("wg0", logger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ok("a fight"); err != nil {
+		t.Errorf("a successful command reported failure: %v", err)
+	}
+}
+
+// On a platform where Norn cannot assume a command, it says so rather than
+// guessing at something that might not take the interface down at all.
+func TestQuarantineNeedsACommandWhereThereIsNoDefault(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	_, err := Config{}.QuarantineFor("wg0", logger)
+	if runtime.GOOS == "linux" {
+		if err != nil {
+			t.Fatalf("linux has a documented default: %v", err)
+		}
+		return
+	}
+	if err == nil {
+		t.Fatalf("assumed a quarantine command on %s", runtime.GOOS)
+	}
+	if !strings.Contains(err.Error(), "quarantine_command") {
+		t.Errorf("the error should say what to configure: %v", err)
 	}
 }

@@ -2,7 +2,12 @@ package main
 
 import (
 	"fmt"
+	"github.com/onembyte/norn/internal/agent"
+	"log/slog"
 	"net/netip"
+	"os/exec"
+	"runtime"
+	"strings"
 	"time"
 
 	"github.com/BurntSushi/toml"
@@ -27,6 +32,18 @@ type Config struct {
 	RunDir string `toml:"run_dir"`
 	Hints  string `toml:"hints_file"`
 	Peers  []Peer `toml:"peer"`
+
+	// FightPolicy is what to do when the same key keeps coming back:
+	// "alarm" (the default) or "quarantine".
+	FightPolicy    string `toml:"fight_policy"`
+	FightThreshold int    `toml:"fight_threshold"`
+	FightWindow    string `toml:"fight_window"`
+	// QuarantineCommand takes the interface out of service. `{iface}` is
+	// replaced with the interface name. It is a command rather than a library
+	// call on purpose: taking a network down is a break-glass action, and an
+	// operator should be able to read exactly what it will run -- and replace
+	// it with `wg-quick down`, a firewall rule, or whatever their site uses.
+	QuarantineCommand []string `toml:"quarantine_command"`
 }
 
 // Peer is a `[[peer]]` block: reachability for one device the log proves.
@@ -130,3 +147,55 @@ const (
 	MinPoll     = 10 * time.Millisecond
 	MaxPoll     = time.Hour
 )
+
+// FightSettings resolves the fight policy and its knobs.
+func (c Config) FightSettings() (policy string, threshold int, window time.Duration, err error) {
+	policy = c.FightPolicy
+	switch policy {
+	case "":
+		policy = agent.PolicyAlarm
+	case agent.PolicyAlarm, agent.PolicyQuarantine:
+	default:
+		return "", 0, 0, fmt.Errorf("fight_policy %q is not a policy; use %q or %q",
+			policy, agent.PolicyAlarm, agent.PolicyQuarantine)
+	}
+	if c.FightThreshold < 0 {
+		return "", 0, 0, fmt.Errorf("fight_threshold cannot be negative")
+	}
+	if c.FightWindow != "" {
+		window, err = time.ParseDuration(c.FightWindow)
+		if err != nil {
+			return "", 0, 0, fmt.Errorf("fight_window: %w", err)
+		}
+		if window <= 0 {
+			return "", 0, 0, fmt.Errorf("fight_window must be positive")
+		}
+	}
+	return policy, c.FightThreshold, window, nil
+}
+
+// QuarantineFor builds the action the quarantine policy runs, or explains why
+// it cannot.
+func (c Config) QuarantineFor(iface string, logger *slog.Logger) (func(string) error, error) {
+	command := c.QuarantineCommand
+	if len(command) == 0 {
+		if runtime.GOOS != "linux" {
+			return nil, fmt.Errorf("quarantine needs a quarantine_command on %s: there is "+
+				"no command here that Norn can assume takes an interface down", runtime.GOOS)
+		}
+		command = []string{"ip", "link", "set", "{iface}", "down"}
+	}
+	resolved := make([]string, len(command))
+	for i, part := range command {
+		resolved[i] = strings.ReplaceAll(part, "{iface}", iface)
+	}
+	return func(reason string) error {
+		logger.Warn("quarantining the interface", "reason", reason, "command", resolved)
+		out, err := exec.Command(resolved[0], resolved[1:]...).CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("%s: %w: %s", strings.Join(resolved, " "), err,
+				strings.TrimSpace(string(out)))
+		}
+		return nil
+	}, nil
+}

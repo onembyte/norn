@@ -103,9 +103,17 @@ func build(config Config, logger *slog.Logger) (*agent.Agent, time.Duration, err
 	// reading a startup error should be able to see which mode was intended,
 	// because "it did not start" and "it started enforcing" are very
 	// different things to be wrong about.
+	fightPolicy, _, _, err := config.FightSettings()
+	if err != nil {
+		return nil, 0, err
+	}
 	logger.Info("nornd configuration",
 		"interface", config.Interface, "mode", mode, "poll", interval,
-		"trust", config.Trust, "run_dir", config.RunDir)
+		"trust", config.Trust, "run_dir", config.RunDir, "fight_policy", fightPolicy)
+	if fightPolicy == agent.PolicyQuarantine {
+		logger.Warn("fight policy is quarantine: a control-plane fight will take this " +
+			"interface out of service until an operator intervenes")
+	}
 	if mode == reconcile.Observe {
 		logger.Info("observe mode: this node will alarm and write nothing (D-005)")
 	}
@@ -141,10 +149,23 @@ func build(config Config, logger *slog.Logger) (*agent.Agent, time.Duration, err
 		return nil, 0, err
 	}
 
+	policy, threshold, window, err := config.FightSettings()
+	if err != nil {
+		return nil, 0, err
+	}
+	var quarantine func(string) error
+	if policy == agent.PolicyQuarantine {
+		if quarantine, err = config.QuarantineFor(config.Interface, logger); err != nil {
+			return nil, 0, err
+		}
+	}
+
 	cycle, err := agent.New(agent.Config{
 		Anchor: anchor, Fetcher: fetcher, Device: device, Provider: provider,
 		Mode: mode, RunDir: config.RunDir, Now: time.Now,
-		Emit: func(event agent.Event) { report(logger, event) },
+		FightPolicy: policy, FightThreshold: threshold, FightWindow: window,
+		Quarantine: quarantine,
+		Emit:       func(event agent.Event) { report(logger, event) },
 	})
 	if err != nil {
 		return nil, 0, err
@@ -216,7 +237,8 @@ func report(logger *slog.Logger, event agent.Event) {
 	}
 	switch event.Kind {
 	case reconcile.UnprovenPeer, reconcile.EvictedPeer, agent.VerifyFailed,
-		agent.EnforcingOnStaleState, agent.InterfaceUnavailable:
+		agent.EnforcingOnStaleState, agent.InterfaceUnavailable,
+		agent.ControlPlaneFight, agent.Quarantined, agent.QuarantineFailed:
 		logger.Warn(event.Message, attrs...)
 	default:
 		logger.Info(event.Message, attrs...)

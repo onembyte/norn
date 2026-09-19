@@ -393,3 +393,122 @@ func TestProviderClaimsAreReported(t *testing.T) {
 		t.Errorf("the provider's claim about an unproven device was not reported: %v", rec.kinds())
 	}
 }
+
+// A control plane that keeps putting a key back is not misconfigured, it is
+// disagreeing -- and one eviction at a time the two look identical.
+func TestAControlPlaneThatKeepsComingBackIsNamed(t *testing.T) {
+	rec := &recorder{}
+	fake := peertable.NewFake(provenKeys(t)...)
+	a := newAgent(t, reconcile.Watchdog, servedLog(t), fake, rec)
+
+	for i := 0; i < 3; i++ {
+		fake.Inject(rogue(t)) // the other writer puts it back
+		if err := a.Once(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if rec.kinds()[ControlPlaneFight] != 1 {
+		t.Fatalf("events = %v, want exactly one fight declared", rec.kinds())
+	}
+	if rec.kinds()[reconcile.EvictedPeer] != 3 {
+		t.Errorf("all three evictions should still be reported: %v", rec.kinds())
+	}
+	// And it keeps evicting: alarming is not giving up.
+	peers, _ := fake.Peers()
+	for _, peer := range peers {
+		if peer.Key == rogue(t).Key {
+			t.Fatal("Norn stopped evicting once it declared a fight")
+		}
+	}
+}
+
+// Failing closed is a choice. The default keeps a network up.
+func TestQuarantineNeverHappensByDefault(t *testing.T) {
+	rec := &recorder{}
+	fake := peertable.NewFake(provenKeys(t)...)
+	a := newAgent(t, reconcile.Watchdog, servedLog(t), fake, rec)
+
+	for i := 0; i < 5; i++ {
+		fake.Inject(rogue(t))
+		if err := a.Once(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if a.Quarantined() {
+		t.Fatal("a default configuration took the interface down")
+	}
+	if rec.kinds()[Quarantined] != 0 {
+		t.Errorf("events = %v", rec.kinds())
+	}
+}
+
+func TestQuarantineFiresOnceWhenChosen(t *testing.T) {
+	rec := &recorder{}
+	fake := peertable.NewFake(provenKeys(t)...)
+	var calls []string
+	a, err := New(Config{
+		Anchor: anchor(t), Fetcher: logclient.Dir(servedLog(t)), Device: fake,
+		Mode: reconcile.Watchdog, FightPolicy: PolicyQuarantine,
+		Quarantine: func(reason string) error { calls = append(calls, reason); return nil },
+		Now:        func() time.Time { return time.Unix(1_760_000_000, 0) }, Emit: rec.emit,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for i := 0; i < 6; i++ {
+		fake.Inject(rogue(t))
+		if err := a.Once(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(calls) != 1 {
+		t.Fatalf("quarantine ran %d times; it must fire once, not every poll", len(calls))
+	}
+	if !strings.Contains(calls[0], rogue(t).Key.Short()) {
+		t.Errorf("the reason should name the key: %q", calls[0])
+	}
+	if !a.Quarantined() || rec.kinds()[Quarantined] != 1 {
+		t.Errorf("events = %v", rec.kinds())
+	}
+}
+
+// An agent told to quarantine with no way to do it must say so at startup, not
+// discover it in the middle of an incident.
+func TestQuarantineWithoutAWayToDoItIsRefused(t *testing.T) {
+	_, err := New(Config{Anchor: anchor(t), Fetcher: logclient.Dir("."),
+		Device: peertable.NewFake(), FightPolicy: PolicyQuarantine})
+	if err == nil {
+		t.Fatal("accepted a quarantine policy with no quarantine")
+	}
+	if !strings.Contains(err.Error(), "mid-incident") {
+		t.Errorf("err = %v", err)
+	}
+}
+
+func TestAnUnknownFightPolicyIsRefused(t *testing.T) {
+	_, err := New(Config{Anchor: anchor(t), Fetcher: logclient.Dir("."),
+		Device: peertable.NewFake(), FightPolicy: "shutdown"})
+	if err == nil {
+		t.Fatal("accepted a fight policy that does not exist")
+	}
+}
+
+// A failed eviction is a broken interface, not an accusation: counting it
+// would blame a control plane for Norn's own inability to write.
+func TestAFailedEvictionIsNotEvidenceOfAFight(t *testing.T) {
+	rec := &recorder{}
+	fake := peertable.NewFake(provenKeys(t)...)
+	fake.Inject(rogue(t))
+	fake.FailWrite = peertable.ErrDown
+
+	a := newAgent(t, reconcile.Watchdog, servedLog(t), fake, rec)
+	for i := 0; i < 5; i++ {
+		if err := a.Once(); err == nil {
+			t.Fatal("a failing interface reported success")
+		}
+	}
+	if rec.kinds()[ControlPlaneFight] != 0 {
+		t.Errorf("a broken interface was blamed on the control plane: %v", rec.kinds())
+	}
+}

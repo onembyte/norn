@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/onembyte/norn/internal/endpoint"
+	"github.com/onembyte/norn/internal/fight"
 	"github.com/onembyte/norn/internal/logclient"
 	"github.com/onembyte/norn/internal/peertable"
 	"github.com/onembyte/norn/internal/proven"
@@ -43,6 +44,23 @@ const (
 	// ProviderClaim: a provider had opinions about devices the log does not
 	// prove, or none about devices it does.
 	ProviderClaim = "PROVIDER_CLAIM"
+	// ControlPlaneFight: the same key keeps coming back, so whoever owns this
+	// table disagrees with the log about who belongs on the network.
+	ControlPlaneFight = "CONTROL_PLANE_FIGHT"
+	// Quarantined: the configured fight policy took the interface down.
+	Quarantined = "QUARANTINED"
+	// QuarantineFailed: it tried, and could not.
+	QuarantineFailed = "QUARANTINE_FAILED"
+)
+
+// Fight policies (`ENFORCEMENT.md` part 3).
+const (
+	// PolicyAlarm keeps evicting and keeps alarming. The default, because the
+	// alternative disconnects a network.
+	PolicyAlarm = "alarm"
+	// PolicyQuarantine brings the interface down until an operator
+	// intervenes. Fail-closed **by choice, never by default**.
+	PolicyQuarantine = "quarantine"
 )
 
 // Event is something an operator should know about.
@@ -65,12 +83,25 @@ type Config struct {
 	RunDir string
 	Now    func() time.Time
 	Emit   func(Event)
+
+	// FightPolicy is what to do when the same key keeps coming back:
+	// PolicyAlarm (the default) or PolicyQuarantine.
+	FightPolicy string
+	// FightThreshold and FightWindow override the documented 3-in-60s.
+	FightThreshold int
+	FightWindow    time.Duration
+	// Quarantine takes the interface out of service. Required only when the
+	// policy asks for it; an agent configured to quarantine with no way to do
+	// it refuses to start rather than discovering it mid-incident.
+	Quarantine func(reason string) error
 }
 
 // Agent runs the cycle and remembers the last state that verified.
 type Agent struct {
-	cfg  Config
-	last *logclient.Result
+	cfg         Config
+	last        *logclient.Result
+	fights      *fight.Detector
+	quarantined bool
 }
 
 // New checks what must be true before a node starts at all.
@@ -100,7 +131,21 @@ func New(cfg Config) (*Agent, error) {
 	if cfg.Emit == nil {
 		cfg.Emit = func(Event) {}
 	}
-	return &Agent{cfg: cfg}, nil
+	switch cfg.FightPolicy {
+	case "":
+		cfg.FightPolicy = PolicyAlarm
+	case PolicyAlarm:
+	case PolicyQuarantine:
+		if cfg.Quarantine == nil {
+			return nil, errors.New("agent: the quarantine policy needs a way to take the " +
+				"interface out of service; finding that out mid-incident is too late")
+		}
+	default:
+		return nil, fmt.Errorf("agent: %q is not a fight policy; use %q or %q",
+			cfg.FightPolicy, PolicyAlarm, PolicyQuarantine)
+	}
+	return &Agent{cfg: cfg,
+		fights: fight.New(cfg.FightThreshold, cfg.FightWindow)}, nil
 }
 
 // Mode reports the mode this agent runs in.
@@ -175,7 +220,11 @@ func (a *Agent) reconcile(result *logclient.Result) error {
 		a.emit(Event{Kind: alarm.Kind, Peer: &alarm,
 			Message: fmt.Sprintf("%s %s", alarm.Kind, alarm.Key.Short())})
 	}
-	return reconcile.Apply(a.cfg.Device, plan)
+	if err := reconcile.Apply(a.cfg.Device, plan); err != nil {
+		return err
+	}
+	a.noteEvictions(plan)
+	return nil
 }
 
 // desired is the proven set dressed with whatever the provider knows.
@@ -194,6 +243,45 @@ func (a *Agent) desired(result *logclient.Result) ([]peertable.Peer, endpoint.Re
 	}
 	return endpoint.Desired(devices, a.cfg.Provider)
 }
+
+// noteEvictions watches for the same key being put back over and over.
+//
+// Evictions are recorded only after they succeeded: a key Norn failed to
+// remove has not come back, and counting it would turn a broken interface into
+// an accusation against the control plane.
+func (a *Agent) noteEvictions(plan reconcile.Plan) {
+	now := a.cfg.Now()
+	for _, key := range plan.Remove {
+		count, started := a.fights.Record(key, now)
+		if !started {
+			continue
+		}
+		a.emit(Event{Kind: ControlPlaneFight,
+			Message: fmt.Sprintf("%s has been evicted %d times in %s: whoever owns this "+
+				"peer table disagrees with the log", key.Short(), count, a.fights.Window()),
+			Peer: &reconcile.Alarm{Kind: ControlPlaneFight, Key: key}})
+		a.applyFightPolicy(key)
+	}
+}
+
+// applyFightPolicy does what the operator chose, once.
+func (a *Agent) applyFightPolicy(key peertable.Key) {
+	if a.cfg.FightPolicy != PolicyQuarantine || a.quarantined {
+		return
+	}
+	reason := fmt.Sprintf("control plane fight over %s", key.Short())
+	if err := a.cfg.Quarantine(reason); err != nil {
+		a.emit(Event{Kind: QuarantineFailed, Message: err.Error()})
+		return
+	}
+	a.quarantined = true
+	a.emit(Event{Kind: Quarantined,
+		Message: "the interface has been taken out of service until an operator intervenes (" +
+			reason + ")"})
+}
+
+// Quarantined reports whether the fight policy has fired.
+func (a *Agent) Quarantined() bool { return a.quarantined }
 
 func (a *Agent) emit(event Event) { a.cfg.Emit(event) }
 

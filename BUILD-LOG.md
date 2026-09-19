@@ -363,7 +363,7 @@ starting rather than after.
 | 3.5a | `internal/agent` | one verify-and-reconcile cycle, and the failure semantics of `ENFORCEMENT.md` part 8 — above all, **a failed verification never widens or empties the peer table** | ✅ |
 | 3.5b | `internal/wgdev` | the real interface behind the same seam. **Moved ahead of the daemon:** a `nornd` with nothing to drive cannot be run, and the dependency question had to be answered before a binary depended on the answer | ✅ |
 | 3.5c | `cmd/nornd` | the binary: config, signals, the poll loop, and **observe as the default** (D-005) | ✅ |
-| 3.6 | Fight detection and quarantine | N evictions in W → `CONTROL_PLANE_FIGHT`; `quarantine` fails closed **by choice, never by default** | ⬜ |
+| 3.6 | Fight detection and quarantine | N evictions in W → `CONTROL_PLANE_FIGHT`; `quarantine` fails closed **by choice, never by default** | ✅ |
 | 3.8 | Phase 3 gate audit | each line read against what is actually tested, and what the lab still owes | ⬜ |
 
 ## Decision taken — 2.9d: an `enroll` needs a device signature the device cannot make
@@ -542,3 +542,11 @@ the signer keeps one job — decide, and place the entry in the log.
   - **The poll interval is bounded at both ends.** Zero is a busy loop, and a very long one is the eviction window an intruder lives inside — `ENFORCEMENT.md` part 2 calls 200 ms free, and that is the default.
   - **The binary stays thin on purpose**, so its tests are about wiring and refusals while the behaviour lives in `internal/agent`, tested against a fake interface. Adding `BurntSushi/toml` for `nornd.toml` cost **one module with no transitive dependencies** (graph 24 → 25), and `internal/depgraph` still holds the line that `cmd/norn` and `cmd/norn-log` carry neither it nor a kernel driver.
   - Go: 38 packages, 347 tests; `go test` and staticcheck green; module graph 25.
+- **3.6 fight detection — telling a misconfiguration apart from a disagreement.**
+  - **One eviction at a time, the two look identical.** A control plane that keeps putting the same key back is not misconfigured; it *disagrees* with the log about who belongs on the network, and an operator needs to be told that in those words. Three evictions in sixty seconds is the line (`ENFORCEMENT.md` part 3), and the message names the key, the count and the window rather than quoting a default that may not apply.
+  - **A fight is declared once, not every poll.** A caller that takes an interface down on the signal must not do it five times a second. A run that dies down lapses, so a fresh run is a fresh fight — and Norn **keeps evicting throughout**: alarming is not giving up.
+  - **A failed eviction is not evidence.** If the interface refuses the write, the key has not "come back" — counting it would blame the control plane for Norn's own inability to write. Evictions are recorded only after they succeed, and there is a test that runs five failing cycles and expects silence.
+  - **Quarantine never happens by default.** `alarm` keeps the network up; `quarantine` takes the interface out of service until a human intervenes. Failing closed is a **choice**, and an agent configured to quarantine with no way to do it is **refused at startup** — finding that out mid-incident is too late. The daemon also warns at boot when the policy is armed.
+  - **Quarantine runs a command an operator can read.** `ip link set {iface} down` on Linux, and nothing assumed anywhere else — taking a network down is a break-glass action, so the exact argv is in the config, in the logs, and replaceable with `wg-quick down` or a firewall rule. On a platform with no safe default, Norn says what to configure instead of guessing.
+  - **The detector is bounded.** `nornd` runs for months on a Pi and an attacker can mint keys all day, so quiet keys are forgotten and the map is capped at 4 096 — tested by minting more than that.
+  - Go: 39 packages, 364 tests; `go test` and staticcheck green.
