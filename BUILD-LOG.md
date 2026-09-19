@@ -357,7 +357,7 @@ starting rather than after.
 |---|---|---|---|
 | 3.1 | `internal/peertable` | the narrow seam Norn touches — peers in, peers out — with a fake that records what a real interface would have been told | ✅ |
 | 3.2 | `internal/reconcile` | observe, owner and watchdog as **pure decisions** over (actual, desired): no I/O, so every case including the A1 swap attack is a unit test | ✅ |
-| 3.3 | `internal/endpoint` | providers that supply endpoints and allowed-ips but are **untrusted for keys**: a key they name that is not proven is dropped and logged | ⬜ |
+| 3.3 | `internal/endpoint` | providers that supply endpoints and allowed-ips but are **untrusted for keys**: a key they name that is not proven is dropped and logged | ✅ |
 | 3.4 | `/run/norn/proven.json` | the verifier→enforcer interface of `ENFORCEMENT.md` part 9, written atomically, with its schema pinned | ⬜ |
 | 3.5 | `nornd` | the daemon: verify, reconcile, alarm; **observe is the default** (D-005) and enforcing is opt-in | ⬜ |
 | 3.6 | Fight detection and quarantine | N evictions in W → `CONTROL_PLANE_FIGHT`; `quarantine` fails closed **by choice, never by default** | ⬜ |
@@ -499,3 +499,11 @@ the signer keeps one job — decide, and place the entry in the log.
   - **The hijack that keeps a proven key** is covered too: the control plane leaves the key and widens its allowed-ips to `0.0.0.0/0`. Same key, entirely different authority — so `SameRouting` is what owner mode compares, and the rewrite restores the proven routes.
   - **An unknown mode is `Invalid`, not a quiet no-op** — which would look exactly like a healthy observe run.
   - Go: 33 packages, 293 tests; `go test` and staticcheck green.
+- **3.3 `internal/endpoint` — "untrusted for keys" made structural rather than checked.**
+  - **`Hints` has no key field.** A provider cannot name a peer at all, so there is nothing to validate: `Desired` walks the **proven** set and asks the provider to decorate each device. `ENFORCEMENT.md` part 5 says a control plane is demoted to an endpoint directory; this is what makes that true by construction instead of by a check somebody could forget. The test is named for the property — *a provider cannot add a peer* — and the `file` provider, the escape hatch any control plane can write to, gets the same test again.
+  - **What a provider says about devices the log does not prove is reported, not ignored.** A control plane quietly trying to add peers is precisely the event worth seeing, so those ids come back in the report by name.
+  - **A proven device nobody configured is still installed, and reported as unrouted.** Dropping it would be enforcement removing a peer the log vouches for — the failure mode that turns a security tool into an outage.
+  - **A typo in a signed label must not evict a peer.** Labels are signed by a signer, which makes them authenticated but not authoritative: they say where a device is expected to be, not who it is. So a malformed `endpoint` is reported and the device keeps the routes that did parse, rather than the whole device failing over one bad field.
+  - **Hints files are keyed by `device_id`, not by public key**, and that is the point: identity comes from the log, so an adapter has to map its control plane's idea of a peer onto a device the log proves. Doing that mapping in the adapter is what keeps the control plane out of the business of naming keys.
+  - No TOML dependency yet: `Static` takes a map, so the `nornd.toml` decision belongs to the daemon that parses it (3.5), not to this package.
+  - Go: 34 packages, 306 tests; `go test` and staticcheck green.
