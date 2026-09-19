@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from . import entry, keys
+from . import entry, keys, note, trust
 
 NET = bytes.fromhex("6e6f726e2d746573746e65742d303031")  # "norn-testnet-001"
 T0 = 1_760_000_000
@@ -17,7 +17,10 @@ ROOTS = ["root1", "root2", "root3"]
 SIGNERS = ["signer1", "signer2"]
 DEVICES = ["nas", "laptop", "pi-cam"]
 
-EXTRA_KEYS = ["signer3", "root4", "logkey", "logkey2", "spare", "printer"]
+WITNESSES = ["pi", "vps", "friend"]
+
+EXTRA_KEYS = (["signer3", "root4", "logkey", "logkey2", "spare", "printer"]
+              + [f"witness-{w}" for w in WITNESSES])
 
 KEYS: dict[str, keys.Ed25519] = {
     name: keys.Ed25519.from_name(name)
@@ -28,13 +31,46 @@ WG: dict[str, bytes] = {
     for name in DEVICES + ["laptop2", "nas2", "spare", "printer", "rogue"]
 }
 
-POLICY_TEXT = (
-    "log norn+11111111+AAAA\n"
-    "witness pi norn+22222222+BBBB\n"
-    "witness vps norn+33333333+CCCC\n"
-    "group home 2 pi vps\n"
-    "quorum home\n"
-)
+ORIGIN = trust.origin_for(NET)
+LOG_URLS = ["https://log.norn.example/testnet", "http://10.0.0.155:8099/norn"]
+WITNESS_URLS = {
+    "pi": "http://10.0.0.153:8100",
+    "vps": "https://witness.example.net",
+    "friend": "https://bastion.example.org/w",
+}
+
+
+def log_vkey() -> str:
+    """The log's verifier key. Its note name is the origin (SPEC §2)."""
+    return note.vkey(ORIGIN, KEYS["logkey"].public)
+
+
+def witness_vkey(name: str) -> str:
+    return note.vkey(f"norn-witness/{name}", KEYS[f"witness-{name}"].public)
+
+
+def policy_text() -> str:
+    """Verbatim c2sp.org/tlog-policy: 2 of 3 witnesses in separate places."""
+    lines = [f"log {log_vkey()} {LOG_URLS[0]}"]
+    lines += [f"witness {w} {witness_vkey(w)} {WITNESS_URLS[w]}" for w in WITNESSES]
+    lines += ["group home 2 " + " ".join(WITNESSES), "quorum home"]
+    return "\n".join(lines) + "\n"
+
+
+def trust_file() -> dict[str, Any]:
+    """The trust anchor a node is provisioned with out of band (SPEC §9)."""
+    genesis_hash = entry.leaf_hash(entry.encode(genesis()))
+    return trust.build(
+        net=NET,
+        name="norn-testnet",
+        genesis_hash=genesis_hash,
+        log_key=log_vkey(),
+        log_urls=LOG_URLS,
+        witnesses=[{"name": w, "key": witness_vkey(w), "url": WITNESS_URLS[w]}
+                   for w in WITNESSES],
+        policy=policy_text(),
+        anchor={"type": "opentimestamps", "max_lag": 86400, "mode": "advisory"},
+    )
 
 
 def _signed(env: dict[str, Any], signers: list[tuple[str, str]]) -> dict[str, Any]:
@@ -100,8 +136,7 @@ def catalogue() -> list[tuple[str, dict[str, Any]]]:
             "pk": KEYS["logkey2"].public, "overlap": 2_592_000}),
             [("root1", "root"), ("root2", "root"), ("root3", "root")])),
         ("13-policy", _signed(entry.new("policy", NET, ts=T0 + 780, after=13, body={
-            "text": "log norn+11111111+AAAA\nwitness pi norn+22222222+BBBB\n"
-                    "witness vps norn+33333333+CCCC\ngroup home 2 pi vps\nquorum home\n"}),
+            "text": policy_text()}),
             [("root1", "root"), ("root2", "root"), ("root3", "root")])),
         ("14-params", _signed(entry.new("params", NET, ts=T0 + 840, after=14, body={
             "staleness": 900, "rotate_needs_signer": True}),
@@ -221,7 +256,7 @@ def log() -> list[LogItem]:
 
     b.add("27-log_key", b.build("log_key", {"pk": KEYS["logkey2"].public, "overlap": 2_592_000},
                                 roots3))
-    b.add("28-policy", b.build("policy", {"text": POLICY_TEXT}, roots3))
+    b.add("28-policy", b.build("policy", {"text": policy_text()}, roots3))
     b.add("29-params", b.build("params", {"staleness": 900, "rotate_needs_signer": True}, roots3))
 
     both = [("signer1", "signer"), ("signer3", "signer")]

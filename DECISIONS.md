@@ -179,3 +179,20 @@ unremovable — exactly the key you must be able to remove when it is stolen
 recoverable. `root_remove`/`root_thr` keep their invariant, because losing the
 root quorum is not recoverable in-log (R5 re-genesis). Rejected: symmetry for
 its own sake.
+
+## D-029 · Trust fingerprint is 80 bits of Crockford base32, not 4 words (2026-09-19, 0.5)
+SPEC §9 originally said "first 8 bytes … rendered as 4 words from a 256-word
+list" — internally inconsistent (4 words from 256 words is 32 bits, not 64) and,
+at 32 bits, **grindable**: threat A10 is an attacker who substitutes the trust
+file, and a second preimage that is also a valid trust file pointing at their log
+is ~2³² work — minutes on a GPU. Now 10 bytes = 80 bits, Crockford base32
+(omits I/L/O/U, the confusable characters), 4 groups of 4. Also avoids freezing
+an English wordlist, which is a poor comparison aid for non-English speakers.
+Rejected: BIP-39/PGP wordlists (provenance and licensing); more words from a
+small list (harder to read aloud than 16 characters, no security gain).
+
+## D-030 · Fixture policy text uses real verifier keys (2026-09-19, 0.5)
+The `policy` entry and the trust file now carry actual tlog-policy text built
+from the fixture's log and witness keys, so Go's policy parser is exercised by
+the vectors rather than a placeholder string. Changed `entries/13-policy` and
+`log/28-policy` bytes; no other entry moved.

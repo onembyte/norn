@@ -161,6 +161,7 @@ repo initialised, CI running `go test` + `go vet` + `staticcheck`.
 - [ ] Tamper test: flip one byte in a tile → inclusion proof fails, verifier refuses.
 - [ ] Log restarts without losing or reordering entries; checkpoint size monotonic.
 - [ ] An unmodified `transparency-dev/witness` cosigns a Norn checkpoint (ground rule 3 proven).
+- [ ] Go `note` / torchwood accept `testdata/vectors/receipt.note` and the trust file's verifier keys unchanged (cross-checks the 0.5 encodings, which are otherwise only self-consistent).
 - [ ] End-to-end enrollment with a phone camera: device QR → `norn sign` on the laptop with a hardware key (touch) → submit → device imports trust file by QR → active. Timed; target < 3 min.
 - [ ] Runbooks R1–R3, R6, R7 executed in the lab and their downtime column verified.
 

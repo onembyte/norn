@@ -15,7 +15,7 @@ import sys
 
 import hashlib
 
-from nornref import canonjson, entry, fixture, replay
+from nornref import canonjson, entry, fixture, note, replay, trust
 
 
 def write(path: pathlib.Path, data: bytes | str) -> None:
@@ -78,11 +78,34 @@ def write_log(out: pathlib.Path) -> None:
     write(out / "bad-genesis" / "state.json", replay.replay(bad, raw[:1]).to_json() + "\n")
 
 
+def write_trust(out: pathlib.Path) -> None:
+    """The trust anchor, its human rendering, its fingerprint, and a receipt."""
+    doc = fixture.trust_file()
+    trust.validate(doc)
+    write(out / "trust.cbor", trust.encode(doc))
+    write(out / "trust.toml", trust.to_toml(doc))
+    write(out / "trust.fingerprint", trust.fingerprint(doc) + "\n")
+
+    genesis_leaf = doc["genesis_hash"]
+    deadline = fixture.T0 + 60  # params.mmd
+    text = note.receipt_text(doc["origin"], genesis_leaf, deadline)
+    signed = note.sign(text, doc["origin"], fixture.KEYS["logkey"])
+    write(out / "receipt.note", signed)
+    write(out / "receipt.json", canonjson.dumps({
+        "comment": "receipt for the genesis entry; verifies under trust.log_key",
+        "origin": doc["origin"],
+        "leaf_hash": genesis_leaf,
+        "deadline": deadline,
+        "text_sha256": __import__("hashlib").sha256(text.encode()).digest(),
+    }) + "\n")
+
+
 def main(argv: list[str]) -> int:
     out = pathlib.Path(argv[1] if len(argv) > 1 else "testdata/vectors")
     write_keys(out)
     write_entries(out)
     write_log(out)
+    write_trust(out)
     count = sum(1 for _ in out.rglob("*") if _.is_file())
     print(f"wrote {count} files to {out}")
     return 0

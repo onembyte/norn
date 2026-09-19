@@ -288,13 +288,17 @@ log_urls     = ["https://log.lan.example/norn", "http://10.0.0.155:8099/norn"]
 name = "pi.lan"         key = "<verifier key string>"
 [[witness]]
 name = "vps.example"    key = "<verifier key string>"
-policy       = "2 of [pi.lan, vps.example, ...]"   # tlog-policy text; binding
+policy       = """..."""      # verbatim c2sp.org/tlog-policy text; binding
 anchor       = { type = "opentimestamps", max_lag = "24h", mode = "advisory" }  # OPTIONAL
 ```
 
-Fingerprint for verbal/QR check: first 8 bytes of `H(CBOR(trust))`, rendered as
-4 words from a 256-word list. `nornd` MUST refuse to start without a trust file
-and MUST refuse a trust file whose `genesis_hash` does not match entry 0.
+Fingerprint for out-of-band comparison: the first **10 bytes** of
+`H(CBOR(trust))` — 80 bits — encoded in **Crockford base32** (alphabet
+`0123456789ABCDEFGHJKMNPQRSTVWXYZ`, which omits I, L, O and U) as 16 characters
+in four groups of four, e.g. `ZVGR-QRTN-JY0V-H1Z0` (D-029).
+
+`nornd` MUST refuse to start without a trust file and MUST refuse a trust file
+whose `genesis_hash` does not match entry 0.
 
 ## 10. Verifier procedure (normative outline)
 
