@@ -523,7 +523,7 @@ bytes, so a wrong field name or type changes it.
 
 ```toml
 # Norn trust file for norn-testnet
-# fingerprint = ZVGR-QRTN-JY0V-H1Z0
+# fingerprint = 63Z3-D0ZE-76KT-T87Y
 # Compare the fingerprint out of band before trusting this file.
 
 version      = 1
@@ -561,7 +561,7 @@ if it does not, the fingerprint will not match and the file must be rejected.
 The first **10 bytes** of `SHA-256(CBOR(trust))` — 80 bits — encoded in
 **Crockford base32** (alphabet `0123456789ABCDEFGHJKMNPQRSTVWXYZ`, which omits
 I, L, O and U), most-significant bit first, as 16 characters in four groups of
-four joined by `-` (U+002D): `ZVGR-QRTN-JY0V-H1Z0` (D-029). The
+four joined by `-` (U+002D): `63Z3-D0ZE-76KT-T87Y` (D-029). The
 `trust.fingerprint` file holds exactly that string followed by one `0x0A`.
 
 80 bits is chosen so that an attacker who controls the delivery channel (threat

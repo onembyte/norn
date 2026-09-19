@@ -198,3 +198,63 @@ func backticked(text string) []string {
 		text = text[j+1:]
 	}
 }
+
+// TestSpecFingerprintExampleIsCurrent guards the same failure as the vector
+// citations, in the one other place SPEC.md quotes a value from the suite.
+//
+// It drifted once already: checkpoint 0.13b gave genesis a non-default `mmd`,
+// which changed the genesis entry, which changed `genesis_hash`, which is
+// inside the trust file -- so the fingerprint moved and the spec's worked
+// example silently became fiction. A worked example nobody checks is worse
+// than none, because a reader trusts it.
+func TestSpecFingerprintExampleIsCurrent(t *testing.T) {
+	want, err := os.ReadFile(filepath.Join(vectorRoot(t), "trust.fingerprint"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	fingerprint := strings.TrimSpace(string(want))
+	if fingerprint == "" {
+		t.Fatal("the shipped fingerprint is empty")
+	}
+
+	spec, err := os.ReadFile(filepath.Join("..", "..", "SPEC.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(spec), fingerprint) {
+		t.Errorf("SPEC.md does not mention the shipped fingerprint %s; its worked "+
+			"example has gone stale", fingerprint)
+	}
+	// And it must not still be quoting a different one.
+	for _, line := range strings.Split(string(spec), "\n") {
+		if !strings.Contains(line, "fingerprint") && !strings.Contains(line, "-") {
+			continue
+		}
+		for _, field := range strings.Fields(line) {
+			trimmed := strings.Trim(field, "`.,()")
+			if looksLikeFingerprint(trimmed) && trimmed != fingerprint {
+				t.Errorf("SPEC.md quotes fingerprint %q, but the suite ships %q",
+					trimmed, fingerprint)
+			}
+		}
+	}
+}
+
+// looksLikeFingerprint matches the shape of §9.3: four Crockford groups of four.
+func looksLikeFingerprint(s string) bool {
+	groups := strings.Split(s, "-")
+	if len(groups) != 4 {
+		return false
+	}
+	for _, g := range groups {
+		if len(g) != 4 {
+			return false
+		}
+		for _, c := range g {
+			if !strings.ContainsRune("0123456789ABCDEFGHJKMNPQRSTVWXYZ", c) {
+				return false
+			}
+		}
+	}
+	return true
+}
