@@ -57,7 +57,7 @@ and if the spec is silent, that is a defect to record, not a coin to flip.
 | 1.4 | `internal/replay` | every `(index, reason)` in the manifest, `state.json` byte-exact, and all 12 `genesis/` aborts | ✅ |
 | 1.5 | `internal/note`, `internal/trust` | receipt verifies; fingerprint reproduced; all 14 `trust-bad/` rejected | ✅ |
 | 1.6 | Fuzzing | `go test -fuzz` on the decoder and on replay: 1 h each, zero panics | ⬜ |
-| 1.7 | Cross-implementation check | vectors re-exported from Go and diffed against `testdata/vectors` — identical | ⬜ |
+| 1.7 | Cross-implementation check | entries rebuilt in Go from their semantic values, signed independently, bytes identical to the shipped vectors | ✅ |
 
 ---
 
@@ -218,3 +218,8 @@ residue (low severity) and F10 (§16, deferred to the enrolment CLI by design).
   - The property that matters is **not** "does not panic". `FuzzDecodeIsCanonical` asserts that anything the decoder *accepts* re-encodes to **identical bytes** — because a canonical form is only canonical if there is exactly one encoding per value. An input that decodes but re-encodes differently would mean two encodings of one entry, both accepted, with **different hashes and different signatures**. That is the bug a "no panic" fuzzer would never find.
   - `FuzzReplayNeverPanics` and `FuzzReplayAfterAValidGenesis` treat replay as what it is: code that consumes bytes an untrusted log operator chose. A verifier that crashes on a malformed log is a denial of service against the network it exists to protect. The second target seeds a *valid* genesis first, because that is where a hostile operator has the most room — there is state to corrupt. It also asserts the §5.3 invariant that `active_wg` never disagrees with `devices`.
   - First bursts: **3.3M executions**, zero failures — 1.87M on the canonical property, 1.28M on single-entry replay, 127k on post-genesis replay.
+- **2026-09-19 · 1.7 cross-implementation check — Go and Python produce identical bytes from identical inputs.** Everything before this re-encoded entries that had been *decoded from the suite*, which exercises the encoder only along a path the decoder already vouched for. This test rebuilds each entry **from its semantic values** — the field values out of the `.json` mirror, the signing keys out of `keys.json` — and requires the result to equal the shipped `.cbor`.
+  - All **16** match. Signatures are recreated by signing, never copied out of the vector, which works because Ed25519 is deterministic: two implementations given the same key and message produce the same 64 bytes. That makes the comparison meaningful rather than circular.
+  - This is the strongest form of the claim Phase 1 was for: it is not "Go agrees about bytes it was handed" but "**Go, given the same inputs, produces the same bytes**". The gate line originally said "vectors re-exported from Go and diffed", which would have meant reimplementing the whole Python fixture in Go — a lot of duplicated fixture code testing the same property less directly.
+  - **Fuzz campaign, target 1 of 3 complete: 54,625,215 executions, PASS** on the canonical round-trip property. Targets 2 and 3 still running; 1.6 stays open until all three finish.
+  - Go: 12 packages, 62 tests.
