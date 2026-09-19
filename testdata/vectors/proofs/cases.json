@@ -1,0 +1,14 @@
+{
+  "comment": "the served log and its proof bundles, produced by the Go implementation and validated by upstream libraries; see SPEC 12",
+  "devices": [
+    "contractor",
+    "escaped",
+    "labelcap",
+    "nas",
+    "pi-cam",
+    "printer"
+  ],
+  "log_key_seed": "6e6f726e2f766563746f722f6c6f672d6b65792f76312d2d2d2d2d2d2d2d2d2d",
+  "origin": "norn/nzxxe3rnorsxg5domv2c2mbqge",
+  "size": 91
+}

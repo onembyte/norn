@@ -455,9 +455,36 @@ code; advisory), `429` rate-limited.
 
 ## 8. Proof bundles — what a node holds per peer
 
-For each `active` device the node stores a `c2sp.org/tlog-proof@v1` bundle
-("spicy signature"): the cosigned checkpoint, the entry index, the inclusion
-proof. A node MUST treat a peer as proven only if:
+For each `active` device the node stores a **proof bundle**: the signed
+checkpoint, the entry's index, the entry itself, and the inclusion proof that
+ties them together. The bundle is self-contained, so it can be checked by
+someone holding only `norn.trust` — which is what makes it useful in an alarm,
+an audit trail, or a bug report.
+
+### 8.1 Bundle format (normative)
+
+Deterministic CBOR per §4.0, domain `norn/proof/v1`:
+
+| key | type | meaning |
+|---|---|---|
+| `v` | uint | `1` |
+| `device` | text | the `device_id` this bundle proves |
+| `index` | uint | the entry's index in the log |
+| `entry` | bytes | the entry itself, so the bundle stands alone |
+| `proof` | array of 32-byte strings | RFC 6962 inclusion proof, leaf to root |
+| `checkpoint` | text | the signed checkpoint note, verbatim |
+
+Checking a bundle: verify the checkpoint note under `norn.trust.log_key`;
+confirm `SHA-256(0x00 ‖ entry)` and `proof` reach the checkpoint's root at
+`index` for that size; then apply the rules below.
+
+> **Not yet claimed compatible with `c2sp.org/tlog-proof@v1`.** Earlier drafts
+> of this section named that format. The shape is the same — checkpoint, index,
+> inclusion proof — but byte compatibility has not been checked against the
+> published specification, and saying otherwise would be the kind of unverified
+> claim §7 carried until it was tested in 2.1. Reconcile before freezing v1.
+
+A node MUST treat a peer as proven only if:
 
 1. the bundle's checkpoint verifies under the node's trust policy (§9), and
 2. the bundle's checkpoint is consistent with the node's stored checkpoint, and
@@ -575,6 +602,14 @@ that are not consistent MUST:
 Paths below are relative to the vector root, which ships as `testdata/vectors/`
 in this repository and may be rooted anywhere when the suite is distributed.
 
+**Two provenances, stated plainly.** The entry, state and trust vectors come
+from the Python reference implementation, and the Go code must match them. The
+`served/` and `proofs/` vectors come from the **Go** implementation instead,
+because producing a tiled log requires one — and they are validated against
+libraries neither implementation wrote: `transparency-dev/formats` parses the
+checkpoint, and `x/mod/sumdb/tlog` checks every inclusion proof. Nothing in the
+suite is checked only against its own author.
+
 | file | contents |
 |---|---|
 | `keys.json` | every test key: Ed25519 `{seed, public, kid}` by name, X25519 public keys by name, and `net` |
@@ -586,6 +621,8 @@ in this repository and may be rooted anywhere when the suite is distributed.
 | `state.json` | canonical replay output for `log/` (§5.3) |
 | `genesis/<NN-case>/` | one single-entry log per way entry 0 can abort, each with its own `manifest.json` and `state.json`; an abort stops replay, so the cases cannot share a log. `cases.json` lists them |
 | `trust-bad/<NN-case>.cbor` | trust files that decode cleanly but MUST be rejected as anchors; the file name says why, `cases.json` lists them |
+| `served/` | the fixture's entries as a real **tlog-tiles directory**: `tile/entries/…` bundles, `tile/<L>/…` hashes, an unsigned `checkpoint` and a signed `checkpoint.signed` |
+| `proofs/<device>.bundle` | one §8.1 proof bundle per active device, each proving the entry that made that device active; `cases.json` gives the origin, the log-key seed and the device list |
 | `trust.cbor` · `trust.toml` · `trust.fingerprint` | the trust anchor (§9), authoritative bytes, human rendering, and its fingerprint |
 | `receipt.note` | a submission receipt: the signed note itself (§7) |
 | `receipt.json` | `{comment, origin, leaf_hash, deadline, text_sha256}`, where `text_sha256` is `SHA-256` of the **signed text** — through the newline ending the last text line, excluding the blank separator and the signature lines |
@@ -615,14 +652,15 @@ this table drifted out of date the moment one was.
 | §7 receipt | `receipt.note` | — |
 | §9 trust file, fingerprint | `trust.cbor` | 12 rejected anchors in `trust-bad/` |
 | §14 canonical JSON | every `.json`; `policy-escaping`, `enroll-unicode-labels` | — |
+| §6 tiles and bundles | `served/`, read back to reproduce `state.json` | forged head, tampered bundle, missing bundle |
+| §8 proof bundles | `proofs/`, one per active device | wrong entry, foreign checkpoint, tampered proof, wrong log key |
+| §10 verifier loop | `served/` verified end to end | wrong anchor aborts and yields no devices |
 
 **Not vectored, and therefore not binding on a second implementation:**
 
 | area | missing | owed by |
 |---|---|---|
-| §6 | tiles, entry bundles with their uint16 length prefixes, a cosigned checkpoint | Phase 2 |
-| §8 | `tlog-proof@v1` bundles | Phase 2 |
-| §10 | the verifier loop over a served log | Phase 2 |
+| §6 | **cosignatures** on a checkpoint — a witness must run to produce one | Phase 4 |
 | §11 | fork evidence: two conflicting cosigned checkpoints and the expected evidence file | Phase 4 |
 | §16 | enrollment requests — the bech32m form and its domain-separated signature have **no vectors at all**, and nothing implements them yet | with the enrolment CLI |
 
