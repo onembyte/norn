@@ -340,6 +340,30 @@ checkpoint, the design is wrong — so that is a gate line, not an aspiration.
   - A device enrolling for the first time has no trust file, so `-net` takes an origin (`norn/…`) or 32 hex digits, and `trust.NetFromOrigin` is the new inverse of `OriginFor`, pinned by a round-trip property. `-trust` works too for a device being re-enrolled, and **the two disagreeing is a refusal, not a guess**.
   - Go: 27 packages, 208 tests; module graph 7 → **8**. `make ci`, staticcheck and both halves of `vectors-check` green.
 
+## Phase 3 — The enforcement agent
+
+`ENFORCEMENT.md` part 1 is the whole idea: WireGuard decides whom to talk to in
+exactly one place, the cryptokey routing table, and Norn enforces **there and
+nowhere else**. No packet-path code, no handshake changes, no protocol of its
+own — a rogue key is simply never installed, or is removed.
+
+Every line of this phase's `PLAN.md` gate is a **measurement**: a p99 over a
+thousand runs, two 24-hour soaks, a real NetBird server, a Tailscale netmap
+event. So the code can be built and proven correct here, and the gate cannot
+close outside the lab — the same shape as Phase 2, and worth saying before
+starting rather than after.
+
+| # | Checkpoint | Done when | Status |
+|---|---|---|---|
+| 3.1 | `internal/peertable` | the narrow seam Norn touches — peers in, peers out — with a fake that records what a real interface would have been told | ✅ |
+| 3.2 | `internal/reconcile` | observe, owner and watchdog as **pure decisions** over (actual, desired): no I/O, so every case including the A1 swap attack is a unit test | ⬜ |
+| 3.3 | `internal/endpoint` | providers that supply endpoints and allowed-ips but are **untrusted for keys**: a key they name that is not proven is dropped and logged | ⬜ |
+| 3.4 | `/run/norn/proven.json` | the verifier→enforcer interface of `ENFORCEMENT.md` part 9, written atomically, with its schema pinned | ⬜ |
+| 3.5 | `nornd` | the daemon: verify, reconcile, alarm; **observe is the default** (D-005) and enforcing is opt-in | ⬜ |
+| 3.6 | Fight detection and quarantine | N evictions in W → `CONTROL_PLANE_FIGHT`; `quarantine` fails closed **by choice, never by default** | ⬜ |
+| 3.7 | The wgctrl backend | the real interface behind the same seam, its dependency cost measured, and whatever can be tested without a kernel tested | ⬜ |
+| 3.8 | Phase 3 gate audit | each line read against what is actually tested, and what the lab still owes | ⬜ |
+
 ## Decision taken — 2.9d: an `enroll` needs a device signature the device cannot make
 
 **Answered 2026-09-19: option C.** The loop resumed at 2.9d-i.
@@ -459,3 +483,11 @@ the signer keeps one job — decide, and place the entry in the log.
   - **The restart line needed one more test before it was true.** Reopening an untouched log and getting the same checkpoint proves nothing was lost. It does not prove the log **keeps counting**: a store that recovered its entries but restarted its size would publish a checkpoint claiming fewer entries than it serves. Now tested — the entry after a restart lands at the index the old checkpoint ended on.
   - **Each open line now says precisely what is true and what is missing**, in `PLAN.md` itself. "Half done" with the halves named is worth more than an unticked box, and much more than a ticked one.
   - Go: 31 packages, 272 tests. `make ci`, staticcheck and both halves of `vectors-check` green.
+- **2026-09-19 · 3.1 `internal/peertable` — the seam, and why it is this narrow.**
+  - **It exposes no private key, no listen port and no fwmark.** `nornd` never writes those, and an interface it cannot express is one it cannot break by accident. The three writes are exactly the three `ENFORCEMENT.md` part 2 names: replace the table (owner), remove a key (watchdog), refresh endpoints without adding keys (UpdateOnly).
+  - **It names no implementation, and that is the point.** The enforcement decisions worth testing are the ones that only happen *while an attacker is writing to the table at the same time*. Against a kernel those are slow and flaky; against this seam they are function calls, so the reconciler's whole behaviour — including the A1 swap — becomes unit-testable in 3.2.
+  - **The fake records what the interface was told, not just what it ended up holding.** "Removed the rogue key" and "rewrote the whole table" leave the same table and are different acts: one is watchdog mode and one is owner mode, and a test that could not tell them apart would let either pass for the other.
+  - **`Inject` is how a test plays the other writer** — a key appears without Norn having asked for it, which is the entire situation watchdog mode exists for. It deliberately does not count as a write Norn made, so "did observe mode touch the interface" stays answerable.
+  - **Routing and reachability are separate comparisons.** The key and its allowed-ips decide *who may send what*; the endpoint and keepalive are what an endpoint provider supplies and may legitimately change. Conflating them would make a roaming peer look like a security event — so `SameRouting` ignores the endpoint and `SameEndpoint` is its own question.
+  - `UpdateEndpoints` **refuses to add an absent key**, in the fake as well as in the contract. A fake that quietly added one would hide the exact bug a kernel would have caught.
+  - Go: 32 packages, 280 tests; `make ci` and staticcheck green. Still no new dependency: keys are bytes and addresses are `net/netip`.
