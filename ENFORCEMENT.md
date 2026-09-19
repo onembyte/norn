@@ -51,7 +51,18 @@ connected it yet). Never writes. Mandatory first mode everywhere (D-005).
 - Desired table = `proven` × endpoint data from an **endpoint provider** (§5).
 - On every proven-set change and every `T_poll`: if `actual ≠ desired` →
   `ConfigureDevice(ReplacePeers: true, Peers: desired)`. This both installs the
-  proven set and evicts anything an external writer slipped in.
+  proven set and evicts anything an external writer slipped in, and **the
+  eviction raises `UNPROVEN_PEER` as observe mode would**: correcting an attack
+  silently would leave the attempt invisible, and the attempt is the thing worth
+  knowing about.
+- **A rewrite keeps an endpoint the interface has learned** where the provider
+  supplies none. WireGuard learns a peer's endpoint from its handshakes, and for
+  a roaming peer it exists nowhere else; rewriting the table with a zero
+  endpoint would discard it and take that peer offline until it happened to
+  handshake again — an outage caused by enforcement, on a peer nobody doubted.
+- A difference in **endpoints alone** is refreshed with `UpdateOnly`, never by
+  rewriting the table: `actual ≠ desired` above means the keys or their
+  allowed-ips differ. A peer that roams is not a security event.
 - The endpoint provider may supply endpoints / allowed-ips **only for keys in
   `proven`**; keys it mentions that are not proven are logged and dropped. A control
   plane thus degrades to an *endpoint directory* — the role it should have had.
@@ -61,7 +72,10 @@ connected it yet). Never writes. Mandatory first mode everywhere (D-005).
 Someone else (NetBird, innernet, a human) owns the table; `nornd` polices it.
 
 - Every `T_poll`: for each `actual` key ∉ `proven` → `PeerConfig{Remove: true}`,
-  alarm `EVICTED_PEER`.
+  alarm `EVICTED_PEER`. A proven device the table does **not** carry raises
+  `MISSING_PEER` and nothing else: installing it is the table owner's job, not
+  Norn's (G4 non-goal), and the difference between "reported" and "installed"
+  is the whole distinction between watchdog and owner mode.
 - Window: ≤ `T_poll` + reconfigure latency. A handshake and a few packets can
   complete inside it. Measured in the Phase 3 gate; documented in every README.
 - **Fight detection.** If the same key is evicted `N` times within `W` (default 3

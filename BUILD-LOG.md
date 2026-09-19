@@ -356,7 +356,7 @@ starting rather than after.
 | # | Checkpoint | Done when | Status |
 |---|---|---|---|
 | 3.1 | `internal/peertable` | the narrow seam Norn touches — peers in, peers out — with a fake that records what a real interface would have been told | ✅ |
-| 3.2 | `internal/reconcile` | observe, owner and watchdog as **pure decisions** over (actual, desired): no I/O, so every case including the A1 swap attack is a unit test | ⬜ |
+| 3.2 | `internal/reconcile` | observe, owner and watchdog as **pure decisions** over (actual, desired): no I/O, so every case including the A1 swap attack is a unit test | ✅ |
 | 3.3 | `internal/endpoint` | providers that supply endpoints and allowed-ips but are **untrusted for keys**: a key they name that is not proven is dropped and logged | ⬜ |
 | 3.4 | `/run/norn/proven.json` | the verifier→enforcer interface of `ENFORCEMENT.md` part 9, written atomically, with its schema pinned | ⬜ |
 | 3.5 | `nornd` | the daemon: verify, reconcile, alarm; **observe is the default** (D-005) and enforcing is opt-in | ⬜ |
@@ -491,3 +491,11 @@ the signer keeps one job — decide, and place the entry in the log.
   - **Routing and reachability are separate comparisons.** The key and its allowed-ips decide *who may send what*; the endpoint and keepalive are what an endpoint provider supplies and may legitimately change. Conflating them would make a roaming peer look like a security event — so `SameRouting` ignores the endpoint and `SameEndpoint` is its own question.
   - `UpdateEndpoints` **refuses to add an absent key**, in the fake as well as in the contract. A fake that quietly added one would hide the exact bug a kernel would have caught.
   - Go: 32 packages, 280 tests; `make ci` and staticcheck green. Still no new dependency: keys are bytes and addresses are `net/netip`.
+- **3.2 `internal/reconcile` — the attack cases are unit tests, and three rules the design had not written down.**
+  - **Decide touches nothing; Apply decides nothing.** The behaviour worth testing is what happens *while somebody else is writing to the table*, and against a kernel those cases are slow, racy and hard to arrange. As pure functions they are ordinary tests — `ENFORCEMENT.md`'s **A1 swap attack** is a paragraph in the design and a test case here: owner mode evicts the attacker and restores the device, watchdog evicts the attacker and **deliberately does not install** the device, because availability belongs to whoever owns the table (G4 non-goal). Saying that in a test keeps it a decision rather than an omission.
+  - **Owner mode alarms on what it evicts.** The pseudocode only reports in the observe branch, so a `ReplacePeers` would have corrected an intrusion *silently*. The attempt is the thing worth knowing about; correcting it quietly is how an operator never learns their control plane is compromised. `ENFORCEMENT.md` now says so.
+  - **A rewrite keeps an endpoint the interface has learned** where the provider supplies none. This one is not a refinement, it is a bug I would have shipped: WireGuard learns a roaming peer's endpoint from its handshakes and it exists nowhere else, so rewriting the table with a zero endpoint would take that peer **offline until it happened to handshake again** — an outage caused by enforcement, on a peer nobody doubted. Tested directly.
+  - **An endpoint change is a refresh, not a rewrite.** `actual ≠ desired` means the keys or their allowed-ips differ; a peer that roams is not a security event, and owner mode that rewrote the table every poll would be untestable against the gate's 24-hour zero-divergence diff.
+  - **The hijack that keeps a proven key** is covered too: the control plane leaves the key and widens its allowed-ips to `0.0.0.0/0`. Same key, entirely different authority — so `SameRouting` is what owner mode compares, and the rewrite restores the proven routes.
+  - **An unknown mode is `Invalid`, not a quiet no-op** — which would look exactly like a healthy observe run.
+  - Go: 33 packages, 293 tests; `go test` and staticcheck green.
