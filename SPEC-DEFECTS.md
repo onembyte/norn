@@ -31,10 +31,10 @@ watching it fail against the vectors.
 
 | # | Defect | Fix | Status |
 |---|---|---|---|
-| D7 | §4.0 caps every map key at 23 bytes, then permits `labels` keys of 1–64 bytes. A 30-byte label key is unencodable. | Cap label keys at 23 bytes. | ⬜ |
-| D8 | §5 rejects a `rotate` whose `wg_pk` is "in `active_wg`"; §5.1 rejects only if active **for another device**. A device re-presenting its own key is accepted by one and rejected by the other. **No vector covers it** — two implementations can differ and both pass. | Take §5.1's reading; add a vector. | ⬜ |
-| D9 | §9's trust-file sample disagrees with the shipped file on four fields: `net_id`→`net`, `genesis_hash` base64→hex/bytes, `max_lag` `"24h"`→`86400`, and witnesses also carry `url`. The fingerprint is `H(CBOR(trust))`, so wrong field names change it. | Regenerate §9 from the real structure; add a normative CBOR field table. | ⬜ |
-| D10 | §4.1's "both readings give the same bytes" is true for the two readings meant, but invites a third (bytewise on the key *string*) that differs for every entry in the suite. | Delete the reassurance or name the second reading. | ⬜ |
+| D7 ✅ | §4.0 caps every map key at 23 bytes, then permits `labels` keys of 1–64 bytes. A 30-byte label key is unencodable. | Cap label keys at 23 bytes. | ⬜ |
+| D8 ✅ | §5 rejects a `rotate` whose `wg_pk` is "in `active_wg`"; §5.1 rejects only if active **for another device**. A device re-presenting its own key is accepted by one and rejected by the other. **No vector covers it** — two implementations can differ and both pass. | Take §5.1's reading; add a vector. | ⬜ |
+| D9 ✅ | §9's trust-file sample disagrees with the shipped file on four fields: `net_id`→`net`, `genesis_hash` base64→hex/bytes, `max_lag` `"24h"`→`86400`, and witnesses also carry `url`. The fingerprint is `H(CBOR(trust))`, so wrong field names change it. | Regenerate §9 from the real structure; add a normative CBOR field table. | ⬜ |
+| D10 ✅ | §4.1's "both readings give the same bytes" is true for the two readings meant, but invites a third (bytewise on the key *string*) that differs for every entry in the suite. | Delete the reassurance or name the second reading. | ⬜ |
 
 ## Tier 3 — undecided by the prose *and* by the vectors
 
@@ -52,7 +52,7 @@ suite clean. Each needs a spec decision **and** a vector.
 | D17 ✅ | Re-enrolment after revoke: prior `labels`/`expires` discarded? | **yes, the record is replaced wholesale** — §5.3 | ✅ |
 | D18 | Unrecognised `role` string: decode error, or silently dropped signature (§5 step 4 says "drop")? | decode error | ⬜ |
 | D19 | Must a zero-signature entry carry `sigs: []` rather than omitting the key? | required | ⬜ |
-| D20 | `rotate` with a new `device_pk`: may the incoming key also sign? | unstated | ⬜ |
+| D20 ◐ | `rotate` with a new `device_pk`: may the incoming key also sign? | §5.1 requires the **current** key; vectors 40/41 exercise identity rotation. Whether the incoming key *may additionally* sign is still unstated (0.7c) | ◐ |
 | D21 ◐ | Check order within `enroll`/governance asserted but never tested | order is now **normative** in §5.1's per-type table; vectors still owed (0.7c) | ◐ |
 
 ## Tier 4 — editorial and process

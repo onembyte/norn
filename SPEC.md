@@ -87,7 +87,7 @@ Field constraints (violations → reason `decode`):
 | `device_id` | matches `^[a-z0-9][a-z0-9.-]{0,63}$` |
 | `name`, `reason` | UTF-8, 1–64 / 0–256 bytes |
 | `text` (`note`, `policy`) | UTF-8, ≤ 4096 bytes |
-| `labels` | map text→text; ≤ 32 entries; keys 1–64 bytes; values ≤ 256 bytes |
+| `labels` | map text→text; ≤ 32 entries; keys 1–23 bytes (the map-key cap above — a longer key is unencodable); values ≤ 256 bytes |
 | `roots`, `signers` at genesis | arrays of 32-byte `pk`, no duplicates, no key in both; `len(roots) ≥ root_thr ≥ 1`; `len(signers) ≥ signer_thr ≥ 1` |
 | `thr` | uint ≥ 1 and ≤ the size of the set it applies to (checked at replay) |
 
@@ -111,10 +111,16 @@ An entry is the deterministic CBOR encoding of:
 }
 ```
 
-Map keys MUST be sorted per RFC 8949 §4.2.1: bytewise lexicographic order of
-their *encoded* form. Because every Norn map key is a text string shorter than 24
-bytes (§4.0), this coincides with "shorter first, then bytewise", and both readings
-give the same bytes. Unknown keys MUST cause rejection (this is a *closed* schema).
+Map keys MUST be sorted per RFC 8949 §4.2.1: **bytewise lexicographic order of
+their encoded form**, i.e. of the CBOR text-string item including its header, not
+of the key string itself. Since every Norn map key is 1–23 bytes (§4.0) its header
+is a single byte `0x60 + length`, so this is equivalent to "shorter key first,
+then bytewise" — but it is **not** equivalent to sorting the bare key strings,
+which would order an entry `after, body, net, sigs, t, ts, v` instead of the
+correct `t, v, ts, net, body, sigs, after`. Canonical JSON (§12) does sort bare
+strings; the two orders are independent and MUST NOT be conflated.
+
+Unknown keys MUST cause rejection (this is a *closed* schema).
 
 ### 4.2 Signature preimage
 
@@ -374,31 +380,66 @@ audit output.
 
 ## 9. Trust file — `norn.trust`
 
-Delivered out of band (G6). Deterministic CBOR, also rendered as TOML for humans:
+The only thing a verifier trusts a priori (guarantee G6, no TOFU). Delivered out
+of band; deterministic CBOR per §4.0 is **authoritative**, and the TOML rendering
+below exists for humans.
 
-```
+### 9.1 CBOR fields (normative)
+
+| key | type | meaning |
+|---|---|---|
+| `version` | uint | `1` |
+| `net` | 16 bytes | the network id; `state.net` and every entry's `net` must equal it |
+| `origin` | text | MUST equal `norn/` + lowercase unpadded **RFC 4648** base32 of `net` (§2) |
+| `name` | text, 1–64 bytes | human label for the network |
+| `genesis_hash` | 32 bytes | the **leaf hash** `SHA-256(0x00 ‖ entry0)` (§4.0), not the entry hash |
+| `log_key` | text | signed-note verifier key for the log; its note name MUST equal `origin` |
+| `log_urls` | array of text, ≥ 1 | where to fetch checkpoint and tiles |
+| `witnesses` | array of `{name, key, url?}` | `key` is a signed-note verifier key; `name` unique within the file |
+| `policy` | text | verbatim `c2sp.org/tlog-policy`; MUST contain a `quorum` line |
+| `anchor` | `{type, max_lag, mode}`, OPTIONAL | `type` text (`"opentimestamps"`), `max_lag` **uint seconds**, `mode` text (`"advisory"`) |
+
+Unknown keys MUST cause rejection. The fingerprint (§9.3) is taken over these
+bytes, so a wrong field name or type changes it.
+
+### 9.2 TOML rendering
+
+```toml
+# Norn trust file for norn-testnet
+# fingerprint = ZVGR-QRTN-JY0V-H1Z0
+# Compare the fingerprint out of band before trusting this file.
+
 version      = 1
-net_id       = "<hex32>"
-origin       = "norn/<base32>"
-name         = "casa-onembyte"
-genesis_hash = "<b64 leaf hash of entry 0>"
-log_key      = "<signed-note verifier key string>"
-log_urls     = ["https://log.lan.example/norn", "http://10.0.0.155:8099/norn"]
+net          = "6e6f726e2d746573746e65742d303031"   # hex
+origin       = "norn/nzxxe3rnorsxg5domv2c2mbqge"
+name         = "norn-testnet"
+genesis_hash = "4e18d55c…"                          # hex
+log_key      = "norn/nzxxe3rnorsxg5domv2c2mbqge+bea4a666+…"
+log_urls     = ["https://log.norn.example/testnet", "http://10.0.0.155:8099/norn"]
+policy       = "log …\nwitness pi …\ngroup home 2 pi vps friend\nquorum home\n"
+anchor       = { max_lag = 86400, mode = "advisory", type = "opentimestamps" }
+
 [[witness]]
-name = "pi.lan"         key = "<verifier key string>"
-[[witness]]
-name = "vps.example"    key = "<verifier key string>"
-policy       = """..."""      # verbatim c2sp.org/tlog-policy text; binding
-anchor       = { type = "opentimestamps", max_lag = "24h", mode = "advisory" }  # OPTIONAL
+name = "pi"
+key  = "norn-witness/pi+…"
+url  = "http://10.0.0.153:8100"
 ```
 
-Fingerprint for out-of-band comparison: the first **10 bytes** of
-`H(CBOR(trust))` — 80 bits — encoded in **Crockford base32** (alphabet
-`0123456789ABCDEFGHJKMNPQRSTVWXYZ`, which omits I, L, O and U) as 16 characters
-in four groups of four, e.g. `ZVGR-QRTN-JY0V-H1Z0` (D-029).
+Byte strings render as **lowercase hex** in TOML and stay raw bytes in CBOR; no
+field is ever base64 in the trust file.
 
-`nornd` MUST refuse to start without a trust file and MUST refuse a trust file
-whose `genesis_hash` does not match entry 0.
+### 9.3 Fingerprint
+
+The first **10 bytes** of `SHA-256(CBOR(trust))` — 80 bits — encoded in
+**Crockford base32** (alphabet `0123456789ABCDEFGHJKMNPQRSTVWXYZ`, which omits
+I, L, O and U), most-significant bit first, as 16 characters in four groups of
+four: `ZVGR-QRTN-JY0V-H1Z0` (D-029).
+
+80 bits is chosen so that an attacker who controls the delivery channel (threat
+A10) cannot grind a substitute trust file with a matching fingerprint.
+
+`nornd` MUST refuse to start without a trust file and MUST refuse one whose
+`genesis_hash` does not match entry 0.
 
 ## 10. Verifier procedure (normative outline)
 
@@ -434,7 +475,7 @@ that are not consistent MUST:
 | `keys.json` | fixed seeds for log, 3 witnesses, 2 roots, 2 signers, 3 devices |
 | `entries/NN-<type>.cbor` + `.json` | one valid entry per type, byte-exact |
 | `entries/bad-*.cbor` + `.reason` | one rejected entry per §5 reason code |
-| `log/` | the replay fixture: 40 entry `.cbor` files, a `.reason` file beside each entry that must be rejected, and `manifest.json` |
+| `log/` | the replay fixture: 42 entry `.cbor` files, a `.reason` file beside each entry that must be rejected, and `manifest.json` |
 | `log/manifest.json` | `{"anchor": {"net", "genesis_hash"}, "entries": [{"index", "name", "reason"}]}` — the replay input and its expected outcome; `reason` is `""` for an entry that must be accepted |
 | `bad-genesis/` | a one-entry log plus `manifest.json` whose anchor pins a different genesis, so replay aborts |
 | `state.json` | canonical replay output for `log/` |

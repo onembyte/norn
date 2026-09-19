@@ -102,6 +102,34 @@ def _device_id(body: dict[str, Any]) -> str:
     return value
 
 
+MAX_LABELS = 32
+MAX_LABEL_VALUE = 256
+
+
+def _labels(body: dict[str, Any]) -> dict[str, str] | None:
+    """Validate the optional `labels` map (SPEC §4.0 field constraints).
+
+    Key length is already capped at 23 bytes by the codec, so only the count
+    and the values need checking here.
+    """
+    labels = body.get("labels")
+    if labels is None:
+        return None
+    if not isinstance(labels, dict) or len(labels) > MAX_LABELS:
+        raise Reject("decode")
+    for value in labels.values():
+        if not isinstance(value, str) or len(value.encode("utf-8")) > MAX_LABEL_VALUE:
+            raise Reject("decode")
+    return labels
+
+
+def _expires(body: dict[str, Any]) -> int | None:
+    expires = body.get("expires")
+    if expires is not None and not isinstance(expires, int):
+        raise Reject("decode")
+    return expires
+
+
 def _pk(body: dict[str, Any], key: str) -> bytes:
     value = body.get(key)
     if not isinstance(value, bytes) or len(value) != 32:
@@ -114,6 +142,7 @@ def _pk(body: dict[str, Any], key: str) -> bytes:
 def _h_enroll(state: State, env: dict[str, Any], index: int) -> None:
     body = env["body"]
     device_id, device_pk, wg_pk = _device_id(body), _pk(body, "device_pk"), _pk(body, "wg_pk")
+    labels, expires = _labels(body), _expires(body)
     if not _device_signed(env, device_pk):
         raise Reject("no-device-sig")
     _require(len(_valid_kids(env, "signer", state.signers)), state.signer_thr)
@@ -121,7 +150,7 @@ def _h_enroll(state: State, env: dict[str, Any], index: int) -> None:
         raise Reject("dup-id")
     if wg_pk in state.active_wg:
         raise Reject("dup-wg")
-    state.add_device(device_id, device_pk, wg_pk, index, body.get("labels"), body.get("expires"))
+    state.add_device(device_id, device_pk, wg_pk, index, labels, expires)
 
 
 def _h_rotate(state: State, env: dict[str, Any], index: int) -> None:

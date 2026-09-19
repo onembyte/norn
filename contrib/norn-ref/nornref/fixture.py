@@ -19,7 +19,7 @@ DEVICES = ["nas", "laptop", "pi-cam"]
 
 WITNESSES = ["pi", "vps", "friend"]
 
-EXTRA_KEYS = (["signer3", "root4", "logkey", "logkey2", "spare", "printer"]
+EXTRA_KEYS = (["signer3", "root4", "logkey", "logkey2", "spare", "printer", "nas-id2", "printer-id2"]
               + [f"witness-{w}" for w in WITNESSES])
 
 KEYS: dict[str, keys.Ed25519] = {
@@ -190,7 +190,7 @@ def _enroll_body(device: str, wg: str | None = None, **extra: Any) -> dict[str, 
 
 
 def log() -> list[LogItem]:
-    """A 40-entry log: valid entries interleaved with one per reason code."""
+    """A 42-entry log: valid entries interleaved with one per reason code."""
     b = _Builder()
     b.add("00-genesis", genesis())
 
@@ -282,4 +282,14 @@ def log() -> list[LogItem]:
     b.add("38-note-final", b.build("note", {"text": "end of fixture"}, [("root1", "root")]))
     b.add("39-revoke-spare", b.build("revoke", {"device_id": "spare", "reason": "returned"},
                                      [("signer1", "signer"), ("signer3", "signer")]))
+
+    # D8: a device may rotate its identity key while keeping its WireGuard key
+    # (otherwise software-key -> hardware-key migration would churn every peer
+    # table), but may never take a key active for another device.
+    b.add("40-rotate-device-key-only", b.build("rotate", {
+        "device_id": "nas", "wg_pk": WG["nas2"], "device_pk": KEYS["nas-id2"].public},
+        [("nas", "device")] + both))
+    b.add("41-bad-dup-wg-rotate", b.build("rotate", {
+        "device_id": "printer", "wg_pk": WG["nas2"]},
+        [("printer", "device")] + both), "dup-wg")
     return b.items
