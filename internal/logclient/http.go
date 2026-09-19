@@ -1,6 +1,7 @@
 package logclient
 
 import (
+	"bytes"
 	"io"
 	"net/http"
 	"net/url"
@@ -59,4 +60,32 @@ func Open(location string) (Fetcher, error) {
 		return HTTP(location), nil
 	}
 	return Dir(location), nil
+}
+
+// SubmitPath is §7's endpoint, relative to the log's prefix.
+const SubmitPath = "add"
+
+// Submit POSTs entry bytes to a log and returns the receipt it signs (§7).
+//
+// This is the one thing a verifier never does, so it stands apart from
+// Fetcher: reading a log needs only "give me the bytes at this path", and
+// keeping that interface narrow is what lets a peer serve a log over gossip
+// without also being able to accept submissions.
+func Submit(base string, raw []byte) (receipt string, status int, err error) {
+	endpoint, err := url.JoinPath(base, SubmitPath)
+	if err != nil {
+		return "", 0, logErrorf("building the submission URL: %v", err)
+	}
+	resp, err := http.Post(endpoint, "application/cbor", bytes.NewReader(raw))
+	if err != nil {
+		return "", 0, logErrorf("submitting: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// A log's answer is as untrusted as its files: bound it.
+	body, err := io.ReadAll(io.LimitReader(resp.Body, MaxFetchBytes))
+	if err != nil {
+		return "", resp.StatusCode, logErrorf("reading the response: %v", err)
+	}
+	return string(body), resp.StatusCode, nil
 }

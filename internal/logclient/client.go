@@ -46,7 +46,11 @@ func (d Dir) Fetch(path string) ([]byte, error) {
 type Result struct {
 	Checkpoint tlog.Checkpoint
 	State      *state.State
-	Entries    int
+	// Served is every entry the log served, in log order. A caller that has
+	// just verified a log usually wants to look something up in it -- an
+	// inclusion check, a proof bundle -- and re-fetching would be asking a
+	// second time for bytes already proven to belong to this head.
+	Served [][]byte
 }
 
 // Anchor is everything a verifier is allowed to start from: the network it is
@@ -116,7 +120,7 @@ func Verify(f Fetcher, anchor Anchor) (*Result, error) {
 		return nil, logErrorf("the served entries do not hash to the advertised head")
 	}
 
-	return &Result{Checkpoint: cp, State: replay.Replay(anchor.Anchor, entries), Entries: len(entries)}, nil
+	return &Result{Checkpoint: cp, State: replay.Replay(anchor.Anchor, entries), Served: entries}, nil
 }
 
 // fetchEntries reads entry bundles until it has `size` entries.

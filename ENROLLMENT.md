@@ -66,6 +66,14 @@ admin$   norn sign norn1…            # or: norn sign --pending
          → full `enroll` entry → norn submit → receipt → waits for inclusion
          ✓ pi-cam active at index 41 · checkpoint 42 · cosigned pi, vps
 
+`norn submit` keeps the receipt on disk **before** it starts waiting, because
+§SPEC 7 says to hold it until inclusion is verified and a process that dies
+mid-wait must not take the evidence with it. It re-verifies the whole log on
+every poll — inclusion in a log that no longer checks out is not inclusion — and
+if the deadline passes with the leaf still absent it says so plainly: that
+receipt is now proof the log misbehaved (`THREAT-MODEL.md` A2), and it should be
+kept.
+
 device$  norn trust import  <QR of norn.trust>       # once per device, out of band
          fingerprint: "coral-mango-tiger-piano" — matches the admin's screen?  [y]
          nornd starts, sees itself in the log, is active on every peer ≤ T_c + T_g

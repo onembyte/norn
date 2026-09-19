@@ -35,6 +35,7 @@ type command func(args []string) error
 var commands = map[string]command{
 	"enroll": enrollCmd,
 	"sign":   signCmd,
+	"submit": submitCmd,
 	"verify": verifyCmd,
 }
 
@@ -44,6 +45,7 @@ func usage() {
 commands:
   enroll   build a signed enrollment request for this device (SPEC §16)
   sign     verify a request and sign the enroll entry it asks for
+  submit   send a signed entry to the log and keep its receipt
   verify   fetch a log, check it against a trust anchor, and report its state
 
 Run "norn <command> -h" for a command's flags.
