@@ -41,3 +41,23 @@ it and torchwood verifies it — hand-building a tlog in Python adds no assuranc
   - **Security finding → D-029**: the spec's fingerprint was 32 bits (and self-contradictory), which an attacker substituting a trust file could grind in minutes. Now 80 bits, Crockford base32, no wordlist to freeze.
   - **Bug caught by a test**: verifier-key parsing split on every `+`, but standard base64 key data contains `+`. Go's note package splits at most twice; mine now does too, with a regression test that searches for a key whose base64 actually contains a `+`.
   - **Carried to Phase 2**: these note encodings are so far only self-consistent. Phase 2 must cross-check them against Go's `note` package and torchwood — that is the real verification, and it is now a gate line.
+
+### ⛔ Decision needed before 0.6 — the cold-model gate
+
+0.6 requires giving a **fresh model** only `SPEC.md` + `testdata/vectors/` and
+having it implement an entry verifier that passes every vector. That means
+spawning a subagent, which I do not do without an explicit go-ahead.
+
+Why it matters *now* rather than later: I wrote the spec **and** the Python
+reference, and I am about to write the Go implementation from the same spec.
+All three share my blind spots. A genuinely cold reader is the only thing that
+proves the spec is self-sufficient — and a spec gap is far cheaper to fix before
+the Go code exists than after.
+
+| Option | Consequence |
+|---|---|
+| **Run it now** (recommended) | One subagent run; spec gaps found before Phase 1 |
+| Defer to Phase 6 | Plan already has a cold-model gate on the frozen spec; Phase 1 will surface *some* gaps, but only the ones I happen not to share |
+| Skip entirely | `SPEC.md` never independently validated; the "second implementation" claim in `PUBLICATION.md` §7 weakens |
+
+Loop paused here pending that answer.
