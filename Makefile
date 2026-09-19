@@ -1,7 +1,7 @@
 GO      ?= go
 PKGS    := ./...
 
-.PHONY: all test vet fmt fmt-check lint ci vectors tidy
+.PHONY: all test vet fmt fmt-check lint ci vectors vectors-check ref-test tidy
 
 all: ci
 
@@ -24,8 +24,27 @@ lint:
 tidy:
 	$(GO) mod tidy
 
+PY      ?= contrib/norn-ref/.venv/bin/python
+
 # Regenerate test vectors from the Python reference implementation (the oracle).
 vectors:
-	python3 contrib/norn-ref/gen_vectors.py testdata/vectors
+	PYTHONPATH=contrib/norn-ref $(PY) contrib/norn-ref/gen_vectors.py testdata/vectors
+
+# The committed vectors ARE the contract. Prove they are exactly what the
+# reference produces: regenerate into a scratch tree and diff. Without this,
+# a stale file can survive in testdata/ indefinitely -- seven once did.
+vectors-check:
+	@tmp=$$(mktemp -d); \
+	PYTHONPATH=contrib/norn-ref $(PY) contrib/norn-ref/gen_vectors.py $$tmp >/dev/null; \
+	if diff -r -q testdata/vectors $$tmp --exclude=README.md; then \
+		echo "vectors match the reference implementation"; rm -rf $$tmp; \
+	else \
+		echo "COMMITTED VECTORS DIFFER FROM THE REFERENCE — run 'make vectors'"; \
+		rm -rf $$tmp; exit 1; \
+	fi
+
+# The Python reference's own unit tests.
+ref-test:
+	cd contrib/norn-ref && .venv/bin/python -m unittest discover -s tests
 
 ci: fmt-check vet test

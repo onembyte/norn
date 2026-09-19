@@ -293,3 +293,14 @@ into something else. Names are now `f"{b.index}-…"`, the duplicate source is
 looked up by the property it needs (`_first_rejected`), and two tests fail the
 build if any name and index disagree. Same lesson as D-040 and the derived file
 counts: assert the property, never the magic number.
+
+## D-042 · The build verifies the vectors, not just the code (2026-09-19, 0.12)
+Nothing checked that the *committed* vectors still match what the reference
+implementation produces, which is how seven orphan files from a renumbering
+survived three conformance runs — the suite tested the code against the vectors
+and never the vectors against their source. Now: `make vectors-check`
+regenerates into a scratch tree and diffs, `make ref-test` runs the reference's
+own tests, both in CI; and `internal/specdoc` gained Go-side checks that need no
+Python — no orphan files, every manifest entry has its `.cbor` and a matching
+`.reason`, names agree with indices, and the anchor's `genesis_hash` really is
+the leaf hash of entry 0.
