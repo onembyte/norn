@@ -619,3 +619,37 @@ func TestAGovernanceEntryCannotBeReplayedByAppendingAByte(t *testing.T) {
 		t.Logf("entry %d is %s with one byte appended", index, twin)
 	}
 }
+
+// Cold-model gate run 6, the replay-layer half of "rules the prose pins and no
+// vector does". Each of these passed 285/285 as a variant, and each splits
+// `state.rejected`, which §5.3 requires byte-identical.
+func TestTheReplayRulesRunSixLeftUnpinned(t *testing.T) {
+	_, _, m := loadCase(t, filepath.Join(vectorRoot(), "log"))
+
+	for _, c := range []struct{ suffix, reason, why string }{
+		// §4.4's floor is `after > index`, and the fixture's values were 999,
+		// 5091 and 5 at indices 10, 91 and 75 -- never at or beside the
+		// boundary, so rejecting only above `index+1` passed everything.
+		{"after-at-its-own-index", "", "`after` equal to the index is a floor met exactly"},
+		{"bad-after-by-one", "after", "one past the index is the smallest violation there is"},
+		// §5.1 requires an enroll's request `net` to equal the entry's. The
+		// only net negative patched the *envelope*.
+		{"bad-request-net", "decode", "the request names another network than the entry"},
+		// §5.1's enroll order puts `dup-id` before `dup-wg`.
+		{"bad-dup-id-and-wg", "dup-id", "wrong in both ways; the earlier rule decides"},
+		// §5.2 requires a `device` signature's `kid` to resolve, not merely to
+		// verify against some key.
+		{"bad-device-sig-wrong-kid", "no-device-sig", "the signature verifies and its kid names another key"},
+	} {
+		t.Run(c.suffix, func(t *testing.T) {
+			_, reason := entryNamed(t, m, c.suffix)
+			if reason != c.reason {
+				want := c.reason
+				if want == "" {
+					want = "accepted"
+				}
+				t.Errorf("reason is %q, want %q -- %s", reason, want, c.why)
+			}
+		})
+	}
+}

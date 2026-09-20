@@ -820,7 +820,7 @@ suite is checked only against its own author.
 | `keys.json` | every test key: Ed25519 `{seed, public, kid}` by name, X25519 public keys by name, and `net` |
 | `entries/NN-<type>.cbor` | one valid entry per type, canonical bytes |
 | `entries/NN-<type>.json` | mirror: `{entry, entry_hash, leaf_hash, preimage_sha256, size}` where `size` is the byte length of the `.cbor`. The `entry` object mirrors the **CBOR**, so an optional field absent from the entry is absent here too — unlike `state.json`, where §5.3's schema fields are always emitted |
-| `log/NN-<name>.cbor` | the replay fixture, **100 entries** in order. The file names are labels, not the order: **read the sequence from `manifest.json`**, never by globbing and sorting |
+| `log/NN-<name>.cbor` | the replay fixture, **105 entries** in order. The file names are labels, not the order: **read the sequence from `manifest.json`**, never by globbing and sorting |
 | `log/NN-<name>.reason` | beside each entry that must be rejected: its §5.2 reason code |
 | `log/manifest.json` | `{"anchor": {"net", "genesis_hash"}, "entries": [{"index", "name", "reason"}]}` — the replay input and expected outcome; `reason` is `""` for an accepted entry |
 | `state.json` | canonical replay output for `log/` (§5.3) |
@@ -861,6 +861,10 @@ this table drifted out of date the moment one was.
 | §4.0 the whole input is consumed | — | `bad-trailing-byte`: an accepted `log_key` entry with one byte after it. Its signatures still verify and its `entry_hash` differs, so a decoder that stops at the end of the item applies the same governance entry twice |
 | §10 the checkpoint's origin | `served/checkpoint` | `checkpoints-bad/10-wrong-body-origin`: signed by this network's key under this network's name, naming another log |
 | §4.0 resource limits | — | `entries-hostile/oversize-entry` (a header promising 65536 bytes, refused on length before anything is allocated) and `entries-hostile/deep-nesting` (200 nested arrays, deterministic throughout, so only the depth rule can refuse it) |
+| §4.4 `after` at the boundary | `after-at-its-own-index`: a floor met exactly | `bad-after-by-one`: one past the index, the smallest violation there is |
+| §5.1 the request's `net` | every `enroll` | `bad-request-net`: a properly signed request for another network, so only that check refuses it |
+| §5.1 `dup-id` before `dup-wg` | — | `bad-dup-id-and-wg`: an active `device_id` *and* a WireGuard key active for another device |
+| §5.2 a `device` signature's `kid` resolves | — | `bad-device-sig-wrong-kid`: the signature verifies and its `kid` names another key. The preimage excludes `sigs`, so rewriting a `kid` leaves the signature intact |
 | §4.4 `after` is a floor | `after-below-index` | `bad-after` |
 | §5 replay, 15 of the 16 reason codes | the log | 51 rejecting entries |
 | §5 `bad-genesis` | — | `genesis/`; it cannot appear in the log, since it aborts replay |

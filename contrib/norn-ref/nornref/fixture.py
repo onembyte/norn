@@ -441,6 +441,43 @@ def log() -> list[LogItem]:
     unsigned_enroll["sigs"] = []
     b.add_raw(f"{b.index}-bad-enroll-empty-sigs", cbor.encode(unsigned_enroll), "threshold")
 
+    # Cold gate run 6: five rules the prose pins and no vector did. Each was a
+    # variant that passed every check, and each splits `state.rejected`.
+
+    # §4.4's floor is `after > index`. The fixture's values were 999, 5091 and
+    # 5 at indices 10, 91 and 75 -- never at or beside the boundary -- so
+    # rejecting only above `index + 1` passed everything.
+    b.add(f"{b.index}-after-at-its-own-index", b.build(
+        "note", {"text": "after equals this entry's own index"}, [("signer1", "signer")],
+        after=b.index))
+    b.add(f"{b.index}-bad-after-by-one", b.build(
+        "note", {"text": "after is one past this entry's index"}, [("signer1", "signer")],
+        after=b.index + 1), "after")
+
+    # §5.1: an enroll's request `net` must equal the entry's. The only net
+    # negative patched the *envelope*, so skipping this check passed.
+    other_net = bytes(16)
+    foreign = enrollreq_new_with_net(other_net, "halfsigned")
+    b.add(f"{b.index}-bad-request-net", b.build(
+        "enroll", {"request": foreign}, both), "decode")
+
+    # §5.1's enroll order: `dup-id` decides before `dup-wg`. Wrong in both ways
+    # -- an active device_id, and a WireGuard key active for another device.
+    b.add(f"{b.index}-bad-dup-id-and-wg", b.build(
+        "enroll", _enroll_body("nas", wg="printer"), both), "dup-id")
+
+    # §5.2: a `device` signature's `kid` must resolve, not merely verify. The
+    # preimage excludes `sigs` entirely, so rewriting a `kid` leaves the
+    # signature intact and a reader that searches for any key that verifies
+    # accepts it.
+    wrong_kid = b.build("rotate", {"device_id": "printer", "wg_pk": WG["printer"]},
+                        [("printer", "device")] + both)
+    for sig in wrong_kid["sigs"]:
+        if sig["role"] == "device":
+            sig["kid"] = keys.kid(KEYS["stranger"].public)
+    wrong_kid["sigs"].sort(key=lambda x: x["kid"])
+    b.add_raw(f"{b.index}-bad-device-sig-wrong-kid", cbor.encode(wrong_kid), "no-device-sig")
+
     # H6: the same governance entry, with one byte after it. Every signature
     # still verifies -- a preimage covers the decoded envelope, not the raw
     # bytes -- and the `entry_hash` differs, so `dup-entry` does not fire. A
@@ -832,6 +869,20 @@ def _duplicate_key(raw: bytes) -> bytes:
     count = raw[0] & 0x1F
     assert count < 23, "map header must stay one byte"
     return bytes([0xA0 | (count + 1)]) + raw[1:at] + pair + raw[at:]
+
+
+def enrollreq_new_with_net(net: bytes, device: str) -> bytes:
+    """A properly signed enrollment request for another network.
+
+    Signed, so the only thing wrong with the entry carrying it is that the
+    request's `net` is not the entry's -- SPEC 5.1's check, which nothing
+    exercised because the one net negative patched the envelope instead.
+    """
+    from . import enrollreq
+    request = enrollreq.new(net=net, device_id=device, device_pk=KEYS[device].public,
+                            wg_pk=WG[device], ts=T0)
+    enrollreq.sign(request, KEYS[device])
+    return enrollreq.encode(request)
 
 
 def _entry_raw(b: Any, kind: str) -> bytes:
