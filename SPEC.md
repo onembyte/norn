@@ -3,8 +3,8 @@
 Written **2026-09-18** (plan part 4). Status: **v1**, frozen 2026-09-20.
 
 Frozen means: a second implementation may be written against this document and
-the vectors beside it, and neither will change under it. Everything normative
-here is vectored (§12), every cross-reference resolves, and §13 is empty. What
+the vectors beside it, and neither will change under it. Every cross-reference
+resolves and §13 is empty. What
 changed on the way to v1 is in `BUILD-LOG.md`; the decisions behind it are in
 `DECISIONS.md`, numbered and dated.
 §12.1 lists what is vectored and what is not. It does **not** claim every MUST is vectored — several are not, and they are named there.
@@ -737,10 +737,12 @@ ships the same bytes under stable names so they can be referred to.
 Paths below are relative to the vector root, which ships as `testdata/vectors/`
 in this repository and may be rooted anywhere when the suite is distributed.
 
-**Two provenances, stated plainly.** The entry, state, trust and enrollment-request
+**Three provenances, stated plainly.** The entry, state, trust and enrollment-request
 vectors come from the Python reference implementation, and the Go code must match them. The
-`served/` and `proofs/` vectors come from the **Go** implementation instead,
-because producing a tiled log requires one — and they are validated against
+`served/`, `proofs/`, `fork/` and `checkpoints-bad/` vectors come from the **Go**
+implementation instead, because producing a tiled log requires one. `anchors/`
+comes from `python-opentimestamps`, the reference implementation of a format
+neither of Norn's owns — and they are validated against
 libraries neither implementation wrote: `transparency-dev/formats` parses the
 checkpoint, and `x/mod/sumdb/tlog` checks every inclusion proof. Nothing in the
 suite is checked only against its own author.
@@ -763,6 +765,12 @@ suite is checked only against its own author.
 | `requests/<name>.cbor` · `.txt` · `.json` | enrollment requests (§16): the request bytes, its bech32m text form, and a mirror `{request, preimage_sha256, text, size}`. `cases.json` lists them |
 | `requests-bad/<name>.txt` | requests that MUST be refused — by the text layer, the CBOR profile, a field rule or signature verification. `cases.json` gives each case's reason |
 | `receipt.json` | `{comment, origin, leaf_hash, deadline, text_sha256}`, where `text_sha256` is `SHA-256` of the **signed text** — through the newline ending the last text line, excluding the blank separator and the signature lines |
+| `checkpoints-bad/<NN-case>.checkpoint` | checkpoints that MUST be refused, each served in place of `served/checkpoint` over the honest tiles. `cases.json` lists them and says which two a signature-blind verifier accepts |
+| `entries-hostile/<name>.cbor` | input that is not an entry and never could be, for §4.0's two resource limits. `cases.json` says what each refusal must be about |
+| `proven/cases.json` | the devices admitted at four evaluation times (§5.3), including the boundary where `expires` equals `T` |
+| `fork/` | `evidence.cbor` and the `conflicting.checkpoint` it is about (§11.1), plus `bad-consistent` and `bad-other-origin`, which MUST be refused. `cases.json` lists them |
+| `anchors/` | OpenTimestamps proofs written by `python-opentimestamps`: `checkpoint-<size>.ots` over the fixture's checkpoint body, `sample.ots` over an arbitrary digest, and a calendar's reply |
+| `SHA256SUMS` | every file above, for a reader who has the suite and not its generators |
 
 ### 12.1 Coverage — what is and is not vectored
 
@@ -784,7 +792,7 @@ this table drifted out of date the moment one was.
 | §4.4 `after` is a floor | `after-below-index` | `bad-after` |
 | §5 replay, 15 of the 16 reason codes | the log | 51 rejecting entries |
 | §5 `bad-genesis` | — | `genesis/`; it cannot appear in the log, since it aborts replay |
-| §5.1 genesis | the log's entry 0 | nine abort paths in `genesis/` |
+| §5.1 genesis | the log's entry 0 | twelve abort paths in `genesis/`, one single-entry log each |
 | §5.1 seen set, §4.3 roles | — | `bad-repeat-of-rejected`, `bad-one-of-two-signers`, `bad-role-mismatch` |
 | §5.2 `bad-thr` | — | both halves: `bad-thr-zero` and `bad-thr` (value above the set size) |
 | §5.3 state, incl. D-028 and `expires` | `state.json`, `enroll-contractor` | `signer_remove-below-threshold` accepted, then `signer_add-recover` |
@@ -792,16 +800,34 @@ this table drifted out of date the moment one was.
 | §7 receipt | `receipt.note` | — |
 | §9 trust file, fingerprint | `trust.cbor` | 18 rejected anchors in `trust-bad/`. **`15`** and **`16`** parse cleanly as verifier keys and are refused only by the algorithm rule; **`17`** and **`18`** are a witness the policy never names and a policy naming a witness the file does not list, each otherwise perfectly valid |
 | §14 canonical JSON | every `.json`; `policy-escaping`, `enroll-unicode-labels` | — |
-| §6 tiles and bundles | `served/`, read back to reproduce `state.json` | forged head, tampered bundle, missing bundle |
-| §8 proof bundles | `proofs/`, one per active device | wrong entry, foreign checkpoint, tampered proof, wrong log key |
+| §6 tiles and bundles | `served/`, read back to reproduce `state.json`; a forged head is `checkpoints-bad/04-forged-log-signature` | a **tampered** and a **missing** entry bundle are checked by this project's tests and **do not ship as files** |
+| §8 proof bundles | `proofs/`, one per active device | wrong entry, foreign checkpoint, tampered proof and wrong log key are checked by this project's tests and **do not ship as files** |
 | §10 verifier loop, steps 1–4 | `served/` verified end to end, **signature first** | `checkpoints-bad/01-unsigned`, `02-wrong-log-key`, `03-wrong-origin` and **`04-forged-log-signature`** — the last one being a signature of the right shape under the right key id that does not verify. Without it a verifier that never checks the log signature reproduces the whole suite |
 | §10 step 3, the witness quorum | `served/checkpoint`, cosigned by all three witnesses | `checkpoints-bad/05-one-cosignature-short`, `06-no-cosignatures`, `07-unnamed-witness-only` and **`08-forged-cosignature`**, which carries two lines naming witnesses the policy lists, one of which does not verify: the quorum is met by counting and refused by checking. `quorum none` accepting an uncosigned head needs a second anchor and is **not vectored** |
 | §16 enrollment requests | `requests/`, four cases including a 64-byte `device_id` and non-ASCII labels | `requests-bad/`, 23 cases across all four layers, including **`forged-signature`** (structurally perfect, signed by another key) and `oversize-label-key` (§4.0's map-key cap) |
 | §11.1 fork evidence | `fork/evidence.cbor` and `fork/conflicting.checkpoint`: a second branch of this same network, diverging at entry 40, signed by the same log key and cosigned by the same witnesses. Checking it needs only `trust.cbor` | `fork/bad-other-origin` (a real fork, of a network this anchor is not about) and `fork/bad-consistent` (a log and its own earlier self: every signature valid, both heads cosigned, the roots agreeing) |
 | §16.2 bech32m | the text form of every request | `wrong-hrp`, `plain-bech32` (the same bytes under bech32's constant), `mixed-case`, `corrupt-character`. BIP-350's own vectors are in both implementations' unit tests |
 
-**Everything normative is vectored.** The list that stood here — §6's
-cosignatures and §11's fork evidence — is empty as of v1.
+**What is not vectored.** A suite that looks complete is worse than one that
+admits its holes, so:
+
+- **§6's tampered and missing entry bundles**, and **§8's four proof-bundle
+  negatives**. Both are exercised by this project's own tests, which is exactly
+  the evidence a second implementer does not receive.
+- **`quorum none` accepting an uncosigned head.** It needs a second trust
+  anchor, and one is not shipped.
+- **§4.3's three independent authorisations for `revoke`.** No vector
+  distinguishes them from a single pooled quorum, because the fixture's
+  `revoke-by-roots` meets the root threshold outright.
+- **§14.1's key ordering above the basic multilingual plane.** No object key in
+  the suite is an astral character, so UTF-8 bytewise order and UTF-16
+  code-unit order agree on every file here.
+- **§6's "no extension lines"**, **§5.1's non-empty `params`**, and the trust
+  file's mandatory keys other than `name` and `policy`: each stated, none
+  refused by a shipped file.
+
+Everything else named in the table above ships, and the build fails if a path
+cited here is missing or a directory here is not named.
 
 Two caveats a second implementer should know, because a vector proves a format
 and not a fact about the world:

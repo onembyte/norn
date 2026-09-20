@@ -204,7 +204,7 @@ func TestEveryVectorIsDescribed(t *testing.T) {
 		if name == "README.md" {
 			continue
 		}
-		if !strings.Contains(text, name) {
+		if !citedAsPath(text, name) {
 			t.Errorf("testdata/vectors/%s is not described in the suite's README. A "+
 				"file a second implementer cannot identify is one they cannot use.",
 				name)
@@ -391,4 +391,124 @@ func TestTheEvaluationClockIsDefinedAndUsedOnce(t *testing.T) {
 	if !strings.Contains(strings.ToLower(spec), "quorum time") {
 		t.Error("the evaluation time is never derived from the cosignature timestamps, which are the only timestamps there are")
 	}
+}
+
+// --- Cold-model gate run 5, defect G7 ------------------------------------
+//
+// §12.1 opens by saying a suite that looks complete is worse than one that
+// admits its holes, "and an inaccurate coverage claim is the same failure
+// wearing a different hat". Measured against the shipped files it was wrong in
+// six places: a count of nine where twelve ship, and four rows naming
+// negatives that existed only as Go tests. §12's file table also omitted three
+// directories outright.
+//
+// The table is the thing this specification asks to be judged on, so it is now
+// judged by the build, in both directions.
+
+func vectorsDir() string { return filepath.Join("..", "..", "testdata", "vectors") }
+
+// coverage is §12 and §12.1 together: the file table and the claims about it.
+func coverage(t *testing.T) string {
+	t.Helper()
+	doc := load(t)
+	var b strings.Builder
+	for _, number := range []string{"12", "12.1"} {
+		section, ok := doc.Section(number)
+		if !ok {
+			t.Fatalf("§%s is missing", number)
+		}
+		b.WriteString(section.Body)
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
+var reTicked = regexp.MustCompile("`([^`]+)`")
+
+// Every path the coverage table spells out has to be there. Four rows named
+// negatives that shipped as no files at all, which a reader discovers only by
+// looking for them.
+func TestEveryVectorPathTheSpecCitesExists(t *testing.T) {
+	// Extensions the suite uses; a citation may omit one.
+	suffixes := []string{"", ".cbor", ".checkpoint", ".txt", ".json", ".note", ".ots", ".toml"}
+
+	// Only paths rooted in the suite. `transparency-dev/formats` is a library
+	// this project checks itself against, not a vector, and a checker that
+	// cannot tell the difference invents work.
+	top := map[string]bool{}
+	entries, err := os.ReadDir(vectorsDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		top[e.Name()] = true
+	}
+
+	for _, m := range reTicked.FindAllStringSubmatch(coverage(t), -1) {
+		cited := strings.TrimSpace(strings.TrimSuffix(m[1], "/"))
+		// Templates describe a shape, not a file.
+		if strings.ContainsAny(cited, "<>… ") || !strings.Contains(cited, "/") {
+			continue
+		}
+		if first, _, _ := strings.Cut(cited, "/"); !top[first] {
+			continue
+		}
+		found := false
+		for _, suffix := range suffixes {
+			if _, err := os.Stat(filepath.Join(vectorsDir(), cited+suffix)); err == nil {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("§12 cites %q, which does not ship. A coverage claim for a file "+
+				"nobody receives is the failure §12.1 opens by warning about.", cited)
+		}
+	}
+}
+
+// And the other direction: something in the suite that the table never mentions
+// is coverage nobody can find.
+func TestEveryVectorDirectoryIsInTheCoverageTable(t *testing.T) {
+	text := coverage(t)
+	found, err := os.ReadDir(vectorsDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range found {
+		name := item.Name()
+		if name == "README.md" {
+			continue
+		}
+		if !citedAsPath(text, name) {
+			t.Errorf("testdata/vectors/%s is not cited as a path anywhere in §12 or §12.1", name)
+		}
+	}
+}
+
+// §12.1's closing line and the header's line 10 cannot both be true.
+func TestTheSpecDoesNotClaimTotalCoverage(t *testing.T) {
+	if strings.Contains(rawSpec(t), "Everything normative is vectored") {
+		t.Error("§12.1 claims every normative rule is vectored; the header says it does " +
+			"not claim that, and the header is the one that is true")
+	}
+}
+
+// citedAsPath reports whether the text names this vector as a path rather than
+// merely containing its letters. `proven` is also an ordinary English word, and
+// a check that accepted it anywhere would call the directory described because
+// the prose says "proven set" two hundred lines away.
+func citedAsPath(text, name string) bool {
+	for _, m := range reTicked.FindAllStringSubmatch(text, -1) {
+		cited := strings.TrimSpace(m[1])
+		if cited == name {
+			return true
+		}
+		for _, sep := range []string{"/", "."} {
+			if strings.HasPrefix(cited, name+sep) {
+				return true
+			}
+		}
+	}
+	return false
 }
