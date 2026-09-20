@@ -427,7 +427,8 @@ which a node may do.
 | 5.4 | Outputs | stdout JSON always; `ntfy`, Home Assistant, Alertmanager and email optional and each failing alone | ✅ |
 | 5.5 | The status page | read-only HTML on the tunnel address: sizes, ages, witness times, the device table and the last entries in plain words | ✅ |
 | 5.6 | `norn monitor` | the command, its config, and one run that produces a notification per rule | ✅ |
-| 5.7 | Phase 5 gate audit | each line against what is tested, and the demos named as the lab's | ⬜ |
+| 5.7 | Phase 5 gate audit | each line against what is tested, and the demos named as the lab's | ✅ |
+| 5.8 | `norn audit --by` | what a stolen signer key did: every entry a given key signed, since a given time — `ENROLLMENT.md` R2's first step | ⬜ |
 
 ## Decision taken — 2.9d: an `enroll` needs a device signature the device cannot make
 
@@ -891,3 +892,12 @@ the signer keeps one job — decide, and place the entry in the log.
   - **Failing to bind the status page *is* fatal**, and the asymmetry is deliberate: an operator who asked for a page and did not get one goes looking for it during an incident, which is the worst possible moment to discover a typo in a port. A failed *delivery* is news; a page that was never going to exist is a misconfiguration.
   - **A name collision the compiler caught**, worth a line only because it is the shape of thing a test file can hide: the test's helper and the config struct were both `monitorConfig`.
   - Go: 49 packages, 586 tests; `go test`, staticcheck and both halves of `vectors-check` green.
+
+- **5.7 the Phase 5 gate audit — one line closed, one command missing, and the rest honestly a lab's.**
+  - **The phase divides cleanly and the audit says which side each line falls on.** Five gate lines: one is pure lab (`make demos` — `lab/` and `demo/` are empty directories, and their contents are containers, a patched Headscale and NetBird, and rendered tapes), three have complete software halves, and one names a command that does not exist.
+  - **`norn audit --by` is missing, and two documents name it.** `ENROLLMENT.md` R2 spells it out — *"`norn audit --by <kid> --since <t>` lists everything that key signed"* — and `LAB.md` D2 uses it in the demo. It is the first thing an operator runs when a signer key is stolen: not "revoke it", but **"what did they do with it"**. That is a missing feature rather than an untested one, so it is 5.8 rather than a footnote — the same call the 4.8 audit made about `/norn/evidence`.
+  - **D3 closes outright**, which is the first Phase 5 line to close: a node with an unreachable log adopts a peer's checkpoint (4.5d), a fork produces evidence on the node that caught it *and* on every node it tells (4.6, 4.9), and `norn verify-evidence` checks that evidence offline against a trust file alone, refusing four kinds of fabrication (4.6a). Running it with tapes is the lab's, but no line of it is unproven.
+  - **D1's software half is complete and was built in Phase 3**, before the demo existed to ask for it: owner mode never installs an unproven key, an injected key is gone after exactly one cycle, `CONTROL_PLANE_FIGHT` fires on a key that keeps coming back, and quarantine takes the interface out of service. What the demo adds is the *measurement* and the three control planes.
+  - **D2's point survives the missing command.** "A valid-looking enrolment is still loud" is already true: the monitor reports every entry at info and every governance entry as critical, so the rogue enrolment appears whether or not anybody runs `audit`. The command is for the *next* question.
+  - **Nothing was ticked on the strength of a plausible-sounding half.** Four lines stay open with a sentence each saying exactly which half is true and which needs a container, a phone or a stopwatch.
+  - A documentation checkpoint: no code changed, and the suite stands at 49 packages, 586 tests, green.
