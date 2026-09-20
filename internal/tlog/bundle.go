@@ -7,16 +7,29 @@ import (
 
 // EncodeBundle frames entries as `tlog-tiles` entry-bundle bytes: each entry
 // preceded by its length as a big-endian uint16.
-func EncodeBundle(entries [][]byte) []byte {
+func EncodeBundle(entries [][]byte) ([]byte, error) {
 	var out []byte
-	for _, raw := range entries {
+	for i, raw := range entries {
+		// The length header is 16 bits, so an entry of 65536 bytes or more
+		// cannot be framed. Truncating it to `uint16` writes a header of zero
+		// and produces a bundle that decodes as a different log, which is the
+		// one outcome worse than refusing to serve: SPEC §4.0's
+		// MAX_ENTRY_BYTES is 65535 for exactly this reason.
+		if len(raw) > MaxBundleEntryBytes {
+			return nil, fmt.Errorf("tlog: entry %d is %d bytes; an entry bundle cannot "+
+				"frame more than %d", i, len(raw), MaxBundleEntryBytes)
+		}
 		var header [2]byte
 		binary.BigEndian.PutUint16(header[:], uint16(len(raw)))
 		out = append(out, header[:]...)
 		out = append(out, raw...)
 	}
-	return out
+	return out, nil
 }
+
+// MaxBundleEntryBytes is the largest entry a `tlog-tiles` entry bundle can
+// carry: the most a uint16 length prefix can describe (SPEC §4.0, §6).
+const MaxBundleEntryBytes = 65535
 
 // DecodeBundle reads entry-bundle bytes back.
 //

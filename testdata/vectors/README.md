@@ -32,6 +32,7 @@ of having it.
 | `entries/` | one valid entry per type, canonical bytes, each with a `.json` mirror carrying its hashes and preimage |
 | `log/` | the 90-entry replay fixture. **Read the order from `manifest.json`**, never by sorting filenames; entries that must be refused carry a `.reason` file |
 | `state.json` | the state those 90 entries replay to, in canonical JSON (§14) |
+| `entries-hostile/` | input that is not an entry and never could be: an oversized one and a 200-deep nest, for §4.0's two resource limits. Neither limit is reachable by a valid entry, so these are the only vectors that reach them |
 | `genesis/` | twelve ways a genesis entry is refused |
 | `trust.cbor`, `trust.toml`, `trust.fingerprint` | the anchor in both encodings, and the fingerprint an operator compares out of band (§9.3) |
 | `trust-bad/` | 18 anchors that must be rejected, each otherwise perfectly valid |

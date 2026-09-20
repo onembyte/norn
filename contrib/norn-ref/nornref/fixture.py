@@ -1083,6 +1083,30 @@ def _as_bech32(hrp: str, payload: bytes) -> str:
     return hrp + "1" + "".join(bech32m.CHARSET[v] for v in data + checksum)
 
 
+def hostile_inputs() -> list[tuple[str, bytes, str]]:
+    """(name, raw bytes, what a decoder must say) — input that is not an entry.
+
+    SPEC §4.0's two resource limits are unreachable by any *valid* entry, which
+    is why neither had a vector until cold gate run 5 removed both and passed
+    every check. They exist for input like this, so this is what they are
+    tested with. Built as raw bytes rather than through the encoder: the
+    encoder enforces the profile, and a generator that cannot express the
+    hostile case cannot ship it.
+    """
+    # A byte string whose header promises 65536 bytes. A decoder must refuse it
+    # on length alone, before allocating anything the header asked for.
+    oversize = b"\x5a\x00\x01\x00\x00" + b"\x00" * 65536
+
+    # 200 nested single-element arrays. Deterministic CBOR throughout; only the
+    # depth is hostile, so nothing but the depth limit can refuse it.
+    deep = b"\x81" * 200 + b"\x00"
+
+    return [
+        ("oversize-entry", oversize, "exceeds"),
+        ("deep-nesting", deep, "deeper than"),
+    ]
+
+
 def _expires_at_ts() -> str:
     """`expires == ts`, re-signed so §16.1's rule is the only thing wrong.
 

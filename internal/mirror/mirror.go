@@ -73,8 +73,11 @@ func Write(dir string, cp tlog.Checkpoint, signedCheckpoint string, entries [][]
 		first := index * tlog.TileWidth
 		last := min(first+tlog.TileWidth, tree.Size())
 		bundle := entries[first:last]
-		if err := write(dir, tlog.EntryBundlePath(index, len(bundle)),
-			tlog.EncodeBundle(bundle)); err != nil {
+		framed, err := tlog.EncodeBundle(bundle)
+		if err != nil {
+			return err
+		}
+		if err := write(dir, tlog.EntryBundlePath(index, len(bundle)), framed); err != nil {
 			return err
 		}
 	}

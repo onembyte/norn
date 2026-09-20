@@ -214,8 +214,11 @@ func (s *Store) Append(raw []byte) (int64, error) {
 	s.bundle = append(s.bundle, raw)
 
 	bundleIndex := index / tlog.TileWidth
-	if err := s.writeFile(tlog.EntryBundlePath(bundleIndex, len(s.bundle)),
-		tlog.EncodeBundle(s.bundle)); err != nil {
+	framed, err := tlog.EncodeBundle(s.bundle)
+	if err != nil {
+		return 0, err
+	}
+	if err := s.writeFile(tlog.EntryBundlePath(bundleIndex, len(s.bundle)), framed); err != nil {
 		return 0, err
 	}
 	if len(s.bundle) == tlog.TileWidth {

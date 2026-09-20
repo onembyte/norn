@@ -16,11 +16,14 @@ from typing import Any
 MAX_UINT = 2**63 - 1
 MAX_KEY_LEN = 23
 
-#: Deepest structure the schema allows is an entry's body.labels value, so 8 is
-#: generous. Neither limit below is reachable by a valid entry; they exist so a
-#: hostile input cannot exhaust a verifier (SPEC §4.0).
+#: The top-level map is depth 1. An enroll's embedded request is decoded
+#: separately and restarts the count, so the deepest structure either document
+#: allows is a request's `labels` value at depth 3. Neither limit below is
+#: reachable by a valid entry; they exist so a hostile input cannot exhaust a
+#: verifier, and MAX_ENTRY_BYTES is 65535 because SPEC §6 frames entries behind
+#: a uint16 length prefix (SPEC §4.0).
 MAX_DEPTH = 8
-MAX_ENTRY_BYTES = 65536
+MAX_ENTRY_BYTES = 65535
 
 _MT_UINT, _MT_BYTES, _MT_TEXT, _MT_ARRAY, _MT_MAP, _MT_SIMPLE = 0, 2, 3, 4, 5, 7
 _FALSE, _TRUE = 20, 21

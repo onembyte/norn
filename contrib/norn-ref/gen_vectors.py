@@ -34,6 +34,7 @@ OWNED = frozenset({
     "keys.json", "entries", "log", "genesis", "state.json",
     "trust.cbor", "trust.toml", "trust.fingerprint", "trust-bad",
     "receipt.note", "receipt.json", "requests", "requests-bad",
+    "entries-hostile",
 })
 
 #: Produced by `make vectors-log` from the Go implementation, because building
@@ -218,6 +219,19 @@ def write_requests(out: pathlib.Path) -> None:
                    "the CBOR profile, a field rule or signature verification; "
                    "each file has a trailing newline that is not part of the case",
         "cases": bad,
+    }) + "\n")
+
+
+    hostile = []
+    for name, raw, says in fixture.hostile_inputs():
+        write(out / "entries-hostile" / f"{name}.cbor", raw)
+        hostile.append({"name": name, "says": says})
+    write(out / "entries-hostile" / "cases.json", canonjson.dumps({
+        "comment": "input that is not an entry and never could be: each file MUST be "
+                   "refused by SPEC §4.0's resource limits, and `says` is what the "
+                   "refusal must be about. Neither limit is reachable by a valid "
+                   "entry, which is why these are the only vectors that reach them",
+        "cases": hostile,
     }) + "\n")
 
 

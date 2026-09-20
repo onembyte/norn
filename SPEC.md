@@ -130,10 +130,24 @@ a fourth key is `decode`. "Well-formed `sigs`" in §5.1 step 3 means precisely:
 that closedness, `kid` matching its field constraint, `role` within the enum,
 `sig` exactly 64 bytes, and the array sorted by `kid` with no repeats.
 
-A decoder MUST bound its own resource use: nesting depth is at most **8** (the
-deepest structure the schema allows is an entry's `body.labels` value), and an
-entry is at most **65536** bytes. Neither limit is reachable by a valid entry;
-they exist so that a hostile input cannot exhaust a verifier.
+A decoder MUST bound its own resource use. Two limits, both normative:
+
+- **Nesting depth is at most 8.** The top-level map is depth **1**, so a value
+  inside it is depth 2. An `enroll`'s embedded request (§16.1) is a byte string
+  whose contents are parsed separately, and its own nesting **restarts at 1**:
+  the two documents are decoded by two calls, and a limit that leaked across
+  them would make an entry's validity depend on the shape of something it
+  merely carries. The deepest structure the entry schema itself allows is a
+  request's `labels` value, at depth 3 of that inner document.
+- **`MAX_ENTRY_BYTES` is 65535**, and an entry is at most that many bytes. Not
+  65536: §6 frames entries in `tlog-tiles` entry bundles behind a **uint16**
+  length prefix, so 65535 is the largest entry that can be served at all. A
+  limit above it would admit an entry that is valid and unpublishable, and an
+  encoder that truncated the length to fit would produce a bundle that decodes
+  as a different log.
+
+Neither limit is reachable by a valid entry; they exist so that a hostile input
+cannot exhaust a verifier, and both are vectored in `entries-hostile/`.
 
 The `sigs` key is **mandatory**; an entry with no signatures carries `sigs: []`,
 which is well-formed and is rejected later by an authorisation rule rather than
@@ -727,6 +741,7 @@ this table drifted out of date the moment one was.
 | §4.3 `enroll` embeds the request | every `enroll` in the log; `enroll-unicode-labels`, `enroll-contractor` | **`bad-no-device-sig`** and **`bad-order-enroll`** (a request signed by a *signer*, not the device it names), **`bad-forged-device-sig`** (a request signature of the right shape and wrong), and `bad-device_id-uppercase`, `bad-device_id-leading-dot`, `bad-pk-length` — faults **inside** the request, inside an entry that is otherwise well formed and properly signed, so an implementation treating `request` as opaque bytes accepts all three |
 | §4.0/§4.3 schemas | `enroll-laptop`, `enroll-unicode-labels` | `bad-kid-format`, `bad-missing-sigs`, `bad-empty-sigs`, `bad-unknown-role`, `bad-unknown-envelope-key`, `bad-unknown-body-key`, `bad-device_id-uppercase`, `bad-device_id-leading-dot`, `bad-pk-length`, `bad-sig-length`, `bad-text-too-long`, `bad-unsorted-sigs` |
 | §4.2 signatures, hashes, preimage | 16 entry mirrors | **`bad-forged-signer-sig`, `bad-forged-device-sig`** — syntactically perfect signatures that do not verify. Without these an implementation that never calls Ed25519 reproduces the whole manifest |
+| §4.0 resource limits | — | `entries-hostile/oversize-entry` (a header promising 65536 bytes, refused on length before anything is allocated) and `entries-hostile/deep-nesting` (200 nested arrays, deterministic throughout, so only the depth rule can refuse it) |
 | §4.4 `after` is a floor | `after-below-index` | `bad-after` |
 | §5 replay, 15 of the 16 reason codes | the log | 51 rejecting entries |
 | §5 `bad-genesis` | — | `genesis/`; it cannot appear in the log, since it aborts replay |

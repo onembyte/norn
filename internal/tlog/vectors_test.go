@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/onembyte/norn/internal/cbor"
 	"github.com/onembyte/norn/internal/note"
 )
 
@@ -105,4 +106,15 @@ func signatureBy(sigs []note.Signature, name string) *note.Signature {
 		}
 	}
 	return nil
+}
+
+// The limit a decoder enforces and the limit the log can serve are the same
+// number, or a spec-valid entry exists that cannot be published. §4.0 said
+// 65536 and §6's uint16 bundles top out at 65535, so that entry existed.
+func TestTheProfileLimitIsWhatABundleCanCarry(t *testing.T) {
+	if cbor.MaxEntryBytes != MaxBundleEntryBytes {
+		t.Errorf("a decoder accepts entries up to %d bytes but a bundle can frame only %d: "+
+			"an entry between the two is valid and unservable",
+			cbor.MaxEntryBytes, MaxBundleEntryBytes)
+	}
 }

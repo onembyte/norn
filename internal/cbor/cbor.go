@@ -20,7 +20,7 @@ const (
 	MaxUint       = uint64(math.MaxInt64) // 2**63 - 1
 	MaxKeyLen     = 23
 	MaxDepth      = 8
-	MaxEntryBytes = 65536
+	MaxEntryBytes = 65535
 )
 
 // Major types this profile admits.

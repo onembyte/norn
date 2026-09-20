@@ -12,7 +12,11 @@ import (
 func TestABundleRoundTrips(t *testing.T) {
 	entries := [][]byte{[]byte("one"), {}, bytes.Repeat([]byte("x"), 0xffff)}
 
-	back, err := DecodeBundle(EncodeBundle(entries))
+	framed, err := EncodeBundle(entries)
+	if err != nil {
+		t.Fatal(err)
+	}
+	back, err := DecodeBundle(framed)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,5 +56,37 @@ func TestAnEmptyBundleDecodesToNothing(t *testing.T) {
 	}
 	if len(back) != 0 {
 		t.Errorf("decoded %d entries from nothing", len(back))
+	}
+}
+
+// --- Cold-model gate run 5, defect G9 -----------------------------------
+//
+// §4.0 allowed an entry of exactly 65536 bytes; §6 frames entries in a
+// uint16-length-prefixed bundle, whose largest representable entry is 65535.
+// A spec-valid entry could not be served -- and this function did not refuse
+// it, it truncated the length to zero and produced a bundle that decodes as
+// something else entirely. Silent corruption of the log, reachable through a
+// document that permitted the input.
+
+func TestAnEntryTooLargeToFrameIsRefusedRatherThanTruncated(t *testing.T) {
+	oversize := make([]byte, 65536)
+	if _, err := EncodeBundle([][]byte{oversize}); err == nil {
+		t.Fatal("framed a 65536-byte entry: the uint16 length wrapped to zero and the " +
+			"bundle now decodes as a different log")
+	}
+}
+
+func TestTheLargestFrameableEntryIsStillFramed(t *testing.T) {
+	largest := make([]byte, 65535)
+	raw, err := EncodeBundle([][]byte{largest})
+	if err != nil {
+		t.Fatalf("refused the largest entry the format can carry: %v", err)
+	}
+	back, err := DecodeBundle(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(back) != 1 || len(back[0]) != 65535 {
+		t.Fatalf("round-trip gave %d entries, first of %d bytes", len(back), len(back[0]))
 	}
 }

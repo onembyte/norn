@@ -1,0 +1,1 @@
+{"cases":[{"name":"oversize-entry","says":"exceeds"},{"name":"deep-nesting","says":"deeper than"}],"comment":"input that is not an entry and never could be: each file MUST be refused by SPEC §4.0's resource limits, and `says` is what the refusal must be about. Neither limit is reachable by a valid entry, which is why these are the only vectors that reach them"}
