@@ -474,7 +474,7 @@ them, and then run the gate.
 | 6.5g-vi | **The class, not the instance** | H10 and every other rule-negative refused by its own signature — enforced over the whole directory rather than a list | ✅ |
 | 6.5g-vii-a | The checkpoint and evidence layer | `skip-cosig-verify` (refuse vs merely not count — one broken witness is fail-closed under one reading and business as usual under the other), `allow-proof-at-same-size`, and §6's unstated tile-hash rule | ✅ |
 | 6.5g-vii-b | The replay layer | `after-loose`, `skip-request-net`, `enroll-wg-before-id`, `ignore-kid-match` — four log entries, each splitting the canonical state | ✅ |
-| 6.5g-vii-c | The boundaries | `depth-limit-*` and `size-limit-*` at their exact values, and §16.2's bech32m padding rules | ⬜ |
+| 6.5g-vii-c | The boundaries | `depth-limit-*` and `size-limit-*` at their exact values, and §16.2's bech32m padding rules | ✅ |
 | 6.5g-viii | Cold-model gate run 7 | a *fresh* agent on a *new* copy; the target remains `SPEC SUFFICIENT` | ⬜ |
 | 6.6 | Phase 6 gate audit | what is true, and what needs two people | ⬜ |
 
@@ -1250,3 +1250,11 @@ code does not have.
   - **`bad-device-sig-wrong-kid` is the subtle one.** The signature preimage excludes `sigs` entirely, so rewriting a signature's `kid` leaves the signature **verifying** — and a reader that searches for any key the bytes verify under, rather than resolving the `kid` §5.2 requires, accepts it. Strict: `no-device-sig`.
   - **Four mutations, four reds, one entry each** — `after-loose`, `skip-request-net`, `enroll-wg-before-id` and `ignore-kid-match`, all of which passed 285/285 for run 6. Two of them needed a second attempt: removing a check left the variable it used unused, and the build failed before the test could.
   - **And the reference's guard caught the new `after` vector**, as it should: `test_after_never_exceeds_the_index` forbids a stale `after` on any negative except the ones whose purpose it is, and `bad-after-by-one` is the third. It joins that allowlist by name. Worth noting that **I committed before `make ref-test` finished** and had to follow up — the four checks are not interchangeable, and the Python one is the slowest.
+
+
+- **6.5g-vii-c — limits bounded from one side, and a directory nothing was checking.**
+  - **A limit tested only from above is not tested.** `deep-nesting` is 200 deep, so a decoder enforcing 4, 16 or 64 in place of §4.0's 8 refused it just the same and passed every vector; `oversize-entry` was some 66 KB against a cap of 65535. Each limit now has a case sitting **exactly at it**, which must be accepted, and one a single step past. `entries-hostile/cases.json` carries `accepted: true` for the first kind, because a directory of things that must be refused cannot express the half that bounds the limit from below.
+  - **The depth pair was wrong the first time**, and the vector said so: I built the at-the-limit case with `MAX_DEPTH - 1` containers, and our decoder — correctly, per §4.0's "the top-level map is depth 1" — allows `MAX_DEPTH` of them. The test caught the off-by-one immediately, which is the point of building both sides.
+  - **§16.2's two padding rules were stated, enforced and unvectored.** `excess-padding` and `non-zero-padding` are the valid request's bytes with the *encoding* corrupted and the checksum recomputed, so the wrapper is sound and only the padding rule refuses them.
+  - **And the mutation that removed both rules passed.** Not because the vectors were weak — because **nothing iterated `requests-bad/` asserting its cases are refused at all.** `trust-bad/` has had that loop since Phase 0; the request directory never did, so individual tests named individual files and a rule could be switched off in silence. That loop exists now, and with it the padding mutation turns red.
+  - **Three mutations, three reds**: a depth limit of 16, a size limit one byte lower, and both padding rules removed.

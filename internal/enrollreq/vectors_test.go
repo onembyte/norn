@@ -3,6 +3,7 @@ package enrollreq
 import (
 	"crypto/ed25519"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -175,4 +176,63 @@ func TestEveryRequestNegativeDeclaresItsSignatureHonestly(t *testing.T) {
 			}
 		})
 	}
+}
+
+// The directory's whole purpose, which nothing was checking.
+//
+// `trust-bad/` has had a loop asserting every case is refused since Phase 0.
+// `requests-bad/` never did: individual tests named individual files, so a
+// rule could be switched off and the only signal was a case nobody had thought
+// to name. Found by a mutation that removed §16.2's padding rules and passed.
+func TestEveryRequestNegativeIsRefused(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join(vectorRoot(), "requests-bad", "cases.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Cases []struct{ Name, Why string } `json:"cases"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	net := shippedNet(t)
+
+	for _, c := range doc.Cases {
+		t.Run(c.Name, func(t *testing.T) {
+			body, err := os.ReadFile(filepath.Join(vectorRoot(), "requests-bad", c.Name+".txt"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			request, err := DecodeText(strings.TrimSpace(string(body)))
+			if err != nil {
+				return
+			}
+			if err := Check(request, net); err == nil {
+				t.Errorf("accepted a request that must be refused (%s)", c.Why)
+			}
+		})
+	}
+}
+
+func shippedNet(t *testing.T) []byte {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(vectorRoot(), "keys.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Net string `json:"net"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	out := make([]byte, len(doc.Net)/2)
+	for i := range out {
+		var b int
+		if _, err := fmt.Sscanf(doc.Net[2*i:2*i+2], "%02x", &b); err != nil {
+			t.Fatal(err)
+		}
+		out[i] = byte(b)
+	}
+	return out
 }

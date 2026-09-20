@@ -33,7 +33,7 @@ of having it.
 | `log/` | the 105-entry replay fixture. **Read the order from `manifest.json`**, never by sorting filenames; entries that must be refused carry a `.reason` file |
 | `state.json` | the state those 105 entries replay to, in canonical JSON (§14) |
 | `proven/` | the devices a node admits at four evaluation times, including the boundary where `expires == T`. `state.json` is clock-independent on purpose, so this is the only vector that exercises expiry — the rule that decides when a device stops being admitted |
-| `entries-hostile/` | input that is not an entry and never could be: an oversized one and a 200-deep nest, for §4.0's two resource limits. Neither limit is reachable by a valid entry, so these are the only vectors that reach them |
+| `entries-hostile/` | input at and past §4.0's two resource limits. A case with `says` must be refused for that reason; one marked `accepted` sits exactly at a limit and must be accepted, which is what bounds the limit from below |
 | `genesis/` | twelve ways a genesis entry is refused |
 | `trust.cbor`, `trust.toml`, `trust.fingerprint` | the anchor in both encodings, and the fingerprint an operator compares out of band (§9.3) |
 | `trust-bad/` | 25 anchors that must be rejected, each otherwise perfectly valid — including every mandatory §9.1 key, missing one at a time |

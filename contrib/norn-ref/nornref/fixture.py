@@ -1195,6 +1195,7 @@ def request_negatives() -> list[tuple[str, str, str]]:
 
     good = _request("pi-cam", "pi-cam", "pi-cam", 10)
     base = cbor.encode(good)
+    _pad_excess, _pad_nonzero = _padding_negatives(good)
 
     # A request whose signature is by another key: syntactically perfect and
     # cryptographically wrong. Without it, a decoder that never calls Ed25519
@@ -1226,6 +1227,10 @@ def request_negatives() -> list[tuple[str, str, str]]:
         ("plain-bech32", _as_bech32(enrollreq.HRP, base), "bech32, not bech32m"),
         ("mixed-case", _mixed_case(text(good)), "mixed case (SPEC §16.2)"),
         ("corrupt-character", _corrupt(text(good)), "one character changed"),
+        ("excess-padding", _pad_excess,
+         "five bits of padding where SPEC 16.2 allows under five"),
+        ("non-zero-padding", _pad_nonzero,
+         "a padding bit set where SPEC 16.2 requires zero"),
     ]
     return cases
 
@@ -1273,9 +1278,29 @@ def hostile_inputs() -> list[tuple[str, bytes, str]]:
     # depth is hostile, so nothing but the depth limit can refuse it.
     deep = b"\x81" * 200 + b"\x00"
 
+    # Both sides of each limit. Cold gate run 6 enforced 4, 16 and 64 in place
+    # of the profile's 8 and passed every vector, because `deep-nesting` only
+    # bounds the limit from above: 200 is deeper than any of them. The same for
+    # the size cap, whose only case was some 66 KB.
+    # The top-level container is depth 1 (SPEC 4.0), so MAX_DEPTH nested
+    # containers sit exactly at the limit and one more is past it.
+    at_depth = b"\x81" * cbor.MAX_DEPTH + b"\x00"
+    past_depth = b"\x81" * (cbor.MAX_DEPTH + 1) + b"\x00"
+
+    # A byte string filling the entry exactly: a 3-byte header (0x59 + uint16)
+    # and the rest content.
+    at_size = b"\x59" + (cbor.MAX_ENTRY_BYTES - 3).to_bytes(2, "big") + \
+        b"\x00" * (cbor.MAX_ENTRY_BYTES - 3)
+    past_size = b"\x59" + (cbor.MAX_ENTRY_BYTES - 2).to_bytes(2, "big") + \
+        b"\x00" * (cbor.MAX_ENTRY_BYTES - 2)
+
     return [
         ("oversize-entry", oversize, "exceeds"),
         ("deep-nesting", deep, "deeper than"),
+        ("at-the-depth-limit", at_depth, None),
+        ("past-the-depth-limit", past_depth, "deeper than"),
+        ("at-the-size-limit", at_size, None),
+        ("past-the-size-limit", past_size, "exceeds"),
     ]
 
 
@@ -1316,6 +1341,31 @@ def _oversize_label_key() -> str:
     assert request["sig"] in patched
     patched = patched.replace(request["sig"], signature, 1)
     return bech32m.encode(enrollreq.HRP, patched)
+
+
+def _padding_negatives(request: dict[str, Any]) -> tuple[str, str]:
+    """Two bech32m strings whose *padding* is the only thing wrong.
+
+    SPEC 16.2 requires the payload's padding to be under five bits and zero.
+    Both rules were stated and enforced and neither was vectored, so a decoder
+    that skipped them passed every file. Built from 5-bit groups directly and
+    re-checksummed, so the wrapper is valid and only the padding rule refuses
+    them.
+    """
+    from . import bech32m, enrollreq
+    groups = bech32m._convertbits(list(enrollreq.encode(request)), 8, 5, True)
+
+    # Five more bits of padding than the payload needs.
+    excess = bech32m.encode_raw(enrollreq.HRP, groups + [0])
+
+    # The same payload with a padding bit set. The last group carries the
+    # padding, and the number of padding bits is 5 - (len(payload) * 8) % 5.
+    nonzero = list(groups)
+    pad_bits = (5 - (len(enrollreq.encode(request)) * 8) % 5) % 5
+    if pad_bits == 0:
+        raise SystemExit("this payload has no padding bits to corrupt; pick another")
+    nonzero[-1] |= 1
+    return excess, bech32m.encode_raw(enrollreq.HRP, nonzero)
 
 
 def _mixed_case(text: str) -> str:

@@ -22,13 +22,27 @@ func TestHostileInputIsRefusedByTheProfile(t *testing.T) {
 		t.Fatalf("the hostile-input vectors are missing: %v", err)
 	}
 	var doc struct {
-		Cases []struct{ Name, Says string } `json:"cases"`
+		Cases []struct {
+			Name, Says string
+			Accepted   bool `json:"accepted"`
+		} `json:"cases"`
 	}
 	if err := json.Unmarshal(raw, &doc); err != nil {
 		t.Fatal(err)
 	}
-	if len(doc.Cases) < 2 {
-		t.Fatalf("%d hostile cases; §4.0 states two limits", len(doc.Cases))
+	// Each limit needs both sides, or it is bounded in one direction only.
+	var accepted, refused int
+	for _, c := range doc.Cases {
+		if c.Accepted {
+			accepted++
+		} else {
+			refused++
+		}
+	}
+	if accepted < 2 || refused < 2 {
+		t.Fatalf("%d accepted and %d refused; §4.0's two limits each need a case at the "+
+			"limit and a case past it, or a decoder enforcing the wrong value passes",
+			accepted, refused)
 	}
 	for _, c := range doc.Cases {
 		t.Run(c.Name, func(t *testing.T) {
@@ -37,6 +51,15 @@ func TestHostileInputIsRefusedByTheProfile(t *testing.T) {
 				t.Fatal(err)
 			}
 			value, err := Decode(body)
+			if c.Accepted {
+				// The far side of a boundary. Without it the limit is only
+				// bounded from one direction, and a decoder enforcing 4 or 64
+				// where the profile says 8 passes everything.
+				if err != nil {
+					t.Fatalf("refused input that sits exactly at the limit: %v", err)
+				}
+				return
+			}
 			if err == nil {
 				t.Fatalf("accepted hostile input, decoding to %T", value)
 			}

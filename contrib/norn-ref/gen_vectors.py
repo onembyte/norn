@@ -265,12 +265,17 @@ def write_requests(out: pathlib.Path) -> None:
     hostile = []
     for name, raw, says in fixture.hostile_inputs():
         write(out / "entries-hostile" / f"{name}.cbor", raw)
-        hostile.append({"name": name, "says": says})
+        if says is None:
+            # A case sitting exactly at a limit: it must be accepted, and it
+            # is what bounds the limit from below.
+            hostile.append({"name": name, "accepted": True})
+        else:
+            hostile.append({"name": name, "says": says})
     write(out / "entries-hostile" / "cases.json", canonjson.dumps({
-        "comment": "input that is not an entry and never could be: each file MUST be "
-                   "refused by SPEC §4.0's resource limits, and `says` is what the "
-                   "refusal must be about. Neither limit is reachable by a valid "
-                   "entry, which is why these are the only vectors that reach them",
+        "comment": "input at and past SPEC 4.0's resource limits: a case with `says` MUST be "
+                   "refused for that reason, and a case marked `accepted` sits exactly at a limit "
+                   "and MUST be accepted, which is what bounds it from below. Neither limit is "
+                   "reachable by a valid entry, so these are the only vectors that reach them",
         "cases": hostile,
     }) + "\n")
 
@@ -286,6 +291,11 @@ _PROFILE_CASE_SIGNATURES = {
     # preimage is re-encoded, so the original signature still covers it --
     # SPEC 4.0's first construction route.
     "unsorted-keys": "valid",
+    # SPEC 16.2 text-layer cases: the payload is the valid request's bytes with
+    # its *encoding* corrupted, so the request inside is signed correctly and
+    # the fault is in the wrapper, not in any field rule.
+    "excess-padding": "valid",
+    "non-zero-padding": "valid",
 }
 
 
