@@ -428,7 +428,7 @@ which a node may do.
 | 5.5 | The status page | read-only HTML on the tunnel address: sizes, ages, witness times, the device table and the last entries in plain words | ✅ |
 | 5.6 | `norn monitor` | the command, its config, and one run that produces a notification per rule | ✅ |
 | 5.7 | Phase 5 gate audit | each line against what is tested, and the demos named as the lab's | ✅ |
-| 5.8 | `norn audit --by` | what a stolen signer key did: every entry a given key signed, since a given time — `ENROLLMENT.md` R2's first step | ⬜ |
+| 5.8 | `norn audit --by` | what a stolen signer key did: every entry a given key signed, since a given time — `ENROLLMENT.md` R2's first step | ✅ |
 
 ## Decision taken — 2.9d: an `enroll` needs a device signature the device cannot make
 
@@ -901,3 +901,11 @@ the signer keeps one job — decide, and place the entry in the log.
   - **D2's point survives the missing command.** "A valid-looking enrolment is still loud" is already true: the monitor reports every entry at info and every governance entry as critical, so the rogue enrolment appears whether or not anybody runs `audit`. The command is for the *next* question.
   - **Nothing was ticked on the strength of a plausible-sounding half.** Four lines stay open with a sentence each saying exactly which half is true and which needs a container, a phone or a stopwatch.
   - A documentation checkpoint: no code changed, and the suite stands at 49 packages, 586 tests, green.
+
+- **5.8 `norn audit --by` — the question a revoked key cannot answer.**
+  - **R2 puts this *before* the `signer_remove`, and that ordering is the point.** Removing a stolen key stops the next thing; this finds the last things. It is also the one answer a transparency log exists to make possible: a control plane with an admin console can tell you the current state, but it cannot tell you what a key did three weeks ago, because nothing kept the receipts. Over the fixture it reports *"entry 11 · signer 83eba1f8 revoked pi-cam (decommissioned)"* and seventeen others.
+  - **A malformed key id is refused, and that is the most important line in the file.** `"This key signed nothing"` is the most dangerous wrong answer this command can give, and a typo would produce it **every time** — quietly, reassuringly, and at exactly the moment somebody is deciding whether they have a problem. Sixteen hex characters or an error.
+  - **`--since` carries a warning about itself.** It filters on `ts`, which is set by *whoever signed the entry* — so if the key was stolen, the thief controls that field and can place an entry outside the window. The command says so on screen and tells the operator to run without it. A convenience that can hide evidence has to admit it.
+  - **Rejected entries are shown under `-all`, marked as such.** A stolen key's *attempts* matter whether or not they worked, and "it is in the log, and it changed nothing" is a different fact from "it never happened" — the log carries both, which is the whole reason it is a log.
+  - **A key that signed nothing gets a plain sentence**, not an empty list. After a scare, that is the answer somebody is hoping for, and it should read like an answer rather than like a command that failed to find its input.
+  - Go: 49 packages, 592 tests; `go test`, staticcheck and both halves of `vectors-check` green.

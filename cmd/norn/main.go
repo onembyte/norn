@@ -33,6 +33,7 @@ func main() {
 type command func(args []string) error
 
 var commands = map[string]command{
+	"audit":           auditCmd,
 	"enroll":          enrollCmd,
 	"init":            initCmd,
 	"monitor":         monitorCmd,
@@ -48,6 +49,7 @@ func usage() {
 	fmt.Fprint(os.Stderr, `usage: norn <command> [flags]
 
 commands:
+  audit    list everything one key signed — step one of recovering a stolen key
   enroll   build a signed enrollment request for this device (SPEC §16)
   init     create a network: roots, thresholds, genesis and the trust file
   monitor  watch a network and report what it sees (LAB.md §3)
