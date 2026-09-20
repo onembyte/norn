@@ -17,7 +17,7 @@ depends on who wrote the bytes.
 | Produced by | What | Why it matters |
 |---|---|---|
 | **`contrib/norn-ref`** (the Python reference) | entries, state, trust, enrollment requests | Written from `SPEC.md` by a second implementation; the Go code must match them, not the other way round |
-| **`cmd/norn-genlog`** (this project's Go) | `served/`, `proofs/`, `fork/` | Producing a tiled log requires a log. Validated against libraries neither implementation wrote: `transparency-dev/formats` parses the checkpoint and `x/mod/sumdb/tlog` checks every inclusion proof |
+| **`cmd/norn-genlog`** (this project's Go) | `served/`, `proofs/`, `fork/`, `checkpoints-bad/` | Producing a tiled log requires a log. Validated against libraries neither implementation wrote: `transparency-dev/formats` parses the checkpoint and `x/mod/sumdb/tlog` checks every inclusion proof |
 | **`python-opentimestamps`** (the OTS reference) | `anchors/` | Norn reads `.ots` files and never writes them, so the suite's copies come from the implementation that owns the format |
 
 Regenerate the first two with `make vectors` and `make vectors-log`. The third
@@ -32,12 +32,13 @@ of having it.
 | `entries/` | one valid entry per type, canonical bytes, each with a `.json` mirror carrying its hashes and preimage |
 | `log/` | the 90-entry replay fixture. **Read the order from `manifest.json`**, never by sorting filenames; entries that must be refused carry a `.reason` file |
 | `state.json` | the state those 90 entries replay to, in canonical JSON (§14) |
-| `genesis/` | nine ways a genesis entry is refused |
+| `genesis/` | twelve ways a genesis entry is refused |
 | `trust.cbor`, `trust.toml`, `trust.fingerprint` | the anchor in both encodings, and the fingerprint an operator compares out of band (§9.3) |
 | `trust-bad/` | 18 anchors that must be rejected, each otherwise perfectly valid |
 | `requests/`, `requests-bad/` | enrollment requests (§16) and 23 refusals across all four layers |
 | `receipt.note`, `receipt.json` | a submission receipt (§7) and its parsed form |
 | `served/` | the log as a static site: `checkpoint`, entry bundles and hash tiles |
+| `checkpoints-bad/` | eight checkpoints that MUST be refused, each served in place of `served/checkpoint` over the honest tiles. `cases.json` says what each one is. **Start here if you are checking your verifier**: `04` and `08` are the only files in the suite that a verifier which never checks a note or cosignature signature will accept |
 | `proofs/` | one self-contained proof bundle per proven device (§8) |
 | `fork/` | `evidence.cbor` and `conflicting.checkpoint`: a second branch of this same network, proving the evidence format is checkable by anybody holding `trust.cbor` |
 | `anchors/` | OpenTimestamps proofs, and a calendar's reply, written by `python-opentimestamps` |

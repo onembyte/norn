@@ -130,7 +130,7 @@ func witnesses(t *testing.T) []cosign.Signer {
 func policyOver(t *testing.T, origin string, names []string, threshold int) string {
 	t.Helper()
 	var b strings.Builder
-	fmt.Fprintf(&b, "log %s %s\n", origin, verifierKey(t, logKey(t), origin))
+	fmt.Fprintf(&b, "log %s\n", verifierKey(t, logKey(t), origin))
 	for _, name := range names {
 		public := witnessKey(t, name).Public().(ed25519.PublicKey)
 		fmt.Fprintf(&b, "witness norn-witness/%s %s\n", name,

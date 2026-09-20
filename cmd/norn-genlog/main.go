@@ -12,12 +12,14 @@ package main
 
 import (
 	"crypto/ed25519"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	cosignpkg "github.com/onembyte/norn/internal/cosign"
 	"github.com/onembyte/norn/internal/entry"
@@ -147,6 +149,12 @@ func run(root string) error {
 	// posts, so it is the last thing that should only ever have been produced
 	// by the implementation that reads it.
 	if err := writeForkEvidence(root, origin, key, entries, signed, store); err != nil {
+		return err
+	}
+
+	// The note layer's negatives (G2). Built from the same body the store
+	// signed, so they differ from the served checkpoint in exactly one thing.
+	if err := writeBadCheckpoints(root, origin, key, signed, signers); err != nil {
 		return err
 	}
 
@@ -381,4 +389,191 @@ func policyOf(root string) string {
 		return ""
 	}
 	return doc.Policy
+}
+
+// --- checkpoints-bad: the note layer's negatives (cold gate run 5, G2) ----
+//
+// §12.1 claimed these refusals for §6 and §10. Every one of them was a Go
+// test in this repository and none of them was a file, so a second
+// implementer received a suite of entirely valid notes: run 5 built a verifier
+// that never checked a note or cosignature signature and passed all 597
+// checks. A rule nobody can fail is a rule nobody has to implement.
+//
+// Each file is served in place of `served/checkpoint`, over the honest tiles,
+// under the shipped `trust.cbor`. Everything else about the log is correct, so
+// a refusal can only come from the checkpoint.
+type badCheckpoint struct {
+	Name   string
+	Reason string
+	Signed string
+}
+
+// noteBody is the checkpoint text a signature covers: origin, size, root, and
+// the newline that ends the last of them.
+func noteBody(signed string) (string, error) {
+	i := strings.Index(signed, "\n\n")
+	if i < 0 {
+		return "", fmt.Errorf("checkpoint has no blank line before its signatures")
+	}
+	return signed[:i+1], nil
+}
+
+// forgeLastSignature flips a bit inside the newest signature line's payload,
+// leaving its key id and any timestamp intact. The line stays syntactically
+// perfect and stops verifying, which is the only construction that separates a
+// verifier from one that pretends.
+func forgeLastSignature(signed, whose string) (string, error) {
+	lines := strings.Split(strings.TrimRight(signed, "\n"), "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		if !strings.HasPrefix(lines[i], "— "+whose+" ") {
+			continue
+		}
+		payload, err := base64.StdEncoding.DecodeString(
+			strings.TrimPrefix(lines[i], "— "+whose+" "))
+		if err != nil {
+			return "", err
+		}
+		// The last byte is signature, never key id (4 bytes) or timestamp.
+		payload[len(payload)-1] ^= 0x01
+		lines[i] = note.SignatureLine(whose, payload)
+		return strings.Join(lines, "\n") + "\n", nil
+	}
+	return "", fmt.Errorf("no signature line for %q", whose)
+}
+
+func buildBadCheckpoints(root, origin string, key ed25519.PrivateKey,
+	signed string, signers []cosignpkg.Signer) ([]badCheckpoint, error) {
+
+	body, err := noteBody(signed)
+	if err != nil {
+		return nil, err
+	}
+	// Re-signing the body must reproduce the log's own line: Ed25519 is
+	// deterministic, and if it does not, every negative below is built over a
+	// checkpoint that is not the one the suite serves.
+	base, err := note.Sign(body, origin, key)
+	if err != nil {
+		return nil, err
+	}
+	if !strings.HasPrefix(signed, base) {
+		return nil, fmt.Errorf("re-signing the checkpoint body did not reproduce the served signature")
+	}
+	stranger, err := seedKey(root, "stranger")
+	if err != nil {
+		return nil, err
+	}
+	at := cosignpkg.At(time.Unix(CosignedAt, 0))
+	cosignWith := func(base string, chosen ...cosignpkg.Signer) (string, error) {
+		return cosignpkg.Append(chosen, at)(base)
+	}
+
+	byName := map[string]cosignpkg.Signer{}
+	for _, s := range signers {
+		byName[s.Name] = s
+	}
+
+	var out []badCheckpoint
+
+	out = append(out, badCheckpoint{"01-unsigned",
+		"the checkpoint body with no signature line at all: nothing vouches for this tree",
+		body + "\n"})
+
+	wrongKey, err := note.Sign(body, origin, stranger)
+	if err != nil {
+		return nil, err
+	}
+	out = append(out, badCheckpoint{"02-wrong-log-key",
+		"signed under the log's own name by a key the anchor does not pin", wrongKey})
+
+	elsewhere := "norn/elsewhere"
+	otherBody := elsewhere + body[strings.Index(body, "\n"):]
+	otherLog, err := note.Sign(otherBody, elsewhere, key)
+	if err != nil {
+		return nil, err
+	}
+	otherLog, err = cosignWith(otherLog, signers...)
+	if err != nil {
+		return nil, err
+	}
+	out = append(out, badCheckpoint{"03-wrong-origin",
+		"a perfectly valid checkpoint for another log: right key, wrong network", otherLog})
+
+	forged, err := forgeLastSignature(base, origin)
+	if err != nil {
+		return nil, err
+	}
+	forged, err = cosignWith(forged, signers...)
+	if err != nil {
+		return nil, err
+	}
+	out = append(out, badCheckpoint{"04-forged-log-signature",
+		"the log's signature line is the right shape and the right key id, and does not verify", forged})
+
+	short, err := cosignWith(base, byName["norn-witness/pi"])
+	if err != nil {
+		return nil, err
+	}
+	out = append(out, badCheckpoint{"05-one-cosignature-short",
+		"one witness of the two the policy requires", short})
+
+	out = append(out, badCheckpoint{"06-no-cosignatures",
+		"signed by the log and cosigned by nobody", base})
+
+	unnamed, err := cosignWith(base, cosignpkg.Signer{Name: "norn-witness/stranger", Key: stranger})
+	if err != nil {
+		return nil, err
+	}
+	out = append(out, badCheckpoint{"07-unnamed-witness-only",
+		"cosigned only by a witness the policy never names, which counts for nothing", unnamed})
+
+	forgedCosig, err := cosignWith(base, byName["norn-witness/pi"], byName["norn-witness/vps"])
+	if err != nil {
+		return nil, err
+	}
+	forgedCosig, err = forgeLastSignature(forgedCosig, "norn-witness/vps")
+	if err != nil {
+		return nil, err
+	}
+	out = append(out, badCheckpoint{"08-forged-cosignature",
+		"two cosignature lines, both naming witnesses the policy lists, one of which does not verify: " +
+			"the quorum is met only by a verifier that does not check them", forgedCosig})
+
+	return out, nil
+}
+
+func writeBadCheckpoints(root, origin string, key ed25519.PrivateKey,
+	signed string, signers []cosignpkg.Signer) error {
+
+	cases, err := buildBadCheckpoints(root, origin, key, signed, signers)
+	if err != nil {
+		return err
+	}
+	dir := filepath.Join(root, "checkpoints-bad")
+	if err := os.RemoveAll(dir); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	names := make([]string, 0, len(cases))
+	reasons := map[string]string{}
+	for _, c := range cases {
+		if err := os.WriteFile(filepath.Join(dir, c.Name+".checkpoint"), []byte(c.Signed), 0o644); err != nil {
+			return err
+		}
+		names = append(names, c.Name)
+		reasons[c.Name] = c.Reason
+	}
+	manifest := map[string]any{
+		"cases":   names,
+		"reasons": reasons,
+		"comment": "each file is served in place of served/checkpoint, over the honest tiles, " +
+			"under trust.cbor; every one MUST be refused. 04 and 08 are the two that a " +
+			"verifier which never checks a signature will accept",
+	}
+	raw, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, "cases.json"), append(raw, '\n'), 0o644)
 }

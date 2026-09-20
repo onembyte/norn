@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -171,4 +172,75 @@ func anchoredLog(t *testing.T) string {
 		t.Fatal(err)
 	}
 	return dir
+}
+
+// --- Cold-model gate run 5, defect G2 (6.5b) -----------------------------
+//
+// §12.1 claimed the suite refused an unsigned checkpoint, one signed by
+// another key, one under another origin, a short quorum, an uncosigned head
+// and a forged cosignature. Every one of those was a Go test in this
+// repository and none of them was a file. Run 5's implementer therefore built
+// a verifier that never checked a note or cosignature signature and passed all
+// 597 checks. These are the same refusals, as bytes a second implementer
+// actually receives.
+
+func badCheckpointCases(t *testing.T) []string {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(vectors(), "checkpoints-bad", "cases.json"))
+	if err != nil {
+		t.Fatalf("read checkpoints-bad/cases.json: %v", err)
+	}
+	var doc struct {
+		Cases []string `json:"cases"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	return doc.Cases
+}
+
+// servedWithCheckpoint serves the real log under a checkpoint that must not be
+// believed. Everything else about the log is honest, so a refusal can only
+// come from the checkpoint.
+func servedWithCheckpoint(t *testing.T, checkpoint string) string {
+	t.Helper()
+	dir := anchoredLog(t)
+	body, err := os.ReadFile(checkpoint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "checkpoint"), body, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+func TestEveryBadCheckpointVectorIsRefused(t *testing.T) {
+	cases := badCheckpointCases(t)
+	if len(cases) < 8 {
+		t.Fatalf("checkpoints-bad ships %d cases; §12.1 names more than that", len(cases))
+	}
+	bin := nornBinary(t)
+	for _, name := range cases {
+		t.Run(name, func(t *testing.T) {
+			dir := servedWithCheckpoint(t,
+				filepath.Join(vectors(), "checkpoints-bad", name+".checkpoint"))
+			out, err := exec.Command(bin, "verify",
+				"-trust", filepath.Join(vectors(), "trust.cbor"), "-log", dir).CombinedOutput()
+			if err == nil {
+				t.Fatalf("accepted %s, which must be refused:\n%s", name, out)
+			}
+		})
+	}
+}
+
+// The control: the same harness accepts the honest checkpoint. Without it a
+// test that refuses everything would look identical to one that works.
+func TestTheHonestCheckpointIsStillAccepted(t *testing.T) {
+	dir := servedWithCheckpoint(t, filepath.Join(vectors(), "served", "checkpoint"))
+	out, err := exec.Command(nornBinary(t), "verify",
+		"-trust", filepath.Join(vectors(), "trust.cbor"), "-log", dir).CombinedOutput()
+	if err != nil {
+		t.Fatalf("the honest checkpoint was refused: %v\n%s", err, out)
+	}
 }

@@ -1,0 +1,23 @@
+{
+  "cases": [
+    "01-unsigned",
+    "02-wrong-log-key",
+    "03-wrong-origin",
+    "04-forged-log-signature",
+    "05-one-cosignature-short",
+    "06-no-cosignatures",
+    "07-unnamed-witness-only",
+    "08-forged-cosignature"
+  ],
+  "comment": "each file is served in place of served/checkpoint, over the honest tiles, under trust.cbor; every one MUST be refused. 04 and 08 are the two that a verifier which never checks a signature will accept",
+  "reasons": {
+    "01-unsigned": "the checkpoint body with no signature line at all: nothing vouches for this tree",
+    "02-wrong-log-key": "signed under the log's own name by a key the anchor does not pin",
+    "03-wrong-origin": "a perfectly valid checkpoint for another log: right key, wrong network",
+    "04-forged-log-signature": "the log's signature line is the right shape and the right key id, and does not verify",
+    "05-one-cosignature-short": "one witness of the two the policy requires",
+    "06-no-cosignatures": "signed by the log and cosigned by nobody",
+    "07-unnamed-witness-only": "cosigned only by a witness the policy never names, which counts for nothing",
+    "08-forged-cosignature": "two cosignature lines, both naming witnesses the policy lists, one of which does not verify: the quorum is met only by a verifier that does not check them"
+  }
+}
