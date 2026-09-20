@@ -342,3 +342,33 @@ func TestACheckpointForAnotherOriginIsRefusedByTheOriginCheck(t *testing.T) {
 		t.Errorf("refused, but not for its origin -- so the check is still unforced:\n%s", out)
 	}
 }
+
+// §9.4, and the only vector in the suite with two correct answers.
+//
+// The same head, signed by a key the log's roots published. A reader holding
+// only `trust.cbor` must refuse it -- it has never seen the rotation, and a
+// key that vouched for itself would let a stolen log key name its successor. A
+// reader that has replayed this log has learned the key and must accept it.
+func TestTheRotatedHeadIsRefusedUntilItsRotationIsReplayed(t *testing.T) {
+	dir := servedWithCheckpoint(t, filepath.Join(vectors(), "served-rotated", "checkpoint"))
+	bin := nornBinary(t)
+
+	out, err := exec.Command(bin, "verify",
+		"-trust", filepath.Join(vectors(), "trust.cbor"), "-log", dir).CombinedOutput()
+	if err == nil {
+		t.Fatalf("a one-shot verify accepted a head signed by a key the trust file does "+
+			"not name and this run never replayed:\n%s", out)
+	}
+	if !strings.Contains(string(out), "not signed by a key this anchor trusts") {
+		t.Errorf("refused, but not for the signature:\n%s", out)
+	}
+
+	// The honest head over the same tiles still verifies, so the difference is
+	// the signing key and nothing else about the directory.
+	if out, err := exec.Command(bin, "verify",
+		"-trust", filepath.Join(vectors(), "trust.cbor"),
+		"-log", servedWithCheckpoint(t, filepath.Join(vectors(), "served", "checkpoint")),
+	).CombinedOutput(); err != nil {
+		t.Fatalf("the honest head over the same tiles was refused: %v\n%s", err, out)
+	}
+}

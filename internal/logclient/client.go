@@ -10,7 +10,9 @@ package logclient
 
 import (
 	"bytes"
+	"crypto/ed25519"
 	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -21,6 +23,7 @@ import (
 
 	"github.com/onembyte/norn/internal/cosign"
 	"github.com/onembyte/norn/internal/freshness"
+	"github.com/onembyte/norn/internal/note"
 	"github.com/onembyte/norn/internal/policy"
 	"github.com/onembyte/norn/internal/replay"
 	"github.com/onembyte/norn/internal/state"
@@ -384,3 +387,35 @@ func (e *ForkError) Error() string {
 }
 
 func (e *ForkError) Unwrap() error { return ErrLog }
+
+// KeysFrom is the set of signed-note verifier keys a replayed state authorises
+// for signing this log's checkpoints, in log order (D-020, §9.4).
+//
+// The trust file's own key is not among them: it is not in the log. A caller
+// adds these to the keys it already trusts rather than replacing them, because
+// the point of an overlap window is that both work while operators distribute
+// new trust files.
+//
+// This is the only way a node learns a rotated key, and it is why rotation
+// cannot bootstrap itself: reaching the state that names a key requires having
+// already accepted a checkpoint under a key the node had beforehand. A stolen
+// log key therefore cannot name its own successor -- publishing a `log_key`
+// entry takes the root quorum (§4.3).
+func KeysFrom(origin string, st *state.State) []string {
+	if st == nil {
+		return nil
+	}
+	out := make([]string, 0, len(st.LogKeys))
+	for _, key := range st.LogKeys {
+		raw, err := hex.DecodeString(key.Pk)
+		if err != nil || len(raw) != ed25519.PublicKeySize {
+			// Replay refuses a `log_key` entry whose `pk` is not 32 bytes, so
+			// this is unreachable from a state this package produced. Skipping
+			// rather than failing keeps a caller with a hand-built state from
+			// losing the keys that *are* usable.
+			continue
+		}
+		out = append(out, note.VerifierKey(origin, ed25519.PublicKey(raw)))
+	}
+	return out
+}

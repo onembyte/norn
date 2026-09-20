@@ -17,6 +17,7 @@ import (
 	"github.com/onembyte/norn/internal/cosign"
 	"github.com/onembyte/norn/internal/note"
 	"github.com/onembyte/norn/internal/replay"
+	"github.com/onembyte/norn/internal/state"
 	"github.com/onembyte/norn/internal/tlog"
 	"github.com/onembyte/norn/internal/tlogstore"
 )
@@ -790,4 +791,134 @@ func cosignedLogOfSize(t *testing.T, n int, cosigners []string, threshold int) (
 	}
 	return dir, Anchor{Anchor: inner, LogKeys: []string{verifierKey(t, key, "norn/test")},
 		Policy: policyOver(t, "norn/test", witnessNames, threshold)}
+}
+
+// --- D-020, implemented: log-key rotation with an overlap window ---------
+//
+// Cold gate run 6 (H3) found that which keys may sign a checkpoint, and from
+// when, was in no document: §15 deferred it to `ENROLLMENT.md`, which does not
+// ship, and §5.3 named "the index from which the key becomes valid" without
+// defining it. Nothing in this repository read `state.log_keys` at all.
+//
+// The rule, and the reason it is not circular: a node accepts a checkpoint
+// under the trust file's key, replays the log that checkpoint commits to, and
+// *thereby* learns any key the roots have published. A node that has accepted
+// nothing has only the trust file's key. Rotation cannot bootstrap itself,
+// which is what stops a stolen log key from naming its successor -- a
+// `log_key` entry needs the root quorum (§4.3).
+
+func TestARotatedKeyIsAcceptedOnlyAfterItsRotationIsReplayed(t *testing.T) {
+	dir, anchor := servedLog(t)
+
+	// The node bootstraps on the trust file's key and learns what the log
+	// published.
+	result, err := Verify(Dir(dir), anchor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	learned := KeysFrom("norn/test", result.State)
+	if len(learned) == 0 {
+		t.Fatal("the fixture log publishes no log_key entry, so nothing here is tested")
+	}
+
+	// Re-sign the head with the rotated key the log published.
+	rotated := rotatedKey(t, result.State)
+	signed, err := resignCheckpoint(t, dir, "norn/test", rotated)
+	if err != nil {
+		t.Fatal(err)
+	}
+	served := servedWithHead(t, dir, signed)
+
+	// A node holding only the trust file refuses it: it has never seen the
+	// rotation, so this key is a stranger's.
+	if _, err := Verify(Dir(served), anchor); err == nil {
+		t.Error("a checkpoint signed by a key this node has never seen was accepted; " +
+			"rotation would then bootstrap itself")
+	}
+
+	// A node that replayed the rotation accepts it.
+	informed := anchor
+	informed.LogKeys = append(append([]string(nil), anchor.LogKeys...), learned...)
+	if _, err := Verify(Dir(served), informed); err != nil {
+		t.Errorf("a node that replayed the rotation refused the key the roots published: %v", err)
+	}
+}
+
+// rotatedKey is the private half of the first key the fixture's roots publish,
+// read from `keys.json` by matching the public key the state records.
+func rotatedKey(t *testing.T, st *state.State) ed25519.PrivateKey {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(vectorRoot(), "keys.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var keys struct {
+		Ed25519 map[string]struct{ Seed, Public string } `json:"ed25519"`
+	}
+	if err := json.Unmarshal(raw, &keys); err != nil {
+		t.Fatal(err)
+	}
+	want := st.LogKeys[0].Pk
+	for _, k := range keys.Ed25519 {
+		if k.Public != want {
+			continue
+		}
+		seed, err := hex.DecodeString(k.Seed)
+		if err != nil || len(seed) != ed25519.SeedSize {
+			t.Fatalf("keys.json has no usable seed for %s", want)
+		}
+		return ed25519.NewKeyFromSeed(seed)
+	}
+	t.Fatalf("keys.json holds no private key for the published %s", want)
+	return nil
+}
+
+// resignCheckpoint re-signs the served head under another key, cosigned as
+// usual, so the only thing different about it is who signed it.
+func resignCheckpoint(t *testing.T, dir, origin string, key ed25519.PrivateKey) (string, error) {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(dir, "checkpoint"))
+	if err != nil {
+		return "", err
+	}
+	body, _, err := note.Split(string(raw))
+	if err != nil {
+		return "", err
+	}
+	signed, err := note.Sign(body, origin, key)
+	if err != nil {
+		return "", err
+	}
+	return cosign.Append(witnesses(t), cosign.At(cosignedAt))(signed)
+}
+
+// servedWithHead copies a served log and puts another head on it.
+func servedWithHead(t *testing.T, from, head string) string {
+	t.Helper()
+	to := t.TempDir()
+	err := filepath.Walk(from, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(from, path)
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(to, rel)
+		if info.IsDir() {
+			return os.MkdirAll(target, 0o755)
+		}
+		body, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(target, body, 0o644)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(to, "checkpoint"), []byte(head), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return to
 }

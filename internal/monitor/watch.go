@@ -38,6 +38,12 @@ type Watcher struct {
 	// proves, so the local clock is the right one.
 	Now func() time.Time
 
+	// learned are the log keys the roots published, picked up by replaying a
+	// log this monitor already accepted (D-020). Kept alongside the trust
+	// file's key rather than replacing it: the overlap is what lets a rotation
+	// happen without every reader being re-provisioned first.
+	learned []string
+
 	// reported is the log size already described, so an unchanged log is
 	// silent. A monitor that repeated ninety entries every thirty seconds
 	// would be turned off within the hour, and then it would be monitoring
@@ -68,6 +74,7 @@ func (w *Watcher) Round(log logclient.Fetcher, nodes []Node) []Alert {
 			Message: fmt.Sprintf("the log could not be read or did not verify: %v. "+
 				"Nodes hold their last good view until it comes back.", err)})
 	} else {
+		w.learn(result)
 		alerts = append(alerts, w.readLog(result)...)
 	}
 	for _, node := range nodes {
@@ -175,9 +182,20 @@ func (w *Watcher) staleness(result *logclient.Result) time.Duration {
 	return freshness.LimitsFrom(result.State.Params, 0).Staleness
 }
 
+// logKeys is the trust file's key plus anything the roots have published that
+// this monitor has already replayed.
+func (w *Watcher) logKeys() []string {
+	return append([]string{w.anchor.LogKey}, w.learned...)
+}
+
+// learn records the keys a replayed state authorises, for the next round.
+func (w *Watcher) learn(result *logclient.Result) {
+	w.learned = logclient.KeysFrom(w.anchor.Origin, result.State)
+}
+
 func (w *Watcher) logAnchor() logclient.Anchor {
 	return logclient.Anchor{
 		Anchor:  replay.Anchor{Net: w.anchor.Net, GenesisHash: w.anchor.GenesisHash},
-		LogKeys: []string{w.anchor.LogKey}, Origin: w.anchor.Origin, Policy: w.anchor.Policy,
+		LogKeys: w.logKeys(), Origin: w.anchor.Origin, Policy: w.anchor.Policy,
 	}
 }

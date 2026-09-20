@@ -279,9 +279,18 @@ func (a *Agent) Once() error {
 		held := a.last.Checkpoint
 		stored, heldTree = &held, a.last.Tree
 	}
+	// D-020: the roots can rotate the log key inside the log, and a node
+	// learns the new one by replaying a log it already accepted. The trust
+	// file's key is kept alongside rather than replaced -- that overlap is the
+	// whole point, so a node whose trust file is current is never worse off
+	// than one whose is stale.
+	keys := []string{a.cfg.Anchor.LogKey}
+	if a.last != nil {
+		keys = append(keys, logclient.KeysFrom(a.cfg.Anchor.Origin, a.last.State)...)
+	}
 	anchor := logclient.Anchor{
 		Anchor:  replay.Anchor{Net: a.cfg.Anchor.Net, GenesisHash: a.cfg.Anchor.GenesisHash},
-		LogKeys: []string{a.cfg.Anchor.LogKey},
+		LogKeys: keys,
 		Origin:  a.cfg.Anchor.Origin,
 		Policy:  a.cfg.Anchor.Policy,
 		Stored:  stored,

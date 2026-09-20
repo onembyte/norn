@@ -467,7 +467,9 @@ them, and then run the gate.
 | 6.5e-v | G13's remaining vectors | `revoke`'s three independent authorisations, §5.1's non-empty `params`, an astral object key for §14.1, and the trust file's other mandatory keys | ✅ |
 | 6.5f | Cold-model gate run 6 | a *fresh* agent on a *new* copy; the target is `SPEC SUFFICIENT` outright | ❌ **FAILED** — `SPEC INSUFFICIENT`, 285/285 vectors but 10 defects (`SPEC-DEFECTS-6.md`), all in the layer above the one runs 1–5 attacked |
 | 6.5g-i | §11.1's unforced reader steps | H1: three of the four steps I wrote in 6.5e-i are forced by nothing — including a forged consistency proof, which is a permanent remote DoS | ✅ |
-| 6.5g-ii | Which policy, and which log keys | H2's fatal half closed: a `policy` entry must now be a policy. **The rest needs a decision — see the question below.** | ⚠️ |
+| 6.5g-ii | Which policy, and which log keys | H2's fatal half closed: a `policy` entry must now be a policy. **Decision taken 2026-09-20: v1 applies rotation.** | ⚠️ |
+| 6.5g-ii-a | Log-key rotation | H3: when a published `log_key` becomes valid, what `overlap` obliges the log to do, and a checkpoint signed by a rotated key | ✅ |
+| 6.5g-ii-b | Policy supersession | H2's remaining half: when an in-log `policy` takes effect, and the bootstrap that makes it non-circular | ⬜ |
 | 6.5g-iii | Two reason codes the prose gets wrong | H4 (§4.0 names `no-device-sig` where §5.1 gives `threshold`) and H5 (§5.2's validity rule makes §5.1's rotate proof-of-possession unsatisfiable) | ✅ |
 | 6.5g-iv | What a decoder accepts after the entry | H6 (trailing bytes) and H8 (the origin check exists only inside §11.1) | ✅ |
 | 6.5g-v | Time, again | H7 (`quorum none` makes `T` infinite by a literal reading; cosignature timestamps unruled) and H9 (§8's staleness MUST has no predicate) | ✅ |
@@ -1182,7 +1184,10 @@ acceptance must bootstrap from the trust file, because a node cannot replay a
 log it has not yet accepted a checkpoint for. The fixture no longer publishes
 the canonical-JSON torture string as this network's witness policy.
 
-**Why this is not mine to decide:** `D-020` is a recorded decision with a
+**Answered 2026-09-20: (a), v1 applies rotation.** `D-020` stands. The work is
+6.5g-ii-a and 6.5g-ii-b.
+
+**Why this was not mine to decide:** `D-020` is a recorded decision with a
 rationale ("Rejected: re-issuing trust files to every device on every
 rotation"), and (b) reverses it. It also changes what the Phase 6 gate is
 claiming about, and `PUBLICATION.md`'s Gate A turns on the spec being
@@ -1258,3 +1263,12 @@ code does not have.
   - **§16.2's two padding rules were stated, enforced and unvectored.** `excess-padding` and `non-zero-padding` are the valid request's bytes with the *encoding* corrupted and the checksum recomputed, so the wrapper is sound and only the padding rule refuses them.
   - **And the mutation that removed both rules passed.** Not because the vectors were weak — because **nothing iterated `requests-bad/` asserting its cases are refused at all.** `trust-bad/` has had that loop since Phase 0; the request directory never did, so individual tests named individual files and a rule could be switched off in silence. That loop exists now, and with it the padding mutation turns red.
   - **Three mutations, three reds**: a depth limit of 16, a size limit one byte lower, and both padding rules removed.
+
+
+- **6.5g-ii-a D-020 implemented: the log key rotates, and a node follows it.**
+  - **Franco's call was (a): v1 applies rotation.** So `state.log_keys` stops being a record nobody reads.
+  - **The rule, and why it is not circular.** A checkpoint must be signed by `norn.trust.log_key` **or** by a key in a state this node has *already accepted*. Reaching such a state requires having accepted a checkpoint under a key the node held beforehand, so rotation cannot bootstrap itself — and **a stolen log key cannot name its own successor**, because publishing a `log_key` entry takes the root quorum (§4.3). A key that vouched for itself would undo the whole arrangement, which is why §9.4 states the ordering before it states anything else.
+  - **`overlap` is an obligation on the log, not a rule for the verifier.** It never belonged in the acceptance test: after publishing a rotation the log MUST keep signing with the superseded key for `overlap` seconds, so a node whose trust file predates it can still bootstrap and learn. A log that stops early strands exactly the nodes least able to complain, and a monitor watching the signature sees it.
+  - **The trust file's key is kept alongside what is learned, never replaced.** A node whose trust file is current must never be worse off than one whose is stale.
+  - **`served-rotated/` is the only vector in the suite with two correct answers**, and which one applies depends on what the reader has done rather than on anything in the file: refuse it holding only `trust.cbor`, accept it having replayed this log. That is D-020 in one artifact, and nothing expressed it before.
+  - **Three mutations, and the second found a hole I had just made.** Letting a checkpoint name its own key, and stubbing `KeysFrom`, both turned red — but **the agent forgetting what it learned did not**, because nothing tested the agent across a rotation. That is the whole feature: a one-shot `norn verify` is *meant* to refuse an unseen key; only a node that keeps running has anything to follow. `TestTheAgentFollowsALogKeyRotation` exists now, and the mutation fails on it.

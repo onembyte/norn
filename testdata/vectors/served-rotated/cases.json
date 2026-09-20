@@ -1,0 +1,7 @@
+{
+  "comment": "the served head, signed by the first log key this log's roots published (SPEC 9.4). Serve it in place of served/checkpoint over the same tiles. A reader holding only trust.cbor MUST refuse it: it has never seen the rotation. A reader that has replayed this log MUST accept it. The two answers are both correct, and which applies depends on what the reader has done rather than on anything in the file",
+  "overlap": 2592000,
+  "serve_over": "served",
+  "signed_by": "efe54ffd513af32b5f82b092c79bf3ffb20ce096798e45285b0b55ef2562fdc0",
+  "since_index": 27
+}

@@ -13,6 +13,7 @@ import (
 	"github.com/onembyte/norn/internal/entry"
 	"github.com/onembyte/norn/internal/freshness"
 	"github.com/onembyte/norn/internal/logclient"
+	"github.com/onembyte/norn/internal/note"
 	"github.com/onembyte/norn/internal/peertable"
 	"github.com/onembyte/norn/internal/proven"
 	"github.com/onembyte/norn/internal/reconcile"
@@ -417,5 +418,61 @@ func TestAStaleLogIsNotReportedAsClockSkew(t *testing.T) {
 	}
 	if set.Freshness != freshness.Degraded {
 		t.Errorf("freshness = %q, want %q", set.Freshness, freshness.Degraded)
+	}
+}
+
+// D-020, the part that only matters to a node that keeps running: a rotation
+// published in the log is followed, because the node learned the key by
+// replaying a log it had already accepted.
+//
+// The agent is where this has to work. A one-shot `norn verify` holds only its
+// trust file and is meant to refuse a key it has never seen; a node that has
+// been watching the log has seen the rotation and must not stop at it.
+func TestTheAgentFollowsALogKeyRotation(t *testing.T) {
+	dir, store, _ := writableLog(t)
+	doc := anchor(t)
+
+	rec := &recorder{}
+	a, err := New(Config{
+		Anchor: doc, Fetcher: logclient.Dir(dir), Device: peertable.NewFake(),
+		Mode: reconcile.Owner, Emit: rec.emit,
+		Now: func() time.Time { return time.Unix(fixtureCosignedAt, 0) },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Once(); err != nil {
+		t.Fatalf("the first round did not verify: %v", err)
+	}
+	if len(a.last.State.LogKeys) == 0 {
+		t.Fatal("the fixture publishes no log_key entry, so nothing here is tested")
+	}
+
+	// The log starts signing with the key its roots published.
+	signed, err := store.SignedCheckpoint()
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _, err := note.Split(signed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rotated, err := note.Sign(body, doc.Origin, fixtureKey(t, "logkey2"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rotated, err = cosign.Append(fixtureWitnesses(t),
+		cosign.At(time.Unix(fixtureCosignedAt, 0)))(rotated)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "checkpoint"), []byte(rotated), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := a.Once(); err != nil {
+		t.Errorf("the node stopped at a rotation it had already replayed: %v\n"+
+			"A node that watched the roots publish a key must follow it, or every "+
+			"rotation is an outage for exactly the nodes that were paying attention.", err)
 	}
 }

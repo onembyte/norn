@@ -448,7 +448,7 @@ when the entry that produced it omitted the corresponding optional field.
 | `signers` | map `kid` → 32 bytes | current signer keys |
 | `params` | map | §4.5 defaults, overlaid by `genesis.body.params`, then by each `params` entry |
 | `policy` | string | text of the most recent `policy` entry; `""` if none |
-| `log_keys` | array of `{overlap, pk, since_index}` | one per `log_key` entry, in log order. `since_index` is the **index of that `log_key` entry** — not a log size, not the index from which the key becomes valid. The trust file's initial log key is **not** listed: it is not in the log. |
+| `log_keys` | array of `{overlap, pk, since_index}` | one per `log_key` entry, in log order. `since_index` is the **index of that `log_key` entry** — not a log size. A node may use the key once it has replayed that far (§9.4). The trust file's initial log key is **not** listed: it is not in the log. |
 | `devices` | map `device_id` → device | see below |
 | `active_wg` | map `wg_pk` → `device_id` | exactly the `wg_pk` of every `active` device |
 | `rejected` | array of `{index, reason}` | in index order |
@@ -713,12 +713,45 @@ A10) cannot grind a substitute trust file with a matching fingerprint.
 `nornd` MUST refuse to start without a trust file and MUST refuse one whose
 `genesis_hash` does not match entry 0.
 
+### 9.4 Rotation (normative)
+
+The trust file holds the network's **initial** log key. It evolves inside the
+log (D-020): a `log_key` entry publishes a new one, and doing so takes the root
+quorum (§4.3), never the log's own signature.
+
+**A checkpoint MUST be signed by `norn.trust.log_key`, or by a `pk` in
+`log_keys` of a state this node has already accepted.** A node that has
+accepted nothing has only the trust file's key.
+
+That ordering is the whole of the security argument, and it is why rotation is
+not circular: reaching a state that names a key requires having already
+accepted a checkpoint under a key the node held beforehand. **A stolen log key
+therefore cannot name its own successor** — it can sign checkpoints, and it
+cannot publish a `log_key` entry, because that needs the roots.
+
+`since_index` is the index of the `log_key` entry itself, and the key is usable
+by a node that has replayed that far. There is no separate activation index and
+no waiting period on the verifier's side.
+
+`overlap` is an obligation on the **log**, not a rule for a verifier. After
+publishing a `log_key` entry the log MUST keep signing its checkpoints with the
+superseded key for at least `overlap` seconds, so that a node whose trust file
+predates the rotation can still bootstrap, replay, and learn the new key. A log
+that stops early strands exactly those nodes — the ones least able to complain —
+and a monitor watching the checkpoint's signature can see it happen.
+
+A node keeps the trust file's key **alongside** what it has learned rather than
+replacing it. A node whose trust file is current must never be worse off than
+one whose trust file is stale.
+
 ## 10. Verifier procedure (normative outline)
 
 ```
 loop every T_g or on demand:
   cp := fetch checkpoint (log_urls, then peers)         # part 6
   require cp.origin == norn.trust.origin               # which log this is about
+  # signed by norn.trust.log_key, or by a key a state this node already
+  # accepted names (§9.4). Never by a key learned from this checkpoint.
   verify log signature (torchwood VerifyCheckpoint)     # norn.trust.log_key
                                                         # and norn.trust.policy:
                                                         # a checkpoint must be
@@ -839,6 +872,7 @@ suite is checked only against its own author.
 | `fork/` | `evidence.cbor` and the `conflicting.checkpoint` it is about (§11.1), plus `bad-consistent` and `bad-other-origin`, which MUST be refused. `cases.json` lists them |
 | `anchors/` | OpenTimestamps proofs written by `python-opentimestamps`: `checkpoint-<size>.ots` over the fixture's checkpoint body, `sample.ots` over an arbitrary digest, and a calendar's reply |
 | `proofs-bad/<name>.bundle` | bundles that MUST be refused (§8.1); `cases.json` gives the log key to check them under and what each refusal must be about |
+| `served-rotated/` | the served head signed by a published `log_key` (§9.4), with `cases.json` giving the key, its `since_index` and its `overlap`. Serve it over `served/`'s tiles |
 | `served-bad/` | §6's refusals for a served log, which is a directory rather than a file: each case names the path to replace or delete over an honest copy of `served/` |
 | `SHA256SUMS` | every file above, for a reader who has the suite and not its generators |
 
@@ -859,6 +893,7 @@ this table drifted out of date the moment one was.
 | §4.0/§4.3 schemas | `enroll-laptop`, `enroll-unicode-labels` | `bad-kid-format`, `bad-missing-sigs`, `bad-empty-sigs`, `bad-unknown-role`, `bad-unknown-envelope-key`, `bad-unknown-body-key`, `bad-device_id-uppercase`, `bad-device_id-leading-dot`, `bad-pk-length`, `bad-sig-length`, `bad-text-too-long`, `bad-unsorted-sigs` |
 | §4.2 signatures, hashes, preimage | 16 entry mirrors | **`bad-forged-signer-sig`, `bad-forged-device-sig`** — syntactically perfect signatures that do not verify. Without these an implementation that never calls Ed25519 reproduces the whole manifest |
 | §4.0 the whole input is consumed | — | `bad-trailing-byte`: an accepted `log_key` entry with one byte after it. Its signatures still verify and its `entry_hash` differs, so a decoder that stops at the end of the item applies the same governance entry twice |
+| §9.4 rotation | `served-rotated/`: the same head under a key the roots published — refused by a reader holding only `trust.cbor`, accepted by one that has replayed the rotation | a key that vouched for itself is what the ordering forbids |
 | §10 the checkpoint's origin | `served/checkpoint` | `checkpoints-bad/10-wrong-body-origin`: signed by this network's key under this network's name, naming another log |
 | §4.0 both limits, at the boundary | `entries-hostile/at-the-depth-limit` and `at-the-size-limit`, which MUST be accepted | `past-the-depth-limit` and `past-the-size-limit`, one step beyond each. Without the accepted half a decoder enforcing 4, 16 or 64 passes |
 | §16.2 padding | every request's text form | `requests-bad/excess-padding` and `non-zero-padding`: the payload is the valid request with its encoding corrupted, so only §16.2 refuses them |
