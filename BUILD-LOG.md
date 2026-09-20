@@ -424,7 +424,7 @@ which a node may do.
 | 5.1 | The rules engine | `LAB.md` §3's table as code: an observation in, a level and a sentence out, with the thresholds a homelab can change | ✅ |
 | 5.2 | Watching a network | the log, the witnesses and each node's `/norn/checkpoint` and `/norn/evidence` — read-only, over the tunnel, as an enrolled peer | ✅ |
 | 5.3 | The receipt inbox | a receipt whose deadline passed with no inclusion is **non-repudiable proof of A2**, and the monitor is what notices | ✅ |
-| 5.4 | Outputs | stdout JSON always; `ntfy`, Home Assistant, Alertmanager and email optional and each failing alone | ⬜ |
+| 5.4 | Outputs | stdout JSON always; `ntfy`, Home Assistant, Alertmanager and email optional and each failing alone | ✅ |
 | 5.5 | The status page | read-only HTML on the tunnel address: sizes, ages, witness times, the device table and the last entries in plain words | ⬜ |
 | 5.6 | `norn monitor` | the command, its config, and one run that produces a notification per rule | ⬜ |
 | 5.7 | Phase 5 gate audit | each line against what is tested, and the demos named as the lab's | ⬜ |
@@ -864,3 +864,13 @@ the signer keeps one job — decide, and place the entry in the log.
   - **A proven misbehaviour stays pending.** The proof does not stop being true because it has been mentioned once, and an operator who was asleep still has to find it in the morning. Honoured receipts are forgotten, which is the only thing that should ever clear one.
   - **The alert says what was promised and what the witnesses vouched for**, with both instants — so the reader can check the claim rather than take it.
   - Go: 49 packages, 565 tests; `go test`, staticcheck and both halves of `vectors-check` green.
+
+- **5.4 outputs — "all optional; stdout always", and the last word is the one worth defending.**
+  - **A monitor whose only record of an alert was a push that failed to send has no record at all**, and the operator finds out by not finding out. So stdout is not a fallback, it is unconditional: one JSON object per line, because a log shipper, `jq` and a person at three in the morning can all read that without a parser.
+  - **Each sink fails alone, and the test is the point of the file.** A fanout with a broken sink between two working ones must leave both working ones untouched — the phone being unreachable is *exactly* when the file on disk matters. Failures are returned as a list rather than an error, because there is nothing the caller should do differently: the alert has already happened.
+  - **A hanging sink is a failing sink.** Every network output is bounded, and the test blocks a server forever to prove the monitor does not block with it.
+  - **A fork must not arrive on a phone looking like an enrolment.** `ntfy` priorities are mapped from the level — `urgent`, `high`, `default` — because the whole point of a push is that the important one wakes somebody, and a test requires an info and a critical not to look alike.
+  - **The rule name goes in the Home Assistant payload and the Alertmanager labels.** "Turn the office light red on a fork" has to match on *which rule fired*, not parse a sentence; `alertname` and `severity` are the names Alertmanager's own routing trees expect.
+  - **Email is split where the honesty is.** The message it builds is tested — headers, the blank line, a subject triageable from a lock screen — and the five-line `net/smtp` call is a seam, because there is no logic behind it worth mocking and rather a lot of configuration only a real server can validate. Header values have their newlines stripped: an alert is not attacker input, but it is *generated* text, and a stray newline in a header is how one message becomes two.
+  - **A deadlock in my own test, worth naming because it is the usual one.** `httptest.Server.Close` waits for outstanding handlers, so a handler blocked on a channel closed by a *later* defer hangs the test rather than the code. Defer order is release-then-close.
+  - Go: 49 packages, 575 tests; `go test`, staticcheck and both halves of `vectors-check` green.
