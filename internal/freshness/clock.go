@@ -75,6 +75,11 @@ func (c *Clock) Age(quorumTime time.Time, mono time.Duration) (time.Duration, bo
 type Limits struct {
 	Staleness time.Duration
 	Hard      time.Duration
+	// MaxSkew is Δclock: how far this node's wall clock may be from witness
+	// time before it says so. Node-local like Hard, and for the same reason --
+	// it is a fact about this machine, not about the network. Zero means
+	// DefaultMaxSkew.
+	MaxSkew time.Duration
 }
 
 // State names where `age` falls. `haveClock` is the second return of Age: with

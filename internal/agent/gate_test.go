@@ -330,3 +330,92 @@ func TestAViewAgesFromWitnessTimeNotTheWallClock(t *testing.T) {
 		}
 	}
 }
+
+// GOSSIP.md part 8, T5: a node whose wall clock is two hours out must raise
+// CLOCK_SKEW, must **not** go degraded, and must leave the proven set alone.
+// The wall clock is allowed to produce exactly one finding, and that finding
+// changes nothing about what this node enforces (A11).
+func TestASkewedWallClockAlarmsAndChangesNothing(t *testing.T) {
+	dir, _, _ := writableLog(t)
+	rec := &recorder{}
+	fake := peertable.NewFake()
+
+	// Witness time is the fixture's cosigning instant; this machine believes
+	// it is two hours later.
+	skewed := time.Unix(fixtureCosignedAt, 0).Add(2 * time.Hour)
+	a, err := New(Config{
+		Anchor: anchor(t), Fetcher: logclient.Dir(dir), Device: fake,
+		Mode: reconcile.Owner, RunDir: t.TempDir(), Emit: rec.emit,
+		Now:  func() time.Time { return skewed },
+		Mono: func() time.Duration { return 0 },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Once(); err != nil {
+		t.Fatal(err)
+	}
+
+	if rec.kinds()[ClockSkew] != 1 {
+		t.Errorf("events = %v, want one %s", rec.kinds(), ClockSkew)
+	}
+	set, err := proven.Read(filepath.Join(a.cfg.RunDir, proven.FileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Not degraded: the log is perfectly current, this machine is not.
+	if set.Freshness != freshness.Fresh {
+		t.Errorf("freshness = %q, want %q: a wrong local clock must not age the view",
+			set.Freshness, freshness.Fresh)
+	}
+	// And the peer table is exactly what the log proves.
+	peers, err := fake.Peers()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(peers) != len(set.Devices) {
+		t.Errorf("%d peers for %d proven devices: the clock changed enforcement",
+			len(peers), len(set.Devices))
+	}
+}
+
+// The converse, and the reason the naive formula is not enough: the log really
+// is two hours stale and this node's clock is right. That is `degraded`, and
+// it is not a clock problem -- reporting one would send an operator to fix the
+// wrong machine.
+func TestAStaleLogIsNotReportedAsClockSkew(t *testing.T) {
+	dir, _, _ := writableLog(t)
+	rec := &recorder{}
+
+	// The node adopts at monotonic 0 and asks again two hours later, with a
+	// wall clock that has advanced by exactly the same two hours.
+	var elapsed time.Duration
+	a, err := New(Config{
+		Anchor: anchor(t), Fetcher: logclient.Dir(dir), Device: peertable.NewFake(),
+		Mode: reconcile.Observe, RunDir: t.TempDir(), Emit: rec.emit,
+		Now:  func() time.Time { return time.Unix(fixtureCosignedAt, 0).Add(elapsed) },
+		Mono: func() time.Duration { return elapsed },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Once(); err != nil {
+		t.Fatal(err)
+	}
+	elapsed = 2 * time.Hour
+	if err := a.Once(); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := rec.kinds()[ClockSkew]; got != 0 {
+		t.Errorf("%d clock-skew alarms for a stale log; the operator would fix the "+
+			"wrong machine", got)
+	}
+	set, err := proven.Read(filepath.Join(a.cfg.RunDir, proven.FileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if set.Freshness != freshness.Degraded {
+		t.Errorf("freshness = %q, want %q", set.Freshness, freshness.Degraded)
+	}
+}

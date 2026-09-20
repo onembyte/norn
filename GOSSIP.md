@@ -106,9 +106,19 @@ A node's wall clock is untrusted (A11). Define for an adopted checkpoint:
   `unknown`, not perfect.
 - On every adoption the node records `(mono_now, quorum_time)`.
 - `age()` = `quorum_time_at_adoption` + (monotonic elapsed since) — compared against
-  the *newest* `quorum_time` it has seen. Wall clock is used only to raise
-  `CLOCK_SKEW` when `|wall − quorum_time| > Δclock` at the moment of a direct-from-log
-  fetch (when cosignatures are seconds old).
+  the *newest* `quorum_time` it has seen.
+- The wall clock is used for one thing only: raising `CLOCK_SKEW`. The test is
+  `|(wall − quorum_time) − age| > Δclock` on a **direct-from-log** fetch — never on a
+  checkpoint pulled from a peer, which may legitimately be older.
+
+  `|wall − quorum_time| > Δclock` is the same test only when `age` is zero, and is
+  wrong away from it: a log that has not been cosigned for two hours produces two
+  hours on a node whose clock is perfect. Subtracting the age this node has been
+  measuring all along separates the two, and T5 below depends on the difference —
+  a skewed node alarms and does *not* go degraded, and a stale log degrades and
+  does *not* alarm. Δclock defaults to **5 minutes**: at a direct fetch the newest
+  cosignature is already one checkpoint interval plus a witness round trip old, so
+  a tighter bound would alarm on a healthy network.
 
 State machine:
 

@@ -37,6 +37,11 @@ const (
 	// held to the last set that did verify. Worth saying out loud, because the
 	// facts being enforced are older than they look.
 	EnforcingOnStaleState = "ENFORCING_ON_STALE_STATE"
+	// ClockSkew: this machine's wall clock disagrees with witness time by more
+	// than Δclock. It is the only finding the wall clock is allowed to
+	// produce, and it changes nothing -- not the freshness state, not the
+	// proven set, not the peer table (A11, GOSSIP part 5 and T5).
+	ClockSkew = "CLOCK_SKEW"
 	// InterfaceUnavailable: the WireGuard interface could not be read.
 	InterfaceUnavailable = "INTERFACE_UNAVAILABLE"
 	// NoStateYet: nothing has verified since start, so there is nothing to
@@ -94,7 +99,10 @@ type Config struct {
 	// Hard is S_hard: the age past which the enforcer drops every peer. Zero
 	// leaves it off, which is the default -- see freshness.Limits.
 	Hard time.Duration
-	Emit func(Event)
+	// MaxSkew is Δclock: how far this machine's wall clock may be from witness
+	// time before CLOCK_SKEW is raised. Zero means freshness.DefaultMaxSkew.
+	MaxSkew time.Duration
+	Emit    func(Event)
 
 	// FightPolicy is what to do when the same key keeps coming back:
 	// PolicyAlarm (the default) or PolicyQuarantine.
@@ -208,6 +216,7 @@ func (a *Agent) Once() error {
 	// head this node refused says nothing about what time it is.
 	if verifyErr == nil && result.QuorumTime != nil {
 		a.clock.Observe(*result.QuorumTime, a.cfg.Mono())
+		a.checkClock(*result.QuorumTime, result.State.Params)
 	}
 
 	if verifyErr == nil && a.cfg.RunDir != "" {
@@ -321,6 +330,32 @@ func keyOf(hexKey string) (peertable.Key, error) {
 		return peertable.Key{}, err
 	}
 	return peertable.KeyFromBytes(raw)
+}
+
+// checkClock compares this machine's wall clock against witness time and
+// alarms if they disagree by more than Δclock.
+//
+// This runs on the direct-from-log path only, which today is the only path
+// there is. When gossip arrives (4.5) a checkpoint pulled from a peer must
+// *not* come through here: a peer may legitimately be serving an older head,
+// and its age is the peer's business rather than evidence about this machine's
+// clock.
+//
+// The alarm is all that happens. Nothing downstream reads it, by design: a
+// node that changed what it enforced because of its own clock would be doing
+// the exact thing A11 forbids.
+func (a *Agent) checkClock(quorumTime time.Time, params map[string]any) {
+	limits := freshness.LimitsFrom(params, a.cfg.Hard)
+	limits.MaxSkew = a.cfg.MaxSkew
+
+	skew, ok := a.clock.Skew(quorumTime, a.cfg.Mono(), a.cfg.Now())
+	if !ok || !limits.SkewIsSignificant(skew) {
+		return
+	}
+	a.emit(Event{Kind: ClockSkew, Message: fmt.Sprintf(
+		"this machine's clock is %s from witness time; nothing about what this "+
+			"node enforces has changed, but the clock should be fixed",
+		skew.Round(time.Second))})
 }
 
 // freshness is how old the view this node is enforcing has become, in witness
