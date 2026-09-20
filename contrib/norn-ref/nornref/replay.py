@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from . import cbor, enrollreq, entry, fields, keys
+from . import cbor, enrollreq, entry, fields, keys, policy
 from .state import DEFAULT_PARAMS, PARAM_KEYS, State
 
 REASONS = (
@@ -305,6 +305,13 @@ def _h_log_key(state: State, env: dict[str, Any], index: int) -> None:
 def _h_policy(state: State, env: dict[str, Any], index: int) -> None:
     text = env["body"].get("text")
     if not isinstance(text, str) or len(text.encode("utf-8")) > 4096:
+        raise Reject("decode")
+    # A `policy` entry whose text is not a policy is malformed, whatever an
+    # in-log policy governs (SPEC 5.1). Without this the fixture published the
+    # canonical-JSON torture string as this network's policy.
+    try:
+        policy.parse(text)
+    except policy.PolicyError:
         raise Reject("decode")
     state.policy = text
 

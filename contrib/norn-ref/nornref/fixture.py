@@ -275,119 +275,119 @@ def _raw_enroll_body(fields: dict[str, Any], signer: str) -> dict[str, Any]:
 def log() -> list[LogItem]:
     """A 49-entry log: valid entries interleaved with one per reason code."""
     b = _Builder()
-    b.add("00-genesis", genesis())
+    b.add(f"{b.index}-genesis", genesis())
 
-    b.add("01-enroll-nas", b.build("enroll", _enroll_body("nas"),
+    b.add(f"{b.index}-enroll-nas", b.build("enroll", _enroll_body("nas"),
                                    [("signer1", "signer")]))
-    b.add("02-enroll-laptop", b.build("enroll", _enroll_body(
+    b.add(f"{b.index}-enroll-laptop", b.build("enroll", _enroll_body(
         "laptop", labels={"ip": "10.9.0.2/32", "endpoint": "192.0.2.10:51820"}),
         [("signer1", "signer")]))
-    b.add("03-enroll-pi-cam", b.build("enroll", _enroll_body("pi-cam", expires=T0 + 2_592_000),
+    b.add(f"{b.index}-enroll-pi-cam", b.build("enroll", _enroll_body("pi-cam", expires=T0 + 2_592_000),
                                       [("signer1", "signer")]))
 
-    b.add("04-bad-dup-id", b.build("enroll", _enroll_body("nas", wg="nas2"),
+    b.add(f"{b.index}-bad-dup-id", b.build("enroll", _enroll_body("nas", wg="nas2"),
                                    [("signer1", "signer")]), "dup-id")
-    b.add("05-bad-dup-wg", b.build("enroll", _enroll_body("spare", wg="nas"),
+    b.add(f"{b.index}-bad-dup-wg", b.build("enroll", _enroll_body("spare", wg="nas"),
                                    [("signer1", "signer")]), "dup-wg")
-    b.add("06-bad-no-device-sig", b.build("enroll",
+    b.add(f"{b.index}-bad-no-device-sig", b.build("enroll",
                                           _enroll_body("printer", signer="spare"),
                                           [("signer1", "signer")]), "no-device-sig")
-    b.add("07-bad-threshold", b.build("enroll", _enroll_body("printer"),
+    b.add(f"{b.index}-bad-threshold", b.build("enroll", _enroll_body("printer"),
                                       [("printer", "device")]), "threshold")
 
-    b.add("08-rotate-laptop", b.build("rotate", {"device_id": "laptop", "wg_pk": WG["laptop2"]},
+    b.add(f"{b.index}-rotate-laptop", b.build("rotate", {"device_id": "laptop", "wg_pk": WG["laptop2"]},
                                       [("laptop", "device")]))
-    b.add("09-bad-unknown-device", b.build("rotate", {"device_id": "ghost", "wg_pk": WG["rogue"]},
+    b.add(f"{b.index}-bad-unknown-device", b.build("rotate", {"device_id": "ghost", "wg_pk": WG["rogue"]},
                                            [("nas", "device")]), "unknown-device")
-    b.add("10-bad-after", b.build("note", {"text": "signed against a future log size"},
+    b.add(f"{b.index}-bad-after", b.build("note", {"text": "signed against a future log size"},
                                   [("signer1", "signer")], after=999), "after")
 
-    b.add("11-revoke-pi-cam", b.build("revoke", {"device_id": "pi-cam", "reason": "decommissioned"},
+    b.add(f"{b.index}-revoke-pi-cam", b.build("revoke", {"device_id": "pi-cam", "reason": "decommissioned"},
                                       [("signer1", "signer")]))
-    b.add("12-bad-not-active", b.build("revoke", {"device_id": "pi-cam", "reason": "again"},
+    b.add(f"{b.index}-bad-not-active", b.build("revoke", {"device_id": "pi-cam", "reason": "again"},
                                        [("signer1", "signer")]), "not-active")
-    b.add_raw("13-bad-dup-entry", b.items[1].raw, "dup-entry")
-    b.add("14-bad-dup-genesis", genesis(after=14), "dup-genesis")
+    b.add_raw(f"{b.index}-bad-dup-entry", b.items[1].raw, "dup-entry")
+    b.add(f"{b.index}-bad-dup-genesis", genesis(after=14), "dup-genesis")
 
     bogus = {"v": entry.VERSION, "t": "bogus", "net": NET, "ts": T0, "after": b.index,
              "body": {"text": "not a real type"}, "sigs": []}
     entry.sign(bogus, KEYS["signer1"], "signer")
-    b.add_raw("15-bad-unknown-type", cbor.encode(bogus), "unknown-type")
+    b.add_raw(f"{b.index}-bad-unknown-type", cbor.encode(bogus), "unknown-type")
 
-    b.add("16-signer_add-signer3", b.build("signer_add", {"pk": KEYS["signer3"].public},
+    b.add(f"{b.index}-signer_add-signer3", b.build("signer_add", {"pk": KEYS["signer3"].public},
                                            [("root1", "root"), ("root2", "root")]))
-    b.add("17-bad-dup-key", b.build("signer_add", {"pk": KEYS["signer3"].public},
+    b.add(f"{b.index}-bad-dup-key", b.build("signer_add", {"pk": KEYS["signer3"].public},
                                     [("root1", "root"), ("root2", "root")]), "dup-key")
-    b.add("18-signer_thr-2", b.build("signer_thr", {"thr": 2},
+    b.add(f"{b.index}-signer_thr-2", b.build("signer_thr", {"thr": 2},
                                      [("root1", "root"), ("root2", "root")]))
-    b.add("19-bad-thr", b.build("signer_thr", {"thr": 99},
+    b.add(f"{b.index}-bad-thr", b.build("signer_thr", {"thr": 99},
                                 [("root1", "root"), ("root2", "root")]), "bad-thr")
-    b.add("20-bad-unknown-key", b.build("signer_remove", {"kid": KEYS["root4"].id},
+    b.add(f"{b.index}-bad-unknown-key", b.build("signer_remove", {"kid": KEYS["root4"].id},
                                         [("root1", "root"), ("root2", "root")]), "unknown-key")
-    b.add("21-signer_remove-signer2", b.build("signer_remove", {"kid": KEYS["signer2"].id},
+    b.add(f"{b.index}-signer_remove-signer2", b.build("signer_remove", {"kid": KEYS["signer2"].id},
                                               [("root1", "root"), ("root3", "root")]))
 
-    b.add("22-root_add-root4", b.build("root_add", {"pk": KEYS["root4"].public},
+    b.add(f"{b.index}-root_add-root4", b.build("root_add", {"pk": KEYS["root4"].public},
                                        [("root1", "root"), ("root2", "root")]))
-    b.add("23-root_thr-3", b.build("root_thr", {"thr": 3},
+    b.add(f"{b.index}-root_thr-3", b.build("root_thr", {"thr": 3},
                                    [("root1", "root"), ("root2", "root")]))
     roots3 = [("root1", "root"), ("root2", "root"), ("root3", "root")]
-    b.add("24-root_remove-root4", b.build("root_remove", {"kid": KEYS["root4"].id}, roots3))
-    b.add("25-bad-root-invariant", b.build("root_remove", {"kid": KEYS["root3"].id}, roots3),
+    b.add(f"{b.index}-root_remove-root4", b.build("root_remove", {"kid": KEYS["root4"].id}, roots3))
+    b.add(f"{b.index}-bad-root-invariant", b.build("root_remove", {"kid": KEYS["root3"].id}, roots3),
           "root-invariant")
-    b.add("26-bad-threshold-root", b.build("signer_add", {"pk": KEYS["root4"].public},
+    b.add(f"{b.index}-bad-threshold-root", b.build("signer_add", {"pk": KEYS["root4"].public},
                                            [("root1", "root")]), "threshold")
 
-    b.add("27-log_key", b.build("log_key", {"pk": KEYS["logkey2"].public, "overlap": 2_592_000},
+    b.add(f"{b.index}-log_key", b.build("log_key", {"pk": KEYS["logkey2"].public, "overlap": 2_592_000},
                                 roots3))
-    b.add("28-policy", b.build("policy", {"text": policy_text()}, roots3))
-    b.add("29-params", b.build("params", {"staleness": 900, "rotate_needs_signer": True}, roots3))
+    b.add(f"{b.index}-policy", b.build("policy", {"text": policy_text()}, roots3))
+    b.add(f"{b.index}-params", b.build("params", {"staleness": 900, "rotate_needs_signer": True}, roots3))
 
     both = [("signer1", "signer"), ("signer3", "signer")]
-    b.add("30-note", b.build("note", {"text": "quarterly key review completed"},
+    b.add(f"{b.index}-note", b.build("note", {"text": "quarterly key review completed"},
                              [("signer1", "signer")]))
-    b.add("31-enroll-printer", b.build("enroll", _enroll_body("printer"),
+    b.add(f"{b.index}-enroll-printer", b.build("enroll", _enroll_body("printer"),
                                        both))
 
     wrong_net = entry.new("note", b"\xff" * 16, ts=T0, after=32, body={"text": "wrong network"})
     entry.sign(wrong_net, KEYS["signer1"], "signer")
-    b.add_raw("32-bad-decode-net", entry.encode(wrong_net), "decode")
+    b.add_raw(f"{b.index}-bad-decode-net", entry.encode(wrong_net), "decode")
 
-    b.add("33-enroll-pi-cam-again", b.build("enroll", _enroll_body("pi-cam"),
+    b.add(f"{b.index}-enroll-pi-cam-again", b.build("enroll", _enroll_body("pi-cam"),
                                             both))
-    b.add("34-bad-rotate-needs-signer", b.build("rotate", {"device_id": "nas", "wg_pk": WG["nas2"]},
+    b.add(f"{b.index}-bad-rotate-needs-signer", b.build("rotate", {"device_id": "nas", "wg_pk": WG["nas2"]},
                                                 [("nas", "device")]), "threshold")
-    b.add("35-rotate-nas", b.build("rotate", {"device_id": "nas", "wg_pk": WG["nas2"]},
+    b.add(f"{b.index}-rotate-nas", b.build("rotate", {"device_id": "nas", "wg_pk": WG["nas2"]},
                                    [("nas", "device")] + both))
-    b.add("36-revoke-self-laptop", b.build("revoke", {"device_id": "laptop", "reason": "lost"},
+    b.add(f"{b.index}-revoke-self-laptop", b.build("revoke", {"device_id": "laptop", "reason": "lost"},
                                            [("laptop", "device")]))
-    b.add("37-enroll-spare", b.build("enroll", _enroll_body("spare"),
+    b.add(f"{b.index}-enroll-spare", b.build("enroll", _enroll_body("spare"),
                                      both))
-    b.add("38-note-final", b.build("note", {"text": "end of fixture"}, [("root1", "root")]))
-    b.add("39-revoke-spare", b.build("revoke", {"device_id": "spare", "reason": "returned"},
+    b.add(f"{b.index}-note-final", b.build("note", {"text": "end of fixture"}, [("root1", "root")]))
+    b.add(f"{b.index}-revoke-spare", b.build("revoke", {"device_id": "spare", "reason": "returned"},
                                      [("signer1", "signer"), ("signer3", "signer")]))
 
     # D8: a device may rotate its identity key while keeping its WireGuard key
     # (otherwise software-key -> hardware-key migration would churn every peer
     # table), but may never take a key active for another device.
-    b.add("40-rotate-device-key-only", b.build("rotate", {
+    b.add(f"{b.index}-rotate-device-key-only", b.build("rotate", {
         "device_id": "nas", "wg_pk": WG["nas2"], "device_pk": KEYS["nas-id2"].public},
         [("nas", "device"), ("nas-id2", "device")] + both))
-    b.add("41-bad-dup-wg-rotate", b.build("rotate", {
+    b.add(f"{b.index}-bad-dup-wg-rotate", b.build("rotate", {
         "device_id": "printer", "wg_pk": WG["nas2"]},
         [("printer", "device")] + both), "dup-wg")
 
     # Tier-3 answers, each previously undecided by the prose *and* the vectors.
-    b.add("42-bad-thr-root", b.build("root_thr", {"thr": 99}, roots3), "bad-thr")       # D11
-    b.add("43-bad-revoke-unauthorised", b.build(                                        # D12
+    b.add(f"{b.index}-bad-thr-root", b.build("root_thr", {"thr": 99}, roots3), "bad-thr")       # D11
+    b.add(f"{b.index}-bad-revoke-unauthorised", b.build(                                        # D12
         "revoke", {"device_id": "printer", "reason": "no authority"},
         [("laptop", "device")]), "threshold")
     unknown_role = {"v": entry.VERSION, "t": "note", "net": NET, "ts": T0 + 9000,
                     "after": b.index, "body": {"text": "role outside the enum"}, "sigs": []}
     entry.sign(unknown_role, KEYS["signer1"], "signer")
     unknown_role["sigs"][0]["role"] = "admin"
-    b.add_raw("44-bad-unknown-role", cbor.encode(unknown_role), "decode")               # D18
-    b.add_raw("45-bad-missing-sigs", cbor.encode({                                      # D19
+    b.add_raw(f"{b.index}-bad-unknown-role", cbor.encode(unknown_role), "decode")               # D18
+    b.add_raw(f"{b.index}-bad-missing-sigs", cbor.encode({                                      # D19
         "v": entry.VERSION, "t": "note", "net": NET, "ts": T0 + 9000, "after": 45,
         "body": {"text": "no sigs key at all"}}), "decode")
     # D20, and D-032: the *current* device key signs, so replay gets past the
@@ -396,30 +396,37 @@ def log() -> list[LogItem]:
     # at all -- as this vector did until 6.5c -- is refused three checks
     # earlier and leaves D-032 untested, which is how gate run 5 deleted the
     # check outright and still passed every vector.
-    b.add("46-bad-rotate-no-new-key-sig", b.build(
+    b.add(f"{b.index}-bad-rotate-no-new-key-sig", b.build(
         "rotate", {"device_id": "printer", "wg_pk": WG["printer"],
                    "device_pk": KEYS["printer-id2"].public},
         [("printer", "device")] + both), "no-device-sig")
-    b.add("47-bad-order-enroll", b.build(                                               # D21
+    b.add(f"{b.index}-bad-order-enroll", b.build(                                               # D21
         "enroll", _enroll_body("nas", wg="rogue", signer="signer1"),
         both), "no-device-sig")
-    b.add("48-bad-order-governance", b.build(                                           # D21
+    b.add(f"{b.index}-bad-order-governance", b.build(                                           # D21
         "signer_add", {"pk": KEYS["signer3"].public}, [("root1", "root")]), "threshold")
 
     # Canonical-JSON escaping (SPEC §14.2). Every escape rule in one value, so a
     # second implementation cannot pass while disagreeing about `<`, DEL or an
     # emoji -- none of which appear anywhere else in the suite.
-    b.add("49-policy-escaping", b.build("policy", {"text": ESCAPE_TORTURE}, roots3))
-    b.add("50-enroll-unicode-labels", b.build("enroll", _enroll_body(
+    # A real policy, because §5.1 now requires a `policy` entry to be one. The
+    # canonical-JSON escape torture moved to a label value below, where free
+    # text belongs and where it still reaches `state.json`.
+    rotated = policy_text().replace("group home 2 ", "group home 3 ")
+    b.add(f"{b.index}-policy-rotated", b.build("policy", {"text": rotated}, roots3))
+    # ...and the refusal that rule needs.
+    b.add(f"{b.index}-bad-policy-unparseable", b.build(
+        "policy", {"text": ESCAPE_TORTURE}, roots3), "decode")
+    b.add(f"{b.index}-enroll-unicode-labels", b.build("enroll", _enroll_body(
         "escaped", labels=UNICODE_LABELS), both))
 
     # §5.3's `expires` rule needs a device that actually carries one.
-    b.add("51-enroll-contractor", b.build("enroll", _enroll_body(
+    b.add(f"{b.index}-enroll-contractor", b.build("enroll", _enroll_body(
         "contractor", expires=T0 + 7_776_000),
         both))
 
     # E5: `sigs: []` is well-formed but unauthorised -- `threshold`, not `decode`.
-    b.add_raw("52-bad-empty-sigs", cbor.encode({
+    b.add_raw(f"{b.index}-bad-empty-sigs", cbor.encode({
         "v": entry.VERSION, "t": "note", "net": NET, "ts": T0 + 9000,
         "after": 52, "body": {"text": "well-formed, unsigned"}, "sigs": []}), "threshold")
 
@@ -427,19 +434,19 @@ def log() -> list[LogItem]:
     bad_kid = entry.new("note", NET, ts=T0 + 9000, after=53, body={"text": "bad kid"})
     entry.sign(bad_kid, KEYS["signer1"], "signer")
     bad_kid["sigs"][0]["kid"] = "NOTHEX"
-    b.add_raw("53-bad-kid-format", cbor.encode(bad_kid), "decode")
+    b.add_raw(f"{b.index}-bad-kid-format", cbor.encode(bad_kid), "decode")
 
     # E9: defends D-028. This leaves ONE signer while `signer_thr` is 2 -- the
     # network cannot enrol until roots add a signer, and that is the point:
     # removing a compromised signer key must never be blocked. Placed last so it
     # does not starve earlier entries of signatures.
-    b.add("54-signer_remove-below-threshold",
+    b.add(f"{b.index}-signer_remove-below-threshold",
           b.build("signer_remove", {"kid": KEYS["signer3"].id}, roots3))
     # ...and the recovery roots must then perform, which is the other half of
     # the D-028 argument: the degraded state is real but recoverable. Re-adding
     # the same key keeps the fixture's terminal state usable; a real recovery
     # would add a replacement key.
-    b.add("55-signer_add-recover",
+    b.add(f"{b.index}-signer_add-recover",
           b.build("signer_add", {"pk": KEYS["signer3"].public}, roots3))
 
     # E12: the encoding profile had no negative vectors at all, so a decoder
@@ -448,9 +455,9 @@ def log() -> list[LogItem]:
     base = entry.encode(_signed(entry.new(
         "note", NET, ts=T0 + 9000, after=56, body={"text": "profile probe"}),
         [("signer1", "signer")]))
-    b.add_raw("56-bad-cbor-nonshortest", _patch_nonshortest(base), "decode")
-    b.add_raw("57-bad-cbor-null", _patch_null(base), "decode")
-    b.add_raw("58-bad-cbor-unsorted-keys", _patch_unsorted(base), "decode")
+    b.add_raw(f"{b.index}-bad-cbor-nonshortest", _patch_nonshortest(base), "decode")
+    b.add_raw(f"{b.index}-bad-cbor-null", _patch_null(base), "decode")
+    b.add_raw(f"{b.index}-bad-cbor-unsorted-keys", _patch_unsorted(base), "decode")
 
     # Closed schemas, envelope and body (SPEC §4.1/§4.3). Run 3 shipped a
     # variant leaving bodies open and passed the whole suite -- as did this
@@ -459,13 +466,13 @@ def log() -> list[LogItem]:
     unknown_env = entry.new("note", NET, ts=T0 + 9000, after=59, body={"text": "x"})
     entry.sign(unknown_env, KEYS["signer1"], "signer")
     unknown_env["extra"] = 1
-    b.add_raw("59-bad-unknown-envelope-key", cbor.encode(unknown_env), "decode")
-    b.add("60-bad-unknown-body-key", b.build(
+    b.add_raw(f"{b.index}-bad-unknown-envelope-key", cbor.encode(unknown_env), "decode")
+    b.add(f"{b.index}-bad-unknown-body-key", b.build(
         "note", {"text": "x", "surprise": "extra"}, [("signer1", "signer")]), "decode")
 
     # `thr: 0` -- the half of §5.2's bad-thr clause both other vectors miss,
     # since they use 99. A well-formed uint, so it is bad-thr and not decode.
-    b.add("61-bad-thr-zero", b.build("signer_thr", {"thr": 0}, roots3), "bad-thr")
+    b.add(f"{b.index}-bad-thr-zero", b.build("signer_thr", {"thr": 0}, roots3), "bad-thr")
 
     # A control: the exact entry each encoding negative is a patch of. Without
     # it a reader cannot tell whether a negative is rejected for its one
@@ -600,7 +607,8 @@ def log() -> list[LogItem]:
     # and begins 0xF0 in UTF-8, above it.
     b.add(f"{b.index}-enroll-astral-labels", b.build(
         "enroll", _enroll_body("astral", labels={"\ue000": "private use",
-                                                 "\U0001f512": "astral"}),
+                                                 "\U0001f512": "astral",
+                                                 "escapes": ESCAPE_TORTURE}),
         both))
 
     return b.items

@@ -12,6 +12,7 @@ import (
 
 	"github.com/onembyte/norn/internal/cbor"
 	"github.com/onembyte/norn/internal/entry"
+	"github.com/onembyte/norn/internal/policy"
 )
 
 // Written from SPEC.md §5. The manifest is the oracle: every (index, reason)
@@ -351,15 +352,30 @@ func TestTheAcceptedRotateCarriesBothDeviceSignatures(t *testing.T) {
 // A precedence vector is worth nothing unless it is wrong in *both* ways, so
 // each is checked for the second fault as well as for the reason it produces.
 
-func entryNamed(t *testing.T, m manifest, name string) (int, string) {
+// entryNamed finds a case by the part of its name that identifies it. The
+// index prefix moves whenever an entry is inserted earlier in the fixture --
+// which happened the first time one was, and broke four tests at once.
+func entryNamed(t *testing.T, m manifest, suffix string) (int, string) {
 	t.Helper()
 	for i, e := range m.Entries {
-		if e.Name == name {
+		if strings.HasSuffix(e.Name, suffix) {
 			return i, e.Reason
 		}
 	}
-	t.Fatalf("the fixture has no entry %q", name)
+	t.Fatalf("the fixture has no entry ending %q", suffix)
 	return 0, ""
+}
+
+// fullName is the shipped file name for a case, index prefix and all.
+func fullName(t *testing.T, m manifest, suffix string) string {
+	t.Helper()
+	for _, e := range m.Entries {
+		if strings.HasSuffix(e.Name, suffix) {
+			return e.Name
+		}
+	}
+	t.Fatalf("the fixture has no entry ending %q", suffix)
+	return ""
 }
 
 func rawEntry(t *testing.T, name string) map[string]any {
@@ -390,7 +406,7 @@ func TestThePrecedenceVectorsAreWrongInTwoWays(t *testing.T) {
 		alsoWrong   string
 		secondFault func(t *testing.T, env map[string]any)
 	}{{
-		name: "90-bad-precedence-decode-before-unknown-type", reason: "decode",
+		name: "bad-precedence-decode-before-unknown-type", reason: "decode",
 		alsoWrong: "carries a type §4.3 does not define",
 		secondFault: func(t *testing.T, env map[string]any) {
 			if kind, _ := env["t"].(string); kind == "note" || kind == "enroll" {
@@ -398,7 +414,7 @@ func TestThePrecedenceVectorsAreWrongInTwoWays(t *testing.T) {
 			}
 		},
 	}, {
-		name: "91-bad-precedence-after-before-threshold", reason: "after",
+		name: "bad-precedence-after-before-threshold", reason: "after",
 		alsoWrong: "has no valid signature to count",
 		secondFault: func(t *testing.T, env map[string]any) {
 			sigs, _ := env["sigs"].([]any)
@@ -407,7 +423,7 @@ func TestThePrecedenceVectorsAreWrongInTwoWays(t *testing.T) {
 			}
 		},
 	}, {
-		name: "92-bad-precedence-threshold-before-dup-id", reason: "threshold",
+		name: "bad-precedence-threshold-before-dup-id", reason: "threshold",
 		alsoWrong: "enrols a device_id that is already active",
 		secondFault: func(t *testing.T, env map[string]any) {
 			sigs, _ := env["sigs"].([]any)
@@ -416,7 +432,7 @@ func TestThePrecedenceVectorsAreWrongInTwoWays(t *testing.T) {
 			}
 		},
 	}, {
-		name: "93-bad-precedence-threshold-before-dup-wg", reason: "threshold",
+		name: "bad-precedence-threshold-before-dup-wg", reason: "threshold",
 		alsoWrong: "takes a WireGuard key active for another device",
 		secondFault: func(t *testing.T, env map[string]any) {
 			sigs, _ := env["sigs"].([]any)
@@ -445,7 +461,7 @@ func TestThePrecedenceVectorsAreWrongInTwoWays(t *testing.T) {
 			if reason != c.reason {
 				t.Errorf("reason is %q, want %q -- the earlier step must decide", reason, c.reason)
 			}
-			c.secondFault(t, rawEntry(t, c.name))
+			c.secondFault(t, rawEntry(t, fullName(t, m, c.name)))
 			t.Logf("also %s, which a swapped order would have reported instead", c.alsoWrong)
 		})
 	}
@@ -522,4 +538,27 @@ func rawNamed(t *testing.T, name string) []byte {
 		t.Fatal(err)
 	}
 	return raw
+}
+
+// Cold-model gate run 6, defect H2. §4.5 says a `policy` entry "supersedes"
+// the trust file's policy inside the log, and §5.1's rule for that entry
+// checked only that its body was closed and its text under 4096 bytes -- never
+// that the text was a policy at all. The fixture therefore published
+// `49-policy-escaping`'s canonical-JSON torture string as the network's
+// policy, and an implementer following §4.5 literally could not verify this
+// network's own checkpoint.
+//
+// Whatever an in-log policy is *for* -- a question still open, see BUILD-LOG
+// -- a `policy` entry whose text is not a policy is malformed. That is true
+// under every reading, so it is settled here.
+func TestTheStatesPolicyIsAPolicy(t *testing.T) {
+	anchor, entries, _ := loadCase(t, filepath.Join(vectorRoot(), "log"))
+	st := Replay(anchor, entries)
+	if st.Policy == "" {
+		t.Fatal("the fixture records no policy, so nothing here is tested")
+	}
+	if _, err := policy.Parse(st.Policy); err != nil {
+		t.Errorf("the policy this log publishes does not parse as `tlog-policy`: %v\n"+
+			"A node that honoured §4.5 would be unable to verify this network.", err)
+	}
 }

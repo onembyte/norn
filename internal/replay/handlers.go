@@ -7,6 +7,7 @@ import (
 	"github.com/onembyte/norn/internal/enrollreq"
 	"github.com/onembyte/norn/internal/entry"
 	"github.com/onembyte/norn/internal/fields"
+	"github.com/onembyte/norn/internal/policy"
 	"github.com/onembyte/norn/internal/state"
 )
 
@@ -338,6 +339,13 @@ func hPolicy(_ *replayer, st *state.State, env *entry.Envelope, _ uint64) error 
 	text, err := fieldText(env.Body, "text", maxText)
 	if err != nil {
 		return err
+	}
+	// A `policy` entry whose text is not a policy is malformed, whatever an
+	// in-log policy turns out to govern. Without this the fixture published
+	// the canonical-JSON torture string as the network's policy for six
+	// phases, and §4.5 read literally made this network unverifiable.
+	if _, err := policy.Parse(text); err != nil {
+		return rejectWith(ReasonDecode)
 	}
 	st.Policy = text
 	return nil

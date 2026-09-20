@@ -467,7 +467,7 @@ them, and then run the gate.
 | 6.5e-v | G13's remaining vectors | `revoke`'s three independent authorisations, §5.1's non-empty `params`, an astral object key for §14.1, and the trust file's other mandatory keys | ✅ |
 | 6.5f | Cold-model gate run 6 | a *fresh* agent on a *new* copy; the target is `SPEC SUFFICIENT` outright | ❌ **FAILED** — `SPEC INSUFFICIENT`, 285/285 vectors but 10 defects (`SPEC-DEFECTS-6.md`), all in the layer above the one runs 1–5 attacked |
 | 6.5g-i | §11.1's unforced reader steps | H1: three of the four steps I wrote in 6.5e-i are forced by nothing — including a forged consistency proof, which is a permanent remote DoS | ✅ |
-| 6.5g-ii | Which policy, and which log keys | H2 (the `policy` entry supersedes the anchor's, and the fixture's own `policy` entry is unparseable) and H3 (log-key validity deferred to a document that does not ship) | ⬜ |
+| 6.5g-ii | Which policy, and which log keys | H2's fatal half closed: a `policy` entry must now be a policy. **The rest needs a decision — see the question below.** | ⚠️ |
 | 6.5g-iii | Two reason codes the prose gets wrong | H4 (§4.0 names `no-device-sig` where §5.1 gives `threshold`) and H5 (§5.2's validity rule makes §5.1's rotate proof-of-possession unsatisfiable) | ⬜ |
 | 6.5g-iv | What a decoder accepts after the entry | H6 (trailing bytes) and H8 (the origin check exists only inside §11.1) | ⬜ |
 | 6.5g-v | Time, again | H7 (`quorum none` makes `T` infinite by a literal reading; cosignature timestamps unruled) and H9 (§8's staleness MUST has no predicate) | ⬜ |
@@ -1144,3 +1144,53 @@ the signer keeps one job — decide, and place the entry in the log.
   - **Three vectors, one per unforced step, each of which must get *past* the earlier ones**: `bad-forged-proof` (both checkpoints verify and the sizes agree, so only the proof can refuse it — an invented `held_root` at a size the accuser cannot speak for), `bad-unverifiable-conflicting` (the held head is this network's and valid; the conflicting one is cosigned by nobody, so a reader that only checks the accuser's own head accepts it), and `bad-size-mismatch` (both verify; the file claims a disagreement at a size the conflicting head does not have).
   - **A test asserts each one reaches its own step**, rather than asserting it is refused. A negative that fails at step 1 proves nothing about step 3, and that is precisely how the two vectors I shipped in 6.5e-i managed to cover half the procedure while looking like coverage.
   - **Three mutations, three reds, one each**: `blind-consistency` fails only on `bad-forged-proof`, `skip-conflicting-verify` only on `bad-unverifiable-conflicting`, `skip-size-equality` only on `bad-size-mismatch`. Four steps, five negatives, one-to-one — which is the shape a reader can check at a glance and I did not build the first time.
+
+
+## Decision needed — 6.5g-ii: does v1 apply in-log policy and log-key rotation, or only record it?
+
+**The question.** `D-020` says `log_key` and `policy` entries "evolve trust
+inside the log", with the log signing under old and new keys for an `overlap`
+window so stale trust files still bootstrap. §4.5 repeats it: the `policy`
+entry "supersedes" `norn.trust.policy` inside the log.
+
+**Nothing implements it.** Every verifier path in this repository —
+`logclient`, `agent`, `monitor` — takes `LogKeys` and `Policy` from the trust
+file and never reads `state.log_keys` or `state.policy`. Those two fields are
+recorded by replay and used by nobody. Cold gate run 6 found this from the
+prose alone and rated the specification INSUFFICIENT partly on it (H2, H3).
+
+**Two answers, and they are different products:**
+
+- **(a) v1 applies rotation.** Implement the overlap window: a checkpoint is
+  acceptable under the trust file's key *or* under a `log_key` the log itself
+  published, for `overlap` after publication; likewise for the policy. This is
+  what `D-020` decided and what §4.5 promises. It is a real feature — key
+  validity windows, re-verification after replay, a second acceptance path —
+  and every one of those is a place a verifier can be tricked.
+- **(b) v1 records rotation and does not act on it.** `log_key` and `policy`
+  entries stay in the log and in the state as an auditable record; checkpoint
+  acceptance and §5.3's `T` always use `norn.trust.policy` and
+  `norn.trust.log_key`. §4.5 loses the word "supersedes", §5.3 loses "the index
+  from which the key becomes valid", and rotation becomes a v2 feature with the
+  log format already carrying it.
+
+**What is settled either way, and is done:** a `policy` entry whose text is not
+a policy is malformed (§5.1, `bad-policy-unparseable`), and checkpoint
+acceptance must bootstrap from the trust file, because a node cannot replay a
+log it has not yet accepted a checkpoint for. The fixture no longer publishes
+the canonical-JSON torture string as this network's witness policy.
+
+**Why this is not mine to decide:** `D-020` is a recorded decision with a
+rationale ("Rejected: re-issuing trust files to every device on every
+rotation"), and (b) reverses it. It also changes what the Phase 6 gate is
+claiming about, and `PUBLICATION.md`'s Gate A turns on the spec being
+sufficient — which it cannot be while the document promises a mechanism the
+code does not have.
+
+- **6.5g-ii (part) H2 — the fixture was publishing garbage as its own witness policy.**
+  - **§5.1's `policy` rule checked that the text was short, not that it was a policy.** So `49-policy-escaping` put the canonical-JSON escape torture into `state.policy`, and §4.5's "supersedes" made that the network's witness policy. A reader who followed the specification literally could not verify this network's own checkpoint; a reader who ignored §4.5 passed. Both read the same sentence.
+  - **A `policy` entry must now parse as `c2sp.org/tlog-policy`**, in both implementations, with `bad-policy-unparseable` to pin it. That is true under every answer to the open question, so it did not have to wait for one.
+  - **The reference gained a policy parser** — four directives, whitespace that is space and tab only, exactly one `quorum` line naming something defined. It never evaluates a policy; it only has to refuse a `policy` entry that is not one.
+  - **The escape torture kept its job and changed address.** It rides in a label value now, where free text belongs, and still reaches `state.json`, so §14.2's rules stay vectored. The reference test that asserted `state.policy == ESCAPE_TORTURE` now asserts what it was actually for, in two halves: the torture survives into the state, and a `policy` entry replaces the state's policy.
+  - **Inserting one entry renumbered sixty-one names**, and the guard from D-041 caught it — entry prefixes must equal their own index, and sixty-one of them were hardcoded. They derive from `b.index` now, which is what D-041 intended and had only half done. My own precedence test had the same disease: it looked entries up by `"90-bad-precedence-..."`. It matches by suffix now.
+  - **What is left needs Franco**, and the question is written above: does v1 *apply* in-log policy and log-key rotation, as `D-020` decided and §4.5 promises, or record it for v2? Nothing in this repository implements it, and the two answers are different products. I have not guessed, and 6.5g-ii stays ⚠️ rather than ticked.

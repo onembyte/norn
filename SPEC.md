@@ -370,7 +370,7 @@ checks live inside step 8, after that rule's own body validation.
 | `root_remove` | body well-formed and closed (`decode`) · `kid` is a root (`unknown-key`) · removing it leaves ≥ `root_thr` roots and ≥ 1 root (`root-invariant`) | remove |
 | `signer_thr`, `root_thr` | body well-formed and closed (`decode`) · `1 ≤ thr ≤ len(set)` (`bad-thr`) | set the threshold |
 | `log_key` | body well-formed and closed (`decode`) · `pk` 32 bytes, `overlap` a uint (`decode`) | **append** `{pk, overlap, since_index}` to `log_keys` |
-| `policy` | body well-formed and closed (`decode`) · `text` ≤ 4096 bytes (`decode`) | replace `policy` |
+| `policy` | body well-formed and closed (`decode`) · `text` ≤ 4096 bytes (`decode`) · `text` MUST parse as `c2sp.org/tlog-policy` (`decode`) | replace `policy` |
 | `params` | body well-formed and closed (`decode`) · non-empty, only §4.5 keys, each of the right type (`decode`) | **merge** into `params` |
 | `note` | body well-formed and closed (`decode`) · `text` ≤ 4096 bytes (`decode`) | none |
 
@@ -672,7 +672,13 @@ A10) cannot grind a substitute trust file with a matching fingerprint.
 ```
 loop every T_g or on demand:
   cp := fetch checkpoint (log_urls, then peers)         # part 6
-  verify log signature (torchwood VerifyCheckpoint)
+  verify log signature (torchwood VerifyCheckpoint)     # norn.trust.log_key
+                                                        # and norn.trust.policy:
+                                                        # a checkpoint must be
+                                                        # accepted before the log
+                                                        # can be replayed, so
+                                                        # acceptance cannot depend
+                                                        # on anything the log says
   verify witness policy: every cosignature by a witness the policy names
       must verify, and the quorum must be satisfied  # refuse otherwise
   if stored_cp exists:
@@ -767,7 +773,7 @@ suite is checked only against its own author.
 | `keys.json` | every test key: Ed25519 `{seed, public, kid}` by name, X25519 public keys by name, and `net` |
 | `entries/NN-<type>.cbor` | one valid entry per type, canonical bytes |
 | `entries/NN-<type>.json` | mirror: `{entry, entry_hash, leaf_hash, preimage_sha256, size}` where `size` is the byte length of the `.cbor`. The `entry` object mirrors the **CBOR**, so an optional field absent from the entry is absent here too — unlike `state.json`, where §5.3's schema fields are always emitted |
-| `log/NN-<name>.cbor` | the replay fixture, **97 entries** in order. The file names are labels, not the order: **read the sequence from `manifest.json`**, never by globbing and sorting |
+| `log/NN-<name>.cbor` | the replay fixture, **98 entries** in order. The file names are labels, not the order: **read the sequence from `manifest.json`**, never by globbing and sorting |
 | `log/NN-<name>.reason` | beside each entry that must be rejected: its §5.2 reason code |
 | `log/manifest.json` | `{"anchor": {"net", "genesis_hash"}, "entries": [{"index", "name", "reason"}]}` — the replay input and expected outcome; `reason` is `""` for an accepted entry |
 | `state.json` | canonical replay output for `log/` (§5.3) |
@@ -812,6 +818,7 @@ this table drifted out of date the moment one was.
 | §5.1 genesis | the log's entry 0 | twelve abort paths in `genesis/`, one single-entry log each |
 | §5.1 seen set, §4.3 roles | — | `bad-repeat-of-rejected`, `bad-one-of-two-signers`, `bad-role-mismatch` |
 | §5.2 `bad-thr` | — | both halves: `bad-thr-zero` and `bad-thr` (value above the set size) |
+| §5.1 a `policy` entry is a policy | `policy-rotated`, which raises the quorum from 2 of 3 to 3 of 3 | `bad-policy-unparseable`: text that is well-formed, under the size cap, and not a `tlog-policy` |
 | §4.3 `revoke`'s three authorisations | `revoke-by-roots`, `revoke-by-device` | `bad-revoke-neither-quorum`: one signer of two and two roots of three — short on every rule independently, and a quorum only if the counts are pooled |
 | §5.1 `params` is non-empty | `params` entries in the log | `bad-params-empty` |
 | §14.1 key order above the BMP | `enroll-astral-labels`, whose labels carry one astral key and one private-use key: the only pair in the suite where UTF-8 bytewise order and UTF-16 code-unit order disagree | — |

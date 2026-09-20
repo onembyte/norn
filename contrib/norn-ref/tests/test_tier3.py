@@ -171,7 +171,20 @@ class CanonicalJsonEscaping(unittest.TestCase):
         self.state, _ = state_with([])
 
     def test_torture_value_survives_into_state(self):
-        self.assertEqual(self.state.policy, fixture.ESCAPE_TORTURE)
+        """The escape torture reaches `state.json` through a label value.
+
+        It used to travel as a `policy` entry's text, which SPEC 5.1 now
+        refuses: a policy entry whose text is not a policy is malformed, and
+        the fixture was publishing the torture string as this network's
+        witness policy. The canonical-JSON rules it exercises are the same
+        wherever the value rides; a label is where free text belongs.
+        """
+        labels = self.state.devices["astral"]["labels"]
+        self.assertEqual(labels["escapes"], fixture.ESCAPE_TORTURE)
+
+    def test_a_policy_entry_replaces_the_states_policy(self):
+        """What the old assertion was really for."""
+        self.assertIn("group home 3", self.state.policy)
 
     def test_escapes_exactly_the_specified_characters(self):
         out = self.dumps({"k": fixture.ESCAPE_TORTURE})
