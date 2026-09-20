@@ -83,3 +83,27 @@ func TestTheVerifierStaysNarrow(t *testing.T) {
 		append([]string{"github.com/BurntSushi"}, kernelDriver...),
 		"A verifier needs a log and a trust anchor, and nothing else.")
 }
+
+// A verifier reads cosignatures off the checkpoint it fetched; it never talks
+// to a witness. The distinction is the whole shape of `GOSSIP.md` part 1:
+// witnesses guard the *log*, and a node checks their signatures offline. A
+// verifier that dialled a witness would put a network round trip -- and a
+// third party's availability -- on the path that decides whether a peer stays
+// in the table.
+func TestTheVerifierNeverTalksToAWitness(t *testing.T) {
+	for _, pkg := range []string{
+		"github.com/onembyte/norn/internal/logclient",
+		"github.com/onembyte/norn/internal/agent",
+		"github.com/onembyte/norn/cmd/nornd",
+	} {
+		forbid(t, pkg, []string{"github.com/onembyte/norn/internal/witness"},
+			"Witnesses are asked by the log, not by the nodes reading it.")
+	}
+}
+
+// And the witness client is log-side: it has no business knowing how a peer
+// table is driven.
+func TestTheWitnessClientDoesNotCarryAKernelDriver(t *testing.T) {
+	forbid(t, "github.com/onembyte/norn/internal/witness", kernelDriver,
+		"Submitting a checkpoint is an HTTP request, not an interface operation.")
+}
