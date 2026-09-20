@@ -372,3 +372,48 @@ func TestFreshnessIsReadableByTheDaemon(t *testing.T) {
 		t.Errorf("freshness = %q, want %q", got, freshness.Degraded)
 	}
 }
+
+// T5's other half, and the reason the audit went looking: "proven set
+// unchanged". A node whose wall clock is two hours out must enforce exactly
+// the same peers -- which is only true if expiry is judged against the
+// checkpoint's time rather than the machine's (§5.3, A11).
+func TestASkewedClockDoesNotChangeTheProvenSet(t *testing.T) {
+	full, _, _ := writableLog(t)
+	right := peertable.NewFake()
+	honest, err := New(Config{
+		Anchor: anchor(t), Fetcher: logclient.Dir(full), Device: right,
+		Mode: reconcile.Owner, Emit: (&recorder{}).emit,
+		Now:  func() time.Time { return time.Unix(fixtureCosignedAt, 0) },
+		Mono: func() time.Duration { return 0 },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := honest.Once(); err != nil {
+		t.Fatal(err)
+	}
+	expected, _ := right.Peers()
+
+	// The same network, on a machine whose clock is a year fast -- which is
+	// past the fixture's expiring device.
+	skewed := peertable.NewFake()
+	a, err := New(Config{
+		Anchor: anchor(t), Fetcher: logclient.Dir(full), Device: skewed,
+		Mode: reconcile.Owner, Emit: (&recorder{}).emit,
+		Now:  func() time.Time { return time.Unix(fixtureCosignedAt+365*24*3600, 0) },
+		Mono: func() time.Duration { return 0 },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Once(); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := skewed.Peers()
+
+	if len(got) != len(expected) {
+		t.Errorf("a wrong local clock changed the peer table: %d peers instead of %d. "+
+			"Expiry is judged against the checkpoint's time, not this machine's.",
+			len(got), len(expected))
+	}
+}

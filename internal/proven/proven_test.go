@@ -368,3 +368,57 @@ func TestNoClockPublishesNoAge(t *testing.T) {
 		t.Errorf("age = %v, want none", *set.AgeSeconds)
 	}
 }
+
+// SPEC §5.3: "Entries whose `expires` is earlier than **the checkpoint time**
+// are treated as `revoked` at evaluation time, not at replay, so state stays
+// clock-independent."
+//
+// The checkpoint time is witness time (§10, GOSSIP part 5) -- not the node's
+// wall clock, which A11 says decides nothing. A node with a fast clock would
+// otherwise evict a device early and a slow one would keep an expired device,
+// both silently, and both in contradiction of a normative line. It is also
+// what T5 needs: a node whose clock is two hours out must leave its proven set
+// **unchanged**, and that is only true if expiry never consults that clock.
+func TestExpiryIsJudgedAgainstWitnessTimeNotTheLocalClock(t *testing.T) {
+	result, _ := verified(t)
+	if result.QuorumTime == nil {
+		t.Fatal("the fixture's log is cosigned")
+	}
+	witness := *result.QuorumTime
+
+	// A device the log gives an expiry, set just after witness time.
+	expiring := ""
+	for id, device := range result.State.Devices {
+		if device.Expires > 0 {
+			expiring = id
+			break
+		}
+	}
+	if expiring == "" {
+		t.Skip("the fixture has no expiring device")
+	}
+	expiry := int64(result.State.Devices[expiring].Expires)
+
+	// A node whose wall clock is a year past that expiry must still publish
+	// the device, because the witnesses have not said so.
+	skewed := time.Unix(expiry+365*24*3600, 0)
+	set, err := FromResult(result, skewed, freshnessOf(t, result))
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, d := range set.Devices {
+		if d.DeviceID == expiring {
+			found = true
+		}
+	}
+	if witness.Unix() < expiry && !found {
+		t.Errorf("%s was dropped because *this machine's* clock says it expired; "+
+			"witness time is %s and the expiry is %s (§5.3, A11)",
+			expiring, witness, time.Unix(expiry, 0))
+	}
+	// And the local clock still appears where it is labelled as local.
+	if set.WrittenAt != skewed.Unix() {
+		t.Errorf("written_at_local_clock = %d, want this machine's clock", set.WrittenAt)
+	}
+}

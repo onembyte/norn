@@ -101,6 +101,19 @@ func (d Device) Key() (peertable.Key, error) {
 	return peertable.KeyFromBytes(raw)
 }
 
+// EvaluationTime is the checkpoint time §5.3 judges expiry against.
+//
+// With no witness time there is no clock. Expiry then evaluates as "not
+// reached", which keeps the last known state rather than dropping devices on a
+// number nobody vouched for -- the same choice Norn makes everywhere else it
+// cannot establish something.
+func EvaluationTime(result *logclient.Result) time.Time {
+	if result.QuorumTime != nil {
+		return *result.QuorumTime
+	}
+	return time.Time{}
+}
+
 // IsProven reports whether the log currently vouches for this device: active,
 // and not past an expiry it set for itself.
 //
@@ -111,7 +124,8 @@ func IsProven(device state.Device, now time.Time) bool {
 	if device.Status != state.StatusActive {
 		return false
 	}
-	return device.Expires == 0 || int64(device.Expires) > now.Unix()
+	// A zero time is "no clock": expiry cannot be judged, so it is not.
+	return device.Expires == 0 || now.IsZero() || int64(device.Expires) > now.Unix()
 }
 
 // Devices returns the proven devices of a state, in a stable order.
@@ -150,6 +164,12 @@ func View(clock *freshness.Clock, limits freshness.Limits,
 }
 
 // FromResult builds the view a verified log implies.
+// `now` is this node's wall clock, and it is used for exactly one thing: the
+// `written_at_local_clock` field, which is labelled as local because that is
+// all it is good for. **Expiry is judged against the checkpoint's own time**
+// -- §5.3 says so in as many words, and A11 is why: a node with a fast clock
+// would evict a device early and a slow one would keep an expired device,
+// both silently.
 func FromResult(result *logclient.Result, now time.Time, fresh Freshness) (Set, error) {
 	set := Set{
 		Version: Version,
@@ -174,7 +194,12 @@ func FromResult(result *logclient.Result, now time.Time, fresh Freshness) (Set, 
 		set.AgeSeconds = &seconds
 	}
 
-	for _, id := range Devices(result.State, now) {
+	// The checkpoint time, which is witness time. With no cosignature there is
+	// no clock, so expiry cannot be evaluated at all -- the node keeps what it
+	// last knew and its freshness says `unknown`, which is the alarm. Falling
+	// back to the wall clock here would be the one place A11 leaked.
+	at := EvaluationTime(result)
+	for _, id := range Devices(result.State, at) {
 		device := result.State.Devices[id]
 		raw, err := hex.DecodeString(device.WgPk)
 		if err != nil {

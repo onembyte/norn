@@ -354,3 +354,71 @@ func shorterLog(t *testing.T, entries [][]byte) string {
 	}
 	return dir
 }
+
+// Phase 4's second gate line: "Witness quorum lost -> node refuses the new
+// checkpoint, keeps last good, alarms."
+//
+// The refusal itself is 4.1c's, tested in the verifier. What was never tested
+// is the *node's* half: that a checkpoint short of the quorum leaves the peer
+// table exactly as it was and says so. A verifier that refuses while the
+// daemon quietly enforces anyway would satisfy neither the line nor anybody
+// reading it.
+func TestAQuorumShortCheckpointKeepsTheTableAndAlarms(t *testing.T) {
+	full, _, entries := writableLog(t)
+	fake := peertable.NewFake()
+	rec := &recorder{}
+	a, err := New(Config{
+		Anchor: anchor(t), Fetcher: logclient.Dir(full), Device: fake,
+		Mode: reconcile.Owner, Emit: rec.emit,
+		Now:  func() time.Time { return time.Unix(fixtureCosignedAt, 0) },
+		Mono: func() time.Duration { return 0 },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Once(); err != nil {
+		t.Fatal(err)
+	}
+	held := a.last.Checkpoint
+	before, _ := fake.Peers()
+	if len(before) == 0 {
+		t.Fatal("nothing was enforced to begin with")
+	}
+
+	// The witnesses go away: the log grows and only its own signature is on
+	// the new head. Everything else about it is perfect.
+	a.cfg.Fetcher = logclient.Dir(unwitnessedLog(t, entries))
+
+	if err := a.Once(); err == nil {
+		t.Fatal("a checkpoint no quorum cosigned was accepted")
+	}
+	if rec.kinds()[VerifyFailed] == 0 {
+		t.Error("losing the quorum should be alarmed, not absorbed")
+	}
+	if a.last.Checkpoint != held {
+		t.Error("the stored checkpoint moved to one no quorum vouched for")
+	}
+	after, _ := fake.Peers()
+	if len(after) != len(before) {
+		t.Errorf("the peer table changed: %d -> %d", len(before), len(after))
+	}
+}
+
+// unwitnessedLog is the fixture's log grown by one entry, signed by the log
+// and cosigned by nobody -- what a network looks like when its witnesses are
+// unreachable.
+func unwitnessedLog(t *testing.T, entries [][]byte) string {
+	t.Helper()
+	doc := anchor(t)
+	dir := t.TempDir()
+	store, err := tlogstore.Open(dir, doc.Origin, fixtureKey(t, "logkey"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, raw := range entries {
+		if _, err := store.Append(raw); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return dir
+}

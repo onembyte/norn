@@ -2,6 +2,7 @@ package agent
 
 import (
 	"crypto/ed25519"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"github.com/onembyte/norn/internal/cosign"
 	"github.com/onembyte/norn/internal/entry"
 	"github.com/onembyte/norn/internal/forkevidence"
+	"github.com/onembyte/norn/internal/gossip"
 	"github.com/onembyte/norn/internal/logclient"
 	"github.com/onembyte/norn/internal/note"
 	"github.com/onembyte/norn/internal/peertable"
@@ -274,4 +276,58 @@ func freshAnchor(t *testing.T) *trust.Trust {
 	doc.Policy = strings.Replace(doc.Policy, "log "+anchor(t).Origin, "log "+origin, 1)
 	doc.LogKey = renamed
 	return &doc
+}
+
+// Phase 4's first gate line: "two log instances presenting divergent
+// checkpoints to two nodes -> **detected via gossip**".
+//
+// That is the scenario gossip exists for. A node whose log is fine learns from
+// a *peer* that a second history is circulating -- and a peer serving a forked
+// branch must be treated as what it is, not filed away as one neighbour being
+// unreachable. §11 does not care which source the second history arrived from.
+func TestAForkedPeerIsAForkNotABrokenNeighbour(t *testing.T) {
+	real, _, entries := writableLog(t)
+	forked := forkedLog(t, entries, 40)
+	runDir := t.TempDir()
+	rec := &recorder{}
+	fake := peertable.NewFake()
+
+	peer := httptest.NewServer(gossip.Handler(forked))
+	t.Cleanup(peer.Close)
+
+	a, err := New(Config{
+		Anchor: anchor(t), Fetcher: logclient.Dir(real), Device: fake,
+		Mode: reconcile.Owner, RunDir: runDir, Emit: rec.emit,
+		Now:   func() time.Time { return time.Unix(fixtureCosignedAt, 0) },
+		Mono:  func() time.Duration { return 0 },
+		Peers: func() []string { return []string{peer.URL} },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Once(); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := fake.Peers()
+
+	// The log goes quiet, so the node asks its peers -- and one of them is
+	// serving the other history.
+	a.cfg.Fetcher = logclient.Dir(t.TempDir())
+	_ = a.Once()
+
+	if rec.kinds()[Fork] == 0 {
+		t.Fatalf("a peer serving a second history was not reported as a fork: %v",
+			rec.kinds())
+	}
+	if !a.Frozen() {
+		t.Error("the node did not freeze on a fork it learned from a peer")
+	}
+	files, _ := filepath.Glob(filepath.Join(runDir, ForkDir, "*.evidence"))
+	if len(files) != 1 {
+		t.Errorf("evidence files = %v; a fork learned from a peer is still a fork", files)
+	}
+	after, _ := fake.Peers()
+	if len(after) != len(before) {
+		t.Errorf("the peer table changed on a fork: %d -> %d", len(before), len(after))
+	}
 }

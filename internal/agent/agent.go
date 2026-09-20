@@ -453,9 +453,14 @@ func (a *Agent) reconcile(result *logclient.Result, fresh proven.Freshness) erro
 
 // desired is the proven set dressed with whatever the provider knows.
 func (a *Agent) desired(result *logclient.Result) ([]peertable.Peer, endpoint.Report) {
-	now := a.cfg.Now()
+	// The checkpoint's own time, not this machine's (§5.3, A11). This is the
+	// clock that decides what goes in the peer table, so it is the last place
+	// a wrong local clock should be able to reach: a fast one would evict a
+	// device early, a slow one would keep an expired device, and neither would
+	// say anything.
+	at := proven.EvaluationTime(result)
 	var devices []endpoint.Device
-	for _, id := range proven.Devices(result.State, now) {
+	for _, id := range proven.Devices(result.State, at) {
 		device := result.State.Devices[id]
 		key, err := keyOf(device.WgPk)
 		if err != nil {
@@ -600,7 +605,17 @@ func (a *Agent) askPeers(anchor logclient.Anchor) (*logclient.Result, string) {
 	for _, addr := range gossip.Choose(a.cfg.Peers(), fanout, a.peerOrder) {
 		result, err := logclient.Verify(gossip.Peer(addr), anchor)
 		if err != nil {
-			// One neighbour being broken, lying or behind is not an outage.
+			// A second *history* is not a broken neighbour. §11 does not care
+			// which source it arrived from, and a peer is how a node learns
+			// that the split-view it is not being shown exists at all --
+			// which is the whole point of the first Phase 4 gate line.
+			var fork *logclient.ForkError
+			if errors.As(err, &fork) {
+				a.recordFork(fork)
+				return nil, ""
+			}
+			// Otherwise: one neighbour being broken, lying or behind is not
+			// an outage.
 			a.emit(Event{Kind: PeerRefused,
 				Message: fmt.Sprintf("peer %s: %v", addr, err)})
 			continue
