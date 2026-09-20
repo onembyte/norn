@@ -608,3 +608,78 @@ func TestQuorumNoneAcceptsAnUncosignedCheckpoint(t *testing.T) {
 		t.Errorf("cosignatures = %+v, want none", result.Cosignatures)
 	}
 }
+
+// The checkpoint's witness time: the instant the policy vouches for, which is
+// the only clock a node trusts (A11, GOSSIP part 5). The verifier is where the
+// policy and the cosignatures meet, so it is where that instant is read.
+func TestVerifyReportsTheWitnessTime(t *testing.T) {
+	// Three witnesses, two required, cosigning at three different instants.
+	dir, anchor := cosignedLogAt(t, map[string]int64{
+		"pi": cosignedAtUnix, "vps": cosignedAtUnix - 60, "friend": cosignedAtUnix - 600,
+	}, 2)
+
+	result, err := Verify(Dir(dir), anchor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.QuorumTime == nil {
+		t.Fatal("a cosigned checkpoint must carry a witness time")
+	}
+	// Two of three: the newest instant at which two have signed. The newest
+	// cosignature alone is one witness, and one witness is not a quorum.
+	if got := result.QuorumTime.Unix(); got != cosignedAtUnix-60 {
+		t.Errorf("quorum time = %d, want %d", got, cosignedAtUnix-60)
+	}
+}
+
+// A network that asked for no corroboration has no witness clock, and the
+// result says so by carrying no time rather than by inventing one.
+func TestQuorumNoneReportsNoWitnessTime(t *testing.T) {
+	dir, anchor := cosignedLog(t, nil, 2)
+	anchor.Policy = "log norn/test " + verifierKey(t, logKey(t), "norn/test") + "\nquorum none\n"
+
+	result, err := Verify(Dir(dir), anchor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.QuorumTime != nil {
+		t.Errorf("quorum time = %v, want none", result.QuorumTime)
+	}
+}
+
+// cosignedLogAt is cosignedLog with a different instant per witness.
+func cosignedLogAt(t *testing.T, when map[string]int64, threshold int) (string, Anchor) {
+	t.Helper()
+	inner, entries := loadFixture(t)
+	dir := t.TempDir()
+	key := logKey(t)
+	cosigners := func(signed string) (string, error) {
+		out := signed
+		for _, name := range witnessNames {
+			at, ok := when[name]
+			if !ok {
+				continue
+			}
+			one := cosign.Append(
+				[]cosign.Signer{{Name: "norn-witness/" + name, Key: witnessKey(t, name)}},
+				cosign.At(time.Unix(at, 0)))
+			var err error
+			if out, err = one(out); err != nil {
+				return "", err
+			}
+		}
+		return out, nil
+	}
+	store, err := tlogstore.Open(dir, "norn/test", key,
+		tlogstore.WithCosigner(tlogstore.CosignerFunc(cosigners)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, raw := range entries[:10] {
+		if _, err := store.Append(raw); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return dir, Anchor{Anchor: inner, LogKeys: []string{verifierKey(t, key, "norn/test")},
+		Policy: policyOver(t, "norn/test", witnessNames, threshold)}
+}

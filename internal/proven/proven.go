@@ -127,11 +127,20 @@ func FromResult(result *logclient.Result, now time.Time) (Set, error) {
 			Size:   result.Checkpoint.Size,
 			Root:   hex.EncodeToString(result.Checkpoint.Root[:]),
 		},
-		// No cosignature has been seen, so there is no witness time and no
-		// state to compute from it. Phase 4 replaces this, and until then
-		// saying "fresh" would be a guess wearing a field name.
+		// The state computed from that instant -- fresh, degraded, hard-stale
+		// -- is 4.2b. Until then the reading is published and the state says
+		// `unknown`, because naming a state is a claim about *now* and this
+		// function is not yet the thing that tracks elapsed time.
 		Freshness: Unknown,
 		WrittenAt: now.Unix(),
+	}
+
+	// Witness time: what the network's witnesses vouched for, which is the
+	// only clock a node may treat as authoritative (A11). Absent when no
+	// quorum cosigned, and then it stays absent rather than falling back.
+	if result.QuorumTime != nil {
+		at := result.QuorumTime.Unix()
+		set.Checkpoint.CosignedAt = &at
 	}
 
 	for _, id := range Devices(result.State, now) {

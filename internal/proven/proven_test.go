@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -54,6 +55,7 @@ func verified(t *testing.T) (*logclient.Result, *trust.Trust) {
 // which would read as "all is well".
 func TestFreshnessIsUnknownWithoutWitnesses(t *testing.T) {
 	result, _ := verified(t)
+	result.QuorumTime = nil // a log no witness has cosigned
 	set, err := FromResult(result, time.Now())
 	if err != nil {
 		t.Fatal(err)
@@ -189,7 +191,11 @@ func TestWriteThenRead(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if back.Checkpoint != set.Checkpoint || len(back.Devices) != len(set.Devices) {
+	// Compared by value: `Checkpoint` holds a pointer, and `!=` on the struct
+	// would compare addresses -- which agree only while both are nil, and so
+	// would quietly stop testing anything the moment a witness time appeared.
+	if !reflect.DeepEqual(back.Checkpoint, set.Checkpoint) ||
+		len(back.Devices) != len(set.Devices) {
 		t.Errorf("round trip differs:\n got %+v\nwant %+v", back, set)
 	}
 	if back.Freshness != Unknown {
@@ -251,5 +257,30 @@ func TestReadRejectsAnotherVersion(t *testing.T) {
 	}
 	if _, err := Read(path); err == nil {
 		t.Fatal("read a file from a schema this build does not know")
+	}
+}
+
+// And when witnesses *have* cosigned, the file reports the instant they
+// vouched for -- not the node's own clock, which appears only as
+// `written_at_local_clock` and is labelled as local for that reason (A11).
+func TestTheCheckpointCarriesWitnessTime(t *testing.T) {
+	result, _ := verified(t)
+	if result.QuorumTime == nil {
+		t.Fatal("the fixture's log is cosigned; its verification must yield a witness time")
+	}
+
+	set, err := FromResult(result, time.Unix(1_900_000_000, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if set.Checkpoint.CosignedAt == nil {
+		t.Fatal("a cosigned checkpoint must publish the instant its witnesses vouched for")
+	}
+	if *set.Checkpoint.CosignedAt != result.QuorumTime.Unix() {
+		t.Errorf("cosigned_at = %d, want the quorum time %d",
+			*set.Checkpoint.CosignedAt, result.QuorumTime.Unix())
+	}
+	if set.WrittenAt == *set.Checkpoint.CosignedAt {
+		t.Error("witness time and the local clock must not be the same field")
 	}
 }

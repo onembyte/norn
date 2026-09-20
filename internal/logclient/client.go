@@ -16,9 +16,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/onembyte/norn/internal/cosign"
-	"github.com/onembyte/norn/internal/note"
+	"github.com/onembyte/norn/internal/freshness"
 	"github.com/onembyte/norn/internal/policy"
 	"github.com/onembyte/norn/internal/replay"
 	"github.com/onembyte/norn/internal/state"
@@ -58,6 +59,12 @@ type Result struct {
 	// times they said it was. Witness time is the only clock a node may use
 	// (A11), so this is what freshness is computed from.
 	Cosignatures []cosign.Cosignature
+	// QuorumTime is the instant the policy vouches for -- the newest time at
+	// which enough witnesses had signed (GOSSIP part 5). It is nil when the
+	// policy asks for no corroboration, because then nobody is vouching for
+	// the time either, and a node with no witness clock must say so rather
+	// than fall back to its own (A11).
+	QuorumTime *time.Time
 	// Served is every entry the log served, in log order. A caller that has
 	// just verified a log usually wants to look something up in it -- an
 	// inclusion check, a proof bundle -- and re-fetching would be asking a
@@ -118,7 +125,7 @@ func Verify(f Fetcher, anchor Anchor) (*Result, error) {
 	// Then the witnesses. A log can sign anything it likes, including two
 	// different histories for two different nodes; what it cannot do is get a
 	// quorum of witnesses to cosign both at the same size.
-	cosignatures, err := checkQuorum(anchor, string(raw))
+	cosignatures, quorumTime, err := checkQuorum(anchor, string(raw))
 	if err != nil {
 		return nil, err
 	}
@@ -151,8 +158,8 @@ func Verify(f Fetcher, anchor Anchor) (*Result, error) {
 	}
 
 	return &Result{Checkpoint: cp, SignedCheckpoint: string(raw),
-		Cosignatures: cosignatures,
-		State:        replay.Replay(anchor.Anchor, entries), Served: entries}, nil
+		Cosignatures: cosignatures, QuorumTime: quorumTime,
+		State: replay.Replay(anchor.Anchor, entries), Served: entries}, nil
 }
 
 // fetchEntries reads entry bundles until it has `size` entries.
@@ -234,38 +241,34 @@ func checkTiles(f Fetcher, tree *tlog.Tree) error {
 }
 
 // checkQuorum applies the network's policy to the checkpoint's cosignatures.
-func checkQuorum(anchor Anchor, signed string) ([]cosign.Cosignature, error) {
+func checkQuorum(anchor Anchor, signed string) ([]cosign.Cosignature, *time.Time, error) {
 	if anchor.Policy == "" {
-		return nil, logErrorf("the anchor carries no policy; §10 requires the witness " +
+		return nil, nil, logErrorf("the anchor carries no policy; §10 requires the witness " +
 			"quorum to be checked, and there is nothing to check it against")
 	}
 	rules, err := policy.Parse(anchor.Policy)
 	if err != nil {
-		return nil, logErrorf("the anchor's policy is unusable: %v", err)
+		return nil, nil, logErrorf("the anchor's policy is unusable: %v", err)
 	}
 
 	cosignatures, err := cosign.Verify(signed, rules.Keys())
 	if err != nil {
-		return nil, logErrorf("%v", err)
+		return nil, nil, logErrorf("%v", err)
 	}
 	names := make([]string, 0, len(cosignatures))
 	for _, c := range cosignatures {
-		names = append(names, witnessName(rules, c))
+		names = append(names, rules.Label(c.Name))
 	}
 	if !rules.Satisfied(names) {
-		return nil, logErrorf("the checkpoint does not satisfy the witness policy: "+
+		return nil, nil, logErrorf("the checkpoint does not satisfy the witness policy: "+
 			"quorum %q, cosigned by %v", rules.Quorum(), names)
 	}
-	return cosignatures, nil
-}
 
-// witnessName maps a cosignature back to the local name the policy uses, which
-// is what a quorum is expressed in.
-func witnessName(rules *policy.Policy, c cosign.Cosignature) string {
-	for _, w := range rules.Witnesses {
-		if v, err := note.ParseVerifierKey(w.Key); err == nil && v.Name == c.Name {
-			return w.Name
-		}
+	// The same rules that decided the quorum decide the instant it vouches
+	// for; reading it anywhere else would be a second opinion about the same
+	// question.
+	if at, ok := freshness.QuorumTime(rules, cosignatures); ok {
+		return cosignatures, &at, nil
 	}
-	return c.Name
+	return cosignatures, nil, nil
 }

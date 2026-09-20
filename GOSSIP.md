@@ -94,8 +94,16 @@ and the monitor, never by `nornd` on the handshake path.
 
 A node's wall clock is untrusted (A11). Define for an adopted checkpoint:
 
-- `quorum_time(cp)` = the *k-th newest* cosignature timestamp among the witnesses
-  that satisfy the quorum — the latest instant that ≥ k witnesses vouch for.
+- `quorum_time(cp)` = the latest instant T such that the witnesses whose cosignature
+  is at least T **satisfy the policy** — the newest time the network as a whole
+  vouches for. For a flat `group home k …` this is the *k-th newest* cosignature
+  timestamp, which is how it reads at first; that phrasing has no meaning once
+  groups nest, because `group top 1 inner friend` has no single k. Evaluating the
+  policy at each candidate instant gives the same answer for the flat case and a
+  defined one for the rest.
+- A policy of `quorum none` has **no** `quorum_time`: a network that asked for no
+  corroboration has nobody vouching for the time either, so its freshness is
+  `unknown`, not perfect.
 - On every adoption the node records `(mono_now, quorum_time)`.
 - `age()` = `quorum_time_at_adoption` + (monotonic elapsed since) — compared against
   the *newest* `quorum_time` it has seen. Wall clock is used only to raise

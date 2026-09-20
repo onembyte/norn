@@ -17,6 +17,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/onembyte/norn/internal/note"
 )
 
 // ErrPolicy reports a policy that cannot be used.
@@ -236,4 +238,20 @@ func (p *Policy) Keys() []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// Label maps the name a cosignature carries back to the short name this policy
+// files that witness under. They are two names for one party -- `witness pi
+// norn-witness/pi+...` -- and the quorum is evaluated over the short ones, so
+// anything holding a cosignature has to cross this boundary.
+//
+// A name no witness line claims is returned unchanged: it belongs to somebody
+// else's network, and it will not satisfy anything.
+func (p *Policy) Label(cosignerName string) string {
+	for _, w := range p.Witnesses {
+		if v, err := note.ParseVerifierKey(w.Key); err == nil && v.Name == cosignerName {
+			return w.Name
+		}
+	}
+	return cosignerName
 }
