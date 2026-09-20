@@ -562,3 +562,23 @@ func TestTheStatesPolicyIsAPolicy(t *testing.T) {
 			"A node that honoured §4.5 would be unable to verify this network.", err)
 	}
 }
+
+// Cold-model gate run 6, defect H4. §4.0 said an entry with `sigs: []` is
+// refused `no-device-sig` for `enroll` and `rotate`, "whose first step-8 check
+// is the device signature". For `enroll` that is wrong: the envelope carries
+// no signature, but the *request* inside it is still intact and correctly
+// signed by the device, so the device-signature check passes and the entry is
+// refused `threshold` for having no signers.
+//
+// The only empty-`sigs` vector was a `note`, so nothing in the suite
+// contradicted a reader who believed §4.0 -- and reason codes land in
+// `state.rejected`, which §5.3 requires byte-identical, so one wrong sentence
+// splits `state.json` on the same log bytes.
+func TestAnUnsignedEnrollIsRefusedForItsSignerCount(t *testing.T) {
+	_, _, m := loadCase(t, filepath.Join(vectorRoot(), "log"))
+	_, reason := entryNamed(t, m, "bad-enroll-empty-sigs")
+	if reason != "threshold" {
+		t.Errorf("an enroll with no envelope signatures is refused %q; §5.1's order "+
+			"gives `threshold`, because the embedded request is still signed", reason)
+	}
+}

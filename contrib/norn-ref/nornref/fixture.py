@@ -388,7 +388,7 @@ def log() -> list[LogItem]:
     unknown_role["sigs"][0]["role"] = "admin"
     b.add_raw(f"{b.index}-bad-unknown-role", cbor.encode(unknown_role), "decode")               # D18
     b.add_raw(f"{b.index}-bad-missing-sigs", cbor.encode({                                      # D19
-        "v": entry.VERSION, "t": "note", "net": NET, "ts": T0 + 9000, "after": 45,
+        "v": entry.VERSION, "t": "note", "net": NET, "ts": T0 + 9000, "after": b.index,
         "body": {"text": "no sigs key at all"}}), "decode")
     # D20, and D-032: the *current* device key signs, so replay gets past the
     # current-key check and reaches the proof-of-possession rule on the
@@ -428,7 +428,18 @@ def log() -> list[LogItem]:
     # E5: `sigs: []` is well-formed but unauthorised -- `threshold`, not `decode`.
     b.add_raw(f"{b.index}-bad-empty-sigs", cbor.encode({
         "v": entry.VERSION, "t": "note", "net": NET, "ts": T0 + 9000,
-        "after": 52, "body": {"text": "well-formed, unsigned"}, "sigs": []}), "threshold")
+        "after": b.index, "body": {"text": "well-formed, unsigned"}, "sigs": []}), "threshold")
+
+    # H4: the other shape of `sigs: []`. The envelope carries no signature and
+    # the embedded request still carries the device's own, so §5.1's enroll
+    # order passes the device-signature check and fails the signer count. §4.0
+    # claimed `no-device-sig` for this until cold gate run 6 built the case the
+    # suite lacked -- and reason codes are consensus state (§5.3), so one wrong
+    # sentence split `state.json` on identical log bytes.
+    unsigned_enroll = entry.new("enroll", NET, ts=T0 + 9000, after=b.index,
+                                body=_enroll_body("halfsigned"))
+    unsigned_enroll["sigs"] = []
+    b.add_raw(f"{b.index}-bad-enroll-empty-sigs", cbor.encode(unsigned_enroll), "threshold")
 
     # E6: a malformed `kid` is a schema violation, not an unresolvable key.
     bad_kid = entry.new("note", NET, ts=T0 + 9000, after=53, body={"text": "bad kid"})

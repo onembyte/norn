@@ -8,7 +8,7 @@
 > that isn't in it. Works beside Headscale, NetBird or plain `wg-quick`. Changes
 > nothing in WireGuard.
 
-*Status (2026-09-20): 49 Go packages, 647 tests, a frozen `SPEC.md`, and a
+*Status (2026-09-20): 49 Go packages, 649 tests, a frozen `SPEC.md`, and a
 vector suite a second implementer can use without this repository. **14 of 38
 gate lines** in `PLAN.md` are ticked — every gate that needs a running lab, a
 measurement or a second pair of eyes is still open. No Norn has ever guarded a
@@ -26,7 +26,7 @@ $ go build -o norn ./cmd/norn
 $ ./norn verify -trust testdata/vectors/trust.cbor -log testdata/vectors/served
 network    norn-testnet
 anchor     YV05-H4J9-MA1G-P8V2
-size       98 entries
+size       99 entries
 ...
 10 device(s), 7 active:
 ```

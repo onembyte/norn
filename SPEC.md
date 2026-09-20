@@ -151,13 +151,13 @@ cannot exhaust a verifier, and both are vectored in `entries-hostile/`.
 
 The `sigs` key is **mandatory**; an entry with no signatures carries `sigs: []`,
 which is well-formed and is rejected later by an authorisation rule rather than
-by `decode`. Which rule depends on the type: `threshold` for `note` and the
-governance types, but **`no-device-sig`** for `enroll` and `rotate`, whose first
-step-8 check is the device signature (§5.1). `role` is a
-**closed enum** — a value outside `root` / `signer` / `device` is a schema
-violation and rejects the entry with `decode` (D18). This is distinct from §5.1
-step 7, where a *well-formed* signature whose `kid` does not resolve in that role
-is silently not counted.
+by `decode`. **Which rule is decided by §5.1's ordering for that type, and is
+not restated here** — an entry with no signatures still carries everything
+else, and what it fails on depends on which check that type reaches first. An
+unsigned `enroll`, for instance, is `threshold` and not `no-device-sig`: the
+embedded request is still signed by the device, so the device-signature check
+passes and the signer count is what fails. `log/bad-enroll-empty-sigs` and
+`log/bad-empty-sigs` vector the two shapes.
 
 Field constraints (violations → reason `decode` — **except at index 0**, where
 every failure is `bad-genesis` and aborts replay, per §5.1's entry-0 list):
@@ -405,12 +405,23 @@ time** (§5.3), not at replay, so the state itself stays clock-independent.
 | `root-invariant` | `root_remove` would leave `< root_thr` roots or `< 1` root. **Removals only** — a `root_thr`/`signer_thr` value outside `1 … len(set)` is `bad-thr`, because the *value* is wrong rather than the resulting set (D11). |
 | `bad-thr` | a `signer_thr`/`root_thr` value of 0, or one exceeding the size of the set it applies to. This is a **replay** decision, not a schema one: the value is a well-formed uint, so it is never `decode`. |
 
-Signature counting, precisely: a signature `{kid, role, sig}` is *valid* iff the
-state before this entry maps `kid` to a key **in that role** (for `device`: `kid`
-equals `kid(device_pk)` of the device this entry names — for `enroll`, the
-`device_pk` in the body) and Ed25519 verification of `sig` over the preimage
-succeeds. Invalid signatures are ignored, not fatal; only the count of valid ones
-per role matters.
+Signature counting, precisely: a signature `{kid, role, sig}` is *valid* iff
+`kid` names a key this entry may be signed by **in that role**, and Ed25519
+verification of `sig` over the preimage succeeds. For `signer` and `root` that
+key is whatever the state **before this entry** holds in that role. For
+`device` it is the `device_pk` of the device this entry names:
+
+- on `enroll`, the `device_pk` inside the **embedded request** (§4.3) — an
+  `enroll` body carries no other key;
+- on `rotate`, the device's **current** `device_pk` from the state, **and** the
+  incoming `device_pk` the body carries, when it carries one. The incoming key
+  is by construction not in the state before the entry, which is the whole
+  point of §5.1's proof of possession: a signature by it is valid, and D-032
+  requires it;
+- otherwise, the device's `device_pk` from the state.
+
+Invalid signatures are ignored, not fatal; only the count of valid ones per
+role matters.
 
 ### 5.3 Canonical state schema (normative)
 
@@ -773,7 +784,7 @@ suite is checked only against its own author.
 | `keys.json` | every test key: Ed25519 `{seed, public, kid}` by name, X25519 public keys by name, and `net` |
 | `entries/NN-<type>.cbor` | one valid entry per type, canonical bytes |
 | `entries/NN-<type>.json` | mirror: `{entry, entry_hash, leaf_hash, preimage_sha256, size}` where `size` is the byte length of the `.cbor`. The `entry` object mirrors the **CBOR**, so an optional field absent from the entry is absent here too — unlike `state.json`, where §5.3's schema fields are always emitted |
-| `log/NN-<name>.cbor` | the replay fixture, **98 entries** in order. The file names are labels, not the order: **read the sequence from `manifest.json`**, never by globbing and sorting |
+| `log/NN-<name>.cbor` | the replay fixture, **99 entries** in order. The file names are labels, not the order: **read the sequence from `manifest.json`**, never by globbing and sorting |
 | `log/NN-<name>.reason` | beside each entry that must be rejected: its §5.2 reason code |
 | `log/manifest.json` | `{"anchor": {"net", "genesis_hash"}, "entries": [{"index", "name", "reason"}]}` — the replay input and expected outcome; `reason` is `""` for an accepted entry |
 | `state.json` | canonical replay output for `log/` (§5.3) |

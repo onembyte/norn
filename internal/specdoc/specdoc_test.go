@@ -517,3 +517,35 @@ func citedAsPath(text, name string) bool {
 	}
 	return false
 }
+
+// Cold-model gate run 6, defects H4 and H5. Two sentences described rules that
+// live elsewhere, and both described them wrongly.
+func TestTheProseDoesNotRestateRulesItGetsWrong(t *testing.T) {
+	spec := rawSpec(t)
+
+	// H4: §4.0's per-type claim about empty `sigs`.
+	if strings.Contains(spec, "**`no-device-sig`** for `enroll` and `rotate`") {
+		t.Error("§4.0 still claims an unsigned `enroll` is `no-device-sig`; §5.1's order " +
+			"gives `threshold`, because the embedded request is signed and the " +
+			"device-signature check passes")
+	}
+
+	// H5: §5.2 defines "valid" for a `device` signature in a way that must
+	// admit the key a `rotate` is installing, which is by construction not in
+	// the state before the entry.
+	doc := load(t)
+	section, ok := doc.Section("5.2")
+	if !ok {
+		t.Fatal("§5.2 is missing")
+	}
+	counting := section.Body[strings.Index(section.Body, "Signature counting"):]
+	if !strings.Contains(counting, "rotate") {
+		t.Error("§5.2 defines a valid `device` signature only against the state before " +
+			"the entry, which makes §5.1's proof of possession on a rotate's incoming " +
+			"key unsatisfiable: that key is never in the state beforehand")
+	}
+	if !strings.Contains(counting, "embedded request") {
+		t.Error("§5.2 says an enroll's device key is \"the `device_pk` in the body\"; " +
+			"an enroll body carries only `request`, and §4.3 says inside it")
+	}
+}
