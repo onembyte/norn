@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strings"
 
 	"github.com/onembyte/norn/internal/logclient"
+	"github.com/onembyte/norn/internal/ots"
 	"github.com/onembyte/norn/internal/replay"
 	"github.com/onembyte/norn/internal/state"
 	"github.com/onembyte/norn/internal/trust"
@@ -28,6 +30,8 @@ func verifyCmd(args []string) error {
 	trustPath := fs.String("trust", "", "path to norn.trust (required)")
 	logLocation := fs.String("log", "", "log URL or directory; defaults to the first log_urls entry")
 	asJSON := fs.Bool("json", false, "print the canonical state instead of a summary")
+	anchored := fs.Bool("anchored", false,
+		"also report the OpenTimestamps proof in anchors/, if there is one (advisory)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -64,7 +68,41 @@ func verifyCmd(args []string) error {
 		return err
 	}
 	printSummary(anchor, result)
+	if *anchored {
+		reportAnchor(fetcher, result)
+	}
 	return nil
+}
+
+// reportAnchor says what `anchors/<size>.ots` claims about this checkpoint.
+//
+// It never returns an error, and that is D-009 rather than laziness: anchoring
+// is an **advisory** witness type. A node that refused a perfectly good log
+// because an optional extra was missing, unreadable or for other bytes would
+// be enforcing the opposite of what the decision says -- and would hand
+// anybody who can delete a file a way to stop a network working.
+//
+// What it will do is say exactly what it found, including "this proof is for a
+// different document", which is what a checkpoint edited after stamping looks
+// like.
+func reportAnchor(fetcher logclient.Fetcher, result *logclient.Result) {
+	path := fmt.Sprintf("anchors/%d.ots", result.Checkpoint.Size)
+	raw, err := fetcher.Fetch(path)
+	if err != nil {
+		fmt.Printf("anchor     no anchor served at %s (advisory; D-009)\n", path)
+		return
+	}
+
+	body, _, _ := strings.Cut(result.SignedCheckpoint, "\n\n")
+	report, err := ots.CheckAnchor(raw, body+"\n\n")
+	if err != nil {
+		fmt.Printf("anchor     UNUSABLE: %v\n", err)
+		fmt.Printf("           A stamp that does not chain from this checkpoint is what\n")
+		fmt.Printf("           an edit after stamping looks like. It changes nothing the\n")
+		fmt.Printf("           log proves (D-009), and it is worth asking about.\n")
+		return
+	}
+	fmt.Printf("anchor     %s\n", report.Summary())
 }
 
 // printSummary says what a verifier concluded and, just as importantly, what

@@ -71,3 +71,104 @@ func TestVerifyRefusesALogThatDoesNotMatchTheAnchor(t *testing.T) {
 		t.Fatalf("an unreachable log must fail, got:\n%s", out)
 	}
 }
+
+// `norn verify --anchored` (D-009, PLAN's Phase 4 gate). Advisory: it reports,
+// it never decides, and a network with no anchor is not a network with a
+// problem.
+func TestVerifyAnchoredReportsTheAnchor(t *testing.T) {
+	bin := nornBinary(t)
+	log := anchoredLog(t)
+
+	out, stderr, err := run(t, bin, "verify", "-trust",
+		filepath.Join(vectors(), "trust.cbor"), "-log", log, "-anchored")
+	if err != nil {
+		t.Fatalf("verify -anchored: %v\n%s", err, stderr)
+	}
+	if !strings.Contains(out, "800000") {
+		t.Errorf("the block the proof commits into should be reported:\n%s", out)
+	}
+	// And it must not sound like Norn checked a blockchain.
+	if !strings.Contains(out, "not checked here") {
+		t.Errorf("the summary must say what was not checked:\n%s", out)
+	}
+}
+
+// A log with no anchor is reported as such, and verification still succeeds:
+// anchoring is advisory, and a node that refused a perfectly good log for
+// want of an optional extra would be enforcing the opposite of D-009.
+func TestVerifyAnchoredIsAdvisory(t *testing.T) {
+	bin := nornBinary(t)
+
+	out, stderr, err := run(t, bin, "verify", "-trust",
+		filepath.Join(vectors(), "trust.cbor"),
+		"-log", filepath.Join(vectors(), "served"), "-anchored")
+	if err != nil {
+		t.Fatalf("a log with no anchor must still verify: %v\n%s", err, stderr)
+	}
+	if !strings.Contains(out, "no anchor") {
+		t.Errorf("the absence should be reported:\n%s", out)
+	}
+}
+
+// An anchor that does not belong to this checkpoint is reported loudly. It is
+// still advisory -- it does not change what the log proves -- but a stamp for
+// other bytes is exactly the sign of a checkpoint edited after stamping.
+func TestVerifyAnchoredReportsAMismatchedProof(t *testing.T) {
+	bin := nornBinary(t)
+	log := anchoredLog(t)
+	// The sample proof is over an unrelated digest.
+	sample, err := os.ReadFile(filepath.Join(vectors(), "anchors", "sample.ots"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(log, "anchors", "90.ots"), sample, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out, stderr, _ := run(t, bin, "verify", "-trust",
+		filepath.Join(vectors(), "trust.cbor"), "-log", log, "-anchored")
+	combined := out + stderr
+	if !strings.Contains(combined, "different document") {
+		t.Errorf("a proof for other bytes should be named as such:\n%s", combined)
+	}
+}
+
+// anchoredLog is the fixture's served log with its OpenTimestamps proof in
+// place, which is the layout SPEC §6 describes: `anchors/<size>.ots`.
+func anchoredLog(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	src := filepath.Join(vectors(), "served")
+	err := filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(dir, rel)
+		if info.IsDir() {
+			return os.MkdirAll(target, 0o755)
+		}
+		body, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(target, body, 0o644)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "anchors"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	proof, err := os.ReadFile(filepath.Join(vectors(), "anchors", "checkpoint-90.ots"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "anchors", "90.ots"), proof, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}

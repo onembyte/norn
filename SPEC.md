@@ -436,7 +436,7 @@ shown to agree on it.
 - **Log operator validation is optional and non-binding.** A log SHOULD refuse entries that fail §5 against its own replay, to keep the log tidy — but verifiers MUST NOT rely on it (`THREAT-MODEL.md` G3).
 - Additional paths (Norn-specific, ignored by generic tooling):
   - `<prefix>/add` — submission (§7)
-  - `<prefix>/anchors/<size>.ots` — OpenTimestamps proof for the checkpoint at `size` (D-009; advisory)
+  - `<prefix>/anchors/<size>.ots` — OpenTimestamps proof for the checkpoint at `size` (D-009; advisory). The stamped value is `SHA-256` of the checkpoint **body** — the note text up to and including the blank line, without any signature lines. Not the signed note: cosignatures are appended as witnesses answer, so a note-level digest would stop matching the moment one replied — and the log's signature adds nothing to a claim about *when* the tree existed, since the log is the party the anchor exists to constrain.
   - `<prefix>/norn.trust` — a *copy* of the trust file, for convenience only; never authoritative (G6)
 
 ## 7. Submission and receipts
