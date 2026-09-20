@@ -425,7 +425,7 @@ which a node may do.
 | 5.2 | Watching a network | the log, the witnesses and each node's `/norn/checkpoint` and `/norn/evidence` — read-only, over the tunnel, as an enrolled peer | ✅ |
 | 5.3 | The receipt inbox | a receipt whose deadline passed with no inclusion is **non-repudiable proof of A2**, and the monitor is what notices | ✅ |
 | 5.4 | Outputs | stdout JSON always; `ntfy`, Home Assistant, Alertmanager and email optional and each failing alone | ✅ |
-| 5.5 | The status page | read-only HTML on the tunnel address: sizes, ages, witness times, the device table and the last entries in plain words | ⬜ |
+| 5.5 | The status page | read-only HTML on the tunnel address: sizes, ages, witness times, the device table and the last entries in plain words | ✅ |
 | 5.6 | `norn monitor` | the command, its config, and one run that produces a notification per rule | ⬜ |
 | 5.7 | Phase 5 gate audit | each line against what is tested, and the demos named as the lab's | ⬜ |
 
@@ -874,3 +874,11 @@ the signer keeps one job — decide, and place the entry in the log.
   - **Email is split where the honesty is.** The message it builds is tested — headers, the blank line, a subject triageable from a lock screen — and the five-line `net/smtp` call is a seam, because there is no logic behind it worth mocking and rather a lot of configuration only a real server can validate. Header values have their newlines stripped: an alert is not attacker input, but it is *generated* text, and a stray newline in a header is how one message becomes two.
   - **A deadlock in my own test, worth naming because it is the usual one.** `httptest.Server.Close` waits for outstanding handlers, so a handler blocked on a channel closed by a *later* defer hangs the test rather than the code. Defer order is release-then-close.
   - Go: 49 packages, 575 tests; `go test`, staticcheck and both halves of `vectors-check` green.
+
+- **5.5 the status page — and the fixture had a device built to break it.**
+  - **The security property is not obvious until you look at what is on the page.** A device's labels are chosen by **whoever enrolled it**, and the suite ships a device called `escaped` whose labels contain `<`, `>` and `&` — a fixture written in Phase 1 for the canonical-JSON vectors, sitting there ready. A page that let a label become markup would be a network where *enrolling a device is enough to rewrite what everybody reads*. Alerts are the same problem from another direction: a subject is a peer's name, a message carries a log operator's origin.
+  - **`html/template` is the feature, not a formality**, and the test proves the difference rather than the spelling: swapping it for `text/template` turns both escaping tests red, naming the exact strings that escaped. The awkward label must also still be **readable** — escaped rather than dropped — because an operator who cannot see what a device is actually called has lost the thing the page is for.
+  - **Read-only, like every surface Norn puts on the tunnel.** Anything but `GET`/`HEAD` is `405`: a status page answers questions and takes no instructions.
+  - **A monitor with nothing to show says so.** "nothing verified yet — this monitor has not managed to read the log since it started" beats a blank screen, which is indistinguishable from a broken one.
+  - **The device table is judged at the checkpoint's time**, the same rule §5.3 gave the enforcement path in 4.8 — so the page and the peer table cannot disagree about who is expired.
+  - **The recent entries use `plainlog.Describe`**, the renderer `norn status` already uses, so the page and the terminal never describe the same log differently.
