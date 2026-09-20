@@ -12,6 +12,7 @@ package main
 
 import (
 	"crypto/ed25519"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -509,7 +510,17 @@ func writeForkEvidence(root, origin string, key ed25519.PrivateKey,
 		[]byte(forkedSigned), 0o644); err != nil {
 		return err
 	}
-	return writeForkNegatives(root, origin, key, entries, heldSigned, heldTree, signers)
+	return writeForkNegatives(root, origin, key, entries, heldSigned, heldTree, signers,
+		evidence, forkedSigned, forkedCP)
+}
+
+// mustBody is the note text a signature covers, without the signature lines.
+func mustBody(signed string) string {
+	i := strings.Index(signed, "\n\n")
+	if i < 0 {
+		return signed
+	}
+	return signed[:i+1]
 }
 
 // writeForkNegatives ships the two refusals §12.1 has claimed since Phase 4.
@@ -519,7 +530,8 @@ func writeForkEvidence(root, origin string, key ed25519.PrivateKey,
 // directory could check that a fork is proved and nothing about what is not.
 func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 	entries [][]byte, heldSigned string, heldTree *tlog.Tree,
-	signers []cosignpkg.Signer) error {
+	signers []cosignpkg.Signer, evidence *forkevidence.Evidence,
+	forkedSigned string, forkedCP tlog.Checkpoint) error {
 
 	dir := filepath.Join(root, "fork")
 
@@ -614,12 +626,88 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 		return err
 	}
 
+	// Cold gate run 6, H1: the two cases above land on §11.1's steps 1 and 4,
+	// and nothing in the suite reached steps 2 or 3. A reader that never
+	// checked the consistency proof, never verified the *conflicting*
+	// checkpoint, or never compared the sizes passed every vector -- and §11
+	// rule 4 makes a concluded fork permanent, so a forged accusation any
+	// stranger can write is a permanent denial of service.
+	//
+	// Each of these three must get *past* the earlier steps, or it tests one
+	// of those instead.
+
+	// Step 3. Both checkpoints verify, the sizes agree, and the proof does not
+	// chain: an invented root at a size the accuser cannot speak for.
+	forged := &forkevidence.Evidence{
+		Held: heldSigned, Conflicting: forkedSigned,
+		Size: forkedCP.Size, Policy: policyOf(root),
+	}
+	invented := sha256.Sum256([]byte("norn/fork/an invented held root"))
+	forged.HeldRoot = append([]byte(nil), invented[:]...)
+	for _, hash := range evidence.Proof {
+		forged.Proof = append(forged.Proof, append([]byte(nil), hash...))
+	}
+	if len(forged.Proof) == 0 {
+		return fmt.Errorf("the fork vector's proof is empty; a forged one would prove nothing")
+	}
+	forged.Proof[0][0] ^= 0x01
+	rawForged, err := forged.Encode()
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(dir, "bad-forged-proof.cbor"), rawForged, 0o644); err != nil {
+		return err
+	}
+
+	// Step 1, the half nothing covered: the *held* checkpoint is this
+	// network's and verifies; the conflicting one is cosigned by nobody, so a
+	// reader that only checks the accuser's own head accepts it.
+	uncosigned, err := note.Sign(mustBody(forkedSigned), origin, key)
+	if err != nil {
+		return err
+	}
+	halfVerified := &forkevidence.Evidence{
+		Held: heldSigned, Conflicting: uncosigned,
+		Size: forkedCP.Size, HeldRoot: append([]byte(nil), evidence.HeldRoot...),
+		Proof: evidence.Proof, Policy: policyOf(root),
+	}
+	rawHalf, err := halfVerified.Encode()
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(dir, "bad-unverifiable-conflicting.cbor"),
+		rawHalf, 0o644); err != nil {
+		return err
+	}
+
+	// Step 2. Both checkpoints verify; the file claims a disagreement at a
+	// size the conflicting head does not have.
+	mismatched := &forkevidence.Evidence{
+		Held: heldSigned, Conflicting: forkedSigned,
+		Size: forkedCP.Size - 1, HeldRoot: append([]byte(nil), evidence.HeldRoot...),
+		Proof: evidence.Proof, Policy: policyOf(root),
+	}
+	rawMismatch, err := mismatched.Encode()
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(dir, "bad-size-mismatch.cbor"),
+		rawMismatch, 0o644); err != nil {
+		return err
+	}
+
 	manifest := map[string]any{
 		"cases": []map[string]string{
 			{"name": "bad-consistent",
 				"says": "nothing here is a fork"},
 			{"name": "bad-other-origin",
 				"says": "the held checkpoint"},
+			{"name": "bad-forged-proof",
+				"says": "does not chain"},
+			{"name": "bad-unverifiable-conflicting",
+				"says": "the conflicting checkpoint"},
+			{"name": "bad-size-mismatch",
+				"says": "claims a disagreement"},
 		},
 		"comment": "evidence that MUST NOT be acted on, checked against trust.cbor. " +
 			"bad-consistent is a log and its own earlier self -- every signature valid, " +

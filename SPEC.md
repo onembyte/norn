@@ -737,6 +737,12 @@ A reader MUST, in this order:
    they agree, the file proves nothing: a log and its own earlier self is not a
    fork, and a node MUST NOT publish that as an accusation.
 
+A reader that refuses at any step MUST NOT conclude a fork. This is worth
+stating separately because §11 rule 4 makes the conclusion **permanent** until
+an operator installs a new trust file: a reader that skips a step accepts an
+accusation any stranger can write, and takes the network down until a human
+intervenes. Each step has a vector in `fork/` for that reason.
+
 Nothing in this procedure fetches anything, and no step takes the writer's
 word. A node names its own files `<unix>.evidence`; `testdata/vectors/fork/`
 ships the same bytes under stable names so they can be referred to.
@@ -819,7 +825,7 @@ this table drifted out of date the moment one was.
 | §10 verifier loop, steps 1–4 | `served/` verified end to end, **signature first** | `checkpoints-bad/01-unsigned`, `02-wrong-log-key`, `03-wrong-origin` and **`04-forged-log-signature`** — the last one being a signature of the right shape under the right key id that does not verify. Without it a verifier that never checks the log signature reproduces the whole suite |
 | §10 step 3, the witness quorum | `served/checkpoint`, cosigned by all three witnesses | `checkpoints-bad/05-one-cosignature-short`, `06-no-cosignatures`, `07-unnamed-witness-only` and **`08-forged-cosignature`**, which carries two lines naming witnesses the policy lists, one of which does not verify: the quorum is met by counting and refused by checking. `quorum none` accepting an uncosigned head needs a second anchor and is **not vectored** |
 | §16 enrollment requests | `requests/`, four cases including a 64-byte `device_id` and non-ASCII labels | `requests-bad/`, 23 cases across all four layers, including **`forged-signature`** (structurally perfect, signed by another key) and `oversize-label-key` (§4.0's map-key cap) |
-| §11.1 fork evidence | `fork/evidence.cbor` and `fork/conflicting.checkpoint`: a second branch of this same network, diverging at entry 40, signed by the same log key and cosigned by the same witnesses. Checking it needs only `trust.cbor` | `fork/bad-other-origin` (a real fork, of a network this anchor is not about) and `fork/bad-consistent` (a log and its own earlier self: every signature valid, both heads cosigned, the roots agreeing) |
+| §11.1 fork evidence | `fork/evidence.cbor` and `fork/conflicting.checkpoint`: a second branch of this same network, diverging at entry 40, signed by the same log key and cosigned by the same witnesses. Checking it needs only `trust.cbor` | one per reader step: `fork/bad-other-origin` and `fork/bad-unverifiable-conflicting` (step 1, each half), `fork/bad-size-mismatch` (step 2), `fork/bad-forged-proof` (step 3 — both checkpoints verify and the sizes agree, so nothing but the proof can refuse it), and `fork/bad-consistent` (step 4: a log and its own earlier self) |
 | §16.2 bech32m | the text form of every request | `wrong-hrp`, `plain-bech32` (the same bytes under bech32's constant), `mixed-case`, `corrupt-character`. BIP-350's own vectors are in both implementations' unit tests |
 
 **What is not vectored.** A suite that looks complete is worse than one that

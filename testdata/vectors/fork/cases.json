@@ -7,6 +7,18 @@
     {
       "name": "bad-other-origin",
       "says": "the held checkpoint"
+    },
+    {
+      "name": "bad-forged-proof",
+      "says": "does not chain"
+    },
+    {
+      "name": "bad-unverifiable-conflicting",
+      "says": "the conflicting checkpoint"
+    },
+    {
+      "name": "bad-size-mismatch",
+      "says": "claims a disagreement"
     }
   ],
   "comment": "evidence that MUST NOT be acted on, checked against trust.cbor. bad-consistent is a log and its own earlier self -- every signature valid, both heads cosigned, the roots agreeing. bad-other-origin is a real fork of another network, which this anchor has no business accepting. `says` is what the refusal must be about"

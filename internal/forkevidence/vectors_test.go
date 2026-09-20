@@ -67,3 +67,75 @@ func TestEveryForkNegativeIsRefused(t *testing.T) {
 		})
 	}
 }
+
+// Cold-model gate run 6, defect H1. §11.1 orders four MUSTs for a reader, and
+// the two negatives shipped in 6.5e-i both landed on steps 1 and 4. Three
+// variants -- never verifying the *conflicting* checkpoint, never checking the
+// size equality, and never checking the consistency proof -- each passed
+// 285/285. The acceptance path exercises the non-degenerate proof branch, so
+// the suite forced a reader to *not reject* a valid proof and never once
+// forced it to reject an invalid one.
+//
+// That matters more here than anywhere else in the protocol: §11 rule 4 makes
+// a concluded FORK permanent until an operator ships a new trust file, so a
+// forged accusation any stranger can write is a permanent denial of service.
+
+// reaches reports which of §11.1's steps a case gets past, by checking the
+// pieces a reader checks, in the order a reader checks them.
+func reaches(t *testing.T, name string) (heldOK, conflictingOK, sizesAgree bool) {
+	t.Helper()
+	root := filepath.Join("..", "..", "testdata", "vectors")
+	raw, err := os.ReadFile(filepath.Join(root, "fork", name+".cbor"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ev, err := Parse(raw)
+	if err != nil {
+		t.Fatalf("%s does not parse, so it tests parsing rather than a reader step: %v", name, err)
+	}
+	anchor := shippedAnchor(t, root)
+	rules, err := policy.Parse(anchor.Policy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, heldErr := verified(ev.Held, anchor.Origin, anchor.LogKey, rules.Keys(), ev.Policy)
+	conflicting, conflictingErr := verified(ev.Conflicting, anchor.Origin, anchor.LogKey,
+		rules.Keys(), ev.Policy)
+	return heldErr == nil, conflictingErr == nil,
+		conflictingErr == nil && conflicting.Size == ev.Size
+}
+
+func TestEachForkNegativeReachesADifferentStep(t *testing.T) {
+	// A forged proof must get past steps 1 and 2 to test step 3 at all.
+	heldOK, conflictingOK, sizesAgree := reaches(t, "bad-forged-proof")
+	if !heldOK || !conflictingOK {
+		t.Error("bad-forged-proof carries a checkpoint that does not verify, so step 1 " +
+			"refuses it and the consistency proof is never reached")
+	}
+	if !sizesAgree {
+		t.Error("bad-forged-proof disagrees about the size, so step 2 refuses it and the " +
+			"consistency proof is never reached")
+	}
+
+	// An unverifiable conflicting head must leave the *held* one intact, or it
+	// is the case already covered by bad-other-origin.
+	heldOK, conflictingOK, _ = reaches(t, "bad-unverifiable-conflicting")
+	if !heldOK {
+		t.Error("bad-unverifiable-conflicting fails on the held checkpoint, which is the " +
+			"half bad-other-origin already covers")
+	}
+	if conflictingOK {
+		t.Error("the conflicting checkpoint verifies, so nothing here tests that a reader " +
+			"checks it")
+	}
+
+	// A size mismatch must get past step 1 on both sides.
+	heldOK, conflictingOK, sizesAgree = reaches(t, "bad-size-mismatch")
+	if !heldOK || !conflictingOK {
+		t.Error("bad-size-mismatch carries a checkpoint that does not verify, so step 2 is " +
+			"never reached")
+	}
+	if sizesAgree {
+		t.Error("the sizes agree, so step 2 has nothing to refuse")
+	}
+}
