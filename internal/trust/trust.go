@@ -17,6 +17,7 @@ import (
 
 	"github.com/onembyte/norn/internal/cbor"
 	"github.com/onembyte/norn/internal/note"
+	"github.com/onembyte/norn/internal/policy"
 )
 
 // Version is the only trust-file version this package speaks.
@@ -262,8 +263,32 @@ func (t *Trust) Validate() error {
 				"cosignature key (c2sp.org/tlog-cosignature)", w.Name)
 		}
 	}
-	if !strings.Contains(t.Policy, "quorum") {
-		return trustErrorf("policy must contain a quorum line")
+	parsed, err := policy.Parse(t.Policy)
+	if err != nil {
+		return trustErrorf("policy: %v", err)
+	}
+	// The two lists must agree. `witnesses` is where a node learns a witness's
+	// name and address; `policy` is where it learns whether that witness
+	// counts. A file where they differ configures a quorum over parties the
+	// node cannot reach, or lists parties nothing requires -- either way the
+	// operator believes they set something they did not.
+	named := map[string]string{}
+	for _, w := range parsed.Witnesses {
+		named[w.Name] = w.Key
+	}
+	for _, w := range t.Witnesses {
+		key, ok := named[w.Name]
+		if !ok {
+			return trustErrorf("witness %s is listed but the policy never names it", w.Name)
+		}
+		if key != w.Key {
+			return trustErrorf("witness %s has one key in `witnesses` and another in the policy",
+				w.Name)
+		}
+		delete(named, w.Name)
+	}
+	for name := range named {
+		return trustErrorf("the policy names witness %s, which `witnesses` does not list", name)
 	}
 	if t.Anchor != nil {
 		if _, ok := t.Anchor["type"].(string); !ok {

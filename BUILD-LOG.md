@@ -383,7 +383,8 @@ unknown until something cosigns. It closes **2.6b** too — an unmodified
 | # | Checkpoint | Done when | Status |
 |---|---|---|---|
 | 4.1a | Cosignature keys | witness keys are **cosignature** keys (algorithm 0x04), not plain Ed25519 note keys — today Norn refuses the only kind a real witness publishes | ✅ |
-| 4.1b | Policy quorum | `tlog-policy` is parsed and evaluated, and a checkpoint that does not satisfy it is **refused** — §10 step 3, finally | ⬜ |
+| 4.1b | Policy parsing | `tlog-policy` parses to the real grammar, a quorum evaluates over a set of cosigners, and the trust file's `witnesses` and `policy` must agree | ✅ |
+| 4.1c | The verifier enforces the quorum | cosigned vectors, and a checkpoint that does not satisfy the policy is **refused** — §10 step 3, finally | ⬜ |
 | 4.2 | Witness time | `quorum_time`, the fresh → degraded → hard-stale machine, and `CLOCK_SKEW` — a node's own clock never decides anything (A11) | ⬜ |
 | 4.3 | The log pushes to witnesses | `norn-log` submits each checkpoint over `tlog-witness` `add-checkpoint` and serves the cosignatures it gets back | ⬜ |
 | 4.4 | **2.6b**: a real witness cosigns | an **unmodified** `transparency-dev/witness` returns a cosignature over a Norn checkpoint, and our verifier accepts it | ⬜ |
@@ -592,3 +593,11 @@ the signer keeps one job — decide, and place the entry in the log.
   - **Both rules are now normative and vectored**: §9.1 states the algorithms, and `trust-bad/15` and `16` are files that parse perfectly as verifier keys and are refused only by the algorithm rule.
   - The fingerprint moved, the guard from 2.8 caught it, and `SPEC.md`'s worked example was updated rather than left to rot.
   - Go: 40 packages, 375 tests; `go test`, staticcheck and both halves of `vectors-check` green.
+- **4.1b `internal/policy` — the grammar, verified rather than remembered, and a consistency rule the file needed.**
+  - **The published grammar turned out to match the shape Phase 0 guessed** — `log`, `witness`, `group <name> all|any|<k>`, exactly one `quorum`, `none` to opt out. That is a relief rather than a formality: 4.1a had just found a key encoding that was wrong in precisely the way an unverified guess is wrong, so the policy was checked against the specification before a line of parser was written.
+  - **The parser is strict because a policy is where a network says how much corroboration it wants.** A line nobody understood is a requirement nobody is enforcing, so an unknown keyword, a forward reference, a duplicate key, a threshold larger than its group and a missing or second `quorum` are each errors. Fourteen refusals are tested by name.
+  - **A cosigner nobody named counts for nothing**, however valid its signature — which is the property that makes a quorum mean anything. Two of three, `all`, `any` and nested groups are all exercised, and a repeated name is not two witnesses.
+  - **`witnesses` and `policy` must now name exactly the same parties**, with the same keys. They are not redundant: `witnesses` is where a node learns a witness's *name and address*, `policy` is where it learns whether that witness *counts*. A file where they differ configures a quorum over parties the node cannot reach, or lists parties nothing requires — and either way the operator believes they set something they did not. Normative in §9.1, enforced in both implementations, and vectored as `trust-bad/17` and `18`.
+  - **A vector that failed for the wrong reason was caught and fixed.** The first `17` used a key string edited by hand, so it was rejected for a broken key id rather than for the rule it is named after — the D-044 trap. It now carries a perfectly valid cosigner key under a name the policy never mentions, so only the agreement rule can reject it.
+  - The shipped policy is checked to be usable *and* to need more than one witness: a homelab default whose quorum one machine could meet alone would have lost the only thing it was for.
+  - Go: 41 packages, 383 tests; `go test`, staticcheck and both halves of `vectors-check` green.

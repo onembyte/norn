@@ -536,7 +536,7 @@ below exists for humans.
 | `log_key` | text | signed-note verifier key for the log (algorithm `0x01`); MUST parse as one, MUST NOT be a cosignature key, and its note name MUST equal `origin` |
 | `log_urls` | array of text, ≥ 1 | where to fetch checkpoint and tiles |
 | `witnesses` | array of `{name, key, url?}`, **≥ 1** | `key` is a **cosignature** verifier key — `c2sp.org/tlog-cosignature` algorithm `0x04`, not a note key's `0x01` — and MUST parse as one; `name` unique within the file. The algorithm is part of the key id, so the same public key published under the two algorithms is **two different verifiers**: a file naming a witness with a note key names a key no witness will ever sign with. A file with no witnesses MUST be rejected: with nothing to cosign, the policy's quorum can never be met, so the anchor could never accept a checkpoint. |
-| `policy` | text | verbatim `c2sp.org/tlog-policy`; MUST contain a `quorum` line |
+| `policy` | text | verbatim `c2sp.org/tlog-policy`; MUST parse, and MUST name **exactly** the witnesses `witnesses` lists, with the same keys. The two are not redundant: `witnesses` is where a node learns a witness's name and address, `policy` is where it learns whether that witness counts — so a file where they differ configures a quorum over parties the node cannot reach, or lists parties nothing requires, and either way the operator believes they set something they did not |
 | `anchor` | `{type, max_lag, mode}`, OPTIONAL | `type` text (`"opentimestamps"`), `max_lag` **uint seconds**, `mode` text (`"advisory"`) |
 
 Unknown keys MUST cause rejection. The fingerprint (§9.3) is taken over these
@@ -676,7 +676,7 @@ this table drifted out of date the moment one was.
 | §5.2 `bad-thr` | — | both halves: `bad-thr-zero` and `bad-thr` (value above the set size) |
 | §5.3 state, incl. D-028 and `expires` | `state.json`, `enroll-contractor` | `signer_remove-below-threshold` accepted, then `signer_add-recover` |
 | §7 receipt | `receipt.note` | — |
-| §9 trust file, fingerprint | `trust.cbor` | 16 rejected anchors in `trust-bad/`, including **`15-witness-key-is-a-note-key`** and **`16-log-key-is-a-cosignature-key`**: both parse cleanly as verifier keys, so only the algorithm rule rejects them |
+| §9 trust file, fingerprint | `trust.cbor` | 18 rejected anchors in `trust-bad/`. **`15`** and **`16`** parse cleanly as verifier keys and are refused only by the algorithm rule; **`17`** and **`18`** are a witness the policy never names and a policy naming a witness the file does not list, each otherwise perfectly valid |
 | §14 canonical JSON | every `.json`; `policy-escaping`, `enroll-unicode-labels` | — |
 | §6 tiles and bundles | `served/`, read back to reproduce `state.json` | forged head, tampered bundle, missing bundle |
 | §8 proof bundles | `proofs/`, one per active device | wrong entry, foreign checkpoint, tampered proof, wrong log key |

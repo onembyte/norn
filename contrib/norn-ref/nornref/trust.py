@@ -111,6 +111,7 @@ def validate(doc: dict[str, Any]) -> None:
         seen.add(witness["name"])
     if not isinstance(doc["policy"], str) or "quorum" not in doc["policy"]:
         raise TrustError("policy must be tlog-policy text containing a quorum line")
+    _check_policy_matches_witnesses(doc)
 
 
 def encode(doc: dict[str, Any]) -> bytes:
@@ -165,3 +166,29 @@ def to_toml(doc: dict[str, Any]) -> str:
         if "url" in witness:
             lines.append(f"url  = {_toml_string(witness['url'])}")
     return "\n".join(lines) + "\n"
+
+
+def _check_policy_matches_witnesses(doc: dict[str, Any]) -> None:
+    """`witnesses` and `policy` must name the same parties (SPEC §9.1).
+
+    `witnesses` is where a node learns a witness's name and address; `policy`
+    is where it learns whether that witness counts. A file where the two differ
+    configures a quorum over parties the node cannot reach, or lists parties
+    nothing requires -- either way the operator believes they set something
+    they did not.
+    """
+    named: dict[str, str] = {}
+    for line in doc["policy"].splitlines():
+        fields = line.split()
+        if len(fields) >= 3 and fields[0] == "witness":
+            named[fields[1]] = fields[2]
+    for witness in doc["witnesses"]:
+        if witness["name"] not in named:
+            raise TrustError(
+                f"witness {witness['name']} is listed but the policy never names it")
+        if named.pop(witness["name"]) != witness["key"]:
+            raise TrustError(
+                f"witness {witness['name']} has one key in `witnesses` and another "
+                "in the policy")
+    for name in named:
+        raise TrustError(f"the policy names witness {name}, which `witnesses` does not list")

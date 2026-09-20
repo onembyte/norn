@@ -668,6 +668,20 @@ def trust_rejections() -> list[tuple[str, dict[str, Any]]]:
                                  key=note.vkey("norn-witness/pi", KEYS["witness-pi"].public))])),
         ("16-log-key-is-a-cosignature-key",
          damaged(log_key=note.vkey(ORIGIN, KEYS["logkey"].public, note.ALG_COSIGNATURE))),
+        # `witnesses` and `policy` must name the same parties: a quorum over
+        # a witness the node cannot reach, or a listed witness nothing
+        # requires, is an operator believing they configured something.
+        # A perfectly valid cosigner key under a name the policy never
+        # mentions: everything about it parses, so only the agreement rule
+        # can reject it.
+        ("17-witness-not-in-policy",
+         damaged(witnesses=base["witnesses"] + [
+             {"name": "extra",
+              "key": note.vkey("norn-witness/extra", KEYS["spare"].public,
+                               note.ALG_COSIGNATURE),
+              "url": "https://nowhere.example"}])),
+        ("18-policy-names-an-unlisted-witness",
+         damaged(witnesses=base["witnesses"][:2])),
     ]
 
 

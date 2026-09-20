@@ -230,13 +230,33 @@ func TestTheGeneratedPolicyNamesItsWitnesses(t *testing.T) {
 
 func TestAGivenPolicyIsUsedVerbatim(t *testing.T) {
 	ceremony, rootPrivs := aCeremony(t)
-	ceremony.Policy = "quorum handwritten\n"
+	// A hand-written policy still has to be a usable one: it must name the
+	// same witnesses the trust file lists, with the same keys (§9.1). What
+	// makes this "verbatim" is the wording -- a group named by its owner
+	// rather than the generator's -- not a licence to be inconsistent.
+	witnessKey := note.CosignerVerifierKey("norn-witness/pi", ceremony.Witnesses[0].Key)
+	ceremony.Policy = "witness pi " + witnessKey + "\ngroup mine any pi\nquorum mine\n"
+
 	got, err := Build(ceremony, signersOf(rootPrivs[0], rootPrivs[1]))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Trust.Policy != "quorum handwritten\n" {
-		t.Errorf("policy = %q", got.Trust.Policy)
+	if got.Trust.Policy != ceremony.Policy {
+		t.Errorf("policy = %q, want the one given", got.Trust.Policy)
+	}
+	if strings.Contains(got.Trust.Policy, "group all") {
+		t.Error("the generated policy overwrote the one supplied")
+	}
+}
+
+// A supplied policy that does not agree with the witnesses is refused, because
+// the generator cannot know which of the two the operator meant.
+func TestAnInconsistentPolicyIsRefused(t *testing.T) {
+	ceremony, rootPrivs := aCeremony(t)
+	ceremony.Policy = "witness elsewhere x+11111111+AAAA\nquorum elsewhere\n"
+
+	if _, err := Build(ceremony, signersOf(rootPrivs[0], rootPrivs[1])); err == nil {
+		t.Fatal("built a network whose policy names a witness it does not have")
 	}
 }
 
