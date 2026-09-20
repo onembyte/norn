@@ -153,3 +153,39 @@ func TestErrExpiredIsDistinguishable(t *testing.T) {
 		t.Fatal("the sentinel must be usable with errors.Is")
 	}
 }
+
+// `now.Unix()` is negative for any time before 1970, and the zero `time.Time`
+// is year 1. Casting that to uint64 wraps it to something enormous, which made
+// **every** receipt look expired -- silently, and in the one direction that
+// turns a valid promise into a refusal.
+//
+// The zero time now means what its only caller needs it to mean: do not judge
+// the deadline at all. That is the right answer for anybody holding a receipt
+// without a clock they trust -- the monitor judges deadlines against witness
+// time (§7), not against its own.
+func TestAZeroClockDoesNotJudgeTheDeadline(t *testing.T) {
+	k := key(t)
+	leaf := leafHash(t, "an entry")
+	raw := signed(t, k, origin, origin, leaf, 1_760_000_000)
+	keys := []string{vkey(t, k, origin)}
+
+	if _, err := Check(raw, keys, origin, leaf, time.Time{}); err != nil {
+		t.Errorf("a zero clock refused a valid receipt: %v", err)
+	}
+	// And a caller that does supply a clock still gets the check.
+	if _, err := Check(raw, keys, origin, leaf, time.Unix(1_760_000_001, 0)); err == nil {
+		t.Error("a passed deadline was accepted when a real clock was given")
+	}
+}
+
+// Any pre-epoch clock would have done the same damage.
+func TestAPreEpochClockDoesNotWrap(t *testing.T) {
+	k := key(t)
+	leaf := leafHash(t, "an entry")
+	raw := signed(t, k, origin, origin, leaf, 1_760_000_000)
+
+	if _, err := Check(raw, []string{vkey(t, k, origin)}, origin, leaf,
+		time.Unix(-100, 0)); err != nil {
+		t.Errorf("a clock set before 1970 refused a valid receipt: %v", err)
+	}
+}

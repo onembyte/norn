@@ -45,6 +45,11 @@ func receiptErrorf(format string, args ...any) error {
 // `leaf` is the leaf hash of the entry that was submitted. Passing nil skips
 // that binding, which is only correct when the caller has no entry in hand --
 // reading a stored receipt for inspection, say -- and never when submitting.
+//
+// A zero `now` skips the deadline check, for a caller that has no clock it
+// trusts for the purpose. The monitor is one: §7 judges a missed deadline
+// against **witness time**, not against whatever the machine holding the
+// receipt happens to think.
 func Check(signed string, logKeys []string, origin string, leaf []byte, now time.Time) (*Receipt, error) {
 	if len(logKeys) == 0 {
 		return nil, receiptErrorf("no log key to check the signature against")
@@ -79,7 +84,11 @@ func Check(signed string, logKeys []string, origin string, leaf []byte, now time
 	if leaf != nil && string(leaf) != string(hash) {
 		return nil, receiptErrorf("it promises a different entry than the one submitted")
 	}
-	if deadline <= uint64(now.Unix()) {
+	// Compared as signed. `now.Unix()` is negative before 1970 and the zero
+	// `time.Time` is year 1; casting that to uint64 wrapped it to something
+	// enormous, which made every receipt look expired -- silently, and in the
+	// direction that turns a valid promise into a refusal.
+	if !now.IsZero() && int64(deadline) <= now.Unix() {
 		return nil, receiptErrorf("the deadline has already passed (%s); a promise "+
 			"about the past promises nothing",
 			time.Unix(int64(deadline), 0).Format(time.RFC3339))

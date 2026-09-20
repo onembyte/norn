@@ -423,7 +423,7 @@ which a node may do.
 |---|---|---|---|
 | 5.1 | The rules engine | `LAB.md` §3's table as code: an observation in, a level and a sentence out, with the thresholds a homelab can change | ✅ |
 | 5.2 | Watching a network | the log, the witnesses and each node's `/norn/checkpoint` and `/norn/evidence` — read-only, over the tunnel, as an enrolled peer | ✅ |
-| 5.3 | The receipt inbox | a receipt whose deadline passed with no inclusion is **non-repudiable proof of A2**, and the monitor is what notices | ⬜ |
+| 5.3 | The receipt inbox | a receipt whose deadline passed with no inclusion is **non-repudiable proof of A2**, and the monitor is what notices | ✅ |
 | 5.4 | Outputs | stdout JSON always; `ntfy`, Home Assistant, Alertmanager and email optional and each failing alone | ⬜ |
 | 5.5 | The status page | read-only HTML on the tunnel address: sizes, ages, witness times, the device table and the last entries in plain words | ⬜ |
 | 5.6 | `norn monitor` | the command, its config, and one run that produces a notification per rule | ⬜ |
@@ -856,3 +856,11 @@ the signer keeps one job — decide, and place the entry in the log.
   - **A monitor starting up does not accuse everybody of being down.** A node never yet seen is recorded as seen now, so the heartbeat rule measures silence rather than ignorance.
   - **An architecture test for §3's own words.** "It never sits on the enforcement path": `agent`, `reconcile` and `nornd` may not import the monitor at all. The monitor is allowed to do things a node must not — poll witnesses, hold a receipt inbox, talk to a push service on the internet — and that is safe exactly because nothing it concludes can reach the peer table.
   - Go: 49 packages, 557 tests; `go test`, staticcheck and both halves of `vectors-check` green.
+
+- **5.3 the receipt inbox — and a `uint64` cast that made every receipt look expired.**
+  - **SPEC §7 decides the design in one clause**: *"A receipt whose leaf is absent from every checkpoint **cosigned after `deadline`** is non-repudiable proof of log misbehaviour."* **Cosigned after.** The comparison is against witness time, never the monitor's clock — which is exactly what makes the finding non-repudiable rather than an accusation: it does not depend on the accuser's clock being right. A monitor running fast cannot slander an honest log, and a witness outage produces **silence** rather than a false alarm, because with no cosignature nothing can be said to be late. Both are tests.
+  - **A latent bug, found by needing the behaviour §7 implies.** `receipt.Check` compared `deadline <= uint64(now.Unix())`. `Unix()` is negative before 1970 and the zero `time.Time` is year 1, so that cast **wrapped** to something enormous and every receipt looked expired — silently, and in the direction that turns a valid promise into a refusal. It compares as signed now, and a zero clock explicitly means *do not judge the deadline*, which is what a caller with no clock it trusts for the purpose actually needs.
+  - **Receipts are checked at the door**, because anybody can forward one — so anybody could forward a forgery. A receipt that is not this log's word, or is for another network, is refused and not kept: otherwise the monitor could be made to accuse an honest operator by anyone who can reach it.
+  - **A proven misbehaviour stays pending.** The proof does not stop being true because it has been mentioned once, and an operator who was asleep still has to find it in the morning. Honoured receipts are forgotten, which is the only thing that should ever clear one.
+  - **The alert says what was promised and what the witnesses vouched for**, with both instants — so the reader can check the claim rather than take it.
+  - Go: 49 packages, 565 tests; `go test`, staticcheck and both halves of `vectors-check` green.
