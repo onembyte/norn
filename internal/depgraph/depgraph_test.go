@@ -127,3 +127,22 @@ func TestGossipKnowsNothingAboutVerifying(t *testing.T) {
 		}
 	}
 }
+
+// D-009 makes OpenTimestamps anchoring an **advisory** witness type that
+// "never touches the handshake path". That is a claim about what can influence
+// whether a peer is proven, so it is enforced here rather than remembered: the
+// verifier, the agent and the daemon may not import the proof reader at all.
+//
+// Anchoring answers "was this checkpoint backdated", which is a question for
+// an operator looking at evidence -- not for the code deciding what goes in
+// the peer table in the next 200 milliseconds.
+func TestAnchoringNeverTouchesTheHandshakePath(t *testing.T) {
+	for _, pkg := range []string{
+		"github.com/onembyte/norn/internal/logclient",
+		"github.com/onembyte/norn/internal/agent",
+		"github.com/onembyte/norn/cmd/nornd",
+	} {
+		forbid(t, pkg, []string{"github.com/onembyte/norn/internal/ots"},
+			"Anchoring is advisory (D-009) and must not be able to decide anything.")
+	}
+}

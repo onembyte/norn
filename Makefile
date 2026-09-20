@@ -37,6 +37,11 @@ vectors:
 # alone, since upstream libraries validate both.
 GO_VECTOR_DIRS := served proofs
 
+# Vectors neither of Norn's implementations produces. `anchors` holds a `.ots`
+# written by python-opentimestamps, and regenerating it would defeat the point
+# of having it: it is in the suite because somebody else's code wrote the bytes.
+FOREIGN_VECTOR_DIRS := anchors
+
 # Regenerate the served log and proof bundles from the Go implementation.
 vectors-log:
 	$(GO) run ./cmd/norn-genlog testdata/vectors
@@ -48,7 +53,7 @@ vectors-check:
 	@tmp=$$(mktemp -d); \
 	PYTHONPATH=contrib/norn-ref $(PY) contrib/norn-ref/gen_vectors.py $$tmp >/dev/null; \
 	excludes="--exclude=README.md"; \
-	for d in $(GO_VECTOR_DIRS); do excludes="$$excludes --exclude=$$d"; done; \
+	for d in $(GO_VECTOR_DIRS) $(FOREIGN_VECTOR_DIRS); do excludes="$$excludes --exclude=$$d"; done; \
 	if diff -r -q testdata/vectors $$tmp $$excludes; then \
 		echo "reference-generated vectors match"; rm -rf $$tmp; \
 	else \
