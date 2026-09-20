@@ -36,6 +36,7 @@ var commands = map[string]command{
 	"enroll":          enrollCmd,
 	"init":            initCmd,
 	"sign":            signCmd,
+	"stamp":           stampCmd,
 	"status":          statusCmd,
 	"submit":          submitCmd,
 	"verify":          verifyCmd,
@@ -49,6 +50,7 @@ commands:
   enroll   build a signed enrollment request for this device (SPEC §16)
   init     create a network: roots, thresholds, genesis and the trust file
   sign     verify a request and sign the enroll entry it asks for
+  stamp    obtain an OpenTimestamps proof for a log's checkpoint (advisory)
   status   what this node can prove about the network right now
   submit   send a signed entry to the log and keep its receipt
   verify   fetch a log, check it against a trust anchor, and report its state

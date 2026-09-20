@@ -187,7 +187,7 @@ repo initialised, CI running `go test` + `go vet` + `staticcheck`.
 - [ ] T1b evidence propagation: a node that never saw the second branch freezes via peer evidence ≤ 3·T_g.
 - [ ] T5 clock skew: a node with wall clock +2 h raises CLOCK_SKEW and does **not** go degraded.
 - [ ] T7 revoke propagation latency measured and ≤ T_c + T_g + T_poll.
-- [ ] Checkpoint N has a verifiable OpenTimestamps proof in `anchors/`; `norn verify --anchored` checks it (advisory witness, D-009).
+- [ ] Checkpoint N has a verifiable OpenTimestamps proof in `anchors/`; `norn verify --anchored` checks it (advisory witness, D-009). **Software done (4.7a–c):** `norn stamp` obtains a proof from a calendar and writes `anchors/<size>.ots`; `norn verify --anchored` walks it against the checkpoint body, reports the block it commits into without claiming to have checked a chain, and says "different document" when a checkpoint was edited after stamping. What is untested is what T8 actually asks for — a **real** calendar round trip and the upgrade from a calendar's promise to a Bitcoin block attestation, which takes hours on the public internet.
 
 ### Phase 5 — Attack demos + monitor (2 weeks)
 Reproducible demos — normative in `LAB.md` §2: D1a/b/c (one attack × plain WG / NetBird / Headscale), D2 stolen signer, D3 freeze + fork, D4 lifecycle. `norn monitor` per `LAB.md` §3.

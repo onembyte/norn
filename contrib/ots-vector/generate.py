@@ -59,6 +59,25 @@ def checkpoint_body() -> str:
     return body + "\n\n"
 
 
+def calendar_response(digest: bytes) -> bytes:
+    """What `POST <calendar>/digest` returns: a bare timestamp tree.
+
+    Not a detached file -- no magic, no version, no file-hash op. The client
+    is expected to know which digest it asked about. That asymmetry is why
+    Norn can build an `.ots` by concatenation instead of carrying a
+    serializer: a detached file is a fixed header followed by exactly these
+    bytes.
+    """
+    timestamp = Timestamp(digest)
+    branch = timestamp.ops.add(OpAppend(bytes.fromhex("cafe")))
+    branch = branch.ops.add(OpSHA256())
+    branch.attestations.add(PendingAttestation(CALENDAR))
+
+    ctx = BytesSerializationContext()
+    timestamp.serialize(ctx)
+    return ctx.getbytes()
+
+
 def main() -> int:
     ANCHORS.mkdir(parents=True, exist_ok=True)
 
@@ -70,7 +89,10 @@ def main() -> int:
     (ANCHORS / "checkpoint-90.ots").write_bytes(
         proof_over(hashlib.sha256(body.encode()).digest())
     )
-    print("wrote", ANCHORS / "sample.ots", "and", ANCHORS / "checkpoint-90.ots")
+    (ANCHORS / "calendar-response.bin").write_bytes(
+        calendar_response(hashlib.sha256(body.encode()).digest())
+    )
+    print("wrote sample.ots, checkpoint-90.ots and calendar-response.bin into", ANCHORS)
     return 0
 
 
