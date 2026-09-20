@@ -302,8 +302,14 @@ func TestPublishesTheProvenSet(t *testing.T) {
 	if len(set.Devices) == 0 {
 		t.Fatal("no devices published")
 	}
-	if set.Freshness != proven.Unknown {
-		t.Errorf("freshness = %q", set.Freshness)
+	// The shipped log is cosigned, so this node has a clock and publishes a
+	// state rather than `unknown` -- and an age, which a consumer needs to
+	// decide anything for itself.
+	if set.Freshness != proven.Fresh {
+		t.Errorf("freshness = %q, want %q", set.Freshness, proven.Fresh)
+	}
+	if set.AgeSeconds == nil {
+		t.Error("a node with a witness clock must publish the age it computed")
 	}
 	for _, device := range set.Devices {
 		if _, err := os.Stat(filepath.Join(runDir, device.Proof)); err != nil {

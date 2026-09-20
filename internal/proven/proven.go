@@ -23,6 +23,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/onembyte/norn/internal/freshness"
 	"github.com/onembyte/norn/internal/logclient"
 	"github.com/onembyte/norn/internal/peertable"
 	"github.com/onembyte/norn/internal/proof"
@@ -33,15 +34,14 @@ import (
 // Version is the schema version of proven.json.
 const Version = 1
 
-// Freshness states, from `GOSSIP.md` part 5's machine, plus the one that
-// machine cannot express yet.
+// Freshness states. They are `internal/freshness`'s, not a second copy: the
+// package that computes the state is the one that gets to name it, or the two
+// drift and a consumer matching on strings quietly stops matching.
 const (
-	Fresh     = "fresh"
-	Degraded  = "degraded"
-	HardStale = "hard_stale"
-	// Unknown means no witness has cosigned this checkpoint, so its age has no
-	// answer -- not "it is fine", and not "it is stale".
-	Unknown = "unknown"
+	Fresh     = freshness.Fresh
+	Degraded  = freshness.Degraded
+	HardStale = freshness.HardStale
+	Unknown   = freshness.Unknown
 )
 
 // FileName is where the proven set is published.
@@ -78,7 +78,11 @@ type Set struct {
 	Version    int        `json:"version"`
 	Checkpoint Checkpoint `json:"checkpoint"`
 	Freshness  string     `json:"freshness"`
-	Devices    []Device   `json:"devices"`
+	// AgeSeconds is how old this view is in witness time. Absent when there is
+	// no witness clock -- a zero there would read as brand new, which is the
+	// one thing an unknown age must not look like.
+	AgeSeconds *int64   `json:"age_seconds"`
+	Devices    []Device `json:"devices"`
 	// WrittenAt is this node's own clock, and is labelled as such: it is for
 	// noticing a stopped daemon, never for deciding whether a view is fresh.
 	WrittenAt int64 `json:"written_at_local_clock"`
@@ -118,8 +122,31 @@ func Devices(st *state.State, now time.Time) []string {
 	return out
 }
 
+// Freshness is what a node has worked out about the age of what it holds: the
+// state, and the age it came from. It is computed by the caller because the
+// clock is stateful -- it remembers the newest instant this node ever saw --
+// while building the file is not.
+type Freshness struct {
+	State string
+	Age   *time.Duration
+}
+
+// View reads the clock for a checkpoint cosigned at `quorumTime`, as of the
+// monotonic reading `mono`.
+//
+// The argument is an elapsed duration, not a timestamp, all the way down: no
+// part of deciding whether a view is stale may consult the wall clock (A11).
+func View(clock *freshness.Clock, limits freshness.Limits,
+	quorumTime time.Time, mono time.Duration) Freshness {
+	age, ok := clock.Age(quorumTime, mono)
+	if !ok {
+		return Freshness{State: limits.State(0, false)}
+	}
+	return Freshness{State: limits.State(age, true), Age: &age}
+}
+
 // FromResult builds the view a verified log implies.
-func FromResult(result *logclient.Result, now time.Time) (Set, error) {
+func FromResult(result *logclient.Result, now time.Time, fresh Freshness) (Set, error) {
 	set := Set{
 		Version: Version,
 		Checkpoint: Checkpoint{
@@ -127,11 +154,7 @@ func FromResult(result *logclient.Result, now time.Time) (Set, error) {
 			Size:   result.Checkpoint.Size,
 			Root:   hex.EncodeToString(result.Checkpoint.Root[:]),
 		},
-		// The state computed from that instant -- fresh, degraded, hard-stale
-		// -- is 4.2b. Until then the reading is published and the state says
-		// `unknown`, because naming a state is a claim about *now* and this
-		// function is not yet the thing that tracks elapsed time.
-		Freshness: Unknown,
+		Freshness: fresh.State,
 		WrittenAt: now.Unix(),
 	}
 
@@ -141,6 +164,10 @@ func FromResult(result *logclient.Result, now time.Time) (Set, error) {
 	if result.QuorumTime != nil {
 		at := result.QuorumTime.Unix()
 		set.Checkpoint.CosignedAt = &at
+	}
+	if fresh.Age != nil {
+		seconds := int64(fresh.Age.Seconds())
+		set.AgeSeconds = &seconds
 	}
 
 	for _, id := range Devices(result.State, now) {

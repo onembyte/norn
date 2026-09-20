@@ -20,6 +20,7 @@ import (
 
 	"github.com/onembyte/norn/internal/endpoint"
 	"github.com/onembyte/norn/internal/fight"
+	"github.com/onembyte/norn/internal/freshness"
 	"github.com/onembyte/norn/internal/logclient"
 	"github.com/onembyte/norn/internal/peertable"
 	"github.com/onembyte/norn/internal/proven"
@@ -81,8 +82,19 @@ type Config struct {
 	Mode     reconcile.Mode
 	// RunDir receives proven.json and its bundles; empty means do not publish.
 	RunDir string
-	Now    func() time.Time
-	Emit   func(Event)
+	// Now is this node's wall clock. It is used for expiry (§5.3 `expires` is
+	// written in wall time by whoever signed the entry) and for the
+	// `written_at_local_clock` field -- never for freshness.
+	Now func() time.Time
+	// Mono is a monotonic elapsed reading. Freshness is measured with this and
+	// nothing else, so a node whose wall clock is wrong, or is moved while it
+	// runs, still ages its view correctly (A11, GOSSIP part 5). Defaults to
+	// time since the agent started.
+	Mono func() time.Duration
+	// Hard is S_hard: the age past which the enforcer drops every peer. Zero
+	// leaves it off, which is the default -- see freshness.Limits.
+	Hard time.Duration
+	Emit func(Event)
 
 	// FightPolicy is what to do when the same key keeps coming back:
 	// PolicyAlarm (the default) or PolicyQuarantine.
@@ -102,6 +114,9 @@ type Agent struct {
 	last        *logclient.Result
 	fights      *fight.Detector
 	quarantined bool
+	// clock remembers the newest instant any quorum vouched for. It is the
+	// node's only clock for deciding whether what it holds is current.
+	clock freshness.Clock
 }
 
 // New checks what must be true before a node starts at all.
@@ -127,6 +142,13 @@ func New(cfg Config) (*Agent, error) {
 	}
 	if cfg.Now == nil {
 		cfg.Now = time.Now
+	}
+	if cfg.Mono == nil {
+		// time.Since carries Go's monotonic reading, which does not move when
+		// the wall clock is set. That is the whole point: the default must be
+		// a clock the operator cannot accidentally change.
+		started := time.Now()
+		cfg.Mono = func() time.Duration { return time.Since(started) }
 	}
 	if cfg.Emit == nil {
 		cfg.Emit = func(Event) {}
@@ -182,8 +204,14 @@ func (a *Agent) Once() error {
 	if err := a.reconcile(result); err != nil {
 		return err
 	}
+	// Witness time advances only on a checkpoint that actually verified; a
+	// head this node refused says nothing about what time it is.
+	if verifyErr == nil && result.QuorumTime != nil {
+		a.clock.Observe(*result.QuorumTime, a.cfg.Mono())
+	}
+
 	if verifyErr == nil && a.cfg.RunDir != "" {
-		set, err := proven.FromResult(result, a.cfg.Now())
+		set, err := proven.FromResult(result, a.cfg.Now(), a.freshness(result))
 		if err != nil {
 			return err
 		}
@@ -293,4 +321,16 @@ func keyOf(hexKey string) (peertable.Key, error) {
 		return peertable.Key{}, err
 	}
 	return peertable.KeyFromBytes(raw)
+}
+
+// freshness is how old the view this node is enforcing has become, in witness
+// time. The checkpoint being enforced may be older than the newest the node
+// has seen -- it holds the last one that verified -- so the age is read for
+// *that* checkpoint rather than for the best one known.
+func (a *Agent) freshness(result *logclient.Result) proven.Freshness {
+	limits := freshness.LimitsFrom(result.State.Params, a.cfg.Hard)
+	if result.QuorumTime == nil {
+		return proven.View(&a.clock, limits, time.Time{}, a.cfg.Mono())
+	}
+	return proven.View(&a.clock, limits, *result.QuorumTime, a.cfg.Mono())
 }

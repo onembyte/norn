@@ -11,8 +11,10 @@ import (
 
 	"github.com/onembyte/norn/internal/cosign"
 	"github.com/onembyte/norn/internal/entry"
+	"github.com/onembyte/norn/internal/freshness"
 	"github.com/onembyte/norn/internal/logclient"
 	"github.com/onembyte/norn/internal/peertable"
+	"github.com/onembyte/norn/internal/proven"
 	"github.com/onembyte/norn/internal/reconcile"
 	"github.com/onembyte/norn/internal/replay"
 	"github.com/onembyte/norn/internal/tlogstore"
@@ -279,5 +281,52 @@ func TestAnIntruderIsGoneAfterExactlyOneCycle(t *testing.T) {
 	peers, _ := fake.Peers()
 	if holds(peers, rogue(t).Key) {
 		t.Fatal("an intruder survived the first cycle after it appeared")
+	}
+}
+
+// A node's freshness state has to follow witness time as the node keeps
+// running: the same checkpoint, adopted once and never replaced, goes from
+// fresh to degraded to hard-stale as elapsed time passes -- and the transition
+// is driven by a monotonic reading, so moving the machine's wall clock changes
+// nothing.
+func TestAViewAgesFromWitnessTimeNotTheWallClock(t *testing.T) {
+	dir, _, _ := writableLog(t)
+
+	var elapsed time.Duration
+	// A wall clock that lurches an hour forward between cycles. Nothing below
+	// may notice.
+	wall := time.Unix(1_760_000_000, 0)
+	rec := &recorder{}
+	a, err := New(Config{
+		Anchor: anchor(t), Fetcher: logclient.Dir(dir), Device: peertable.NewFake(),
+		Mode: reconcile.Observe, RunDir: t.TempDir(), Emit: rec.emit,
+		Now:  func() time.Time { wall = wall.Add(time.Hour); return wall },
+		Mono: func() time.Duration { return elapsed },
+		Hard: time.Hour,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		mono time.Duration
+		want string
+	}{
+		{0, freshness.Fresh},
+		{14 * time.Minute, freshness.Fresh},
+		{16 * time.Minute, freshness.Degraded},
+		{90 * time.Minute, freshness.HardStale},
+	} {
+		elapsed = tc.mono
+		if err := a.Once(); err != nil {
+			t.Fatalf("cycle at %v: %v", tc.mono, err)
+		}
+		set, err := proven.Read(filepath.Join(a.cfg.RunDir, proven.FileName))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if set.Freshness != tc.want {
+			t.Errorf("after %v: freshness = %q, want %q", tc.mono, set.Freshness, tc.want)
+		}
 	}
 }

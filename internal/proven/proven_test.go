@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/onembyte/norn/internal/freshness"
 	"github.com/onembyte/norn/internal/logclient"
 	"github.com/onembyte/norn/internal/proof"
 	"github.com/onembyte/norn/internal/replay"
@@ -56,7 +57,7 @@ func verified(t *testing.T) (*logclient.Result, *trust.Trust) {
 func TestFreshnessIsUnknownWithoutWitnesses(t *testing.T) {
 	result, _ := verified(t)
 	result.QuorumTime = nil // a log no witness has cosigned
-	set, err := FromResult(result, time.Now())
+	set, err := FromResult(result, time.Now(), freshnessOf(t, result))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +107,7 @@ func TestProvenExcludesTheExpired(t *testing.T) {
 
 func TestFromResultCarriesTheFixturesDevices(t *testing.T) {
 	result, _ := verified(t)
-	set, err := FromResult(result, time.Unix(1_760_000_000, 0))
+	set, err := FromResult(result, time.Unix(1_760_000_000, 0), freshnessOf(t, result))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,7 +149,7 @@ func TestEveryDeviceGetsACheckableBundle(t *testing.T) {
 	result, doc := verified(t)
 	dir := t.TempDir()
 
-	set, err := FromResult(result, time.Unix(1_760_000_000, 0))
+	set, err := FromResult(result, time.Unix(1_760_000_000, 0), freshnessOf(t, result))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -179,7 +180,7 @@ func TestEveryDeviceGetsACheckableBundle(t *testing.T) {
 func TestWriteThenRead(t *testing.T) {
 	result, _ := verified(t)
 	dir := t.TempDir()
-	set, err := FromResult(result, time.Unix(1_760_000_000, 0))
+	set, err := FromResult(result, time.Unix(1_760_000_000, 0), freshnessOf(t, result))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -198,8 +199,9 @@ func TestWriteThenRead(t *testing.T) {
 		len(back.Devices) != len(set.Devices) {
 		t.Errorf("round trip differs:\n got %+v\nwant %+v", back, set)
 	}
-	if back.Freshness != Unknown {
-		t.Errorf("freshness = %q", back.Freshness)
+	if back.Freshness != set.Freshness {
+		t.Errorf("freshness survived the round trip as %q, was %q",
+			back.Freshness, set.Freshness)
 	}
 
 	// Readable by other tools, so world-readable and no leftovers.
@@ -225,7 +227,7 @@ func TestWriteThenRead(t *testing.T) {
 func TestRewritingIsAtomic(t *testing.T) {
 	result, _ := verified(t)
 	dir := t.TempDir()
-	set, _ := FromResult(result, time.Unix(1_760_000_000, 0))
+	set, _ := FromResult(result, time.Unix(1_760_000_000, 0), freshnessOf(t, result))
 	if err := Write(dir, set, result); err != nil {
 		t.Fatal(err)
 	}
@@ -269,7 +271,7 @@ func TestTheCheckpointCarriesWitnessTime(t *testing.T) {
 		t.Fatal("the fixture's log is cosigned; its verification must yield a witness time")
 	}
 
-	set, err := FromResult(result, time.Unix(1_900_000_000, 0))
+	set, err := FromResult(result, time.Unix(1_900_000_000, 0), freshnessOf(t, result))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -282,5 +284,87 @@ func TestTheCheckpointCarriesWitnessTime(t *testing.T) {
 	}
 	if set.WrittenAt == *set.Checkpoint.CosignedAt {
 		t.Error("witness time and the local clock must not be the same field")
+	}
+}
+
+// freshnessOf is the real freshness of a result, for the tests whose subject
+// is something else: a node that adopted this checkpoint the instant its
+// witnesses cosigned it.
+func freshnessOf(t *testing.T, result *logclient.Result) Freshness {
+	t.Helper()
+	limits := freshness.LimitsFrom(result.State.Params, 0)
+	var clock freshness.Clock
+	if result.QuorumTime == nil {
+		return View(&clock, limits, time.Time{}, 0)
+	}
+	clock.Observe(*result.QuorumTime, 0)
+	return View(&clock, limits, *result.QuorumTime, 0)
+}
+
+// The state a consumer acts on: `freshness`, computed from witness time and a
+// monotonic elapsed reading, never from this node's own clock (A11).
+func TestFreshnessIsPublishedFromWitnessTime(t *testing.T) {
+	result, _ := verified(t)
+	if result.QuorumTime == nil {
+		t.Fatal("the fixture's log is cosigned")
+	}
+
+	var clock freshness.Clock
+	clock.Observe(*result.QuorumTime, 0)
+	limits := freshness.LimitsFrom(result.State.Params, time.Hour)
+
+	// The boundary is the *log's* `staleness`, not §4.5's default: this
+	// fixture's log sets 900s with a `params` entry, and a node that used 600
+	// anyway would disagree with the rest of its own network about when a view
+	// has gone stale.
+	if limits.Staleness != 900*time.Second {
+		t.Fatalf("staleness = %v, want the log's own 900s", limits.Staleness)
+	}
+
+	for _, tc := range []struct {
+		name string
+		mono time.Duration
+		want string
+	}{
+		{"just adopted", 0, freshness.Fresh},
+		{"fourteen minutes on", 14 * time.Minute, freshness.Fresh},
+		{"sixteen minutes on", 16 * time.Minute, freshness.Degraded},
+		{"two hours on", 2 * time.Hour, freshness.HardStale},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			set, err := FromResult(result, time.Unix(1_900_000_000, 0),
+				View(&clock, limits, *result.QuorumTime, tc.mono))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if set.Freshness != tc.want {
+				t.Errorf("freshness = %q, want %q", set.Freshness, tc.want)
+			}
+			if set.AgeSeconds == nil {
+				t.Fatal("a node with a clock must publish the age it computed")
+			}
+			if *set.AgeSeconds != int64(tc.mono.Seconds()) {
+				t.Errorf("age = %ds, want %ds", *set.AgeSeconds, int64(tc.mono.Seconds()))
+			}
+		})
+	}
+}
+
+// And with no witness clock there is no age either -- the field is absent
+// rather than zero, which would read as brand new.
+func TestNoClockPublishesNoAge(t *testing.T) {
+	result, _ := verified(t)
+	result.QuorumTime = nil
+
+	set, err := FromResult(result, time.Now(), View(&freshness.Clock{},
+		freshness.Limits{Staleness: time.Minute}, time.Time{}, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if set.Freshness != Unknown {
+		t.Errorf("freshness = %q, want %q", set.Freshness, Unknown)
+	}
+	if set.AgeSeconds != nil {
+		t.Errorf("age = %v, want none", *set.AgeSeconds)
 	}
 }

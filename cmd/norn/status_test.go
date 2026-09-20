@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func statusOutput(t *testing.T, args ...string) string {
@@ -36,22 +37,41 @@ func TestStatusReportsTheNetworkAndItsPeers(t *testing.T) {
 }
 
 // The heart of this checkpoint: a node must not pretend to know how fresh its
-// view is. Witness time is the clock (GOSSIP.md part 5) and there are no
-// cosignatures yet, so the answer is UNKNOWN and the reason is on screen.
-func TestStatusRefusesToInventFreshness(t *testing.T) {
+// view is. Witness time is the clock (GOSSIP.md part 5), so `status` reports
+// the instant a quorum vouched for -- and labels the age it derives, because
+// a one-shot command has no monotonic history and can only subtract using the
+// machine's own clock, which is not evidence (A11).
+func TestStatusReportsWitnessTimeAndLabelsTheLocalClock(t *testing.T) {
 	out := statusOutput(t)
-	if !strings.Contains(out, "freshness   UNKNOWN") {
-		t.Errorf("freshness must be reported as unknown:\n%s", out)
+	if !strings.Contains(out, "cosigned") {
+		t.Errorf("status must report the instant the witnesses vouched for:\n%s", out)
 	}
-	for _, want := range []string{"cosignature", "clock is", "A11"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("the reason should be stated (%q missing):\n%s", want, out)
-		}
+	// Which witnesses, and how many the policy needed: "2 of 3" is the fact an
+	// operator is actually checking.
+	if !strings.Contains(out, "quorum") {
+		t.Errorf("status must say what the policy required:\n%s", out)
 	}
-	// And it must not claim a state it cannot compute.
-	for _, forbidden := range []string{"freshness   fresh", "freshness   degraded", "seconds old"} {
-		if strings.Contains(out, forbidden) {
-			t.Errorf("status claimed %q with no witness time:\n%s", forbidden, out)
+	// Any age it prints is the local clock's opinion and must say so.
+	if strings.Contains(out, "age") && !strings.Contains(out, "this machine's clock") {
+		t.Errorf("an age must be labelled as the local clock's:\n%s", out)
+	}
+	if !strings.Contains(out, "A11") {
+		t.Errorf("the reason the local clock is not evidence should be on screen:\n%s", out)
+	}
+}
+
+// A log no witness has cosigned still has to produce a status, and it must say
+// `UNKNOWN` rather than a state it cannot compute.
+func TestStatusRefusesToInventFreshnessWithoutWitnesses(t *testing.T) {
+	line := freshnessLine(nil, nil, "quorum home", time.Unix(1_760_000_000, 0))
+	if !strings.Contains(line, "UNKNOWN") {
+		t.Errorf("freshness must be unknown with no cosignatures:\n%s", line)
+	}
+	// It may explain what it cannot compute; it may not claim one.
+	for _, forbidden := range []string{"freshness   fresh", "freshness   degraded",
+		"freshness   hard", "cosigned 2", "age "} {
+		if strings.Contains(line, forbidden) {
+			t.Errorf("status claimed %q with no witness time:\n%s", forbidden, line)
 		}
 	}
 }
