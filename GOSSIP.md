@@ -169,6 +169,12 @@ Every `T_g` a node pulls `/norn/checkpoint` from `r = 3` random proven peers and
 runs §2 on the result. Consistency proofs are computed locally from tiles (the node
 has them), so a peer serves data, never claims.
 
+The address is **derived from the interface, never configured**: `nornd` takes a
+gossip *port* and gets the host from the WireGuard device itself, so there is no
+setting that could point it at `0.0.0.0`. The endpoints are read-only — anything
+but `GET` is refused, because a peer answers questions and takes no instructions —
+and they expose the node's mirror directory and nothing beside it.
+
 Properties this buys, each with a lab test (§8):
 - **Liveness under log freeze** — one node that got the new checkpoint suffices for
   the whole connected mesh (T2).

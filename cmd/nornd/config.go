@@ -36,8 +36,15 @@ type Config struct {
 	HardStale string `toml:"hard_stale"`
 	// MaxSkew is Δclock. Absent means freshness.DefaultMaxSkew.
 	MaxSkew string `toml:"max_skew"`
-	Hints   string `toml:"hints_file"`
-	Peers   []Peer `toml:"peer"`
+	// GossipPort is the port the peer gossip server listens on -- on the
+	// WireGuard interface's own address, never anywhere else (GOSSIP part 6).
+	// Zero turns gossip off; absent means DefaultGossipPort.
+	GossipPort int `toml:"gossip_port"`
+	// gossipSet records that GossipPort was given on the command line, so a
+	// deliberate zero ("off") is not confused with an absent field.
+	gossipSet bool
+	Hints     string `toml:"hints_file"`
+	Peers     []Peer `toml:"peer"`
 
 	// FightPolicy is what to do when the same key keeps coming back:
 	// "alarm" (the default) or "quarantine".
@@ -189,6 +196,30 @@ func ParseMaxSkew(text string) (time.Duration, error) {
 		return 0, fmt.Errorf("max_skew must be positive, got %s", skew)
 	}
 	return skew, nil
+}
+
+// DefaultGossipPort is where a node serves its mirror to peers. It is a port
+// and not an address on purpose: the address comes from the interface, so
+// there is nothing an operator can set that would expose it (GOSSIP part 6).
+const DefaultGossipPort = 8100
+
+// SetGossipPort records a port from a flag. `given` says the flag was used,
+// so an explicit `-gossip-port 0` turns gossip off while an absent flag leaves
+// whatever the config file said.
+func (c *Config) SetGossipPort(port int, given bool) {
+	if given {
+		c.GossipPort, c.gossipSet = port, true
+	}
+}
+
+// GossipPortOrDefault is the port to gossip on: the configured one, or the
+// default when nothing was said. A configured zero means off, which is why
+// this is a method rather than a default applied at parse time.
+func (c Config) GossipPortOrDefault() int {
+	if c.gossipSet || c.GossipPort != 0 {
+		return c.GossipPort
+	}
+	return DefaultGossipPort
 }
 
 // Polling bounds. 200 ms is the interval `ENFORCEMENT.md` part 2 calls free:

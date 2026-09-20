@@ -107,3 +107,23 @@ func TestTheWitnessClientDoesNotCarryAKernelDriver(t *testing.T) {
 	forbid(t, "github.com/onembyte/norn/internal/witness", kernelDriver,
 		"Submitting a checkpoint is an HTTP request, not an interface operation.")
 }
+
+// Gossip is a file server and a fetcher, and nothing else.
+//
+// It depends on **no other Norn package at all** -- not the verifier, not the
+// enforcement side. That is not tidiness: it is the design claim made
+// structural. A peer serves bytes and the receiver verifies them with the same
+// code it uses on the log, so there is nothing for a gossip-specific trust
+// model to live in. `Peer` satisfies `logclient.Fetcher` without importing it,
+// because Go interfaces are structural; the day this package needs to import
+// the verifier is the day gossip has grown an opinion about what to believe.
+func TestGossipKnowsNothingAboutVerifying(t *testing.T) {
+	imported := deps(t, "github.com/onembyte/norn/internal/gossip")
+	for dep := range imported {
+		if strings.HasPrefix(dep, "github.com/onembyte/norn/") &&
+			dep != "github.com/onembyte/norn/internal/gossip" {
+			t.Errorf("internal/gossip depends on %s.\nA peer serves bytes; whoever "+
+				"reads them decides what they mean.", dep)
+		}
+	}
+}

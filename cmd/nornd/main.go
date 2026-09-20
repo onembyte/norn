@@ -13,14 +13,19 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"net"
+	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
 	"github.com/onembyte/norn/internal/agent"
 	"github.com/onembyte/norn/internal/endpoint"
+	"github.com/onembyte/norn/internal/gossip"
 	"github.com/onembyte/norn/internal/logclient"
+	"github.com/onembyte/norn/internal/proven"
 	"github.com/onembyte/norn/internal/reconcile"
 	"github.com/onembyte/norn/internal/trust"
 	"github.com/onembyte/norn/internal/wgdev"
@@ -49,6 +54,8 @@ func run(args []string) error {
 		"age past which every peer is dropped, e.g. 6h; off unless set")
 	maxSkew := fs.String("max-skew", "",
 		"how far this machine's clock may be from witness time before CLOCK_SKEW")
+	gossipPort := fs.Int("gossip-port", DefaultGossipPort,
+		"port for the peer gossip server, on the tunnel address only; 0 turns it off")
 	once := fs.Bool("once", false, "run one cycle and exit")
 	asJSON := fs.Bool("json", false, "log as JSON instead of text")
 	if err := fs.Parse(args); err != nil {
@@ -71,6 +78,7 @@ func run(args []string) error {
 	config.RunDir = pick(*runDir, config.RunDir, DefaultRunDir)
 	config.Poll = pick(*poll, config.Poll)
 	config.HardStale = pick(*hardStale, config.HardStale)
+	config.SetGossipPort(*gossipPort, *gossipPort != DefaultGossipPort)
 	config.MaxSkew = pick(*maxSkew, config.MaxSkew)
 
 	logger := newLogger(*asJSON)
@@ -186,6 +194,20 @@ func build(config Config, logger *slog.Logger) (*agent.Agent, time.Duration, err
 		return nil, 0, err
 	}
 
+	// Serve this node's mirror to its peers, on the tunnel and nowhere else.
+	// A failure here is reported and does not stop the node: gossip is how a
+	// network survives a log outage, not how a node enforces, and refusing to
+	// start because peers cannot reach us would trade the second for the
+	// first.
+	if port := config.GossipPortOrDefault(); port > 0 {
+		addr, err := gossip.TunnelAddress(config.Interface, port)
+		if err != nil {
+			logger.Warn("not gossiping", "reason", err)
+		} else {
+			serveGossip(logger, addr, filepath.Join(config.RunDir, proven.MirrorDir))
+		}
+	}
+
 	logger.Info("nornd started", "network", anchor.Name, "origin", anchor.Origin,
 		"log", location, "endpoints", provider.Name())
 	return cycle, interval, nil
@@ -275,4 +297,25 @@ func pick(values ...string) string {
 		}
 	}
 	return ""
+}
+
+// serveGossip runs the peer endpoints in the background.
+func serveGossip(logger *slog.Logger, addr, mirror string) {
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		// The usual cause is a tunnel that is not up yet, which is a state
+		// worth naming rather than a reason to refuse to run.
+		logger.Warn("not gossiping", "addr", addr, "reason", err)
+		return
+	}
+	logger.Info("gossiping", "addr", addr, "mirror", mirror)
+	go func() {
+		server := &http.Server{
+			Handler:           gossip.Handler(mirror),
+			ReadHeaderTimeout: 10 * time.Second,
+		}
+		if err := server.Serve(listener); err != nil {
+			logger.Warn("gossip server stopped", "reason", err)
+		}
+	}()
 }

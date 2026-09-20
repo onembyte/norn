@@ -144,3 +144,24 @@ func TestTheModeIsAnnouncedEvenWhenStartupFails(t *testing.T) {
 		t.Error("owner mode claimed it would write nothing")
 	}
 }
+
+// `GOSSIP.md` part 6 puts the gossip server on the WireGuard address only.
+// There is no flag for it, and that is the point: an operator cannot expose a
+// node's mirror to the internet by typing the wrong thing, because there is
+// nothing to type.
+func TestThereIsNoWayToBindGossipToTheWorld(t *testing.T) {
+	bin := nornd(t)
+	out, _ := runNornd(t, bin, "-h")
+
+	for _, forbidden := range []string{"gossip-listen", "gossip-addr", "gossip-bind"} {
+		if strings.Contains(out, forbidden) {
+			t.Errorf("-%s exists; the gossip address must come from the interface "+
+				"so it cannot be pointed anywhere else:\n%s", forbidden, out)
+		}
+	}
+	// It can be turned off, because a node on a tunnel that does not carry its
+	// peers has nobody to gossip with.
+	if !strings.Contains(out, "gossip") {
+		t.Errorf("there should be a way to turn gossip off:\n%s", out)
+	}
+}
