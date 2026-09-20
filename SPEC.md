@@ -693,6 +693,45 @@ that are not consistent MUST:
 4. refuse every later checkpoint not consistent with the stored one — forever,
    until an operator explicitly resets with a new trust file (KEYTRANS rule).
 
+### 11.1 Evidence format (normative)
+
+Evidence is the one artifact this protocol produces for **somebody else** — a
+witness operator, a mailing list, a stranger — so it has to be checkable by a
+reader who has the network's trust file and nothing else: no running log, no
+connection, and **no reason to trust whoever handed them the file**. That is
+why the format is here rather than in `GOSSIP.md`.
+
+Deterministic CBOR per §4.0, a closed map of exactly these seven keys:
+
+| key | type | meaning |
+|---|---|---|
+| `version` | uint | `1` |
+| `held` | text | the signed checkpoint the accuser was holding — the branch it can speak for, because it has the entries |
+| `conflicting` | text | the signed checkpoint that could not be reconciled with it |
+| `size` | uint | where the two disagree: the **conflicting** head's size |
+| `held_root` | bytes (32) | what the held branch had at `size` |
+| `proof` | array of bytes (32 each) | consistency proof chaining (`size`, `held_root`) to `held`'s own head. **Empty when `size` equals `held`'s size**, where the two signatures say it alone |
+| `policy` | text | the network's `tlog-policy` at the time, so a reader can see which witnesses were meant to prevent this |
+
+A reader MUST, in this order:
+
+1. verify **both** checkpoints per §10 — this network's origin, this network's
+   log key, and a satisfied witness quorum. A log signing two heads by itself
+   is a log misbehaving in private; what makes a fork provable to a third party
+   is that independent witnesses vouched for **both**.
+2. check `conflicting`'s size equals `size`,
+3. check `proof` chains `held_root` at `size` to `held`'s signed head — or, when
+   `size` is `held`'s own size, that `held_root` is the root `held` is signed
+   over. Without this the reader is taking the accuser's word for the number
+   that matters most, and
+4. conclude a fork **only if `held_root` differs from `conflicting`'s root**. If
+   they agree, the file proves nothing: a log and its own earlier self is not a
+   fork, and a node MUST NOT publish that as an accusation.
+
+Nothing in this procedure fetches anything, and no step takes the writer's
+word. A node names its own files `<unix>.evidence`; `testdata/vectors/fork/`
+ships the same bytes under stable names so they can be referred to.
+
 ## 12. Test vectors (deliverable of Phase 0/1)
 
 Paths below are relative to the vector root, which ships as `testdata/vectors/`
@@ -758,7 +797,7 @@ this table drifted out of date the moment one was.
 | §10 verifier loop, steps 1–4 | `served/` verified end to end, **signature first** | `checkpoints-bad/01-unsigned`, `02-wrong-log-key`, `03-wrong-origin` and **`04-forged-log-signature`** — the last one being a signature of the right shape under the right key id that does not verify. Without it a verifier that never checks the log signature reproduces the whole suite |
 | §10 step 3, the witness quorum | `served/checkpoint`, cosigned by all three witnesses | `checkpoints-bad/05-one-cosignature-short`, `06-no-cosignatures`, `07-unnamed-witness-only` and **`08-forged-cosignature`**, which carries two lines naming witnesses the policy lists, one of which does not verify: the quorum is met by counting and refused by checking. `quorum none` accepting an uncosigned head needs a second anchor and is **not vectored** |
 | §16 enrollment requests | `requests/`, four cases including a 64-byte `device_id` and non-ASCII labels | `requests-bad/`, 23 cases across all four layers, including **`forged-signature`** (structurally perfect, signed by another key) and `oversize-label-key` (§4.0's map-key cap) |
-| §11 fork evidence | `fork/evidence.cbor` and `fork/conflicting.checkpoint`: a second branch of this same network, diverging at entry 40, signed by the same log key and cosigned by the same witnesses. Checking it needs only `trust.cbor` | evidence for another origin is refused; so is a "fork" between a log and its own earlier self |
+| §11.1 fork evidence | `fork/evidence.cbor` and `fork/conflicting.checkpoint`: a second branch of this same network, diverging at entry 40, signed by the same log key and cosigned by the same witnesses. Checking it needs only `trust.cbor` | `fork/bad-other-origin` (a real fork, of a network this anchor is not about) and `fork/bad-consistent` (a log and its own earlier self: every signature valid, both heads cosigned, the roots agreeing) |
 | §16.2 bech32m | the text form of every request | `wrong-hrp`, `plain-bech32` (the same bytes under bech32's constant), `mixed-case`, `corrupt-character`. BIP-350's own vectors are in both implementations' unit tests |
 
 **Everything normative is vectored.** The list that stood here — §6's
@@ -848,8 +887,10 @@ of both tables above.
 ## 15. Distribution, freshness and gossip
 
 Checkpoint acquisition order, the witness-time clock, the `fresh → degraded →
-hard-stale` state machine, the peer gossip endpoints and fork evidence format are
-normative in `GOSSIP.md`. The policy text in `norn.trust` is verbatim
+hard-stale` state machine and the peer gossip endpoints are normative in
+`GOSSIP.md`. The **fork evidence format is §11.1 of this document**: it is the
+one artifact a stranger is asked to check, so it may not live in a file that
+does not ship beside the vectors. The policy text in `norn.trust` is verbatim
 `c2sp.org/tlog-policy`.
 
 ## 16. Enrollment requests and key handling

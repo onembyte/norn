@@ -1,0 +1,13 @@
+{
+  "cases": [
+    {
+      "name": "bad-consistent",
+      "says": "nothing here is a fork"
+    },
+    {
+      "name": "bad-other-origin",
+      "says": "the held checkpoint"
+    }
+  ],
+  "comment": "evidence that MUST NOT be acted on, checked against trust.cbor. bad-consistent is a log and its own earlier self -- every signature valid, both heads cosigned, the roots agreeing. bad-other-origin is a real fork of another network, which this anchor has no business accepting. `says` is what the refusal must be about"
+}

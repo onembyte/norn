@@ -340,8 +340,156 @@ func writeForkEvidence(root, origin string, key ed25519.PrivateKey,
 	}
 	// The conflicting head on its own too, so a reader can see what the
 	// evidence is about without decoding anything.
-	return os.WriteFile(filepath.Join(dir, "conflicting.checkpoint"),
-		[]byte(forkedSigned), 0o644)
+	if err := os.WriteFile(filepath.Join(dir, "conflicting.checkpoint"),
+		[]byte(forkedSigned), 0o644); err != nil {
+		return err
+	}
+	return writeForkNegatives(root, origin, key, entries, heldSigned, heldTree, signers)
+}
+
+// writeForkNegatives ships the two refusals §12.1 has claimed since Phase 4.
+// Neither existed as a file: the first was exercised by a Go test against the
+// *valid* vector, and the second could not be exercised at all, because
+// `forkevidence.Build` refuses to produce it. A reader given only this
+// directory could check that a fork is proved and nothing about what is not.
+func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
+	entries [][]byte, heldSigned string, heldTree *tlog.Tree,
+	signers []cosignpkg.Signer) error {
+
+	dir := filepath.Join(root, "fork")
+
+	// 1. A log and its own earlier self. Every signature is valid, both heads
+	// are cosigned, and the roots agree at the smaller size -- which is
+	// exactly why it is not a fork. `Build` refuses to make this, so it is
+	// assembled by hand: the accusation a node must never be able to publish.
+	prefixAt := int64(len(entries)) - 10
+	prefixSigned, err := signedHeadOver(root, origin, key, entries[:prefixAt], signers)
+	if err != nil {
+		return err
+	}
+	rootAt, err := heldTree.HeadAt(prefixAt)
+	if err != nil {
+		return err
+	}
+	consistent := &forkevidence.Evidence{
+		Held: heldSigned, Conflicting: prefixSigned,
+		Size: prefixAt, HeldRoot: append([]byte(nil), rootAt[:]...),
+		Policy: policyOf(root),
+	}
+	proof, err := heldTree.ConsistencyProof(prefixAt)
+	if err != nil {
+		return err
+	}
+	for _, hash := range proof {
+		consistent.Proof = append(consistent.Proof, append([]byte(nil), hash[:]...))
+	}
+	raw, err := consistent.Encode()
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(dir, "bad-consistent.cbor"), raw, 0o644); err != nil {
+		return err
+	}
+
+	// 2. A real fork, of a different network. Perfectly valid evidence, and
+	// none of this anchor's business: an accusation a reader must not accept
+	// on behalf of a log it is not about.
+	elsewhere := "norn/elsewhere"
+	elsewhereEntries := append([][]byte(nil), entries[:forkAt]...)
+	divergent, err := forkEntry(root)
+	if err != nil {
+		return err
+	}
+	branchA, err := signedHeadOver(root, elsewhere, key, elsewhereEntries, signers)
+	if err != nil {
+		return err
+	}
+	branchB, err := signedHeadOver(root, elsewhere, key,
+		append(append([][]byte(nil), elsewhereEntries...), divergent), signers)
+	if err != nil {
+		return err
+	}
+	treeA, err := tlog.Build(elsewhereEntries)
+	if err != nil {
+		return err
+	}
+	cpB, err := tlog.Verify(branchB, []string{note.VerifierKey(elsewhere,
+		key.Public().(ed25519.PublicKey))})
+	if err != nil {
+		return err
+	}
+	_ = cpB
+	// Their heads differ at the shorter size, which is what makes it evidence
+	// over there and irrelevant here.
+	other := &forkevidence.Evidence{
+		Held: branchB, Conflicting: branchA, Size: treeA.Size(),
+		Policy: policyOf(root),
+	}
+	treeB, err := tlog.Build(append(append([][]byte(nil), elsewhereEntries...), divergent))
+	if err != nil {
+		return err
+	}
+	rootB, err := treeB.HeadAt(treeA.Size())
+	if err != nil {
+		return err
+	}
+	other.HeldRoot = append([]byte(nil), rootB[:]...)
+	proofB, err := treeB.ConsistencyProof(treeA.Size())
+	if err != nil {
+		return err
+	}
+	for _, hash := range proofB {
+		other.Proof = append(other.Proof, append([]byte(nil), hash[:]...))
+	}
+	rawOther, err := other.Encode()
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(dir, "bad-other-origin.cbor"), rawOther, 0o644); err != nil {
+		return err
+	}
+
+	manifest := map[string]any{
+		"cases": []map[string]string{
+			{"name": "bad-consistent",
+				"says": "nothing here is a fork"},
+			{"name": "bad-other-origin",
+				"says": "the held checkpoint"},
+		},
+		"comment": "evidence that MUST NOT be acted on, checked against trust.cbor. " +
+			"bad-consistent is a log and its own earlier self -- every signature valid, " +
+			"both heads cosigned, the roots agreeing. bad-other-origin is a real fork of " +
+			"another network, which this anchor has no business accepting. `says` is what " +
+			"the refusal must be about",
+	}
+	encoded, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, "cases.json"), append(encoded, '\n'), 0o644)
+}
+
+// signedHeadOver builds a cosigned checkpoint over exactly these entries.
+func signedHeadOver(root, origin string, key ed25519.PrivateKey,
+	entries [][]byte, signers []cosignpkg.Signer) (string, error) {
+
+	dir, err := os.MkdirTemp("", "norn-branch")
+	if err != nil {
+		return "", err
+	}
+	defer os.RemoveAll(dir)
+
+	store, err := tlogstore.Open(dir, origin, key, tlogstore.WithCosigner(
+		tlogstore.CosignerFunc(cosignpkg.Append(signers, cosignpkg.At(time.Unix(CosignedAt, 0))))))
+	if err != nil {
+		return "", err
+	}
+	for _, raw := range entries {
+		if _, err := store.Append(raw); err != nil {
+			return "", err
+		}
+	}
+	return store.SignedCheckpoint()
 }
 
 // forkEntry is the entry only the second branch carries: a revoke the real
