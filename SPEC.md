@@ -889,6 +889,10 @@ admits its holes, so:
 
 - **`quorum none` accepting an uncosigned head.** It needs a second trust
   anchor, and one is not shipped.
+- **§16.1's 32-byte `device_pk`, independently.** `requests-bad/short-device-pk`
+  is refused by that rule, and a verifier that skipped it would fail anyway: a
+  31-byte key verifies nothing. No construction separates the two, so the rule
+  is refused-but-not-pinned, which is different from covered.
 - **§5's `state.net` coming from the anchor rather than from the genesis
   entry.** Unobservable: entry 0 aborts whenever the two differ, so no file can
   tell the two readings apart. Recorded here because a reader will look.

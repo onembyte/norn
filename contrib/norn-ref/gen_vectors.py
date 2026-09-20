@@ -252,7 +252,8 @@ def write_requests(out: pathlib.Path) -> None:
     bad = []
     for name, text, why in fixture.request_negatives():
         write(out / "requests-bad" / f"{name}.txt", text + "\n")
-        bad.append({"name": name, "why": why})
+        bad.append({"name": name, "why": why,
+                    "signature": _signature_state(name, text)})
     write(out / "requests-bad" / "cases.json", canonjson.dumps({
         "comment": "every .txt here MUST be refused, whether by the text layer, "
                    "the CBOR profile, a field rule or signature verification; "
@@ -272,6 +273,49 @@ def write_requests(out: pathlib.Path) -> None:
                    "entry, which is why these are the only vectors that reach them",
         "cases": hostile,
     }) + "\n")
+
+
+#: The two negatives the strict decoder cannot read, and why each is
+#: nonetheless signed over the bytes that ship. Named individually because a
+#: blanket answer here is how the whole class went unchecked.
+_PROFILE_CASE_SIGNATURES = {
+    # Re-signed over the patched preimage in 6.5c: the 24-byte key cannot
+    # canonicalise away, so SPEC 4.0's second construction route applies.
+    "oversize-label-key": "valid",
+    # The patch swaps two map entries, which canonicalises away when the
+    # preimage is re-encoded, so the original signature still covers it --
+    # SPEC 4.0's first construction route.
+    "unsorted-keys": "valid",
+}
+
+
+def _signature_state(name: str, text: str) -> str:
+    """Whether this negative's `sig` covers the bytes that ship.
+
+    Computed, not declared. A negative that names a field rule and carries a
+    stale signature is refused by Ed25519 before its rule is reached, and
+    eleven of fifteen were, because nobody had asked the question per case.
+    """
+    from nornref import bech32m, cbor, enrollreq, keys as keymod
+
+    try:
+        _, raw = bech32m.decode(text)
+    except Exception:
+        # A text-layer case: the wrapper is the fault and the bytes inside are
+        # the valid request, signature and all.
+        return "valid"
+    try:
+        req = cbor.decode(raw)
+    except cbor.ProfileError:
+        if name in _PROFILE_CASE_SIGNATURES:
+            return _PROFILE_CASE_SIGNATURES[name]
+        raise SystemExit(
+            f"{name}: outside the CBOR profile and not accounted for; say whether its "
+            "signature covers its own bytes and why")
+    sig, public = req.get("sig"), req.get("device_pk")
+    if not isinstance(sig, bytes) or len(sig) != 64 or not isinstance(public, bytes):
+        return "broken"
+    return "valid" if keymod.verify(public, enrollreq.preimage(req), sig) else "broken"
 
 
 def main(argv: list[str]) -> int:

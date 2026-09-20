@@ -1122,13 +1122,24 @@ def request_negatives() -> list[tuple[str, str, str]]:
     def text(req: dict[str, Any]) -> str:
         return bech32m.encode(enrollreq.HRP, cbor.encode(req))
 
-    def mutate(**over: Any) -> str:
+    def mutate(resign: bool = True, **over: Any) -> str:
+        """Patch a valid request, and re-sign it over the patched preimage.
+
+        Re-signing is the default because a negative that names a field rule
+        must fail for *that* rule: SPEC §4.0 states the standard for the entry
+        profile, and until 6.5g-vi nothing applied it here, so eleven of
+        fifteen field negatives were refused by Ed25519 before their own rule
+        was reached. `resign=False` is for the cases that are *about* the
+        signature, where a valid one would defeat the point.
+        """
         req = dict(_request("pi-cam", "pi-cam", "pi-cam", 10))
         for key, value in over.items():
             if value is _ABSENT:
                 req.pop(key)
             else:
                 req[key] = value
+        if resign and "sig" in req:
+            enrollreq.sign(req, KEYS["pi-cam"], strict=False)
         return text(req)
 
     good = _request("pi-cam", "pi-cam", "pi-cam", 10)
@@ -1142,7 +1153,7 @@ def request_negatives() -> list[tuple[str, str, str]]:
 
     cases = [
         ("unknown-key", mutate(extra=1), "closed schema: an unknown key"),
-        ("missing-sig", mutate(sig=_ABSENT), "unsigned"),
+        ("missing-sig", mutate(resign=False, sig=_ABSENT), "unsigned"),
         ("wrong-version", mutate(v=2), "v is not 1"),
         ("short-net", mutate(net=NET[:8]), "net is not 16 bytes"),
         ("uppercase-device-id", mutate(device_id="Pi-Cam"), "§2 forbids uppercase"),
@@ -1150,7 +1161,7 @@ def request_negatives() -> list[tuple[str, str, str]]:
         ("long-device-id", mutate(device_id="d" + "e" * 64), "65 bytes"),
         ("short-device-pk", mutate(device_pk=KEYS["pi-cam"].public[:31]), "not 32 bytes"),
         ("short-wg-pk", mutate(wg_pk=WG["pi-cam"][:31]), "not 32 bytes"),
-        ("short-sig", mutate(sig=good["sig"][:63]), "not 64 bytes"),
+        ("short-sig", mutate(resign=False, sig=good["sig"][:63]), "the `sig` field is not 64 bytes"),
         ("bool-expires", mutate(expires=True), "a CBOR bool where a uint is required"),
         ("expires-at-ts", _expires_at_ts(), "expires must be after ts"),
         ("too-many-labels", mutate(labels={f"k{i}": "v" for i in range(33)}), "over 32 labels"),

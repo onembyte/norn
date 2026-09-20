@@ -471,7 +471,7 @@ them, and then run the gate.
 | 6.5g-iii | Two reason codes the prose gets wrong | H4 (§4.0 names `no-device-sig` where §5.1 gives `threshold`) and H5 (§5.2's validity rule makes §5.1's rotate proof-of-possession unsatisfiable) | ✅ |
 | 6.5g-iv | What a decoder accepts after the entry | H6 (trailing bytes) and H8 (the origin check exists only inside §11.1) | ✅ |
 | 6.5g-v | Time, again | H7 (`quorum none` makes `T` infinite by a literal reading; cosignature timestamps unruled) and H9 (§8's staleness MUST has no predicate) | ✅ |
-| 6.5g-vi | **The class, not the instance** | H10 and every other rule-negative refused by its own signature — enforced over the whole directory rather than a list | ⬜ |
+| 6.5g-vi | **The class, not the instance** | H10 and every other rule-negative refused by its own signature — enforced over the whole directory rather than a list | ✅ |
 | 6.5g-vii | Clear prose, no vector | the ten variants run 6 lists where the prose is unambiguous and nothing pins it | ⬜ |
 | 6.5g-viii | Cold-model gate run 7 | a *fresh* agent on a *new* copy; the target remains `SPEC SUFFICIENT` | ⬜ |
 | 6.6 | Phase 6 gate audit | what is true, and what needs two people | ⬜ |
@@ -1222,3 +1222,12 @@ code does not have.
   - **H9: §8's fourth condition had no predicate**, deferring "not stale" to a document that does not ship. It has one now, and the A11 tension it raised is named rather than left to look like a contradiction: §5.3 forbids the local clock from supplying an **instant**, not from supplying a **duration**. A node's estimate of now is the quorum time it was given plus the monotonic time elapsed since — and monotonic time cannot be set wrong, only paused. That is exactly what `freshness.Clock` has always computed (`best + (mono - seenAt)`) and what no document said.
   - **Two mutations, two reds**: taking the newest timestamp instead of the k-th newest now disagrees with the recorded value, and letting `quorum none` produce a clock fails on its own test.
   - **A test that hardcoded "5m" found the change for me.** The status page's age is measured from the instant the *quorum* was reached, which moved by seven seconds; the test now derives it from the checkpoint's own quorum time, and derives the size too — it had been asserting the page mentions "90" since the fixture was ninety entries long.
+
+
+- **6.5g-vi H10 — the instance, fixed twice, and the class, fixed once.**
+  - **Run 5 reported two request negatives refused by their own broken signature. 6.5c fixed those two.** Run 6 found two more; checking the whole directory found **eleven of fifteen**. 6.5b's log says a fix should "close the class, not the instance", and one checkpoint later I fixed the instances and shipped a test that knew two names.
+  - **So `mutate()` re-signs by default.** A patched request is signed again over the patched preimage unless the case is *about* the signature, which is three of them. SPEC §4.0 has stated that standard for the entry profile since Phase 0; nobody had applied it to `requests-bad/`.
+  - **The declaration is computed, not written.** `cases.json` now carries `"signature": "valid" | "broken"` for every case, and the generator derives it by verifying the shipped bytes rather than by consulting a list — because a list is what failed. The two cases the strict decoder cannot read are named individually with the §4.0 construction route each relies on, and an unaccounted third would stop the build.
+  - **The test enforces the rule over the directory**: every case must declare, the declaration must match the file, and **only a case about the signature may declare it broken**. A negative added later cannot avoid the question.
+  - **One case cannot be fixed, and §12.1 says so.** `short-device-pk` carries a 31-byte key, and a 31-byte key verifies nothing — so no construction separates "refused by the length rule" from "refused because the key is unusable". It is refused-but-not-pinned, which is different from covered, and the not-vectored list now distinguishes the two.
+  - **The proof it worked**: with the 32-label cap removed from both places that enforce it, `too-many-labels` is now **accepted**. Run 6's `no-label-count-cap` variant passed 285/285 precisely because the signature refused the file first; it would fail now.
