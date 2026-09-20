@@ -69,3 +69,60 @@ func TestHostileInputIsRefusedByTheProfile(t *testing.T) {
 		})
 	}
 }
+
+// Cold-model gate run 7, defect J1. §4.0 said "the top-level map is depth 1,
+// so a value inside it is depth 2" -- which counts scalars -- while both
+// implementations count containers, and the vector written for the limit is
+// eight nested arrays around a scalar. Under the prose that is depth 9 and
+// must be refused; its `cases.json` says accept.
+//
+// Run 7's `depth-scalars` variant is the only one in seven rounds that failed
+// for *following the document*, which is the worst way for a specification to
+// be wrong. The rule and the vector are tied together here so neither can move
+// without the other.
+func TestTheDepthLimitMatchesTheVectorWrittenForIt(t *testing.T) {
+	dir := filepath.Join("..", "..", "testdata", "vectors", "entries-hostile")
+	at, err := os.ReadFile(filepath.Join(dir, "at-the-depth-limit.cbor"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	past, err := os.ReadFile(filepath.Join(dir, "past-the-depth-limit.cbor"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Both vectors are chains of one-element arrays around a scalar, so the
+	// number of containers is the number of 0x81 bytes.
+	containers := func(raw []byte) int {
+		n := 0
+		for _, b := range raw {
+			if b == 0x81 {
+				n++
+			}
+		}
+		return n
+	}
+	if got := containers(at); got != MaxDepth {
+		t.Errorf("the at-the-limit vector nests %d containers and the limit is %d; a "+
+			"vector that does not sit exactly on the limit bounds nothing", got, MaxDepth)
+	}
+	if got := containers(past); got != MaxDepth+1 {
+		t.Errorf("the past-the-limit vector nests %d containers, want %d", got, MaxDepth+1)
+	}
+
+	// And the document must say which of the two things is counted, because
+	// the whole defect was that it said the other one.
+	spec, err := os.ReadFile(filepath.Join("..", "..", "SPEC.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Markdown wraps and puts emphasis markers mid-phrase; an author should not
+	// have to avoid a line break to stay checked (the same correction 6.3 made
+	// to the README checks).
+	flat := strings.Join(strings.Fields(strings.ReplaceAll(string(spec), "*", "")), " ")
+	if !strings.Contains(flat, "A scalar does not add depth") {
+		t.Error("§4.0 does not say whether a scalar adds depth. It counted values once, " +
+			"the implementations count containers, and the vector followed the " +
+			"implementations")
+	}
+}

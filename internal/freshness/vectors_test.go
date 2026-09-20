@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"testing"
 
 	"github.com/onembyte/norn/internal/cosign"
@@ -94,4 +96,67 @@ func TestQuorumNoneYieldsNoClockRatherThanAnInfiniteOne(t *testing.T) {
 	if _, ok := QuorumTime(rules, nil); ok {
 		t.Error("`quorum none` yielded a clock; nobody vouches for the time under it")
 	}
+}
+
+// Cold-model gate run 7, defect J7. 6.5g-v staggered the fixture's witnesses
+// seven seconds apart and claimed in §12.1 that this makes "the newest, the
+// median and the k-th newest disagree". With three witnesses and a threshold
+// of two, the k-th newest **is** the median. The vector is right and the
+// sentence about it was arithmetic nobody did.
+func TestTheSpecOnlyClaimsSeparationsTheFixtureMakes(t *testing.T) {
+	got, distinct := servedQuorumTime(t)
+	if distinct != 3 {
+		t.Fatalf("%d distinct cosignature timestamps; this check assumes three", distinct)
+	}
+	stamps := servedTimestamps(t)
+	sort.Slice(stamps, func(i, j int) bool { return stamps[i] > stamps[j] })
+	newest, median, oldest := stamps[0], stamps[1], stamps[2]
+
+	if got != median {
+		t.Fatalf("quorum time %d is not the middle timestamp %d", got, median)
+	}
+	// So the fixture separates the k-th newest from the newest and from the
+	// oldest, and cannot separate it from the median. The document may claim
+	// the first two and must not claim the third.
+	spec, err := os.ReadFile(filepath.Join("..", "..", "SPEC.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if median == newest || median == oldest {
+		t.Fatal("the timestamps are not distinct enough for this check")
+	}
+	if strings.Contains(string(spec), "the newest, the median and the k-th newest disagree") {
+		t.Error("§12.1 claims the fixture separates the median from the k-th newest. " +
+			"With three witnesses and a threshold of two they are the same timestamp, " +
+			"and separating them needs a fourth witness")
+	}
+}
+
+func servedTimestamps(t *testing.T) []int64 {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(vectorRoot(), "served", "checkpoint"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	anchorRaw, err := os.ReadFile(filepath.Join(vectorRoot(), "trust.cbor"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, err := trust.Parse(anchorRaw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rules, err := policy.Parse(doc.Policy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cosignatures, err := cosign.Verify(string(raw), rules.Keys())
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := make([]int64, 0, len(cosignatures))
+	for _, c := range cosignatures {
+		out = append(out, c.Time.Unix())
+	}
+	return out
 }

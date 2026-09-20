@@ -390,25 +390,37 @@ func TestTheLogCollectsACosignatureOverHTTP(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 
-	resp, err := http.Get(base + "/checkpoint")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer resp.Body.Close()
-	served, err := io.ReadAll(resp.Body)
-	if err != nil {
-		t.Fatal(err)
+	// The log asks its witnesses in the background -- 2.9 made the first
+	// refresh asynchronous precisely so that a witness which is slow or down
+	// cannot stop the log from starting. So the port opening does not mean the
+	// first round has finished, and asserting on the first fetch made this
+	// test fail under parallel load and pass on its own, four times.
+	//
+	// Poll for the cosignature rather than assuming it has arrived. The
+	// assertion is unchanged; only the moment it is made is.
+	public := witnessKey.Public().(ed25519.PublicKey)
+	witnessVKey := note.CosignerVerifierKey("norn-witness/pi", public)
+	var served []byte
+	deadline = time.Now().Add(10 * time.Second)
+	for {
+		resp, err := http.Get(base + "/checkpoint")
+		if err == nil {
+			served, _ = io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if got, err := cosign.Verify(string(served), []string{witnessVKey}); err == nil &&
+				len(got) == 1 {
+				break
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the served checkpoint never carried a cosignature from the "+
+				"witness; the log asked it %d time(s). Last head:\n%s", asked, served)
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 
 	if asked == 0 {
 		t.Fatal("the log never asked its witness")
-	}
-	public := witnessKey.Public().(ed25519.PublicKey)
-	got, err := cosign.Verify(string(served),
-		[]string{note.CosignerVerifierKey("norn-witness/pi", public)})
-	if err != nil || len(got) != 1 {
-		t.Fatalf("the served checkpoint carries no cosignature from the witness (%v):\n%s",
-			err, served)
 	}
 }
 

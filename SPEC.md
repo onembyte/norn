@@ -140,13 +140,16 @@ same governance entry be applied twice.
 
 A decoder MUST bound its own resource use. Two limits, both normative:
 
-- **Nesting depth is at most 8.** The top-level map is depth **1**, so a value
-  inside it is depth 2. An `enroll`'s embedded request (§16.1) is a byte string
-  whose contents are parsed separately, and its own nesting **restarts at 1**:
-  the two documents are decoded by two calls, and a limit that leaked across
-  them would make an entry's validity depend on the shape of something it
-  merely carries. The deepest structure the entry schema itself allows is a
-  request's `labels` value, at depth 3 of that inner document.
+- **Nesting depth is at most 8**, counted in **containers**. The top-level map
+  is depth 1; a map or array inside it is depth 2. **A scalar does not add
+  depth** — the limit exists to bound recursion, and a scalar recurses no
+  further, so the depth of a value is the number of maps and arrays enclosing
+  it. An `enroll`'s embedded request (§16.1) is a byte string whose contents
+  are parsed separately, and its own nesting **restarts at 1**: the two
+  documents are decoded by two calls, and a limit that leaked across them would
+  make an entry's validity depend on the shape of something it merely carries.
+  The deepest structure the entry schema itself allows is a request's `labels`
+  map, at depth 2 of that inner document.
 - **`MAX_ENTRY_BYTES` is 65535**, and an entry is at most that many bytes. Not
   65536: §6 frames entries in `tlog-tiles` entry bundles behind a **uint16**
   length prefix, so 65535 is the largest entry that can be served at all. A
@@ -937,7 +940,7 @@ this table drifted out of date the moment one was.
 | §5.1 `params` is non-empty | `params` entries in the log | `bad-params-empty` |
 | §14.1 key order above the BMP | `enroll-astral-labels`, whose labels carry one astral key and one private-use key: the only pair in the suite where UTF-8 bytewise order and UTF-16 code-unit order disagree | — |
 | §5.3 state, incl. D-028 and `expires` | `state.json`, `enroll-contractor` | `signer_remove-below-threshold` accepted, then `signer_add-recover` |
-| §5.3 the derivation of `T` | `served/checkpoint`, whose three witnesses cosign seven seconds apart, so the newest, the median and the k-th newest disagree; `proofs/cases.json` records the value `T` must come out as | — |
+| §5.3 the derivation of `T` | `served/checkpoint`, whose three witnesses cosign seven seconds apart, so the **newest** and the **oldest** are both separated from the answer; `proofs/cases.json` records the value `T` must come out as | — |
 | §5.3 evaluation time | `proven/cases.json`: the admitted set at four values of `T` — no clock, before, **exactly at**, and after the one deadline the fixture carries. `state.json` is clock-independent by design, so this is the only vector that exercises expiry | the `at-the-deadline` case, where `expires == T` and the device is **out** |
 | §7 receipt | `receipt.note` | — |
 | §9 trust file, fingerprint | `trust.cbor` | 18 rejected anchors in `trust-bad/`. **`15`** and **`16`** parse cleanly as verifier keys and are refused only by the algorithm rule; **`17`** and **`18`** are a witness the policy never names and a policy naming a witness the file does not list, each otherwise perfectly valid |
@@ -957,6 +960,10 @@ admits its holes, so:
 
 - **`quorum none` accepting an uncosigned head.** It needs a second trust
   anchor, and one is not shipped.
+- **The median, as distinct from the k-th newest.** With three witnesses and a
+  threshold of two they are the same timestamp, so no reading of the fixture
+  tells them apart. Separating them needs a fourth witness, which this network
+  does not have.
 - **§16.1's 32-byte `device_pk`, independently.** `requests-bad/short-device-pk`
   is refused by that rule, and a verifier that skipped it would fail anyway: a
   31-byte key verifies nothing. No construction separates the two, so the rule
