@@ -122,7 +122,7 @@ func TestVerifyAnchoredReportsAMismatchedProof(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(log, "anchors", "90.ots"), sample, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(log, "anchors", servedSize(t)+".ots"), sample, 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -164,11 +164,11 @@ func anchoredLog(t *testing.T) string {
 	if err := os.MkdirAll(filepath.Join(dir, "anchors"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	proof, err := os.ReadFile(filepath.Join(vectors(), "anchors", "checkpoint-90.ots"))
+	proof, err := os.ReadFile(anchorProof(t))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "anchors", "90.ots"), proof, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "anchors", servedSize(t)+".ots"), proof, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	return dir
@@ -243,4 +243,33 @@ func TestTheHonestCheckpointIsStillAccepted(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the honest checkpoint was refused: %v\n%s", err, out)
 	}
+}
+
+// anchorProof is the fixture's OpenTimestamps proof. Its name carries the tree
+// size (§6: `anchors/<size>.ots`), so it is found rather than spelled: four
+// entries were added to the fixture in 6.5d-ii and every hardcoded
+// `checkpoint-90.ots` went stale at once.
+func anchorProof(t *testing.T) string {
+	t.Helper()
+	matches, err := filepath.Glob(filepath.Join(vectors(), "anchors", "checkpoint-*.ots"))
+	if err != nil || len(matches) != 1 {
+		t.Fatalf("want exactly one checkpoint proof in anchors/, found %v (%v)", matches, err)
+	}
+	return matches[0]
+}
+
+// servedSize is the tree size the fixture's checkpoint claims. §6 names the
+// anchor `anchors/<size>.ots`, so both the file and the name that finds it
+// follow the fixture rather than a constant.
+func servedSize(t *testing.T) string {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(vectors(), "served", "checkpoint"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(string(raw), "\n")
+	if len(lines) < 2 {
+		t.Fatal("the served checkpoint has no size line")
+	}
+	return lines[1]
 }

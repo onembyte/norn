@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/onembyte/norn/internal/cbor"
 	"github.com/onembyte/norn/internal/entry"
 )
 
@@ -337,4 +338,131 @@ func TestTheAcceptedRotateCarriesBothDeviceSignatures(t *testing.T) {
 			t.Errorf("the accepted rotate is not signed by %s", name)
 		}
 	}
+}
+
+// --- Cold-model gate run 5, defect G10 ----------------------------------
+//
+// §5.1 says "The order is normative: several vectors are simultaneously wrong
+// in more than one way, so the first matching step decides the reason code."
+// For four of its precedence pairs no such vector existed, and run 5 swapped
+// each order in turn and passed 597/597. Only the governance step-7-before-8
+// case was genuinely pinned.
+//
+// A precedence vector is worth nothing unless it is wrong in *both* ways, so
+// each is checked for the second fault as well as for the reason it produces.
+
+func entryNamed(t *testing.T, m manifest, name string) (int, string) {
+	t.Helper()
+	for i, e := range m.Entries {
+		if e.Name == name {
+			return i, e.Reason
+		}
+	}
+	t.Fatalf("the fixture has no entry %q", name)
+	return 0, ""
+}
+
+func rawEntry(t *testing.T, name string) map[string]any {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(vectorRoot(), "log", name+".cbor"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Deliberately not entry.Decode: the envelope check is one of the rules
+	// under test, so these bytes are read as plain CBOR.
+	value, err := cbor.Decode(raw)
+	if err != nil {
+		t.Fatalf("%s is not decodable CBOR, so it cannot isolate a later rule: %v", name, err)
+	}
+	m, ok := value.(map[string]any)
+	if !ok {
+		t.Fatalf("%s is not a CBOR map", name)
+	}
+	return m
+}
+
+func TestThePrecedenceVectorsAreWrongInTwoWays(t *testing.T) {
+	_, _, m := loadCase(t, filepath.Join(vectorRoot(), "log"))
+
+	cases := []struct {
+		name        string
+		reason      string
+		alsoWrong   string
+		secondFault func(t *testing.T, env map[string]any)
+	}{{
+		name: "90-bad-precedence-decode-before-unknown-type", reason: "decode",
+		alsoWrong: "carries a type §4.3 does not define",
+		secondFault: func(t *testing.T, env map[string]any) {
+			if kind, _ := env["t"].(string); kind == "note" || kind == "enroll" {
+				t.Errorf("t is %q, which §4.3 defines: step 4 would not have fired", kind)
+			}
+		},
+	}, {
+		name: "91-bad-precedence-after-before-threshold", reason: "after",
+		alsoWrong: "has no valid signature to count",
+		secondFault: func(t *testing.T, env map[string]any) {
+			sigs, _ := env["sigs"].([]any)
+			if len(sigs) != 0 {
+				t.Errorf("%d signatures: step 7 would have been satisfied", len(sigs))
+			}
+		},
+	}, {
+		name: "92-bad-precedence-threshold-before-dup-id", reason: "threshold",
+		alsoWrong: "enrols a device_id that is already active",
+		secondFault: func(t *testing.T, env map[string]any) {
+			sigs, _ := env["sigs"].([]any)
+			if len(sigs) >= 2 {
+				t.Errorf("%d signatures meets signer_thr, so step 7 would not fire", len(sigs))
+			}
+		},
+	}, {
+		name: "93-bad-precedence-threshold-before-dup-wg", reason: "threshold",
+		alsoWrong: "takes a WireGuard key active for another device",
+		secondFault: func(t *testing.T, env map[string]any) {
+			sigs, _ := env["sigs"].([]any)
+			if len(sigs) < 1 {
+				t.Error("no signatures at all: this would fail the device-signature check first")
+			}
+			// The fault the later rule would have reported has to be real. The
+			// first version of this vector took `nas`'s *original* key, which
+			// `nas` rotated away from at entry 35, so it was wrong in only one
+			// way and pinned nothing -- and this check was not here to say so.
+			body, _ := env["body"].(map[string]any)
+			wg, _ := body["wg_pk"].([]byte)
+			owner, taken := activeWg(t)[hex.EncodeToString(wg)]
+			if !taken {
+				t.Error("the new WireGuard key is not active for anybody, so `dup-wg` " +
+					"would never have fired and the order is not pinned")
+			} else if owner == "printer" {
+				t.Error("the key already belongs to this device, which `dup-wg` permits")
+			}
+		},
+	}}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			_, reason := entryNamed(t, m, c.name)
+			if reason != c.reason {
+				t.Errorf("reason is %q, want %q -- the earlier step must decide", reason, c.reason)
+			}
+			c.secondFault(t, rawEntry(t, c.name))
+			t.Logf("also %s, which a swapped order would have reported instead", c.alsoWrong)
+		})
+	}
+}
+
+// activeWg is the fixture's final WireGuard-key ownership, keyed by hex.
+func activeWg(t *testing.T) map[string]string {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(vectorRoot(), "state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var st struct {
+		ActiveWg map[string]string `json:"active_wg"`
+	}
+	if err := json.Unmarshal(raw, &st); err != nil {
+		t.Fatal(err)
+	}
+	return st.ActiveWg
 }

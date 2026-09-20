@@ -546,6 +546,41 @@ def log() -> list[LogItem]:
     for name, raw in forged_signature_negatives(b.index):
         reason = "no-device-sig" if "device" in name else "threshold"
         b.add_raw(f"{b.index}-bad-{name}", raw, reason)
+
+    # §5.1 calls its order normative and rests that claim on vectors that are
+    # "simultaneously wrong in more than one way". For four of its precedence
+    # pairs no such vector existed, so cold gate run 5 swapped each order in
+    # turn and still reproduced the whole manifest. Each entry below is wrong
+    # in exactly two ways; only the earlier step's code may appear.
+
+    # Step 3 (envelope closedness) precedes step 4 (`unknown-type`).
+    unknown_and_open = {
+        "v": entry.VERSION, "t": "teleport", "net": NET,
+        "ts": T0 + b.index * 60, "after": b.index,
+        "body": {"text": "neither a known type nor a closed envelope"},
+        "sigs": [], "surprise": "an unpermitted envelope key"}
+    b.add_raw(f"{b.index}-bad-precedence-decode-before-unknown-type",
+              cbor.encode(unknown_and_open), "decode")
+
+    # Step 6 (`after`) precedes step 7 (the signature count).
+    b.add(f"{b.index}-bad-precedence-after-before-threshold", b.build(
+        "note", {"text": "from the future, and unsigned"}, [],
+        after=b.index + 5000), "after")
+
+    # `enroll`: the signer count precedes `dup-id`. `nas` is active, and one
+    # signer is below `signer_thr` = 2.
+    b.add(f"{b.index}-bad-precedence-threshold-before-dup-id", b.build(
+        "enroll", _enroll_body("nas"), [("signer1", "signer")]), "threshold")
+
+    # `rotate`: with `rotate_needs_signer` on, the signer count precedes
+    # `dup-wg`. `printer` is active and signs with its current key; the new
+    # WireGuard key belongs to `nas`.
+    # `nas` rotated to `nas2` at entry 35, so `WG["nas"]` is not active and
+    # using it would leave this entry wrong in only one way.
+    b.add(f"{b.index}-bad-precedence-threshold-before-dup-wg", b.build(
+        "rotate", {"device_id": "printer", "wg_pk": WG["nas2"]},
+        [("printer", "device"), ("signer1", "signer")]), "threshold")
+
     return b.items
 
 

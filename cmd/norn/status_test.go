@@ -23,7 +23,7 @@ func statusOutput(t *testing.T, args ...string) string {
 func TestStatusReportsTheNetworkAndItsPeers(t *testing.T) {
 	out := statusOutput(t)
 	for _, want := range []string{"norn-testnet", "norn/nzxx", "anchor", "checkpoint",
-		"90 entries", "peers", "proven", "revoked", "expired"} {
+		"94 entries", "peers", "proven", "revoked", "expired"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("status omits %q:\n%s", want, out)
 		}
@@ -83,9 +83,11 @@ func TestStatusReadsTheLogBackInWords(t *testing.T) {
 		t.Fatalf("no recent section:\n%s", out)
 	}
 	tail := out[strings.Index(out, "recent"):]
+	// Every rendered row, not only the datable ones: an entry that does not
+	// decode has no timestamp to show and is still one of the recent entries.
 	lines := 0
 	for _, line := range strings.Split(tail, "\n") {
-		if strings.HasPrefix(line, "  ") && strings.Contains(line, "ago") {
+		if strings.HasPrefix(line, "  ") && strings.TrimSpace(line) != "" {
 			lines++
 		}
 	}

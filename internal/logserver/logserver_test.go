@@ -70,7 +70,7 @@ func testPolicy(t *testing.T, origin string) string {
 		"quorum " + testWitnessName + "\n"
 }
 
-// theLog builds a server over the fixture's 90 entries: a real log, not a stub.
+// theLog builds a server over the whole replay fixture: a real log, not a stub.
 func theLog(t *testing.T) (*Server, *httptest.Server, replay.Anchor, string) {
 	t.Helper()
 	raw, err := os.ReadFile(filepath.Join(vectorRoot(), "log", "manifest.json"))
@@ -226,8 +226,11 @@ func TestASubmissionIsAcceptedAndTheLogStillVerifies(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the log stopped verifying after a submission: %v", err)
 	}
-	if result.Checkpoint.Size != server.store.Size() || result.Checkpoint.Size != 91 {
-		t.Errorf("size = %d, want 91", result.Checkpoint.Size)
+	// One more than the fixture, whatever the fixture is: a literal here went
+	// stale the moment the replay fixture gained an entry.
+	if want := fixtureSize(t) + 1; result.Checkpoint.Size != server.store.Size() ||
+		result.Checkpoint.Size != want {
+		t.Errorf("size = %d, want %d", result.Checkpoint.Size, want)
 	}
 	device, ok := result.State.Devices["submitted"]
 	if !ok || device.Status != state.StatusActive {
@@ -372,8 +375,8 @@ func TestConcurrentSubmissionsAllLand(t *testing.T) {
 			t.Errorf("submission %d: status %d", i, code)
 		}
 	}
-	if got := server.store.Size(); got != 90+n {
-		t.Fatalf("size = %d, want %d", got, 90+n)
+	if want := fixtureSize(t) + int64(n); server.store.Size() != want {
+		t.Fatalf("size = %d, want %d", server.store.Size(), want)
 	}
 
 	public := logKey(t).Public().(ed25519.PublicKey)
@@ -393,4 +396,21 @@ func TestConcurrentSubmissionsAllLand(t *testing.T) {
 			t.Errorf("%s did not land", id)
 		}
 	}
+}
+
+// fixtureSize is how many entries the replay fixture has, read from its
+// manifest rather than spelled out.
+func fixtureSize(t *testing.T) int64 {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(vectorRoot(), "log", "manifest.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m struct {
+		Entries []struct{} `json:"entries"`
+	}
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatal(err)
+	}
+	return int64(len(m.Entries))
 }

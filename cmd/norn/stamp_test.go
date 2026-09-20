@@ -37,7 +37,7 @@ func TestStampWritesAProofVerifyCanRead(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stamp: %v\n%s", err, stderr)
 	}
-	if !strings.Contains(stdout, "90.ots") {
+	if !strings.Contains(stdout, servedSize(t)+".ots") {
 		t.Errorf("the path written should be reported:\n%s", stdout)
 	}
 	// It must be honest that a fresh stamp is not yet evidence.
@@ -48,14 +48,14 @@ func TestStampWritesAProofVerifyCanRead(t *testing.T) {
 	// The two halves meet: what `stamp` wrote, `verify --anchored` reads.
 	anchored := t.TempDir()
 	copyDir(t, served, anchored)
-	proof, err := os.ReadFile(filepath.Join(out, "anchors", "90.ots"))
+	proof, err := os.ReadFile(filepath.Join(out, "anchors", servedSize(t)+".ots"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(filepath.Join(anchored, "anchors"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(anchored, "anchors", "90.ots"), proof, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(anchored, "anchors", servedSize(t)+".ots"), proof, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	report, stderr, err := run(t, bin, "verify", "-trust", trustFile, "-log", anchored, "-anchored")
@@ -112,7 +112,7 @@ func TestTheStampedDigestIsTheBody(t *testing.T) {
 	// The committed vector was built over exactly this, by the reference
 	// implementation -- so if the rule here ever drifts, that file stops
 	// matching and this test says which.
-	proof, err := os.ReadFile(filepath.Join(vectors(), "anchors", "checkpoint-90.ots"))
+	proof, err := os.ReadFile(anchorProof(t))
 	if err != nil {
 		t.Fatal(err)
 	}

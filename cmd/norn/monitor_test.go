@@ -39,7 +39,7 @@ func TestMonitorOnceWritesJSONToStdout(t *testing.T) {
 
 	lines := strings.Split(strings.TrimSpace(out), "\n")
 	if len(lines) < 2 {
-		t.Fatalf("a round over a 90-entry log wrote %d lines:\n%s", len(lines), out)
+		t.Fatalf("a round over the fixture log wrote %d lines:\n%s", len(lines), out)
 	}
 	rules := map[string]bool{}
 	for _, line := range lines {

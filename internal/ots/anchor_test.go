@@ -3,6 +3,7 @@ package ots
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -27,7 +28,7 @@ func checkpointBody(t *testing.T) string {
 func checkpointProof(t *testing.T) []byte {
 	t.Helper()
 	raw, err := os.ReadFile(filepath.Join("..", "..", "testdata", "vectors",
-		"anchors", "checkpoint-90.ots"))
+		"anchors", checkpointProofName(t)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,9 +59,22 @@ func TestAnAnchorIsCheckedAgainstTheCheckpointBody(t *testing.T) {
 // The property the whole thing is for: a checkpoint edited after stamping has
 // an anchor that no longer chains, and this is visible with no network.
 func TestAnEditedCheckpointBreaksItsAnchor(t *testing.T) {
-	edited := strings.Replace(checkpointBody(t), "90\n", "91\n", 1)
+	// Bump whatever size the body claims, rather than a literal: a fixture
+	// that grows turns a hardcoded edit into no edit at all, and the test
+	// would then pass by comparing the checkpoint with itself.
+	body := checkpointBody(t)
+	lines := strings.Split(body, "\n")
+	size, err := strconv.Atoi(lines[1])
+	if err != nil {
+		t.Fatalf("the checkpoint's size line is %q: %v", lines[1], err)
+	}
+	lines[1] = strconv.Itoa(size + 1)
+	edited := strings.Join(lines, "\n")
+	if edited == body {
+		t.Fatal("the edit changed nothing")
+	}
 
-	_, err := CheckAnchor(checkpointProof(t), edited)
+	_, err = CheckAnchor(checkpointProof(t), edited)
 	if err == nil {
 		t.Fatal("an anchor was accepted for a checkpoint it was not made over")
 	}
@@ -133,4 +147,17 @@ func pendingOnly(t *testing.T) *Proof {
 	}
 	parsed.Tree.Steps = kept
 	return parsed
+}
+
+// The fixture's proof is named for the tree size (SPEC §6), so it is found
+// rather than spelled -- the fixture gained four entries in 6.5d-ii and every
+// hardcoded name went stale together.
+func checkpointProofName(t *testing.T) string {
+	t.Helper()
+	matches, err := filepath.Glob(filepath.Join("..", "..", "testdata", "vectors",
+		"anchors", "checkpoint-*.ots"))
+	if err != nil || len(matches) != 1 {
+		t.Fatalf("want exactly one checkpoint proof, found %v (%v)", matches, err)
+	}
+	return filepath.Base(matches[0])
 }

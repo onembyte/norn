@@ -4,7 +4,7 @@ Two files, for the two things `norn verify --anchored` has to tell apart:
 
 * `sample.ots` — a proof over an arbitrary digest, with both branch kinds.
   Exercises the parser against bytes this project did not write.
-* `checkpoint-90.ots` — a proof over the *fixture's* checkpoint body, so the
+* `checkpoint-<size>.ots` — a proof over the *fixture's* checkpoint body, so the
   end-to-end path (`anchors/<size>.ots` → this checkpoint) has something real
   to walk.
 
@@ -78,21 +78,41 @@ def calendar_response(digest: bytes) -> bytes:
     return ctx.getbytes()
 
 
+def checkpoint_size(body: str) -> int:
+    """The tree size the body claims: SPEC §6's checkpoint is origin, size, root.
+
+    Read rather than hardcoded. The anchor is named `<size>.ots` (§6), so a
+    fixture that grows by one entry renames this file, and a constant here
+    would quietly keep stamping a name the log no longer serves.
+    """
+    return int(body.split("\n")[1])
+
+
 def main() -> int:
     ANCHORS.mkdir(parents=True, exist_ok=True)
 
+    body = checkpoint_body()
+    size = checkpoint_size(body)
+
+    # An arbitrary digest, deliberately fixed: this file exercises the parser
+    # against bytes this project did not write, and has nothing to do with the
+    # fixture's size. Tying it to the size would churn it every time the log
+    # gains an entry, for no gain at all.
     (ANCHORS / "sample.ots").write_bytes(
         proof_over(hashlib.sha256(b"norn checkpoint at size 90").digest())
     )
 
-    body = checkpoint_body()
-    (ANCHORS / "checkpoint-90.ots").write_bytes(
+    name = f"checkpoint-{size}.ots"
+    for stale in ANCHORS.glob("checkpoint-*.ots"):
+        if stale.name != name:
+            stale.unlink()
+    (ANCHORS / name).write_bytes(
         proof_over(hashlib.sha256(body.encode()).digest())
     )
     (ANCHORS / "calendar-response.bin").write_bytes(
         calendar_response(hashlib.sha256(body.encode()).digest())
     )
-    print("wrote sample.ots, checkpoint-90.ots and calendar-response.bin into", ANCHORS)
+    print(f"wrote sample.ots, {name} and calendar-response.bin into", ANCHORS)
     return 0
 
 

@@ -538,8 +538,9 @@ expiry — and a signer cannot alter any of them without destroying the proof,
 where before it could have restated them freely. `ts` and `after` stay with the
 signer, the only party that knows the log. Each side keeps one job.
 
-Consequences taken rather than hidden: the log fixture is 90 entries, not 91,
-because §4.0's 23-byte map-key cap had to move to `requests-bad/` — after this
+Consequences taken rather than hidden: the log fixture lost an entry rather
+than gaining one, because §4.0's 23-byte map-key cap had to move to
+`requests-bad/` — after this
 change **no entry body has a free-form map left**, and putting the oversize key
 anywhere else would let a closed-schema check fire first and hide a missing cap.
 The field negatives (`bad-device_id-uppercase`, `bad-pk-length`, …) now sit

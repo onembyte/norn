@@ -294,8 +294,8 @@ func TestADegradedNodeAsksItsPeersEvenWhenTheLogAnswers(t *testing.T) {
 		t.Fatal("a degraded node did not ask its peers; the mesh would stay stale " +
 			"behind a log that never stopped answering")
 	}
-	if a.last.Checkpoint.Size != 90 {
-		t.Errorf("size = %d, want the peer's 90", a.last.Checkpoint.Size)
+	if want := int64(len(entries)); a.last.Checkpoint.Size != want {
+		t.Errorf("size = %d, want the peer's %d", a.last.Checkpoint.Size, want)
 	}
 	if rec.kinds()[AdoptedFromPeer] == 0 {
 		t.Error("adopting from a peer should be said out loud")

@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -36,8 +37,8 @@ func TestAPeerVerifiesAsALogDoes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("a peer's gossip endpoint does not verify as a log: %v", err)
 	}
-	if result.Checkpoint.Size != 90 {
-		t.Errorf("size = %d, want the fixture's 90", result.Checkpoint.Size)
+	if want := fixtureSize(t); result.Checkpoint.Size != want {
+		t.Errorf("size = %d, want the fixture's %d", result.Checkpoint.Size, want)
 	}
 	if len(result.Cosignatures) == 0 {
 		t.Error("a peer must pass on the cosignatures; a head without them is refused")
@@ -47,13 +48,15 @@ func TestAPeerVerifiesAsALogDoes(t *testing.T) {
 func TestTheEndpointsAreTheDocumentedOnes(t *testing.T) {
 	peer := served(t)
 
-	// The fixture's log is 90 entries, so its tiles are partial -- which is
-	// the normal case for a log that is not a multiple of 256 entries, and
-	// the path shape a peer actually has to serve.
+	// The fixture's log is not a multiple of 256 entries, so its tiles are
+	// partial -- the normal case, and the path shape a peer actually has to
+	// serve. The width is read from the fixture: it was spelled out here
+	// until the log gained four entries and every literal went stale at once.
+	partial := strconv.FormatInt(fixtureSize(t), 10)
 	for _, path := range []string{
 		"/norn/checkpoint",
-		"/norn/tile/entries/000.p/90",
-		"/norn/tile/0/000.p/90",
+		"/norn/tile/entries/000.p/" + partial,
+		"/norn/tile/0/000.p/" + partial,
 	} {
 		resp, err := http.Get(peer.URL + path)
 		if err != nil {
@@ -303,4 +306,20 @@ func TestOnlyEvidenceIsReachableFromTheEvidenceDirectory(t *testing.T) {
 			t.Errorf("GET %s reached a file beside the evidence", attempt)
 		}
 	}
+}
+
+// fixtureSize is the tree size the shipped checkpoint claims.
+func fixtureSize(t *testing.T) int64 {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join("..", "..", "testdata", "vectors",
+		"served", "checkpoint"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(string(raw), "\n")
+	size, err := strconv.ParseInt(lines[1], 10, 64)
+	if err != nil {
+		t.Fatalf("the served checkpoint's size line is %q: %v", lines[1], err)
+	}
+	return size
 }

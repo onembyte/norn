@@ -94,10 +94,15 @@ class NegativesAreNotOverDetermined(unittest.TestCase):
     rule entirely.
     """
 
+    #: Vectors whose purpose *is* a stale `after`: the plain one, and the
+    #: precedence case that pairs it with a second fault so §5.1's step 6 can
+    #: be shown to decide before step 7.
+    AFTER_IS_THE_POINT = ("-bad-after", "-bad-precedence-after-before-threshold")
+
     def test_after_never_exceeds_the_index(self):
-        """Except in the one vector whose whole purpose is to exceed it."""
+        """Except in the vectors whose whole purpose is to exceed it."""
         for index, item in enumerate(fixture.log()):
-            if item.name.endswith("-bad-after"):
+            if item.name.endswith(self.AFTER_IS_THE_POINT):
                 continue
             after = fixture.decode_leniently(item.raw).get("after")
             if not isinstance(after, int):
