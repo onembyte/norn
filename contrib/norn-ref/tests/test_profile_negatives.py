@@ -97,7 +97,8 @@ class NegativesAreNotOverDetermined(unittest.TestCase):
     #: Vectors whose purpose *is* a stale `after`: the plain one, and the
     #: precedence case that pairs it with a second fault so §5.1's step 6 can
     #: be shown to decide before step 7.
-    AFTER_IS_THE_POINT = ("-bad-after", "-bad-precedence-after-before-threshold")
+    AFTER_IS_THE_POINT = ("-bad-after", "-bad-precedence-after-before-threshold",
+                          "-bad-after-by-one")
 
     def test_after_never_exceeds_the_index(self):
         """Except in the vectors whose whole purpose is to exceed it."""
