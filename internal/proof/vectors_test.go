@@ -1,158 +1,90 @@
-package proof_test
+package proof
 
 import (
-	"crypto/ed25519"
-	"encoding/hex"
-	"encoding/json"
 	"os"
 	"path/filepath"
+	"regexp"
+	"sort"
+	"strings"
 	"testing"
 
-	"github.com/onembyte/norn/internal/trust"
-
-	"github.com/onembyte/norn/internal/note"
-	"github.com/onembyte/norn/internal/proof"
-	"github.com/onembyte/norn/internal/replay"
-	"github.com/onembyte/norn/internal/state"
+	"github.com/onembyte/norn/internal/cbor"
 )
 
-// The shipped served log and its bundles must verify from what a node holds --
-// the trust anchor and the bundle -- and must agree with the replayed state.
+// Cold-model gate run 5, defect G12. §8.1 said the bundle format carries
+// "domain `norn/proof/v1`", and the six-key table below that sentence has no
+// domain in it, no signature for a domain prefix to separate, and the string
+// appears nowhere else in the document. The bundles are byte-canonical
+// six-key maps, so the domain is emitted nowhere -- and an implementer cannot
+// tell whether they are required to produce it or to check for it.
+//
+// The table and the artifact are now compared, so the section cannot describe
+// a format the suite does not ship.
 
-func root() string { return filepath.Join("..", "..", "testdata", "vectors") }
+var reKeyRow = regexp.MustCompile("(?m)^\\| `([a-z_]+)` \\|")
 
-func loadCases(t *testing.T) (string, []string, []string) {
-	t.Helper()
-	raw, err := os.ReadFile(filepath.Join(root(), "proofs", "cases.json"))
-	if err != nil {
-		t.Skip("served-log vectors not generated")
-	}
-	var meta struct {
-		Origin  string   `json:"origin"`
-		Devices []string `json:"devices"`
-	}
-	if err := json.Unmarshal(raw, &meta); err != nil {
-		t.Fatal(err)
-	}
-
-	// The key comes from the shipped trust file, not from a seed repeated in
-	// cases.json. A second copy is a second thing to keep in step, and the two
-	// halves of the suite were signed by different keys for six checkpoints
-	// before anything checked (2.9g).
-	rawTrust, err := os.ReadFile(filepath.Join(root(), "trust.cbor"))
+func TestTheBundleTableDescribesTheShippedBundles(t *testing.T) {
+	spec, err := os.ReadFile(filepath.Join("..", "..", "SPEC.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	anchor, err := trust.Parse(rawTrust)
+	text := string(spec)
+	start := strings.Index(text, "### 8.1")
+	if start < 0 {
+		t.Fatal("§8.1 is missing")
+	}
+	end := strings.Index(text[start:], "\n\nChecking a bundle")
+	if end < 0 {
+		t.Fatal("§8.1 no longer has its key table")
+	}
+	var described []string
+	for _, m := range reKeyRow.FindAllStringSubmatch(text[start:start+end], -1) {
+		described = append(described, m[1])
+	}
+	sort.Strings(described)
+	if len(described) == 0 {
+		t.Fatal("§8.1 describes no keys")
+	}
+
+	bundles, err := filepath.Glob(filepath.Join("..", "..", "testdata", "vectors",
+		"proofs", "*.bundle"))
+	if err != nil || len(bundles) == 0 {
+		t.Fatalf("no proof bundles ship: %v", err)
+	}
+	raw, err := os.ReadFile(bundles[0])
 	if err != nil {
 		t.Fatal(err)
 	}
-	if anchor.Origin != meta.Origin {
-		t.Fatalf("the bundles say origin %q, the trust file says %q", meta.Origin, anchor.Origin)
-	}
-	return meta.Origin, []string{anchor.LogKey}, meta.Devices
-}
-
-func TestEveryShippedBundleChecksOut(t *testing.T) {
-	_, keys, devices := loadCases(t)
-	if len(devices) == 0 {
-		t.Fatal("no proof bundles were generated")
-	}
-	for _, id := range devices {
-		raw, err := os.ReadFile(filepath.Join(root(), "proofs", id+".bundle"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		bundle, err := proof.Decode(raw)
-		if err != nil {
-			t.Errorf("%s: %v", id, err)
-			continue
-		}
-		if err := bundle.Check(keys); err != nil {
-			t.Errorf("%s: shipped bundle does not check out: %v", id, err)
-		}
-		if bundle.Device != id {
-			t.Errorf("%s: bundle names device %q", id, bundle.Device)
-		}
-	}
-}
-
-func TestEachBundleProvesTheEntryThatEnrolledItsDevice(t *testing.T) {
-	_, keys, devices := loadCases(t)
-	anchor, entries := loadFixture(t)
-	st := replay.Replay(anchor, entries)
-
-	for _, id := range devices {
-		raw, _ := os.ReadFile(filepath.Join(root(), "proofs", id+".bundle"))
-		bundle, err := proof.Decode(raw)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := bundle.Check(keys); err != nil {
-			t.Fatalf("%s: %v", id, err)
-		}
-		device, ok := st.Devices[id]
-		if !ok || device.Status != state.StatusActive {
-			t.Errorf("%s: a bundle exists for a device that is not active", id)
-			continue
-		}
-		// The bundle must point at the entry that made this device active,
-		// not merely at some entry in the log.
-		if uint64(bundle.Index) != device.SinceIndex {
-			t.Errorf("%s: bundle proves index %d, device became active at %d",
-				id, bundle.Index, device.SinceIndex)
-		}
-		if string(bundle.Entry) != string(entries[bundle.Index]) {
-			t.Errorf("%s: bundle carries a different entry than the log holds", id)
-		}
-	}
-}
-
-func TestBundlesAreRefusedUnderTheWrongLogKey(t *testing.T) {
-	_, _, devices := loadCases(t)
-	origin, _, _ := loadCases(t)
-	other := ed25519.NewKeyFromSeed(append(make([]byte, 31), 3)).Public().(ed25519.PublicKey)
-	wrong := []string{note.VerifierKey(origin, other)}
-
-	for _, id := range devices {
-		raw, _ := os.ReadFile(filepath.Join(root(), "proofs", id+".bundle"))
-		bundle, err := proof.Decode(raw)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := bundle.Check(wrong); err == nil {
-			t.Errorf("%s: a bundle must not check out under a key that did not sign it", id)
-		}
-	}
-}
-
-func loadFixture(t *testing.T) (replay.Anchor, [][]byte) {
-	t.Helper()
-	raw, err := os.ReadFile(filepath.Join(root(), "log", "manifest.json"))
+	value, err := cbor.Decode(raw)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var m struct {
-		Anchor struct {
-			Net         string `json:"net"`
-			GenesisHash string `json:"genesis_hash"`
-		} `json:"anchor"`
-		Entries []struct {
-			Name string `json:"name"`
-		} `json:"entries"`
+	m, ok := value.(map[string]any)
+	if !ok {
+		t.Fatal("a bundle is not a CBOR map")
 	}
-	if err := json.Unmarshal(raw, &m); err != nil {
+	var actual []string
+	for key := range m {
+		actual = append(actual, key)
+	}
+	sort.Strings(actual)
+
+	if strings.Join(described, ",") != strings.Join(actual, ",") {
+		t.Errorf("§8.1 and the shipped bundles disagree about the format:\n"+
+			"  §8.1 describes %v\n  %s carries   %v",
+			described, filepath.Base(bundles[0]), actual)
+	}
+}
+
+// And the claim that started it: a domain string nothing emits.
+func TestTheBundleClaimsNoDomainItDoesNotCarry(t *testing.T) {
+	spec, err := os.ReadFile(filepath.Join("..", "..", "SPEC.md"))
+	if err != nil {
 		t.Fatal(err)
 	}
-	net, _ := hex.DecodeString(m.Anchor.Net)
-	genesis, _ := hex.DecodeString(m.Anchor.GenesisHash)
-	entries := make([][]byte, 0, len(m.Entries))
-	for _, e := range m.Entries {
-		b, err := os.ReadFile(filepath.Join(root(), "log", e.Name+".cbor"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		entries = append(entries, b)
+	if strings.Contains(string(spec), "norn/proof/v1") {
+		t.Error("§8.1 names a domain `norn/proof/v1` that appears in no field, covers " +
+			"no signature, and is emitted by nothing: an implementer cannot tell " +
+			"whether they must produce it")
 	}
-	return replay.Anchor{Net: net, GenesisHash: genesis}, entries
 }

@@ -18,7 +18,7 @@ they win:
 - `c2sp.org/tlog-cosignature` — witness cosignatures (v1)
 - `c2sp.org/tlog-witness` — witness HTTP protocol
 - `c2sp.org/tlog-policy` — witness quorum policy (§9.1)
-- `c2sp.org/tlog-proof` (v1) — self-contained inclusion proof bundles
+- `c2sp.org/tlog-proof` (v1) — self-contained inclusion proof bundles. Referenced for comparison only: §8.1 is Norn's own format and is **not** claimed byte-compatible
 - RFC 6962 §2.1 — Merkle tree hashing (SHA-256)
 - RFC 8949 §4.2.1 — deterministic CBOR ("core deterministic encoding")
 - RFC 8032 — Ed25519 · RFC 7748 — X25519
@@ -104,7 +104,7 @@ Derived values:
 |---|---|
 | `kid(pk)` | lowercase hex of `SHA-256(pk)[0:8]` — 16 ASCII chars, as a text string |
 | entry bytes | the full envelope **with** `sigs`, deterministically encoded |
-| `entry_hash` | `SHA-256(entry bytes)` — identity for de-duplication |
+| `entry_hash` | `SHA-256` of the entry **as received**, byte for byte — identity for de-duplication. Not of a re-encoded canonical form: §5.1 records it at step 1, *before* the entry is decoded at step 2, so an entry that never decodes must still have one |
 | leaf hash | `SHA-256(0x00 ‖ entry bytes)` (RFC 6962 §2.1) |
 | signature preimage | the 14-byte prefix `norn/entry/v1\n` (13 ASCII characters and one `0x0A`), then the envelope encoded **without** the `sigs` key |
 
@@ -224,11 +224,17 @@ verified against the key the `kid` resolves to in the state *before* this entry.
 | `revoke` | `device_id`, `reason` (string, **OPTIONAL** — absent is equivalent to `""`) | ≥ `signer_thr` signers, **or** the device itself, **or** ≥ `root_thr` roots |
 | `signer_add` | `pk` | ≥ `root_thr` roots |
 | `signer_remove` | `kid` | ≥ `root_thr` roots |
-| `signer_thr` | `thr` (uint ≥ 1) | ≥ `root_thr` roots |
+| `signer_thr` | `thr` (uint) | ≥ `root_thr` roots |
 | `root_add` | `pk` | ≥ `root_thr` roots |
 | `root_remove` | `kid` | ≥ `root_thr` roots; MUST leave ≥ `root_thr` roots and ≥ 1 root |
-| `root_thr` | `thr` (uint ≥ 1, ≤ number of roots) | ≥ `root_thr` roots (the *old* threshold) |
+| `root_thr` | `thr` (uint) | ≥ `root_thr` roots (the *old* threshold) |
 | `params` | partial §4.5 map | ≥ `root_thr` roots |
+
+`thr` is a plain uint **here**, deliberately. Its range — `1 … len(set)` — is a
+**replay** decision, not a schema one (§5.2's `bad-thr`): the value is a
+well-formed uint either way, so an implementation that enforced `≥ 1` as a
+field constraint would return `decode` where `bad-thr` is required. `log/61-bad-thr-zero`
+and the value-above-the-set case vector both halves.
 | `note` | `text` (string ≤ 4096) | any 1 signer or root; **no state effect** |
 | `log_key` | `pk` (bytes32), `overlap` (uint s) | ≥ `root_thr` roots — log-key rotation; both keys valid for `overlap` (`ENROLLMENT.md` §6) |
 | `policy` | `text` (verbatim tlog-policy) | ≥ `root_thr` roots — replaces witness policy in state |
@@ -527,7 +533,9 @@ an audit trail, or a bug report.
 
 ### 8.1 Bundle format (normative)
 
-Deterministic CBOR per §4.0, domain `norn/proof/v1`:
+Deterministic CBOR per §4.0, a closed map of exactly these six keys. A bundle
+is **not signed**: its authority is the signed checkpoint inside it, which is
+why there is no domain prefix here — there is nothing for one to separate.
 
 | key | type | meaning |
 |---|---|---|
@@ -542,11 +550,12 @@ Checking a bundle: verify the checkpoint note under `norn.trust.log_key`;
 confirm `SHA-256(0x00 ‖ entry)` and `proof` reach the checkpoint's root at
 `index` for that size; then apply the rules below.
 
-> **Not yet claimed compatible with `c2sp.org/tlog-proof@v1`.** Earlier drafts
-> of this section named that format. The shape is the same — checkpoint, index,
-> inclusion proof — but byte compatibility has not been checked against the
-> published specification, and saying otherwise would be the kind of unverified
-> claim §7 carried until it was tested in 2.1. Reconcile before freezing v1.
+> **This is Norn's own format, and v1 says so rather than deferring it again.**
+> The shape is the same as `c2sp.org/tlog-proof` — checkpoint, index, inclusion
+> proof — and byte compatibility with it was never established, so v1 does not
+> claim it. A later version may adopt that format outright; what it may not do
+> is what earlier drafts did, which is name a specification the bytes had never
+> been checked against.
 
 A node MUST treat a peer as proven only if:
 
@@ -800,7 +809,7 @@ this table drifted out of date the moment one was.
 | §7 receipt | `receipt.note` | — |
 | §9 trust file, fingerprint | `trust.cbor` | 18 rejected anchors in `trust-bad/`. **`15`** and **`16`** parse cleanly as verifier keys and are refused only by the algorithm rule; **`17`** and **`18`** are a witness the policy never names and a policy naming a witness the file does not list, each otherwise perfectly valid |
 | §14 canonical JSON | every `.json`; `policy-escaping`, `enroll-unicode-labels` | — |
-| §6 tiles and bundles | `served/`, read back to reproduce `state.json`; a forged head is `checkpoints-bad/04-forged-log-signature` | a **tampered** and a **missing** entry bundle are checked by this project's tests and **do not ship as files** |
+| §6 tiles and bundles | `served/`, read back to reproduce `state.json`; a forged head is `checkpoints-bad/04-forged-log-signature` and a fourth body line is `checkpoints-bad/09-extension-line` | a **tampered** and a **missing** entry bundle are checked by this project's tests and **do not ship as files** |
 | §8 proof bundles | `proofs/`, one per active device | wrong entry, foreign checkpoint, tampered proof and wrong log key are checked by this project's tests and **do not ship as files** |
 | §10 verifier loop, steps 1–4 | `served/` verified end to end, **signature first** | `checkpoints-bad/01-unsigned`, `02-wrong-log-key`, `03-wrong-origin` and **`04-forged-log-signature`** — the last one being a signature of the right shape under the right key id that does not verify. Without it a verifier that never checks the log signature reproduces the whole suite |
 | §10 step 3, the witness quorum | `served/checkpoint`, cosigned by all three witnesses | `checkpoints-bad/05-one-cosignature-short`, `06-no-cosignatures`, `07-unnamed-witness-only` and **`08-forged-cosignature`**, which carries two lines naming witnesses the policy lists, one of which does not verify: the quorum is met by counting and refused by checking. `quorum none` accepting an uncosigned head needs a second anchor and is **not vectored** |
@@ -822,9 +831,8 @@ admits its holes, so:
 - **§14.1's key ordering above the basic multilingual plane.** No object key in
   the suite is an astral character, so UTF-8 bytewise order and UTF-16
   code-unit order agree on every file here.
-- **§6's "no extension lines"**, **§5.1's non-empty `params`**, and the trust
-  file's mandatory keys other than `name` and `policy`: each stated, none
-  refused by a shipped file.
+- **§5.1's non-empty `params`**, and the trust file's mandatory keys other than
+  `name` and `policy`: each stated, none refused by a shipped file.
 
 Everything else named in the table above ships, and the build fails if a path
 cited here is missing or a directory here is not named.

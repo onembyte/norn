@@ -168,6 +168,11 @@ func TestAFrozenSpecMakesNoPromises(t *testing.T) {
 	for _, marker := range []string{
 		"NOT YET IMPLEMENTED", "pending a decision", "TODO", "TBD",
 		"to be decided", "owed by | Phase",
+		// §8.1 carried "Reconcile before freezing v1" *through* the freeze,
+		// because this list did not name the one phrase it used. A guard is
+		// only as good as its vocabulary.
+		"before freezing", "Reconcile before", "has not been checked",
+		"not yet claimed", "Not yet claimed",
 	} {
 		if idx := strings.Index(string(raw), marker); idx >= 0 {
 			line := 1 + strings.Count(string(raw[:idx]), "\n")

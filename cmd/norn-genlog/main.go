@@ -682,6 +682,22 @@ func buildBadCheckpoints(root, origin string, key ed25519.PrivateKey,
 	if err != nil {
 		return nil, err
 	}
+	// §6 fixes a checkpoint at three lines: origin, size, root, and **no
+	// extension lines**. The rule was enforced and unvectored, so a second
+	// implementer could accept a fourth line and pass everything shipped.
+	// Signed and cosigned properly, so only the rule can refuse it.
+	extended, err := note.Sign(body+"norn extension line\n", origin, key)
+	if err != nil {
+		return nil, err
+	}
+	extended, err = cosignWith(extended, signers...)
+	if err != nil {
+		return nil, err
+	}
+	out = append(out, badCheckpoint{"09-extension-line",
+		"a fourth body line, signed and cosigned exactly as correctly as the real one: " +
+			"§6 allows origin, size and root and nothing else", extended})
+
 	out = append(out, badCheckpoint{"08-forged-cosignature",
 		"two cosignature lines, both naming witnesses the policy lists, one of which does not verify: " +
 			"the quorum is met only by a verifier that does not check them", forgedCosig})
