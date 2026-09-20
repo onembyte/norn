@@ -20,6 +20,16 @@ import (
 // AlgEd25519 is the note signature algorithm byte.
 const AlgEd25519 = 0x01
 
+// AlgCosignature is the algorithm byte of a witness's key
+// (`c2sp.org/tlog-cosignature` v1).
+//
+// It is not a formality. The byte goes into the key id, so the same public key
+// published as a note signer and as a cosigner is **two different verifiers**.
+// Norn encoded witness keys with 0x01 until 4.1a, which meant its own
+// validator would have rejected a trust file naming a real witness -- and a
+// cosignature from one could never have been attributed to it.
+const AlgCosignature = 0x04
+
 // SigPrefix opens a signature line: an em dash and a space.
 const SigPrefix = "— "
 
@@ -36,9 +46,14 @@ func noteErrorf(format string, args ...any) error {
 // KeyID binds a key to its name and algorithm: SHA-256(name || 0x0A || alg ||
 // key)[:4]. One key under two names therefore has two ids.
 func KeyID(name string, public []byte) []byte {
+	return KeyIDFor(name, public, AlgEd25519)
+}
+
+// KeyIDFor is KeyID for a given algorithm.
+func KeyIDFor(name string, public []byte, alg byte) []byte {
 	h := sha256.New()
 	h.Write([]byte(name))
-	h.Write([]byte{'\n', AlgEd25519})
+	h.Write([]byte{'\n', alg})
 	h.Write(public)
 	sum := h.Sum(nil)
 	return sum[:4]
@@ -46,18 +61,39 @@ func KeyID(name string, public []byte) []byte {
 
 // VerifierKey renders `name+<keyid hex>+<base64(alg||key)>`.
 func VerifierKey(name string, public []byte) string {
-	data := base64.StdEncoding.EncodeToString(append([]byte{AlgEd25519}, public...))
-	return fmt.Sprintf("%s+%s+%s", name, hex.EncodeToString(KeyID(name, public)), data)
+	return VerifierKeyFor(name, public, AlgEd25519)
+}
+
+// CosignerVerifierKey renders a witness's key: the same shape, algorithm 0x04.
+func CosignerVerifierKey(name string, public []byte) string {
+	return VerifierKeyFor(name, public, AlgCosignature)
+}
+
+// VerifierKeyFor renders a verifier key for a given algorithm.
+func VerifierKeyFor(name string, public []byte, alg byte) string {
+	data := base64.StdEncoding.EncodeToString(append([]byte{alg}, public...))
+	return fmt.Sprintf("%s+%s+%s", name, hex.EncodeToString(KeyIDFor(name, public, alg)), data)
 }
 
 // Verifier is a parsed verifier key.
 type Verifier struct {
 	Name   string
 	Public []byte
+	// Alg distinguishes a note signer (0x01) from a witness cosigner (0x04).
+	Alg byte
 }
 
 // ID returns the verifier's 4-byte key id.
-func (v Verifier) ID() []byte { return KeyID(v.Name, v.Public) }
+func (v Verifier) ID() []byte {
+	alg := v.Alg
+	if alg == 0 {
+		alg = AlgEd25519
+	}
+	return KeyIDFor(v.Name, v.Public, alg)
+}
+
+// IsCosigner reports whether this key signs cosignatures rather than notes.
+func (v Verifier) IsCosigner() bool { return v.Alg == AlgCosignature }
 
 // ParseVerifierKey reads a verifier key string and checks its embedded id.
 func ParseVerifierKey(text string) (Verifier, error) {
@@ -70,12 +106,14 @@ func ParseVerifierKey(text string) (Verifier, error) {
 	if err != nil {
 		return Verifier{}, noteErrorf("key data is not base64")
 	}
-	if len(raw) != ed25519.PublicKeySize+1 || raw[0] != AlgEd25519 {
-		return Verifier{}, noteErrorf("only Ed25519 verifier keys are supported")
+	if len(raw) != ed25519.PublicKeySize+1 ||
+		(raw[0] != AlgEd25519 && raw[0] != AlgCosignature) {
+		return Verifier{}, noteErrorf("only Ed25519 note and cosignature keys are supported")
 	}
-	v := Verifier{Name: parts[0], Public: raw[1:]}
+	v := Verifier{Name: parts[0], Public: raw[1:], Alg: raw[0]}
+	// The algorithm is part of the identity, so it is part of the id check.
 	if parts[1] != hex.EncodeToString(v.ID()) {
-		return Verifier{}, noteErrorf("key id does not match the name and key")
+		return Verifier{}, noteErrorf("key id does not match the name, key and algorithm")
 	}
 	return v, nil
 }
@@ -95,8 +133,14 @@ func Sign(text, name string, key ed25519.PrivateKey) (string, error) {
 type Signature struct {
 	Name  string
 	KeyID []byte
-	Sig   []byte
+	// Sig is everything after the key id: 64 bytes for a note signature, or
+	// a timestamp and 64 bytes for a cosignature. What it means depends on
+	// the algorithm of the key the id resolves to.
+	Sig []byte
 }
+
+// IsCosignature reports whether this line carries a timestamped signature.
+func (s Signature) IsCosignature() bool { return len(s.Sig) == 8+ed25519.SignatureSize }
 
 // Split separates a signed note into its text and its signature lines.
 func Split(signed string) (string, []Signature, error) {
@@ -119,8 +163,12 @@ func Split(signed string) (string, []Signature, error) {
 		if err != nil {
 			return "", nil, noteErrorf("signature is not base64")
 		}
-		if len(raw) != 4+ed25519.SignatureSize {
-			return "", nil, noteErrorf("signature must be a 4-byte key id plus 64 bytes")
+		// A note signature is 4 + 64. A cosignature is 4 + 8 + 64: the
+		// extra eight are the timestamp (`c2sp.org/tlog-cosignature`). Both
+		// appear on a cosigned checkpoint, and a parser that knew only the
+		// first would refuse every checkpoint a witness had touched.
+		if len(raw) != 4+ed25519.SignatureSize && len(raw) != 4+8+ed25519.SignatureSize {
+			return "", nil, noteErrorf("signature must be a 4-byte key id plus 64 or 72 bytes")
 		}
 		sigs = append(sigs, Signature{Name: name, KeyID: raw[:4], Sig: raw[4:]})
 	}
@@ -145,8 +193,15 @@ func Verify(signed string, vkeys []string) (string, error) {
 		trusted = append(trusted, v)
 	}
 	for _, sig := range sigs {
+		// A cosignature is not a signature over this text, so it is skipped
+		// rather than failed: a checkpoint carrying the log's signature *and*
+		// three witnesses' cosignatures must still verify under the log key
+		// alone. internal/cosign is where the others are checked.
+		if sig.IsCosignature() {
+			continue
+		}
 		for _, v := range trusted {
-			if v.Name != sig.Name || string(v.ID()) != string(sig.KeyID) {
+			if v.Name != sig.Name || v.IsCosigner() || string(v.ID()) != string(sig.KeyID) {
 				continue
 			}
 			if ed25519.Verify(v.Public, []byte(text), sig.Sig) {
@@ -164,4 +219,10 @@ func ReceiptText(origin string, leafHash []byte, deadline uint64) (string, error
 	}
 	return fmt.Sprintf("%s\n%s\n%s\n%d\n", ReceiptHeader, origin,
 		base64.StdEncoding.EncodeToString(leafHash), deadline), nil
+}
+
+// SignatureLine renders one signature line: the em-dash prefix, the key name,
+// and base64 of the key id followed by the signature payload.
+func SignatureLine(name string, payload []byte) string {
+	return SigPrefix + name + " " + base64.StdEncoding.EncodeToString(payload)
 }

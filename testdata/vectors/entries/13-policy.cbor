@@ -1,7 +1,7 @@
 §atfpolicyavbtshç{cnetPnorn-testnet-001dbody¡dtextyğlog norn/nzxxe3rnorsxg5domv2c2mbqge+bea4a666+AV6v97lmGyW99eHglI8syFAU2uY+/HuHHq0VYz9Rmio1 https://log.norn.example/testnet
-witness pi norn-witness/pi+d9c19a60+AXeagefoK0s3F5shdMl1Ahsd1ZCE9MC5F5gvM3cLTnZa http://10.0.0.153:8100
-witness vps norn-witness/vps+24c7e998+AYXCilOrHi0kMxynG/s1EyJ2aWFC1jZc4UlZRza6g8ou https://witness.example.net
-witness friend norn-witness/friend+16811c97+AZjvlkRbihDdM/4Lb/YPiP+eoqk3VgrncrTgSXQNXr6B https://bastion.example.org/w
+witness pi norn-witness/pi+051d1c51+BHeagefoK0s3F5shdMl1Ahsd1ZCE9MC5F5gvM3cLTnZa http://10.0.0.153:8100
+witness vps norn-witness/vps+46a6fd38+BIXCilOrHi0kMxynG/s1EyJ2aWFC1jZc4UlZRza6g8ou https://witness.example.net
+witness friend norn-witness/friend+1404f742+BJjvlkRbihDdM/4Lb/YPiP+eoqk3VgrncrTgSXQNXr6B https://bastion.example.org/w
 group home 2 pi vps friend
 quorum home
-dsigsƒ£ckidp2cb62fecd0ac9de2csigX@^¥7’ô Í®™xA*hÆÍÊÓaßÂÑÁcñªUŸ,íÂ…1ã$),Ô2uµŸ/Ï¬ãĞÒ`L³Ødroledroot£ckidp65d0a10d64f7ef3acsigX@dl}Ø£ÆÙy§ÂÄnÉ’cÄ&Ÿx“Eg³5Äûp5‰ß†6xXäÃtà7¼$gv<Ï	Æª›droledroot£ckidpd1a69ef8611af532csigX@ìAœ«f4Ë)‘zâ%İ­óNÜ1Ê®ÆÎ3CdÂ{|¥s,í¨UÉ P¾3Ùƒß:zÀ”(÷E6¨•4droledrooteafter
+dsigsƒ£ckidp2cb62fecd0ac9de2csigX@ •dk(ØQ>C+ƒÏÆıf™ö,höèâ°"z•ss?5¶ÏX;îU©g–“nÏ²9ÿMŒèk¡ãñÁdroledroot£ckidp65d0a10d64f7ef3acsigX@‘Î‘	H_tÄõ”?ê˜ƒ,Ëã¢‰Ğ‘ekÜ$á)öîØ¬kŒ™®‘‘uu£€äJj–D	™«ŒZÎ«œÔ5•droledroot£ckidpd1a69ef8611af532csigX@#&}ÌX«SäMyÒ³È§GIĞ¥„pÍhıÒ:qoØİ¯wpe©´öw|ŞŸZT~{RÊ¹Ík;Ddroledrooteafter

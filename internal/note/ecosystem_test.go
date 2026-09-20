@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	cosigner "github.com/transparency-dev/formats/note"
 	upstream "golang.org/x/mod/sumdb/note"
 
 	"github.com/onembyte/norn/internal/note"
@@ -39,31 +40,63 @@ func loadTrust(t *testing.T) *trust.Trust {
 	return doc
 }
 
-func TestUpstreamAcceptsOurVerifierKeysUnchanged(t *testing.T) {
+// The trust file carries two kinds of key, and they belong to two different
+// ecosystems. The **log key** is a note key, and `x/mod/sumdb/note` -- the
+// package the whole transparency world uses -- must accept it. The **witness
+// keys** are cosignature keys (algorithm 0x04), which sumdb deliberately does
+// not know; `transparency-dev/formats/note` is what understands those, and it
+// is the package a real witness uses.
+//
+// This test asserted the wrong thing until 4.1a: it required sumdb to accept
+// the witness keys, and passed only because Norn was encoding them as note
+// keys. Both sides were wrong in the same way, which is exactly the failure a
+// cross-check is supposed to be immune to.
+func TestUpstreamAcceptsTheLogKeyUnchanged(t *testing.T) {
 	doc := loadTrust(t)
-	keys := []string{doc.LogKey}
-	for _, w := range doc.Witnesses {
-		keys = append(keys, w.Key)
+	v, err := upstream.NewVerifier(doc.LogKey)
+	if err != nil {
+		t.Fatalf("golang.org/x/mod/sumdb/note rejects our log key: %v", err)
 	}
-	for _, vkey := range keys {
-		v, err := upstream.NewVerifier(vkey)
+	ours, err := note.ParseVerifierKey(doc.LogKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ours.IsCosigner() {
+		t.Fatal("the log key must be a note key, not a cosignature key")
+	}
+	if v.Name() != ours.Name {
+		t.Errorf("name disagreement: upstream %q, ours %q", v.Name(), ours.Name)
+	}
+	wantID := uint32(ours.ID()[0])<<24 | uint32(ours.ID()[1])<<16 |
+		uint32(ours.ID()[2])<<8 | uint32(ours.ID()[3])
+	if v.KeyHash() != wantID {
+		t.Errorf("key id disagreement: upstream %08x, ours %08x", v.KeyHash(), wantID)
+	}
+}
+
+// And the witness keys must be the kind a witness actually publishes.
+func TestWitnessKeysAreCosignatureKeys(t *testing.T) {
+	doc := loadTrust(t)
+	if len(doc.Witnesses) == 0 {
+		t.Fatal("the trust vector has no witnesses")
+	}
+	for _, w := range doc.Witnesses {
+		ours, err := note.ParseVerifierKey(w.Key)
 		if err != nil {
-			t.Errorf("golang.org/x/mod/sumdb/note rejects our verifier key %q: %v",
-				vkey[:min(len(vkey), 40)], err)
-			continue
+			t.Fatalf("%s: %v", w.Name, err)
 		}
-		ours, err := note.ParseVerifierKey(vkey)
-		if err != nil {
-			t.Fatal(err)
+		if !ours.IsCosigner() {
+			t.Errorf("%s is published as a note key; a witness publishes algorithm 0x%02x",
+				w.Name, note.AlgCosignature)
 		}
-		if v.Name() != ours.Name {
-			t.Errorf("name disagreement: upstream %q, ours %q", v.Name(), ours.Name)
+		// The package a real witness uses must accept it as it stands.
+		if _, err := cosigner.NewVerifierForCosignatureV1(w.Key); err != nil {
+			t.Errorf("%s: transparency-dev/formats rejects it: %v", w.Name, err)
 		}
-		// Upstream exposes the key id as a uint32; ours is the same four bytes.
-		wantID := uint32(ours.ID()[0])<<24 | uint32(ours.ID()[1])<<16 |
-			uint32(ours.ID()[2])<<8 | uint32(ours.ID()[3])
-		if v.KeyHash() != wantID {
-			t.Errorf("key id disagreement: upstream %08x, ours %08x", v.KeyHash(), wantID)
+		// And sumdb must *not*: these are not note keys, and a build that
+		// accepted them there would be back where 4.1a started.
+		if _, err := upstream.NewVerifier(w.Key); err == nil {
+			t.Errorf("%s parsed as a plain note key", w.Name)
 		}
 	}
 }
@@ -177,11 +210,4 @@ func TestOurKeyIDDerivationMatchesUpstream(t *testing.T) {
 			t.Errorf("key %d: upstream %08x, ours %08x", i, v.KeyHash(), want)
 		}
 	}
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }

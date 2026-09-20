@@ -150,7 +150,9 @@ func Build(c Ceremony, signers []crypto.Signer) (*Result, error) {
 	witnesses := make([]trust.Witness, 0, len(c.Witnesses))
 	for _, w := range c.Witnesses {
 		witnesses = append(witnesses, trust.Witness{
-			Name: w.Name, Key: note.VerifierKey(witnessName(w.Name), w.Key), URL: w.URL,
+			// A witness publishes a cosignature key (algorithm 0x04), not a
+			// note key: the log signs checkpoints, a witness cosigns them.
+			Name: w.Name, Key: note.CosignerVerifierKey(witnessName(w.Name), w.Key), URL: w.URL,
 		})
 	}
 
@@ -272,7 +274,8 @@ func buildPolicy(origin string, logKey ed25519.PublicKey, urls []string,
 	fmt.Fprintf(&b, "log %s %s\n", note.VerifierKey(origin, logKey), urls[0])
 	names := make([]string, 0, len(witnesses))
 	for _, w := range witnesses {
-		fmt.Fprintf(&b, "witness %s %s", w.Name, note.VerifierKey(witnessName(w.Name), w.Key))
+		fmt.Fprintf(&b, "witness %s %s", w.Name,
+			note.CosignerVerifierKey(witnessName(w.Name), w.Key))
 		if w.URL != "" {
 			fmt.Fprintf(&b, " %s", w.URL)
 		}

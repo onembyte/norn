@@ -219,6 +219,13 @@ func (t *Trust) Validate() error {
 	if err != nil {
 		return trustErrorf("log_key: %v", err)
 	}
+	// The log signs notes; a witness signs cosignatures. They are different
+	// algorithms with different key ids (c2sp.org/tlog-cosignature), and a
+	// file that mixed them up would name keys nobody can use.
+	if logKey.IsCosigner() {
+		return trustErrorf("log_key is a cosignature key; the log signs checkpoints, " +
+			"not cosignatures")
+	}
 	// The note name binds the key to this network: a checkpoint signed by a key
 	// named for another origin must not verify here.
 	if logKey.Name != t.Origin {
@@ -246,8 +253,13 @@ func (t *Trust) Validate() error {
 			return trustErrorf("duplicate witness name %q", w.Name)
 		}
 		seen[w.Name] = true
-		if _, err := parseKey(w.Key); err != nil {
+		witnessKey, err := parseKey(w.Key)
+		if err != nil {
 			return trustErrorf("witness %s: %v", w.Name, err)
+		}
+		if !witnessKey.IsCosigner() {
+			return trustErrorf("witness %s publishes a note key; a witness key is a "+
+				"cosignature key (c2sp.org/tlog-cosignature)", w.Name)
 		}
 	}
 	if !strings.Contains(t.Policy, "quorum") {

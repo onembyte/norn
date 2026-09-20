@@ -66,7 +66,15 @@ def log_vkey() -> str:
 
 
 def witness_vkey(name: str) -> str:
-    return note.vkey(f"norn-witness/{name}", KEYS[f"witness-{name}"].public)
+    """A witness publishes a *cosignature* key (c2sp.org/tlog-cosignature).
+
+    Algorithm 0x04, not 0x01: the byte is part of the key id, so the same key
+    published as a note signer is a different verifier. Norn shipped the wrong
+    one until 4.1a, which meant a trust file naming a real witness would have
+    been rejected by its own validator.
+    """
+    return note.vkey(f"norn-witness/{name}", KEYS[f"witness-{name}"].public,
+                     note.ALG_COSIGNATURE)
 
 
 def policy_text() -> str:
@@ -651,6 +659,15 @@ def trust_rejections() -> list[tuple[str, dict[str, Any]]]:
             log_key=note.vkey("norn/aaaaaaaaaaaaaaaaaaaaaaaaaa", KEYS["logkey"].public))),
         # Isolated: a missing key that no other rule also catches.
         ("14-missing-name", damaged(name=_REMOVE)),
+        # The two kinds of key are not interchangeable: a witness signs
+        # cosignatures (algorithm 0x04) and the log signs notes (0x01). A file
+        # that mixes them names keys nobody can use, and both directions parse
+        # cleanly, so only this rule rejects them.
+        ("15-witness-key-is-a-note-key",
+         damaged(witnesses=[dict(base["witnesses"][0],
+                                 key=note.vkey("norn-witness/pi", KEYS["witness-pi"].public))])),
+        ("16-log-key-is-a-cosignature-key",
+         damaged(log_key=note.vkey(ORIGIN, KEYS["logkey"].public, note.ALG_COSIGNATURE))),
     ]
 
 

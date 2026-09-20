@@ -366,6 +366,32 @@ starting rather than after.
 | 3.6 | Fight detection and quarantine | N evictions in W → `CONTROL_PLANE_FIGHT`; `quarantine` fails closed **by choice, never by default** | ✅ |
 | 3.8 | Phase 3 gate audit | each line read against what is actually tested, and what the lab still owes | ✅ |
 
+## Phase 4 — Witnesses, gossip, freshness
+
+`GOSSIP.md` part 1 in one sentence: **witnesses guard against the log; gossip
+guards against the witnesses.** Neither alone is enough, and together the only
+undetectable attack is a log plus a witness quorum showing *every* node the
+same false history — which is no longer a split view but a forgery of signed
+entries, and that needs signer keys.
+
+This phase also settles two debts the earlier phases wrote down rather than
+hid: **§10 step 3**, the witness-policy check the verifier still does not do
+(2.9e-i), and **`freshness: "unknown"`** in `proven.json` (3.4), which stays
+unknown until something cosigns. It closes **2.6b** too — an unmodified
+`transparency-dev/witness` cosigning a Norn checkpoint.
+
+| # | Checkpoint | Done when | Status |
+|---|---|---|---|
+| 4.1a | Cosignature keys | witness keys are **cosignature** keys (algorithm 0x04), not plain Ed25519 note keys — today Norn refuses the only kind a real witness publishes | ✅ |
+| 4.1b | Policy quorum | `tlog-policy` is parsed and evaluated, and a checkpoint that does not satisfy it is **refused** — §10 step 3, finally | ⬜ |
+| 4.2 | Witness time | `quorum_time`, the fresh → degraded → hard-stale machine, and `CLOCK_SKEW` — a node's own clock never decides anything (A11) | ⬜ |
+| 4.3 | The log pushes to witnesses | `norn-log` submits each checkpoint over `tlog-witness` `add-checkpoint` and serves the cosignatures it gets back | ⬜ |
+| 4.4 | **2.6b**: a real witness cosigns | an **unmodified** `transparency-dev/witness` returns a cosignature over a Norn checkpoint, and our verifier accepts it | ⬜ |
+| 4.5 | Peer gossip | `nornd` serves its checkpoint on the tunnel address and adopts a better one from a peer; trust is identical because the signatures are | ⬜ |
+| 4.6 | Fork detection and evidence | a consistency-proof failure freezes the node, alarms, and writes evidence a third party can check | ⬜ |
+| 4.7 | OpenTimestamps anchoring | `anchors/<size>.ots` and `norn verify --anchored`, advisory by D-009 | ⬜ |
+| 4.8 | Phase 4 gate audit | each line against what is actually tested, and what the lab still owes | ⬜ |
+
 ## Decision taken — 2.9d: an `enroll` needs a device signature the device cannot make
 
 **Answered 2026-09-19: option C.** The loop resumed at 2.9d-i.
@@ -557,3 +583,12 @@ the signer keeps one job — decide, and place the entry in the log.
   - **One line is not started, and says so.** Tailscale observe needs a LocalAPI watcher: `tailscaled` exposes no UAPI socket, so it is a different *source of truth* feeding the same reconciler, not another backend behind `peertable.Device`. It stays unwritten rather than half-written.
   - Every open line now names what is true and what is missing, in `PLAN.md` itself. Two phases in a row have ended this way, and the pattern is worth naming: **a gate made of measurements cannot be closed by a test suite, but it can be made smaller by one.**
   - Go: 39 packages, 368 tests; `go test` and staticcheck green.
+- **4.1a cosignature keys — Norn could not have accepted a real witness, and found out by reading the spec first.**
+  - **The defect, in three parts.** `c2sp.org/tlog-cosignature` says a witness key is algorithm **0x04**, and the byte is part of the key id — so the same public key under 0x01 and 0x04 is **two different verifiers**. Norn encoded witness keys as 0x01 (both implementations); `ParseVerifierKey` **refused** anything that was not 0x01, so `trust.Validate` would have **rejected a trust file naming a real witness**; and `note.Split` required a 68-byte signature line, so a cosigned checkpoint — which §6 says a checkpoint *is* — **would not have parsed at all**. Gate line 4.4 was not merely unimplemented, it was unreachable.
+  - **Found before writing code, by fetching the format instead of recalling it.** Same habit as BIP-350 and RFC 7748: the spec named the algorithm byte, and the byte did not match what the project shipped.
+  - **The cross-check was green because both sides were wrong the same way.** 2.1's ecosystem test required `x/mod/sumdb/note` to accept *every* key in the trust file, witnesses included — and sumdb only knows note keys. It passed because Norn was handing it note keys where witness keys belonged. It now splits honestly: the **log key** is checked against sumdb, the **witness keys** against `transparency-dev/formats/note`, which is what a real witness uses — and sumdb must **reject** them, or we are back where this started.
+  - **Cosignatures verify against the ecosystem in both directions**, using the package a witness runs: their generator's key rendered by our renderer must be byte-identical, their signer's cosignature must verify here, and ours must open there. That is most of 4.4's substance, available without a witness process.
+  - **A cosigned checkpoint must still verify under the log key alone** — the log's signature says this is the log, the cosignatures are additional — so unknown and cosignature lines are skipped rather than failed. An unknown witness is ignored (somebody else's business); a *trusted* witness's line that does not verify is an error (a claim that this network's witness said something it did not).
+  - **Both rules are now normative and vectored**: §9.1 states the algorithms, and `trust-bad/15` and `16` are files that parse perfectly as verifier keys and are refused only by the algorithm rule.
+  - The fingerprint moved, the guard from 2.8 caught it, and `SPEC.md`'s worked example was updated rather than left to rot.
+  - Go: 40 packages, 375 tests; `go test`, staticcheck and both halves of `vectors-check` green.

@@ -17,6 +17,13 @@ from dataclasses import dataclass
 from . import keys
 
 ALG_ED25519 = 0x01
+
+#: A *cosignature* key is a different algorithm to a plain note key
+#: (`c2sp.org/tlog-cosignature` v1). It is not a detail: the byte goes into the
+#: key id, so a witness's key under 0x01 and the same key under 0x04 are two
+#: different identities, and a checkpoint cosigned by the real one could never
+#: be attributed to the first.
+ALG_COSIGNATURE = 0x04
 SIG_PREFIX = "\u2014 "  # em dash, space
 RECEIPT_HEADER = "norn/receipt/v1"
 
@@ -25,27 +32,28 @@ class NoteError(ValueError):
     """Malformed note, malformed key, or no signature from a trusted key."""
 
 
-def key_id(name: str, public: bytes) -> bytes:
+def key_id(name: str, public: bytes, alg: int = ALG_ED25519) -> bytes:
     """4-byte key id binding the key to its name and algorithm."""
-    return hashlib.sha256(name.encode("utf-8") + b"\n" + bytes([ALG_ED25519]) + public).digest()[:4]
+    return hashlib.sha256(name.encode("utf-8") + b"\n" + bytes([alg]) + public).digest()[:4]
 
 
-def vkey(name: str, public: bytes) -> str:
+def vkey(name: str, public: bytes, alg: int = ALG_ED25519) -> str:
     """Verifier key string: `name+<keyid hex>+<base64(alg||key)>`."""
     if "+" in name or "\n" in name or not name:
         raise NoteError(f"invalid key name: {name!r}")
-    keydata = base64.b64encode(bytes([ALG_ED25519]) + public).decode("ascii")
-    return f"{name}+{key_id(name, public).hex()}+{keydata}"
+    keydata = base64.b64encode(bytes([alg]) + public).decode("ascii")
+    return f"{name}+{key_id(name, public, alg).hex()}+{keydata}"
 
 
 @dataclass(frozen=True)
 class Verifier:
     name: str
     public: bytes
+    alg: int = ALG_ED25519
 
     @property
     def id(self) -> bytes:
-        return key_id(self.name, self.public)
+        return key_id(self.name, self.public, self.alg)
 
 
 def parse_vkey(text: str) -> Verifier:
@@ -59,12 +67,15 @@ def parse_vkey(text: str) -> Verifier:
         raw = base64.b64decode(keydata, validate=True)
     except (ValueError, base64.binascii.Error) as exc:
         raise NoteError("key data is not base64") from exc
-    if len(raw) != 33 or raw[0] != ALG_ED25519:
-        raise NoteError("only Ed25519 verifier keys are supported")
-    public = raw[1:]
-    if keyhash != key_id(name, public).hex():
-        raise NoteError("key id does not match name and key")
-    return Verifier(name, public)
+    if len(raw) != 33 or raw[0] not in (ALG_ED25519, ALG_COSIGNATURE):
+        raise NoteError("only Ed25519 note and cosignature keys are supported")
+    alg, public = raw[0], raw[1:]
+    # The algorithm is part of the identity, so it is part of the id check: a
+    # key published as a cosigner is a different verifier from the same bytes
+    # published as a note signer.
+    if keyhash != key_id(name, public, alg).hex():
+        raise NoteError("key id does not match name, key and algorithm")
+    return Verifier(name, public, alg)
 
 
 def _check_text(text: str) -> None:

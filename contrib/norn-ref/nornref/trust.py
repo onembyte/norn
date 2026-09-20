@@ -85,6 +85,11 @@ def validate(doc: dict[str, Any]) -> None:
     if log_key.name != doc["origin"]:
         raise TrustError(
             f"log_key note name {log_key.name!r} does not match origin {doc['origin']!r}")
+    # The log signs notes; a witness signs cosignatures. Different algorithms,
+    # different key ids, and a file that confused them would name keys nobody
+    # can use (c2sp.org/tlog-cosignature).
+    if log_key.alg != note.ALG_ED25519:
+        raise TrustError("log_key is a cosignature key; the log signs checkpoints")
     if not doc["log_urls"] or not all(isinstance(u, str) and u for u in doc["log_urls"]):
         raise TrustError("log_urls must be a non-empty list of strings")
     if not doc["witnesses"]:
@@ -94,7 +99,11 @@ def validate(doc: dict[str, Any]) -> None:
         if set(witness) - {"name", "key", "url"} or "name" not in witness or "key" not in witness:
             raise TrustError("each witness needs a name and a key")
         try:
-            note.parse_vkey(witness["key"])
+            witness_key = note.parse_vkey(witness["key"])
+            if witness_key.alg != note.ALG_COSIGNATURE:
+                raise note.NoteError(
+                    "a witness key is a cosignature key (c2sp.org/tlog-cosignature), "
+                    "not a note key")
         except note.NoteError as exc:
             raise TrustError(f"witness {witness['name']}: {exc}") from exc
         if witness["name"] in seen:

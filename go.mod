@@ -9,6 +9,7 @@ require github.com/transparency-dev/formats v0.1.1
 require rsc.io/qr v0.2.0
 
 require (
+	filippo.io/mldsa v0.0.0-20260215214346-43d0283efc3e // indirect
 	github.com/BurntSushi/toml v1.6.0 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/josharian/native v1.1.0 // indirect

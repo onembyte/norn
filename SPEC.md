@@ -533,9 +533,9 @@ below exists for humans.
 | `origin` | text | MUST equal `norn/` + lowercase unpadded **RFC 4648** base32 of `net` (§2) |
 | `name` | text, 1–64 bytes | human label for the network |
 | `genesis_hash` | 32 bytes | the **leaf hash** `SHA-256(0x00 ‖ entry0)` (§4.0), not the entry hash |
-| `log_key` | text | signed-note verifier key for the log; MUST parse as one, and its note name MUST equal `origin` |
+| `log_key` | text | signed-note verifier key for the log (algorithm `0x01`); MUST parse as one, MUST NOT be a cosignature key, and its note name MUST equal `origin` |
 | `log_urls` | array of text, ≥ 1 | where to fetch checkpoint and tiles |
-| `witnesses` | array of `{name, key, url?}`, **≥ 1** | `key` is a signed-note verifier key, and MUST parse as one; `name` unique within the file. A file with no witnesses MUST be rejected: with nothing to cosign, the policy's quorum can never be met, so the anchor could never accept a checkpoint. |
+| `witnesses` | array of `{name, key, url?}`, **≥ 1** | `key` is a **cosignature** verifier key — `c2sp.org/tlog-cosignature` algorithm `0x04`, not a note key's `0x01` — and MUST parse as one; `name` unique within the file. The algorithm is part of the key id, so the same public key published under the two algorithms is **two different verifiers**: a file naming a witness with a note key names a key no witness will ever sign with. A file with no witnesses MUST be rejected: with nothing to cosign, the policy's quorum can never be met, so the anchor could never accept a checkpoint. |
 | `policy` | text | verbatim `c2sp.org/tlog-policy`; MUST contain a `quorum` line |
 | `anchor` | `{type, max_lag, mode}`, OPTIONAL | `type` text (`"opentimestamps"`), `max_lag` **uint seconds**, `mode` text (`"advisory"`) |
 
@@ -546,7 +546,7 @@ bytes, so a wrong field name or type changes it.
 
 ```toml
 # Norn trust file for norn-testnet
-# fingerprint = 63Z3-D0ZE-76KT-T87Y
+# fingerprint = YV05-H4J9-MA1G-P8V2
 # Compare the fingerprint out of band before trusting this file.
 
 version      = 1
@@ -584,7 +584,7 @@ if it does not, the fingerprint will not match and the file must be rejected.
 The first **10 bytes** of `SHA-256(CBOR(trust))` — 80 bits — encoded in
 **Crockford base32** (alphabet `0123456789ABCDEFGHJKMNPQRSTVWXYZ`, which omits
 I, L, O and U), most-significant bit first, as 16 characters in four groups of
-four joined by `-` (U+002D): `63Z3-D0ZE-76KT-T87Y` (D-029). The
+four joined by `-` (U+002D): `YV05-H4J9-MA1G-P8V2` (D-029). The
 `trust.fingerprint` file holds exactly that string followed by one `0x0A`.
 
 80 bits is chosen so that an attacker who controls the delivery channel (threat
@@ -676,7 +676,7 @@ this table drifted out of date the moment one was.
 | §5.2 `bad-thr` | — | both halves: `bad-thr-zero` and `bad-thr` (value above the set size) |
 | §5.3 state, incl. D-028 and `expires` | `state.json`, `enroll-contractor` | `signer_remove-below-threshold` accepted, then `signer_add-recover` |
 | §7 receipt | `receipt.note` | — |
-| §9 trust file, fingerprint | `trust.cbor` | 12 rejected anchors in `trust-bad/` |
+| §9 trust file, fingerprint | `trust.cbor` | 16 rejected anchors in `trust-bad/`, including **`15-witness-key-is-a-note-key`** and **`16-log-key-is-a-cosignature-key`**: both parse cleanly as verifier keys, so only the algorithm rule rejects them |
 | §14 canonical JSON | every `.json`; `policy-escaping`, `enroll-unicode-labels` | — |
 | §6 tiles and bundles | `served/`, read back to reproduce `state.json` | forged head, tampered bundle, missing bundle |
 | §8 proof bundles | `proofs/`, one per active device | wrong entry, foreign checkpoint, tampered proof, wrong log key |
