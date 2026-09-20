@@ -405,6 +405,30 @@ unknown until something cosigns. It closes **2.6b** too — an unmodified
 | 4.8 | Phase 4 gate audit | each line against what is actually tested, and what the lab still owes | ✅ |
 | 4.9 | Evidence propagation | `GET /norn/evidence`: a node freezes on a fork **another node** proved, which is T1b and the one gate line with nothing behind it | ✅ |
 
+## Phase 5 — Attack demos + monitor
+
+Phase 5 has two halves and they are not alike. **`norn monitor` is software**,
+and every rule in `LAB.md` §3 can be written and tested here. **The demos are a
+lab**: `make lab-up`, containers, a patched Headscale and NetBird, a phone
+receiving a push, and tapes rendered for a README. Nothing in this repository
+can produce those, so the checkpoints below build the monitor and the gate
+audit says plainly what the lab still owes.
+
+The monitor is also the one component that is *allowed* to be wrong without
+anyone being harmed: it never sits on the enforcement path (`LAB.md` §3). That
+is why it can poll witnesses, hold a receipt inbox and talk to `ntfy` — none of
+which a node may do.
+
+| # | Checkpoint | Done when | ✔ |
+|---|---|---|---|
+| 5.1 | The rules engine | `LAB.md` §3's table as code: an observation in, a level and a sentence out, with the thresholds a homelab can change | ✅ |
+| 5.2 | Watching a network | the log, the witnesses and each node's `/norn/checkpoint` and `/norn/evidence` — read-only, over the tunnel, as an enrolled peer | ⬜ |
+| 5.3 | The receipt inbox | a receipt whose deadline passed with no inclusion is **non-repudiable proof of A2**, and the monitor is what notices | ⬜ |
+| 5.4 | Outputs | stdout JSON always; `ntfy`, Home Assistant, Alertmanager and email optional and each failing alone | ⬜ |
+| 5.5 | The status page | read-only HTML on the tunnel address: sizes, ages, witness times, the device table and the last entries in plain words | ⬜ |
+| 5.6 | `norn monitor` | the command, its config, and one run that produces a notification per rule | ⬜ |
+| 5.7 | Phase 5 gate audit | each line against what is tested, and the demos named as the lab's | ⬜ |
+
 ## Decision taken — 2.9d: an `enroll` needs a device signature the device cannot make
 
 **Answered 2026-09-19: option C.** The loop resumed at 2.9d-i.
@@ -812,3 +836,13 @@ the signer keeps one job — decide, and place the entry in the log.
   - **A node that learns of a fork before it ever enforced anything enforces nothing at all**, which the test asserts directly: the interface stays empty rather than being filled from a history already proved false.
   - **`T_g` is not the poll interval, and now says so.** Polling the local peer table four times a second is cheap; asking three neighbours over the tunnel that often is neither cheap nor useful.
   - Go: 48 packages, 538 tests; `go test`, staticcheck and both halves of `vectors-check` green.
+
+- **5.1 the monitor's rules — every alert is a sentence, because a page at three in the morning is read by a person.**
+  - **`LAB.md` §3's table is the specification, and the tests are it read back.** Governance entries (`signer_*`, `root_*`, `log_key`, `policy`, `params`) are critical because they change *who may say what*; everything else adds or removes a device, which matters less than changing who decides. Every other entry is still reported at info — "a homelab has few", and the one nobody was told about is the one that matters.
+  - **Not codes.** `UNPROVEN_PEER on node1: … Something is putting keys on an interface that the log does not prove.` A monitor that pages with `LEVEL=2 CODE=7` has failed at the only job it has, so every rule carries a sentence and a test looks for the node's name in it.
+  - **A missing heartbeat says what stops happening**, not that it stopped: *"in watchdog mode that makes its eviction window unbounded"*. Without that an operator files it under "probably fine", which is exactly what it is not.
+  - **Anchor lag is info and only ever info**, and the test says why: D-009 makes anchoring advisory, and the monitor is precisely where that would quietly stop being true. A page about a missing anchor trains an operator to treat it as load-bearing.
+  - **The escalation is a real distinction.** A checkpoint past `staleness` is a warning; past **3·S** it is critical, because a freeze that has run three times too long is a different event from one that just started — and the alert says which it is rather than repeating the same line louder.
+  - **Every alert names its rule**, because the gate line asks for "one notification **per rule**" and nothing can count that otherwise. A test requires the names to be distinct, so a rule that cannot be told from another cannot hide inside it.
+  - **Thresholds are fields, not constants.** A homelab changes the heartbeat window or the anchor-lag tolerance without editing Go, and a test sets both to prove it.
+  - Go: 49 packages, 548 tests; `go test`, staticcheck and both halves of `vectors-check` green.
