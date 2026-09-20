@@ -450,7 +450,7 @@ them, and then run the gate.
 | # | Checkpoint | Done when | ✔ |
 |---|---|---|---|
 | 6.1 | Freeze `SPEC.md` | every open item closed or carried on purpose, and the spec audited against what was actually built | ✅ |
-| 6.2 | The vectors stand alone | a second implementer can use `testdata/vectors/` without this repository or its Makefile | ⬜ |
+| 6.2 | The vectors stand alone | a second implementer can use `testdata/vectors/` without this repository or its Makefile | ✅ |
 | 6.3 | README | what Norn is, who it is not for, the threat model in one screen, and the comparison table | ⬜ |
 | 6.4 | `PUBLICATION.md` | the sequence, the review targets, and what to say when somebody asks the obvious questions | ⬜ |
 | 6.5 | Cold-model gate on the frozen spec | a fresh reader implements a verifier from `SPEC.md` alone and passes every vector | ⬜ |
@@ -944,3 +944,12 @@ the signer keeps one job — decide, and place the entry in the log.
   - **A mechanical guard, so this cannot happen again.** A spec marked `Status: **v1**` may not contain `NOT YET IMPLEMENTED`, `pending a decision`, `TODO`, `TBD` or an `owed by | Phase` row. Both of the things this checkpoint found were of exactly that shape, and both had been true when written — which is what makes them invisible. The test names the line number.
   - **Frozen is defined where a reader will look**: "a second implementation may be written against this document and the vectors beside it, and neither will change under it."
   - Go: 49 packages, 595 tests; `go test`, staticcheck and both halves of `vectors-check` green — the Go half now covering `fork/` as well.
+
+- **6.2 the vectors stand alone — and the document a second implementer reads first was wrong.**
+  - **The suite's README said the whole directory came from the Python reference.** By then `served/`, `proofs/` and `fork/` came from this project's Go and `anchors/` from `python-opentimestamps`. Provenance is the *first* thing a reader needs, because it decides how much a vector proves — a file the Go must match is a different kind of evidence from one the Go produced — and the one sentence stating it had quietly become false. Three provenances, in a table, with what each is worth.
+  - **Sixteen of seventeen top-level entries were undescribed.** The README was thirteen lines, twelve of which were about `anchors/`, because that was the last thing added and the only thing anybody had thought to explain. A test now fails if anything in the directory is unnamed in the README: *a file a second implementer cannot identify is one they cannot use*.
+  - **`SHA256SUMS`, for the reader who does not have the generators.** `make vectors-check` regenerates and diffs, which catches a vector that drifted from its generator; checksums catch one edited by hand — and fail with the *filename*, which a diff of 293 files does not.
+  - **The generator hashed its own temporary file.** `xargs … > SHA256SUMS.tmp` creates the file before `find` lists the directory, so the first run produced 294 entries for 293 files, and the guard caught it immediately. The temp file now lives outside the tree being hashed.
+  - **The guard's first catch was the sentence documenting it.** I wrote the `SHA256SUMS` section into the README *after* generating the sums, so the README's own hash changed and the test failed by name. Which is the behaviour asked for, arriving about ninety seconds after it was written.
+  - **And `vectors-check` refused the new file until it was declared**, exactly as it refused `anchors/` in 4.7a. `SHA256SUMS` is `KEEP`: nothing generates it from the vectors, it is generated *from* them.
+  - **"Using them" is an ordering, not an inventory.** Start where nothing is needed but Ed25519 and SHA-256, then replay, then tiles — and the half most implementations get wrong is named as such: `trust-bad/`, `requests-bad/` and `log/*.reason` are files that **must be refused**, for the stated reason.

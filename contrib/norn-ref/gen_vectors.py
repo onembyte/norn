@@ -47,7 +47,7 @@ FOREIGN = frozenset({"served", "proofs", "fork"})
 #: reference implementation of a format neither of Norn's implementations owns.
 #: Regenerating it would defeat its purpose: it is in the suite precisely
 #: because somebody else's code produced the bytes.
-KEEP = frozenset({"README.md", "anchors"})
+KEEP = frozenset({"README.md", "anchors", "SHA256SUMS"})
 
 
 def prune(out: pathlib.Path) -> list[pathlib.Path]:

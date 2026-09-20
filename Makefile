@@ -52,7 +52,7 @@ vectors-log:
 vectors-check:
 	@tmp=$$(mktemp -d); \
 	PYTHONPATH=contrib/norn-ref $(PY) contrib/norn-ref/gen_vectors.py $$tmp >/dev/null; \
-	excludes="--exclude=README.md"; \
+	excludes="--exclude=README.md --exclude=SHA256SUMS"; \
 	for d in $(GO_VECTOR_DIRS) $(FOREIGN_VECTOR_DIRS); do excludes="$$excludes --exclude=$$d"; done; \
 	if diff -r -q testdata/vectors $$tmp $$excludes; then \
 		echo "reference-generated vectors match"; rm -rf $$tmp; \
@@ -96,3 +96,13 @@ witness:
 	  $(GO) build -o $(CURDIR)/build/omniwitness github.com/transparency-dev/witness/cmd/omniwitness && \
 	  $(GO) build -o $(CURDIR)/build/generate_keys github.com/transparency-dev/witness/cmd/generate_keys
 	@echo "built build/omniwitness and build/generate_keys at $(WITNESS_VERSION)"
+
+.PHONY: vectors-sums
+# The temporary file is written *outside* the directory being hashed: a
+# redirect creates it before `find` runs, so writing it in place lists it in
+# its own output.
+vectors-sums:
+	@tmp=$$(mktemp); cd testdata/vectors && \
+	  find . -type f ! -name SHA256SUMS | sed 's|^\./||' | LC_ALL=C sort | \
+	  xargs shasum -a 256 > $$tmp && mv $$tmp SHA256SUMS && chmod 644 SHA256SUMS
+	@echo "wrote testdata/vectors/SHA256SUMS ($$(wc -l < testdata/vectors/SHA256SUMS | tr -d ' ') files)"

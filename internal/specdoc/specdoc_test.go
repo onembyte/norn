@@ -1,6 +1,8 @@
 package specdoc
 
 import (
+	"crypto/sha256"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -172,5 +174,117 @@ func TestAFrozenSpecMakesNoPromises(t *testing.T) {
 				"promise: a reader has no way to tell a live caveat from one that "+
 				"stopped being true.", line, marker)
 		}
+	}
+}
+
+// The vector suite is the cross-implementation contract, and its README is the
+// first thing a second implementer reads. A file nobody described is a file
+// nobody can use -- and the README has already been wrong once: it claimed the
+// whole directory came from the Python reference, after `served/`, `proofs/`
+// and `fork/` started coming from Go and `anchors/` from
+// `python-opentimestamps`.
+//
+// So: every top-level entry is named in the README, and nothing is named that
+// is not there.
+func TestEveryVectorIsDescribed(t *testing.T) {
+	root := filepath.Join("..", "..", "testdata", "vectors")
+	readme, err := os.ReadFile(filepath.Join(root, "README.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(readme)
+
+	found, err := os.ReadDir(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range found {
+		name := item.Name()
+		if name == "README.md" {
+			continue
+		}
+		if !strings.Contains(text, name) {
+			t.Errorf("testdata/vectors/%s is not described in the suite's README. A "+
+				"file a second implementer cannot identify is one they cannot use.",
+				name)
+		}
+	}
+}
+
+// And the suite says where every byte came from. "Two provenances, stated
+// plainly" is SPEC §12's own promise, and it is now three: the Python
+// reference, this project's Go, and `python-opentimestamps`. A reader deciding
+// how much a vector proves has to know which.
+func TestTheSuiteStatesItsProvenances(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "testdata", "vectors", "README.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"contrib/norn-ref", "norn-genlog", "python-opentimestamps"} {
+		if !strings.Contains(string(raw), want) {
+			t.Errorf("the README does not say that %s produces part of this suite", want)
+		}
+	}
+}
+
+// `SHA256SUMS` is for somebody who downloaded this directory and does not have
+// the generators: it is how they know they have the set the specification
+// describes, whole and unmodified.
+//
+// Inside this repository it does a second job. `make vectors-check`
+// regenerates and diffs, which catches a vector that drifted from its
+// generator; this catches one edited by hand in a way that happens to survive
+// regeneration -- and it fails with the filename, which a diff of ninety files
+// does not.
+func TestTheVectorChecksumsAreCurrent(t *testing.T) {
+	root := filepath.Join("..", "..", "testdata", "vectors")
+	raw, err := os.ReadFile(filepath.Join(root, "SHA256SUMS"))
+	if err != nil {
+		t.Fatalf("the suite ships no checksums: %v", err)
+	}
+
+	listed := map[string]string{}
+	for _, line := range strings.Split(strings.TrimSpace(string(raw)), "\n") {
+		sum, name, ok := strings.Cut(line, "  ")
+		if !ok {
+			t.Fatalf("not a sha256sum line: %q", line)
+		}
+		listed[name] = sum
+	}
+
+	var counted int
+	err = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() {
+			return err
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		if rel == "SHA256SUMS" {
+			return nil
+		}
+		body, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		want, ok := listed[rel]
+		if !ok {
+			t.Errorf("%s is not in SHA256SUMS; run `make vectors-sums`", rel)
+			return nil
+		}
+		if got := fmt.Sprintf("%x", sha256.Sum256(body)); got != want {
+			t.Errorf("%s has changed since the checksums were written (%s, listed %s)",
+				rel, got[:12], want[:12])
+		}
+		counted++
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if counted != len(listed) {
+		t.Errorf("SHA256SUMS lists %d files, %d are present; run `make vectors-sums`",
+			len(listed), counted)
 	}
 }
