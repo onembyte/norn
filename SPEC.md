@@ -17,6 +17,7 @@ they win:
 - `c2sp.org/signed-note` — signature line format
 - `c2sp.org/tlog-cosignature` — witness cosignatures (v1)
 - `c2sp.org/tlog-witness` — witness HTTP protocol
+- `c2sp.org/tlog-policy` — witness quorum policy (§9.1)
 - `c2sp.org/tlog-proof` (v1) — self-contained inclusion proof bundles
 - RFC 6962 §2.1 — Merkle tree hashing (SHA-256)
 - RFC 8949 §4.2.1 — deterministic CBOR ("core deterministic encoding")
@@ -360,8 +361,8 @@ or rejected. Replay never aborts after entry 0.
 `since_index` records the index of the entry that last **changed the device's
 status**: `enroll` sets it, `revoke` sets it, `rotate` leaves it alone.
 
-Entries whose `expires` is earlier than the checkpoint time are treated as
-`revoked` *at evaluation time*, not at replay, so state stays clock-independent.
+Entries whose `expires` has passed are treated as `revoked` at **evaluation
+time** (§5.3), not at replay, so the state itself stays clock-independent.
 
 ### 5.2 Reason codes (closed list; part of the vectors)
 
@@ -432,6 +433,26 @@ labels and expiry from the earlier enrolment do not survive.
 `{d.wg_pk: id for id, d in devices if d.status == "active"}`. It is serialised
 because a verifier needs the reverse lookup and a second implementation must be
 shown to agree on it.
+
+**Evaluation time `T` (normative).** `expires` is never applied during replay,
+so the state above is the same on every node regardless of any clock. It is
+applied when a verifier turns that state into a proven set (§10), against a
+clock that is **the log's witnesses, never the local one** (A11): a machine
+whose time is wrong, or has been set wrong, must not be able to decide who is on
+the network.
+
+`T` is the **quorum time** of the checkpoint the state was replayed from: the
+newest instant such that the witnesses whose cosignature timestamp is at or
+after it satisfy the policy (§9). A `tlog-checkpoint` body carries no timestamp
+of its own — the `tlog-cosignature` lines are the only timestamps in the
+artifact, and `T` is the only value derived from them.
+
+A device is expired exactly when `expires != 0 && expires <= T`; an `expires`
+equal to `T` **has** passed. When the policy is satisfied at no instant — which
+includes `quorum none`, where nobody vouches for the time either — there is **no
+clock**, and expiry is not judged at all: the device keeps the status replay gave
+it. Norn fails towards the last state a quorum vouched for, rather than dropping
+devices on a number nobody signed.
 
 ## 6. The log
 
@@ -548,6 +569,30 @@ below exists for humans.
 Unknown keys MUST cause rejection. The fingerprint (§9.3) is taken over these
 bytes, so a wrong field name or type changes it.
 
+**The policy grammar.** `policy` is `c2sp.org/tlog-policy` verbatim and is not
+redefined here, but a verifier cannot be written without it, so its four
+directives are restated. Lines end in ASCII newline; fields are separated by
+ASCII spaces and tabs **only**:
+
+```
+log     <vkey> [<url>]
+witness <name> <vkey> [<url>]
+group   <name> all|any|<k> <name>...
+quorum  <name>
+```
+
+Both URLs are **optional in the grammar and present in every Norn policy** —
+omitting them parses, and a second implementation that stops reading a line
+after the key will silently accept a policy it has misread. A `group` names
+previously-defined witnesses or groups (`any` is `k = 1`, `all` is `k = n`,
+otherwise `1 ≤ k ≤ n` in decimal); there is **exactly one** `quorum` line, and
+it names a witness, a group, or the reserved name `none`.
+
+The `witness` directive is matched on **its own `<name>`** — the same short name
+the `witnesses` array carries (`pi`), never the note name inside the verifier
+key (`norn-witness/pi`). This is what §9.1 means by naming exactly the same
+witnesses: the names must correspond one-to-one, and so must the keys.
+
 ### 9.2 TOML rendering
 
 ```toml
@@ -562,7 +607,7 @@ name         = "norn-testnet"
 genesis_hash = "4e18d55c…"                          # hex
 log_key      = "norn/nzxxe3rnorsxg5domv2c2mbqge+bea4a666+…"
 log_urls     = ["https://log.norn.example/testnet", "http://10.0.0.155:8099/norn"]
-policy       = "log …\nwitness pi …\ngroup home 2 pi vps friend\nquorum home\n"
+policy       = "log norn/nzxxe3rnorsxg5domv2c2mbqge+bea4a666+AV6v97lmGyW99eHglI8syFAU2uY+/HuHHq0VYz9Rmio1 https://log.norn.example/testnet\nwitness pi norn-witness/pi+051d1c51+BHeagefoK0s3F5shdMl1Ahsd1ZCE9MC5F5gvM3cLTnZa http://10.0.0.153:8100\nwitness vps norn-witness/vps+46a6fd38+BIXCilOrHi0kMxynG/s1EyJ2aWFC1jZc4UlZRza6g8ou https://witness.example.net\nwitness friend norn-witness/friend+1404f742+BJjvlkRbihDdM/4Lb/YPiP+eoqk3VgrncrTgSXQNXr6B https://bastion.example.org/w\ngroup home 2 pi vps friend\nquorum home\n"
 anchor       = { max_lag = 86400, mode = "advisory", type = "opentimestamps" }
 
 [[witness]]
@@ -618,7 +663,8 @@ loop every T_g or on demand:
       on mismatch → FORK (§11)
   fetch new tiles / entry bundles (TileFetcher / TileFS + PermanentCache)
   state := replay(trust, entries[0:cp.size])
-  proven := { d ∈ state.devices : status == active && not expired(now) }
+  T := the evaluation time of cp (§5.3)                  # witness time, never ours
+  proven := { d ∈ state.devices : status == active && not expired(d, T) }
   store cp; hand proven to the enforcer                  # part 5
 ```
 

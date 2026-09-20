@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -286,5 +287,108 @@ func TestTheVectorChecksumsAreCurrent(t *testing.T) {
 	if counted != len(listed) {
 		t.Errorf("SHA256SUMS lists %d files, %d are present; run `make vectors-sums`",
 			len(listed), counted)
+	}
+}
+
+// --- Cold-model gate run 5, defects G1 and G5 (6.5a) ---------------------
+//
+// Run 5's implementer built a `tlog-policy` parser strictly from this document
+// and it rejected the suite's own `trust.cbor`. The grammar is somebody else's,
+// the document requires a normative parse against it, and it was not in the
+// list of specifications this one reuses. These tests make both halves of that
+// failure impossible to reintroduce.
+
+func rawSpec(t *testing.T) string {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join("..", "..", "SPEC.md"))
+	if err != nil {
+		t.Fatalf("read SPEC.md: %v", err)
+	}
+	return string(raw)
+}
+
+var reC2SP = regexp.MustCompile(`c2sp\.org/[a-z0-9-]+`)
+
+// A normative parse against a grammar the document does not list is a grammar
+// the second implementer has to guess.
+func TestEveryReusedSpecificationIsListed(t *testing.T) {
+	spec := rawSpec(t)
+
+	// The head list: the bullets that name what this document reuses.
+	declared := map[string]bool{}
+	for _, line := range strings.Split(spec, "\n") {
+		if !strings.HasPrefix(line, "- `c2sp.org/") {
+			continue
+		}
+		if m := reC2SP.FindString(line); m != "" {
+			declared[m] = true
+		}
+	}
+	if len(declared) < 4 {
+		t.Fatalf("found %d declared C2SP references; the head list is not being read", len(declared))
+	}
+
+	for _, used := range reC2SP.FindAllString(spec, -1) {
+		if !declared[used] {
+			t.Errorf("%s is required by the body but is not in the list of specifications this document reuses", used)
+		}
+	}
+}
+
+// §9.2 renders the trust file as TOML. Hashes and keys may be elided there --
+// they carry no grammar. The policy string carries nothing *but* grammar, and
+// eliding it is what cost run 5 its first attempt.
+func TestTheRenderedPolicyIsTheShippedPolicy(t *testing.T) {
+	shipped, err := os.ReadFile(filepath.Join("..", "..", "testdata", "vectors", "trust.toml"))
+	if err != nil {
+		t.Fatalf("read trust.toml: %v", err)
+	}
+	want := policyLine(string(shipped))
+	if want == "" {
+		t.Fatal("the shipped trust.toml has no policy line")
+	}
+	got := policyLine(rawSpec(t))
+	if got == "" {
+		t.Fatal("SPEC.md renders no policy line")
+	}
+	if got != want {
+		t.Errorf("the policy §9.2 shows is not the one the suite ships.\n  spec:    %s\n  shipped: %s", got, want)
+	}
+}
+
+func policyLine(s string) string {
+	for _, line := range strings.Split(s, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "policy") && strings.Contains(line, "=") {
+			return strings.TrimSpace(line)
+		}
+	}
+	return ""
+}
+
+// G5: two clocks were specified for one decision -- "the checkpoint time" in
+// §5.3 and `now` in §10 -- and the document defined neither, though a
+// tlog-checkpoint body carries no timestamp at all. This is the rule that
+// decides when a device stops being admitted to the VPN.
+func TestTheEvaluationClockIsDefinedAndUsedOnce(t *testing.T) {
+	spec := rawSpec(t)
+
+	if strings.Contains(spec, "expired(now)") {
+		t.Error("§10 still judges expiry against the local wall clock; A11 says that clock is untrusted")
+	}
+
+	doc := load(t)
+	for _, section := range []string{"5.3", "10"} {
+		sec, ok := doc.Section(section)
+		if !ok {
+			t.Fatalf("§%s is missing", section)
+		}
+		if !strings.Contains(strings.ToLower(sec.Body), "evaluation time") {
+			t.Errorf("§%s decides expiry without naming the evaluation time", section)
+		}
+	}
+
+	// Defined as a derivation from something the artifact actually carries.
+	if !strings.Contains(strings.ToLower(spec), "quorum time") {
+		t.Error("the evaluation time is never derived from the cosignature timestamps, which are the only timestamps there are")
 	}
 }
