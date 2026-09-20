@@ -3,6 +3,7 @@ package monitor
 import (
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -48,8 +49,9 @@ func statusPage(t *testing.T, alerts []Alert) string {
 func TestTheStatusPageShowsWhatTheSectionAsksFor(t *testing.T) {
 	page := statusPage(t, nil)
 
+	result := verifiedLog(t)
 	for _, want := range []string{
-		"90",              // checkpoint size
+		strconv.FormatInt(result.Checkpoint.Size, 10), // checkpoint size
 		"norn-testnet",    // the network's name
 		"norn-witness/pi", // a witness, with its cosignature time
 		"pi-cam",          // the device table
@@ -59,9 +61,17 @@ func TestTheStatusPageShowsWhatTheSectionAsksFor(t *testing.T) {
 			t.Errorf("the page does not mention %q", want)
 		}
 	}
-	// The age, which is the number somebody is actually checking.
-	if !strings.Contains(page, "5m0s") && !strings.Contains(page, "5m") {
-		t.Errorf("the checkpoint age should be on the page:\n%s", firstLines(page, 40))
+	// The age, which is the number somebody is actually checking. Derived from
+	// the checkpoint's own quorum time rather than assumed: the fixture's
+	// witnesses cosign seven seconds apart now, so the age is measured from
+	// the instant the *quorum* was reached and not from the first answer.
+	if result.QuorumTime == nil {
+		t.Fatal("the fixture's checkpoint has no quorum time")
+	}
+	age := time.Unix(fixtureCosigned+300, 0).Sub(*result.QuorumTime).Round(time.Second)
+	if !strings.Contains(page, age.String()) {
+		t.Errorf("the checkpoint age %s should be on the page:\n%s",
+			age, firstLines(page, 40))
 	}
 }
 

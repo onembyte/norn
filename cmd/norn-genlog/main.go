@@ -71,6 +71,13 @@ func seedKey(root, name string) (ed25519.PrivateKey, error) {
 // WitnessNames are the fixture's witnesses, in the order the policy lists them.
 var WitnessNames = []string{"pi", "vps", "friend"}
 
+// CosignSpread is how much later each witness answers than the one before it.
+// Until cold gate run 6 all three cosigned at the same instant, so the newest
+// timestamp, the median and the k-th newest agreed and no vector said which
+// §5.3 means. They answer seven seconds apart now, which makes the 2-of-3
+// quorum time the *second* newest and tells the three readings apart.
+const CosignSpread = 7
+
 // CosignedAt is the fixed instant the fixture's witnesses cosign at.
 //
 // Fixed, because a vector whose bytes changed with the clock could not be
@@ -81,6 +88,32 @@ const CosignedAt = 1_760_003_600
 // witnessSigners loads the fixture's witnesses in the order the policy lists
 // them, so the cosignature lines land in a fixed order and the fixture stays
 // byte-reproducible.
+// staggeredCosigner appends each witness's line at its own instant, in policy
+// order, by chaining one single-signer `Append` per witness.
+func staggeredCosigner(signers []cosignpkg.Signer) func(string) (string, error) {
+	return func(signed string) (string, error) {
+		out := signed
+		for i, s := range signers {
+			at := time.Unix(CosignedAt+int64(i*CosignSpread), 0)
+			next, err := cosignpkg.Append([]cosignpkg.Signer{s}, cosignpkg.At(at))(out)
+			if err != nil {
+				return "", err
+			}
+			out = next
+		}
+		return out, nil
+	}
+}
+
+// QuorumTimeOf is the instant §5.3 derives from a set of cosignature
+// timestamps under a k-of-n quorum: the newest instant at which k of them have
+// answered. Computed here so the suite can record it for a second implementer.
+func QuorumTimeOf(threshold int) int64 {
+	// Witness i answers at CosignedAt + i*spread, so the k-th newest of n is
+	// the one at index n-k.
+	return CosignedAt + int64((len(WitnessNames)-threshold)*CosignSpread)
+}
+
 func witnessSigners(root string) ([]cosignpkg.Signer, error) {
 	signers := make([]cosignpkg.Signer, 0, len(WitnessNames))
 	for _, name := range WitnessNames {
@@ -126,7 +159,7 @@ func run(root string) error {
 		return err
 	}
 	store, err := tlogstore.Open(served, origin, key, tlogstore.WithCosigner(
-		tlogstore.CosignerFunc(cosignpkg.Append(signers, cosignpkg.At(time.Unix(CosignedAt, 0))))))
+		tlogstore.CosignerFunc(staggeredCosigner(signers))))
 	if err != nil {
 		return err
 	}
@@ -205,6 +238,11 @@ func run(root string) error {
 		"log_key": "keys.json ed25519.logkey — the key trust.cbor names",
 		"size":    store.Size(),
 		"devices": ids,
+		// §5.3's evaluation time, derived from this checkpoint's cosignature
+		// timestamps under the shipped 2-of-3 policy. Recorded so a second
+		// implementer can check their derivation rather than only their
+		// proven set.
+		"checkpoint_quorum_time": QuorumTimeOf(2),
 	}
 	blob, err := json.MarshalIndent(meta, "", "  ")
 	if err != nil {
@@ -464,7 +502,7 @@ func writeForkEvidence(root, origin string, key ed25519.PrivateKey,
 	defer os.RemoveAll(forkedDir)
 
 	store, err := tlogstore.Open(forkedDir, origin, key, tlogstore.WithCosigner(
-		tlogstore.CosignerFunc(cosignpkg.Append(signers, cosignpkg.At(time.Unix(CosignedAt, 0))))))
+		tlogstore.CosignerFunc(staggeredCosigner(signers))))
 	if err != nil {
 		return err
 	}
@@ -733,7 +771,7 @@ func signedHeadOver(root, origin string, key ed25519.PrivateKey,
 	defer os.RemoveAll(dir)
 
 	store, err := tlogstore.Open(dir, origin, key, tlogstore.WithCosigner(
-		tlogstore.CosignerFunc(cosignpkg.Append(signers, cosignpkg.At(time.Unix(CosignedAt, 0))))))
+		tlogstore.CosignerFunc(staggeredCosigner(signers))))
 	if err != nil {
 		return "", err
 	}
@@ -863,9 +901,8 @@ func buildBadCheckpoints(root, origin string, key ed25519.PrivateKey,
 	if err != nil {
 		return nil, err
 	}
-	at := cosignpkg.At(time.Unix(CosignedAt, 0))
 	cosignWith := func(base string, chosen ...cosignpkg.Signer) (string, error) {
-		return cosignpkg.Append(chosen, at)(base)
+		return staggeredCosigner(chosen)(base)
 	}
 
 	byName := map[string]cosignpkg.Signer{}

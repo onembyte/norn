@@ -486,6 +486,22 @@ after it satisfy the policy (§9). A `tlog-checkpoint` body carries no timestamp
 of its own — the `tlog-cosignature` lines are the only timestamps in the
 artifact, and `T` is the only value derived from them.
 
+Three things that decision needs and the rest of this document does not supply:
+
+- **Only a cosignature that verifies contributes a timestamp**, and only from a
+  witness the policy names. An unverified line is not evidence of anything, and
+  §10 already refuses the whole checkpoint over one — but a reader computing
+  `T` must not count it even in the moment before that refusal.
+- **A witness counts once.** Two verifying lines from the same witness with
+  different timestamps are its newest; a witness cannot meet a threshold by
+  answering twice.
+- **Under `quorum none` there is no clock.** Not because the policy is
+  satisfied at no instant — it is satisfied at *every* instant, and a reader
+  taking the definition literally gets an unbounded `T` and drops every device
+  with an `expires`. It is because a policy that requires nobody has nobody
+  vouching for the time either, and `T` is a corroborated instant or it is
+  nothing.
+
 A device is expired exactly when `expires != 0 && expires <= T`; an `expires`
 equal to `T` **has** passed. When the policy is satisfied at no instant — which
 includes `quorum none`, where nobody vouches for the time either — there is **no
@@ -581,7 +597,17 @@ A node MUST treat a peer as proven only if:
 1. the bundle's checkpoint verifies under the node's trust policy (§9), and
 2. the bundle's checkpoint is consistent with the node's stored checkpoint, and
 3. replay of the log up to that checkpoint yields the device as `active` with that `wg_pk`, and
-4. the checkpoint is not stale (part 6).
+4. the checkpoint is not stale: **`elapsed > params.staleness`** makes it so,
+   where `elapsed` is the node's **monotonic** reading now minus its monotonic
+   reading when it learned this checkpoint's quorum time (§5.3).
+
+Condition 4 is where A11 looks contradictory and is not. §5.3 forbids the local
+clock from supplying an *instant*, because a machine whose time is wrong must
+not be able to decide who is on the network. It does not forbid the local clock
+from supplying a *duration*: a node's estimate of now is the quorum time it was
+given plus the monotonic time elapsed since, and monotonic time cannot be set
+wrong — only paused. A node that has never seen a quorum time has no estimate,
+and under §5.3 judges no expiry at all.
 
 Because the node replays the whole log, condition 3 is what actually decides;
 the bundle is the portable, offline-checkable evidence that goes in alerts and
@@ -845,6 +871,7 @@ this table drifted out of date the moment one was.
 | §5.1 `params` is non-empty | `params` entries in the log | `bad-params-empty` |
 | §14.1 key order above the BMP | `enroll-astral-labels`, whose labels carry one astral key and one private-use key: the only pair in the suite where UTF-8 bytewise order and UTF-16 code-unit order disagree | — |
 | §5.3 state, incl. D-028 and `expires` | `state.json`, `enroll-contractor` | `signer_remove-below-threshold` accepted, then `signer_add-recover` |
+| §5.3 the derivation of `T` | `served/checkpoint`, whose three witnesses cosign seven seconds apart, so the newest, the median and the k-th newest disagree; `proofs/cases.json` records the value `T` must come out as | — |
 | §5.3 evaluation time | `proven/cases.json`: the admitted set at four values of `T` — no clock, before, **exactly at**, and after the one deadline the fixture carries. `state.json` is clock-independent by design, so this is the only vector that exercises expiry | the `at-the-deadline` case, where `expires == T` and the device is **out** |
 | §7 receipt | `receipt.note` | — |
 | §9 trust file, fingerprint | `trust.cbor` | 18 rejected anchors in `trust-bad/`. **`15`** and **`16`** parse cleanly as verifier keys and are refused only by the algorithm rule; **`17`** and **`18`** are a witness the policy never names and a policy naming a witness the file does not list, each otherwise perfectly valid |

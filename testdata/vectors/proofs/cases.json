@@ -1,4 +1,5 @@
 {
+  "checkpoint_quorum_time": 1760003607,
   "comment": "the served log and its proof bundles, produced by the Go implementation and validated by upstream libraries; see SPEC 12",
   "devices": [
     "astral",
