@@ -38,9 +38,24 @@ const MaxNameLen = 64
 
 // Witness is one cosigner the network will require.
 type Witness struct {
+	// Name is the short label this network files the witness under, and the
+	// one its policy evaluates the quorum over.
 	Name string
 	Key  ed25519.PublicKey
 	URL  string
+	// NoteName is the name inside the witness's own key, which is what its
+	// cosignatures carry. It is usually `norn-witness/<Name>` -- but a witness
+	// this network did not create has a name of its own, and signing under
+	// anything else produces a line nothing here would match.
+	NoteName string
+}
+
+// noteName is the name this witness's cosignatures carry.
+func (w Witness) noteName() string {
+	if w.NoteName != "" {
+		return w.NoteName
+	}
+	return "norn-witness/" + w.Name
 }
 
 // Ceremony is a network about to exist.
@@ -152,7 +167,7 @@ func Build(c Ceremony, signers []crypto.Signer) (*Result, error) {
 		witnesses = append(witnesses, trust.Witness{
 			// A witness publishes a cosignature key (algorithm 0x04), not a
 			// note key: the log signs checkpoints, a witness cosigns them.
-			Name: w.Name, Key: note.CosignerVerifierKey(witnessName(w.Name), w.Key), URL: w.URL,
+			Name: w.Name, Key: note.CosignerVerifierKey(w.noteName(), w.Key), URL: w.URL,
 		})
 	}
 
@@ -275,7 +290,7 @@ func buildPolicy(origin string, logKey ed25519.PublicKey, urls []string,
 	names := make([]string, 0, len(witnesses))
 	for _, w := range witnesses {
 		fmt.Fprintf(&b, "witness %s %s", w.Name,
-			note.CosignerVerifierKey(witnessName(w.Name), w.Key))
+			note.CosignerVerifierKey(w.noteName(), w.Key))
 		if w.URL != "" {
 			fmt.Fprintf(&b, " %s", w.URL)
 		}
@@ -289,8 +304,6 @@ func buildPolicy(origin string, logKey ed25519.PublicKey, urls []string,
 }
 
 // witnessName is the note name a witness signs under.
-func witnessName(name string) string { return "norn-witness/" + name }
-
 func toAny(keys []ed25519.PublicKey) []any {
 	out := make([]any, 0, len(keys))
 	for _, key := range keys {

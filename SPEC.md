@@ -694,11 +694,13 @@ this table drifted out of date the moment one was.
 
 `served/checkpoint` now carries three cosignatures, so §6's format *is*
 vectored — and the encoding is checked against `transparency-dev/formats`
-rather than against itself. What the fixture cannot show is a witness
-**process**: these cosignatures come from keys the generator holds, so they
-prove the format is right, not that an unmodified witness will produce one.
-That is 4.4, and it is the reason the row above still waits: a fork proof is
-something a second party produces, and faking it here would prove nothing.
+rather than against itself. The fixture's cosignatures come from keys the
+generator holds, so they prove the format; that an **unmodified witness** will
+produce one is proven separately, by `internal/interop` driving the real
+`transparency-dev/witness` end to end (4.4).
+
+The row above still waits because a fork proof is something a second party
+produces, and faking it here would prove nothing.
 
 ## 13. Open items
 

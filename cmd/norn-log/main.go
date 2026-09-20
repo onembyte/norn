@@ -12,6 +12,7 @@ import (
 	"crypto"
 	"crypto/ed25519"
 	"encoding/hex"
+	"errors"
 	"flag"
 	"fmt"
 	"net/http"
@@ -102,6 +103,9 @@ func run(args []string) error {
 	var cosigners []tlogstore.Cosigner
 	if len(remote) > 0 {
 		cosigners = append(cosigners, witness.NewSubmitter(remote, proofs, func(err error) {
+			if errors.Is(err, errNotOpenYet) {
+				return
+			}
 			fmt.Fprintln(os.Stderr, "norn-log:", err)
 		}))
 		for _, client := range remote {
@@ -247,9 +251,16 @@ func witnessClients(anchor *trust.Trust) []*witness.Client {
 // witnesses, which is the dependency `internal/witness` exists to avoid.
 type storeProofs struct{ store *tlogstore.Store }
 
+// errNotOpenYet marks the one refusal that is expected on every start.
+var errNotOpenYet = errors.New("the log is not open yet")
+
 func (p *storeProofs) ConsistencyProof(old int64) ([][]byte, error) {
 	if p.store == nil {
-		return nil, fmt.Errorf("the log is not open yet")
+		// The store republishes as it opens, before this is wired -- so the
+		// very first round has nothing to prove from. It is not a failure and
+		// it is not worth a line on an operator's console: the background
+		// refresh asks again a moment later with the tree in hand.
+		return nil, errNotOpenYet
 	}
 	if old == 0 {
 		return nil, nil // "The proof MUST be empty if the old size is zero."

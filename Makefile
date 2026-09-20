@@ -73,3 +73,21 @@ ref-test:
 	cd contrib/norn-ref && .venv/bin/python -m unittest discover -s tests
 
 ci: fmt-check vet test
+
+# The pinned `transparency-dev/witness` used by internal/interop. It is built
+# outside this module on purpose: its own go.mod pulls Cloud Spanner, gRPC,
+# OpenTelemetry and sqlite, and none of that belongs in a verifier's
+# dependency graph. `go.work` is not used either -- the point is that Norn and
+# the witness share no code at all.
+WITNESS_VERSION = 55a5a0bf332a04f64296841ea857f86ec4494fc3
+
+.PHONY: witness
+witness:
+	@mkdir -p build $(CURDIR)/build/witness-src
+	@cd $(CURDIR)/build/witness-src && \
+	  (test -f go.mod || printf 'module norn-witness-build\n\ngo 1.25\n' > go.mod) && \
+	  $(GO) get github.com/transparency-dev/witness/cmd/omniwitness@$(WITNESS_VERSION) && \
+	  $(GO) get github.com/transparency-dev/witness/cmd/generate_keys@$(WITNESS_VERSION) && \
+	  $(GO) build -o $(CURDIR)/build/omniwitness github.com/transparency-dev/witness/cmd/omniwitness && \
+	  $(GO) build -o $(CURDIR)/build/generate_keys github.com/transparency-dev/witness/cmd/generate_keys
+	@echo "built build/omniwitness and build/generate_keys at $(WITNESS_VERSION)"

@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/ed25519"
+	"crypto/rand"
 	"encoding/hex"
 	"net"
 	"net/http"
@@ -13,6 +15,7 @@ import (
 
 	"github.com/onembyte/norn/internal/entry"
 	"github.com/onembyte/norn/internal/keyfile"
+	"github.com/onembyte/norn/internal/note"
 	"github.com/onembyte/norn/internal/replay"
 	"github.com/onembyte/norn/internal/trust"
 )
@@ -177,7 +180,7 @@ func TestInitRefusals(t *testing.T) {
 			return []string{"init", "-name", "n", "-out", d, "-log-key", filepath.Join(d, "l.key"),
 				"-log-url", "http://x", "-root", filepath.Join(d, "r.key"),
 				"-signer", filepath.Join(d, "s.key"), "-witness", "nokey"}
-		}, "name=hex"},
+		}, "name=key"},
 	}
 	for _, c := range cases {
 		t.Run(c.why, func(t *testing.T) {
@@ -298,5 +301,134 @@ func waitForLog(t *testing.T, base string) {
 			t.Fatal("norn-log never came up")
 		}
 		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// A witness operator publishes a cosignature verifier key -- that is literally
+// what `transparency-dev/witness`'s own `generate_keys` prints. Making an
+// operator decode it back to hex to type it in here is friction with a wrong
+// answer available at every step.
+func TestInitAcceptsAPublishedWitnessKey(t *testing.T) {
+	bin := nornBinary(t)
+	work := t.TempDir()
+	keys := filepath.Join(work, "keys")
+	if err := os.MkdirAll(keys, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	// A key in the form a witness publishes it.
+	pub, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	vkey := note.CosignerVerifierKey("norn-witness/published", pub)
+
+	_, stderr, err := run(t, bin, "init", "-name", "vkeylab", "-out", work,
+		"-root", filepath.Join(keys, "root1.key"), "-root-thr", "1",
+		"-signer", filepath.Join(keys, "signer1.key"), "-signer-thr", "1",
+		"-log-key", filepath.Join(keys, "log.key"), "-log-url", "http://127.0.0.1:1",
+		"-witness", "pub="+vkey,
+		"-witness-url", "pub=http://127.0.0.1:9100")
+	if err != nil {
+		t.Fatalf("init: %v\n%s", err, stderr)
+	}
+
+	anchor := readAnchor(t, filepath.Join(work, "norn.trust"))
+	if len(anchor.Witnesses) != 1 {
+		t.Fatalf("witnesses = %+v", anchor.Witnesses)
+	}
+	if anchor.Witnesses[0].Key != vkey {
+		t.Errorf("the published key was not carried through:\n got %q\nwant %q",
+			anchor.Witnesses[0].Key, vkey)
+	}
+	// And the address, so a log knows where to submit without the trust file
+	// being hand-edited afterwards -- which would change its fingerprint.
+	if anchor.Witnesses[0].URL != "http://127.0.0.1:9100" {
+		t.Errorf("url = %q", anchor.Witnesses[0].URL)
+	}
+}
+
+// A plain note key where a cosignature key belongs is the 4.1a defect wearing
+// an operator's hat: it parses, and no witness will ever sign with it.
+func TestInitRefusesANoteKeyAsAWitness(t *testing.T) {
+	bin := nornBinary(t)
+	work := t.TempDir()
+	keys := filepath.Join(work, "keys")
+	if err := os.MkdirAll(keys, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	pub, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, stderr, err := run(t, bin, "init", "-name", "badkey", "-out", work,
+		"-root", filepath.Join(keys, "root1.key"), "-root-thr", "1",
+		"-signer", filepath.Join(keys, "signer1.key"), "-signer-thr", "1",
+		"-log-key", filepath.Join(keys, "log.key"), "-log-url", "http://127.0.0.1:1",
+		"-witness", "plain="+note.VerifierKey("norn-witness/plain", pub))
+	if err == nil {
+		t.Fatal("a plain note key was accepted as a witness key")
+	}
+	if !strings.Contains(stderr, "cosignature") {
+		t.Errorf("the error should say what kind of key is needed:\n%s", stderr)
+	}
+}
+
+// A URL for a witness that does not exist is a typo that would otherwise leave
+// the real witness unreachable and say nothing.
+func TestInitRefusesAURLForAnUnknownWitness(t *testing.T) {
+	bin := nornBinary(t)
+	work := t.TempDir()
+	keys := filepath.Join(work, "keys")
+	if err := os.MkdirAll(keys, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	_, stderr, err := run(t, bin, "init", "-name", "typo", "-out", work,
+		"-root", filepath.Join(keys, "root1.key"), "-root-thr", "1",
+		"-signer", filepath.Join(keys, "signer1.key"), "-signer-thr", "1",
+		"-log-key", filepath.Join(keys, "log.key"), "-log-url", "http://127.0.0.1:1",
+		"-witness", "pi="+filepath.Join(keys, "witness-pi.key"),
+		"-witness-url", "py=http://127.0.0.1:9100")
+	if err == nil {
+		t.Fatal("a URL was accepted for a witness that was never declared")
+	}
+	if !strings.Contains(stderr, "py") {
+		t.Errorf("the error should name the typo:\n%s", stderr)
+	}
+}
+
+// A mistyped key must not quietly become a new identity.
+//
+// `-witness`, like `-root` and `-signer`, generates a keypair when handed a
+// path that does not exist. That is right for `-witness pi=keys/pi.key` and
+// wrong for a corrupted published key: the network would be created trusting a
+// witness whose private key is a file nobody knows exists, and the mistake
+// would only surface as "the witness never cosigns anything".
+func TestInitRefusesToInventAKeyFromAMangledKeyString(t *testing.T) {
+	bin := nornBinary(t)
+	work := t.TempDir()
+	keys := filepath.Join(work, "keys")
+	if err := os.MkdirAll(keys, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	pub, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A published key with a character lost in copying.
+	mangled := strings.Replace(note.CosignerVerifierKey("norn-witness/w", pub), "+", "", 1)
+
+	_, stderr, err := run(t, bin, "init", "-name", "mangled", "-out", work,
+		"-root", filepath.Join(keys, "root1.key"), "-root-thr", "1",
+		"-signer", filepath.Join(keys, "signer1.key"), "-signer-thr", "1",
+		"-log-key", filepath.Join(keys, "log.key"), "-log-url", "http://127.0.0.1:1",
+		"-witness", "w="+mangled)
+	if err == nil {
+		t.Fatal("a corrupted key string was turned into a brand-new witness identity")
+	}
+	if !strings.Contains(stderr, "key") {
+		t.Errorf("the error should say the value looks like a key:\n%s", stderr)
 	}
 }

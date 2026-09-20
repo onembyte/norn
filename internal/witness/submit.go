@@ -2,6 +2,7 @@ package witness
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 
@@ -117,8 +118,10 @@ func (s *Submitter) ask(client *Client, signed string) ([]string, error) {
 func (s *Submitter) attempt(client *Client, signed string, from int64) ([]string, error) {
 	proof, err := s.proofs.ConsistencyProof(from)
 	if err != nil {
-		return nil, witnessErrorf("building the consistency proof from size %d for %s: %v",
-			from, client.name(), err)
+		// Wrapped, not reformatted: a caller that recognises its own error
+		// here -- a log that is not finished opening, say -- can still tell.
+		return nil, fmt.Errorf("%w: building the consistency proof from size %d for %s: %w",
+			ErrWitness, from, client.name(), err)
 	}
 	lines, err := client.Add(signed, from, proof)
 	if err != nil {

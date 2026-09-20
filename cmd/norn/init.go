@@ -13,6 +13,7 @@ import (
 	"github.com/onembyte/norn/internal/entry"
 	"github.com/onembyte/norn/internal/genesis"
 	"github.com/onembyte/norn/internal/keyfile"
+	"github.com/onembyte/norn/internal/note"
 	"github.com/onembyte/norn/internal/sshagent"
 )
 
@@ -26,13 +27,18 @@ func initCmd(args []string) error {
 	logKeyPath := fs.String("log-key", "", "the log's signing key file; created if absent (required)")
 
 	var roots, rootPubs, rootAgents, signers, signerPubs, logURLs, witnesses repeated
+	var witnessURLs repeated
 	fs.Var(&roots, "root", "a root key `file`; created if absent. Repeat for more roots")
 	fs.Var(&rootPubs, "root-pub", "a root's public key as 64 `hex` digits, for a key held elsewhere")
 	fs.Var(&rootAgents, "root-agent", "a root held in the ssh-agent, by `kid`")
 	fs.Var(&signers, "signer", "a signer key `file`; created if absent")
 	fs.Var(&signerPubs, "signer-pub", "a signer's public key as 64 `hex` digits")
 	fs.Var(&logURLs, "log-url", "where the log will be served; repeat for more")
-	fs.Var(&witnesses, "witness", "a witness as `name=hex` or name=keyfile; repeat for more")
+	fs.Var(&witnesses, "witness", "a witness as `name=key`, where key is the "+
+		"cosignature verifier key the witness publishes, a hex public key, or a "+
+		"keyfile; repeat for more")
+	fs.Var(&witnessURLs, "witness-url", "where a witness listens, as `name=url`; "+
+		"repeat for more")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -109,20 +115,69 @@ func initCmd(args []string) error {
 	for _, spec := range witnesses {
 		name, value, found := strings.Cut(spec, "=")
 		if !found || name == "" {
-			return fmt.Errorf("-witness takes name=hex or name=keyfile, got %q", spec)
+			return fmt.Errorf("-witness takes name=key, got %q", spec)
 		}
-		public, err := publicFromHex(value)
-		if err != nil {
-			key, made, keyErr := keyAt(value)
-			if keyErr != nil {
-				return fmt.Errorf("witness %s: %v, and %v", name, err, keyErr)
+		witness := genesis.Witness{Name: name}
+
+		// The form a witness operator actually publishes. `transparency-dev`'s
+		// own `generate_keys` prints exactly this, so requiring an operator to
+		// decode it back to hex would be friction with a wrong answer
+		// available at every step.
+		if verifier, err := note.ParseVerifierKey(value); err == nil {
+			if !verifier.IsCosigner() {
+				return fmt.Errorf("witness %s: %q is a plain note key, not a "+
+					"cosignature verifier key -- the same public key under the two "+
+					"algorithms is two different verifiers, and no witness will ever "+
+					"sign with this one (§9.1)", name, value)
 			}
-			if made {
-				created = append(created, value)
+			witness.Key = ed25519.PublicKey(verifier.Public)
+			witness.NoteName = verifier.Name
+		} else if looksLikeAKey(value) {
+			// `-witness` generates a keypair when handed a path that does not
+			// exist, which is right for `name=keys/pi.key` and wrong here: a
+			// published key with a character lost in copying would become a
+			// brand-new witness whose private half is a file nobody knows
+			// about, and the mistake would surface much later as "the witness
+			// never cosigns anything".
+			return fmt.Errorf("witness %s: %q looks like a verifier key but does not "+
+				"parse as one; check it was copied whole rather than letting it be "+
+				"read as a path to a key to generate", name, value)
+		} else {
+			public, err := publicFromHex(value)
+			if err != nil {
+				key, made, keyErr := keyAt(value)
+				if keyErr != nil {
+					return fmt.Errorf("witness %s: %v, and %v", name, err, keyErr)
+				}
+				if made {
+					created = append(created, value)
+				}
+				public = key.Public().(ed25519.PublicKey)
 			}
-			public = key.Public().(ed25519.PublicKey)
+			witness.Key = public
 		}
-		witnessSet = append(witnessSet, genesis.Witness{Name: name, Key: public})
+		witnessSet = append(witnessSet, witness)
+	}
+
+	// Where each witness listens. A trust file without addresses makes a log
+	// unable to submit to anyone, and adding them afterwards changes the
+	// fingerprint every node was provisioned to compare against (§9.3).
+	for _, spec := range witnessURLs {
+		name, url, found := strings.Cut(spec, "=")
+		if !found || name == "" || url == "" {
+			return fmt.Errorf("-witness-url takes name=url, got %q", spec)
+		}
+		known := false
+		for i := range witnessSet {
+			if witnessSet[i].Name == name {
+				witnessSet[i].URL, known = url, true
+			}
+		}
+		if !known {
+			return fmt.Errorf("-witness-url names %q, which is not one of this "+
+				"network's witnesses; a typo here leaves the real witness unreachable "+
+				"and says nothing", name)
+		}
 	}
 
 	threshold := *rootThr
@@ -266,4 +321,19 @@ func (r *repeated) Set(value string) error {
 	}
 	*r = append(*r, value)
 	return nil
+}
+
+// looksLikeAKey reports whether a value was meant to be a verifier key rather
+// than a path to generate one at.
+//
+// A verifier key always contains `+`; a path an operator wants a fresh key
+// written to essentially never does. If such a value is also not a file that
+// already exists, it is a key string that failed to parse -- and generating a
+// keypair at that path would answer the wrong question.
+func looksLikeAKey(value string) bool {
+	if !strings.Contains(value, "+") {
+		return false
+	}
+	_, err := os.Stat(value)
+	return err != nil
 }
