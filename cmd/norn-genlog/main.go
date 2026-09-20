@@ -20,10 +20,15 @@ import (
 	"sort"
 
 	cosignpkg "github.com/onembyte/norn/internal/cosign"
+	"github.com/onembyte/norn/internal/entry"
+	"github.com/onembyte/norn/internal/forkevidence"
+	"github.com/onembyte/norn/internal/note"
 	"github.com/onembyte/norn/internal/proof"
 	"github.com/onembyte/norn/internal/replay"
 	"github.com/onembyte/norn/internal/state"
+	"github.com/onembyte/norn/internal/tlog"
 	"github.com/onembyte/norn/internal/tlogstore"
+	"github.com/onembyte/norn/internal/trust"
 	"time"
 )
 
@@ -136,6 +141,15 @@ func run(root string) error {
 		return err
 	}
 
+	// §12.1 owed a fork-evidence vector from Phase 4. Without one, a second
+	// implementation has nothing to check its evidence reader against -- and
+	// evidence is the artifact `GOSSIP.md` sends to witness operators and blog
+	// posts, so it is the last thing that should only ever have been produced
+	// by the implementation that reads it.
+	if err := writeForkEvidence(root, origin, key, entries, signed, store); err != nil {
+		return err
+	}
+
 	st := replay.Replay(anchor, entries)
 	bundles := filepath.Join(root, "proofs")
 	if err := os.RemoveAll(bundles); err != nil {
@@ -244,4 +258,127 @@ func loadFixture(root string) (replay.Anchor, [][]byte, string, error) {
 		return replay.Anchor{}, nil, "", fmt.Errorf("no origin in trust.toml")
 	}
 	return replay.Anchor{Net: net, GenesisHash: genesis}, entries, origin, nil
+}
+
+// writeForkEvidence builds a second branch of this network and the evidence
+// that proves the two cannot both be its log.
+//
+// The branch diverges at `forkAt` and is signed and cosigned exactly as
+// correctly as the real one -- which is the whole difficulty of a fork: every
+// signature checks out, and only holding both heads reveals it.
+func writeForkEvidence(root, origin string, key ed25519.PrivateKey,
+	entries [][]byte, heldSigned string, held *tlogstore.Store) error {
+	// A prefix is not a fork -- `forkevidence.Build` refuses one, which is the
+	// guard that stopped this vector being wrong the first time it was
+	// generated. The branch has to *diverge*: the same history up to `forkAt`,
+	// then an entry this network never carried.
+	branch := append([][]byte(nil), entries[:forkAt]...)
+	divergent, err := forkEntry(root)
+	if err != nil {
+		return err
+	}
+	branch = append(branch, divergent)
+
+	signers, err := witnessSigners(root)
+	if err != nil {
+		return err
+	}
+	forkedDir, err := os.MkdirTemp("", "norn-fork")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(forkedDir)
+
+	store, err := tlogstore.Open(forkedDir, origin, key, tlogstore.WithCosigner(
+		tlogstore.CosignerFunc(cosignpkg.Append(signers, cosignpkg.At(time.Unix(CosignedAt, 0))))))
+	if err != nil {
+		return err
+	}
+	for _, raw := range branch {
+		if _, err := store.Append(raw); err != nil {
+			return err
+		}
+	}
+	forkedSigned, err := store.SignedCheckpoint()
+	if err != nil {
+		return err
+	}
+	forkedCP, err := tlog.Verify(forkedSigned, []string{note.VerifierKey(origin,
+		key.Public().(ed25519.PublicKey))})
+	if err != nil {
+		return err
+	}
+
+	heldTree, err := tlog.Build(entries)
+	if err != nil {
+		return err
+	}
+	evidence, err := forkevidence.Build(heldTree, heldSigned, forkedSigned, forkedCP)
+	if err != nil {
+		return err
+	}
+	evidence.Policy = policyOf(root)
+
+	raw, err := evidence.Encode()
+	if err != nil {
+		return err
+	}
+	dir := filepath.Join(root, "fork")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(dir, "evidence.cbor"), raw, 0o644); err != nil {
+		return err
+	}
+	// The conflicting head on its own too, so a reader can see what the
+	// evidence is about without decoding anything.
+	return os.WriteFile(filepath.Join(dir, "conflicting.checkpoint"),
+		[]byte(forkedSigned), 0o644)
+}
+
+// forkEntry is the entry only the second branch carries: a revoke the real
+// network never issued, signed by the fixture's own signers so that every
+// signature on the forked branch checks out. That is the difficulty a fork
+// presents -- nothing about either head looks wrong on its own.
+func forkEntry(root string) ([]byte, error) {
+	raw, err := os.ReadFile(filepath.Join(root, "trust.cbor"))
+	if err != nil {
+		return nil, err
+	}
+	doc, err := trust.Parse(raw)
+	if err != nil {
+		return nil, err
+	}
+	env := &entry.Envelope{
+		V: entry.Version, T: "revoke", Net: doc.Net, TS: CosignedAt - 100,
+		Body: map[string]any{"device_id": "nas", "reason": "the fork's own idea"},
+	}
+	for _, name := range []string{"signer1", "signer2"} {
+		key, err := seedKey(root, name)
+		if err != nil {
+			return nil, err
+		}
+		if err := entry.Sign(env, key, "signer"); err != nil {
+			return nil, err
+		}
+	}
+	return entry.Encode(env)
+}
+
+// forkAt is where the fixture's second branch diverges: far enough in that the
+// two share real history, early enough that the divergence is obvious.
+const forkAt = 40
+
+// policyOf reads the generated trust file's policy, so the evidence carries
+// the same text a node would check it against.
+func policyOf(root string) string {
+	raw, err := os.ReadFile(filepath.Join(root, "trust.cbor"))
+	if err != nil {
+		return ""
+	}
+	doc, err := trust.Parse(raw)
+	if err != nil {
+		return ""
+	}
+	return doc.Policy
 }

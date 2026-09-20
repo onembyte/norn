@@ -1,6 +1,12 @@
 # Norn — Specification v0 (draft)
 
-Written **2026-09-18** (plan part 4). Status: **draft** — frozen at Phase 6.
+Written **2026-09-18** (plan part 4). Status: **v1**, frozen 2026-09-20.
+
+Frozen means: a second implementation may be written against this document and
+the vectors beside it, and neither will change under it. Everything normative
+here is vectored (§12), every cross-reference resolves, and §13 is empty. What
+changed on the way to v1 is in `BUILD-LOG.md`; the decisions behind it are in
+`DECISIONS.md`, numbered and dated.
 §12.1 lists what is vectored and what is not. It does **not** claim every MUST is vectored — several are not, and they are named there.
 
 Norn reuses these specifications verbatim; where they conflict with this document,
@@ -690,34 +696,37 @@ this table drifted out of date the moment one was.
 | §10 verifier loop, steps 1–4 | `served/` verified end to end, **signature first** | wrong anchor aborts and yields no devices; an unsigned checkpoint, one signed by another key, and one signed under another origin's name are each refused |
 | §10 step 3, the witness quorum | `served/checkpoint`, cosigned by all three witnesses | one cosignature short, none at all, cosignatures only from witnesses the policy does not name, and a forged one carrying a named witness's key id are each refused; `quorum none` accepts an uncosigned head |
 | §16 enrollment requests | `requests/`, four cases including a 64-byte `device_id` and non-ASCII labels | `requests-bad/`, 23 cases across all four layers, including **`forged-signature`** (structurally perfect, signed by another key) and `oversize-label-key` (§4.0's map-key cap) |
+| §11 fork evidence | `fork/evidence.cbor` and `fork/conflicting.checkpoint`: a second branch of this same network, diverging at entry 40, signed by the same log key and cosigned by the same witnesses. Checking it needs only `trust.cbor` | evidence for another origin is refused; so is a "fork" between a log and its own earlier self |
 | §16.2 bech32m | the text form of every request | `wrong-hrp`, `plain-bech32` (the same bytes under bech32's constant), `mixed-case`, `corrupt-character`. BIP-350's own vectors are in both implementations' unit tests |
 
-**Not vectored, and therefore not binding on a second implementation:**
+**Everything normative is vectored.** The list that stood here — §6's
+cosignatures and §11's fork evidence — is empty as of v1.
 
-| area | missing | owed by |
-|---|---|---|
-| §11 | fork evidence: two conflicting cosigned checkpoints and the expected evidence file | Phase 4 |
+Two caveats a second implementer should know, because a vector proves a format
+and not a fact about the world:
 
-`served/checkpoint` now carries three cosignatures, so §6's format *is*
-vectored — and the encoding is checked against `transparency-dev/formats`
-rather than against itself. The fixture's cosignatures come from keys the
-generator holds, so they prove the format; that an **unmodified witness** will
-produce one is proven separately, by `internal/interop` driving the real
-`transparency-dev/witness` end to end (4.4).
-
-The row above still waits because a fork proof is something a second party
-produces, and faking it here would prove nothing.
+- `served/checkpoint`'s cosignatures come from keys the generator holds. They
+  prove the **format** is right, and the encoding is checked against
+  `transparency-dev/formats` rather than against itself. That an **unmodified
+  witness** will produce one is proven separately, by `internal/interop`
+  driving the real `transparency-dev/witness` end to end.
+- `fork/evidence.cbor` is a fork this project constructed. It proves the
+  **artifact** is checkable by anybody holding `norn.trust`; it is not evidence
+  that any log has ever equivocated.
 
 ## 13. Open items
 
-- **§4.3/§5.1 `enroll` requires a device signature the device cannot produce (raised 2.9d).**
-  The entry's `ts`, `after` and body are chosen by the **signer**, and the device
-  signature must be over that envelope's preimage (§4.2). In `ENROLLMENT.md`
-  part 3 the device is headless and one-way: it prints a request and is not
-  heard from again, so it never sees the envelope. The two documents cannot
-  both be satisfied. Resolution is pending a decision; see `BUILD-LOG.md` 2.9d.
-  Only `enroll` is affected — `rotate` and self-`revoke` are built **by** the
-  device, which can therefore sign their envelopes itself.
+None. The one item this section carried — that `enroll` required a device
+signature the device could not produce — was closed by giving `enroll` a
+`request` body: the device signs its **own** request (§16.1), the signer
+embeds it verbatim, and the entry carries the device's consent without the
+device ever seeing the envelope. §4.3 and §5.1 are written that way, and
+`requests-bad/` vectors the refusals.
+
+Sections that describe something deliberately **not** in v1 say so where they
+are, rather than here: paper roots (`ENROLLMENT.md` tier 3), multi-log
+validity (D-009's O2), and policy transparency are named in `PLAN.md`'s
+stretch list.
 
 The verifier hands the enforcer an in-memory proven set and mirrors it to
 `/run/norn/proven.json` (schema in `ENFORCEMENT.md` §9). Modes, backends, the

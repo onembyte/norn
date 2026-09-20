@@ -11,7 +11,9 @@ import (
 
 	"github.com/onembyte/norn/internal/cosign"
 	"github.com/onembyte/norn/internal/note"
+	"github.com/onembyte/norn/internal/policy"
 	"github.com/onembyte/norn/internal/tlog"
+	"github.com/onembyte/norn/internal/trust"
 )
 
 // `GOSSIP.md` part 7: fork evidence "is the artifact that goes to the witness
@@ -245,4 +247,78 @@ func TestEvidenceRoundTripsThroughAFile(t *testing.T) {
 	if _, err := Check(back, origin, logVKey, witnessVKeys); err != nil {
 		t.Fatalf("evidence stopped checking out after a round trip: %v", err)
 	}
+}
+
+// The shipped vector. §12.1 owed this from Phase 4: without it a second
+// implementation has nothing to check its evidence reader against -- and
+// evidence is the artifact `GOSSIP.md` sends to witness operators and blog
+// posts, so it is the last thing that should only ever be produced by the
+// implementation that reads it.
+//
+// This checks it the way a stranger would: the committed file, the committed
+// trust document, and nothing else.
+func TestTheShippedVectorProvesAFork(t *testing.T) {
+	root := filepath.Join("..", "..", "testdata", "vectors")
+	raw, err := os.ReadFile(filepath.Join(root, "fork", "evidence.cbor"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	evidence, err := Parse(raw)
+	if err != nil {
+		t.Fatalf("the shipped evidence does not parse: %v", err)
+	}
+
+	anchor := shippedAnchor(t, root)
+	rules, err := policy.Parse(anchor.Policy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	finding, err := Check(evidence, anchor.Origin, anchor.LogKey, rules.Keys())
+	if err != nil {
+		t.Fatalf("the shipped evidence does not prove a fork: %v", err)
+	}
+	if finding.Held == finding.Claimed {
+		t.Error("the two roots are the same, so nothing is proved")
+	}
+	// The conflicting head ships beside it, so a reader can see what the
+	// evidence is about without decoding anything.
+	conflicting, err := os.ReadFile(filepath.Join(root, "fork", "conflicting.checkpoint"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(conflicting) != evidence.Conflicting {
+		t.Error("the checkpoint shipped beside the evidence is not the one in it")
+	}
+}
+
+// And it must be refused against any other network's anchor.
+func TestTheShippedVectorIsRefusedElsewhere(t *testing.T) {
+	root := filepath.Join("..", "..", "testdata", "vectors")
+	raw, err := os.ReadFile(filepath.Join(root, "fork", "evidence.cbor"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	evidence, err := Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	anchor := shippedAnchor(t, root)
+	rules, _ := policy.Parse(anchor.Policy)
+
+	if _, err := Check(evidence, "norn/somebody-else", anchor.LogKey, rules.Keys()); err == nil {
+		t.Error("the vector was accepted against another network's origin")
+	}
+}
+
+func shippedAnchor(t *testing.T, root string) *trust.Trust {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(root, "trust.cbor"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, err := trust.Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return doc
 }

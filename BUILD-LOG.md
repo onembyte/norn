@@ -430,6 +430,32 @@ which a node may do.
 | 5.7 | Phase 5 gate audit | each line against what is tested, and the demos named as the lab's | ✅ |
 | 5.8 | `norn audit --by` | what a stolen signer key did: every entry a given key signed, since a given time — `ENROLLMENT.md` R2's first step | ✅ |
 
+## Phase 6 — Spec v1 + publication
+
+Phase 6 is three gate lines and two of them need **people**: somebody outside
+this homelab running the lab and filing an issue, and somebody who has run at
+least two of Tailnet Lock, Nebula and NetBird reviewing the comparison table.
+Nothing here can manufacture either, and pretending otherwise would be the
+exact failure the cold-model gates were invented to prevent.
+
+The third — *"cold-model gate repeated on frozen spec: independent verifier
+passes all vectors"* — is a **process**, and it is the one the project has run
+three times already. It needs a reader with no memory of writing the thing,
+which is the whole point.
+
+So: freeze the spec honestly, make the vectors usable by somebody who does not
+have this repository, write what a stranger needs to decide whether Norn is for
+them, and then run the gate.
+
+| # | Checkpoint | Done when | ✔ |
+|---|---|---|---|
+| 6.1 | Freeze `SPEC.md` | every open item closed or carried on purpose, and the spec audited against what was actually built | ✅ |
+| 6.2 | The vectors stand alone | a second implementer can use `testdata/vectors/` without this repository or its Makefile | ⬜ |
+| 6.3 | README | what Norn is, who it is not for, the threat model in one screen, and the comparison table | ⬜ |
+| 6.4 | `PUBLICATION.md` | the sequence, the review targets, and what to say when somebody asks the obvious questions | ⬜ |
+| 6.5 | Cold-model gate on the frozen spec | a fresh reader implements a verifier from `SPEC.md` alone and passes every vector | ⬜ |
+| 6.6 | Phase 6 gate audit | what is true, and what needs two people | ⬜ |
+
 ## Decision taken — 2.9d: an `enroll` needs a device signature the device cannot make
 
 **Answered 2026-09-19: option C.** The loop resumed at 2.9d-i.
@@ -909,3 +935,12 @@ the signer keeps one job — decide, and place the entry in the log.
   - **Rejected entries are shown under `-all`, marked as such.** A stolen key's *attempts* matter whether or not they worked, and "it is in the log, and it changed nothing" is a different fact from "it never happened" — the log carries both, which is the whole reason it is a log.
   - **A key that signed nothing gets a plain sentence**, not an empty list. After a scare, that is the answer somebody is hoping for, and it should read like an answer rather than like a command that failed to find its input.
   - Go: 49 packages, 592 tests; `go test`, staticcheck and both halves of `vectors-check` green.
+
+- **6.1 freezing `SPEC.md` — two promises the document was still making, and one it could finally keep.**
+  - **§13 said "Resolution is pending a decision" eight checkpoints after the decision.** The `enroll` device-signature problem was settled in 4.1c — the device signs its own **request**, the signer embeds it verbatim — and §4.3, §5.1 and §16 were all rewritten that way. Only §13 never heard. A reader implementing from the frozen spec would have found a live open item pointing at a `BUILD-LOG` entry that closes it.
+  - **§12.1 still owed a fork-evidence vector "by Phase 4".** Phase 4 shipped without it, so the last thing `GOSSIP.md` sends to witness operators and blog posts was the one artifact only the implementation that reads it had ever produced. `fork/evidence.cbor` and `fork/conflicting.checkpoint` now ship: a second branch of the same network diverging at entry 40, signed by the same log key and cosigned by the same witnesses, checkable with nothing but `trust.cbor`.
+  - **The generator's first attempt was wrong, and 4.6a's guard caught it.** I built the "fork" as `entries[:40]` — a **prefix**, not a fork — and `forkevidence.Build` refused it by name: *"these two heads agree at size 40; a log and its own earlier self is not a fork"*. That guard was written precisely so a node could not make this accusation; it turns out it also stops the project shipping a vector that proves nothing.
+  - **"Not vectored" is now an empty list**, and what replaced it is two caveats rather than a silence: the fixture's cosignatures prove the *format* (an unmodified witness is proven separately, in `internal/interop`), and the fork evidence proves the *artifact is checkable* — it is not evidence that any log has ever equivocated. A vector proves a format, not a fact about the world.
+  - **A mechanical guard, so this cannot happen again.** A spec marked `Status: **v1**` may not contain `NOT YET IMPLEMENTED`, `pending a decision`, `TODO`, `TBD` or an `owed by | Phase` row. Both of the things this checkpoint found were of exactly that shape, and both had been true when written — which is what makes them invisible. The test names the line number.
+  - **Frozen is defined where a reader will look**: "a second implementation may be written against this document and the vectors beside it, and neither will change under it."
+  - Go: 49 packages, 595 tests; `go test`, staticcheck and both halves of `vectors-check` green — the Go half now covering `fork/` as well.

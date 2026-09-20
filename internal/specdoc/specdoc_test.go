@@ -3,6 +3,7 @@ package specdoc
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -137,5 +138,39 @@ func TestReferencesIntoOtherDocumentsAreIgnored(t *testing.T) {
 	}
 	if len(doc.Refs) != 1 || doc.Refs[0].Number != "1" {
 		t.Errorf("expected only the internal §1 reference, got %+v", doc.Refs)
+	}
+}
+
+// A frozen specification does not contain promises.
+//
+// Every one of these markers was true when it was written and stopped being
+// true without anybody noticing: §10 carried `NOT YET IMPLEMENTED — Phase 4`
+// for eight checkpoints after the quorum check landed, and §13's open item
+// said "pending a decision" for just as long after the decision was made. A
+// reader implementing from a frozen spec cannot tell a live caveat from a
+// stale one, so a frozen spec must not contain either.
+//
+// The exception is prose that *describes* deferral as history rather than as a
+// present state -- "closed by", "was owed" -- which reads as a record and not
+// as an instruction.
+func TestAFrozenSpecMakesNoPromises(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "SPEC.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), "Status: **v1**") {
+		t.Skip("the spec is still a draft; this guard applies once it is frozen")
+	}
+
+	for _, marker := range []string{
+		"NOT YET IMPLEMENTED", "pending a decision", "TODO", "TBD",
+		"to be decided", "owed by | Phase",
+	} {
+		if idx := strings.Index(string(raw), marker); idx >= 0 {
+			line := 1 + strings.Count(string(raw[:idx]), "\n")
+			t.Errorf("SPEC.md:%d still says %q. A frozen spec cannot carry a "+
+				"promise: a reader has no way to tell a live caveat from one that "+
+				"stopped being true.", line, marker)
+		}
 	}
 }
