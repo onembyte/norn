@@ -761,7 +761,7 @@ suite is checked only against its own author.
 | `keys.json` | every test key: Ed25519 `{seed, public, kid}` by name, X25519 public keys by name, and `net` |
 | `entries/NN-<type>.cbor` | one valid entry per type, canonical bytes |
 | `entries/NN-<type>.json` | mirror: `{entry, entry_hash, leaf_hash, preimage_sha256, size}` where `size` is the byte length of the `.cbor`. The `entry` object mirrors the **CBOR**, so an optional field absent from the entry is absent here too — unlike `state.json`, where §5.3's schema fields are always emitted |
-| `log/NN-<name>.cbor` | the replay fixture, **94 entries** in order. The file names are labels, not the order: **read the sequence from `manifest.json`**, never by globbing and sorting |
+| `log/NN-<name>.cbor` | the replay fixture, **97 entries** in order. The file names are labels, not the order: **read the sequence from `manifest.json`**, never by globbing and sorting |
 | `log/NN-<name>.reason` | beside each entry that must be rejected: its §5.2 reason code |
 | `log/manifest.json` | `{"anchor": {"net", "genesis_hash"}, "entries": [{"index", "name", "reason"}]}` — the replay input and expected outcome; `reason` is `""` for an accepted entry |
 | `state.json` | canonical replay output for `log/` (§5.3) |
@@ -806,6 +806,9 @@ this table drifted out of date the moment one was.
 | §5.1 genesis | the log's entry 0 | twelve abort paths in `genesis/`, one single-entry log each |
 | §5.1 seen set, §4.3 roles | — | `bad-repeat-of-rejected`, `bad-one-of-two-signers`, `bad-role-mismatch` |
 | §5.2 `bad-thr` | — | both halves: `bad-thr-zero` and `bad-thr` (value above the set size) |
+| §4.3 `revoke`'s three authorisations | `revoke-by-roots`, `revoke-by-device` | `bad-revoke-neither-quorum`: one signer of two and two roots of three — short on every rule independently, and a quorum only if the counts are pooled |
+| §5.1 `params` is non-empty | `params` entries in the log | `bad-params-empty` |
+| §14.1 key order above the BMP | `enroll-astral-labels`, whose labels carry one astral key and one private-use key: the only pair in the suite where UTF-8 bytewise order and UTF-16 code-unit order disagree | — |
 | §5.3 state, incl. D-028 and `expires` | `state.json`, `enroll-contractor` | `signer_remove-below-threshold` accepted, then `signer_add-recover` |
 | §5.3 evaluation time | `proven/cases.json`: the admitted set at four values of `T` — no clock, before, **exactly at**, and after the one deadline the fixture carries. `state.json` is clock-independent by design, so this is the only vector that exercises expiry | the `at-the-deadline` case, where `expires == T` and the device is **out** |
 | §7 receipt | `receipt.note` | — |
@@ -824,14 +827,9 @@ admits its holes, so:
 
 - **`quorum none` accepting an uncosigned head.** It needs a second trust
   anchor, and one is not shipped.
-- **§4.3's three independent authorisations for `revoke`.** No vector
-  distinguishes them from a single pooled quorum, because the fixture's
-  `revoke-by-roots` meets the root threshold outright.
-- **§14.1's key ordering above the basic multilingual plane.** No object key in
-  the suite is an astral character, so UTF-8 bytewise order and UTF-16
-  code-unit order agree on every file here.
-- **§5.1's non-empty `params`**, and the trust file's mandatory keys other than
-  `name` and `policy`: each stated, none refused by a shipped file.
+- **§5's `state.net` coming from the anchor rather than from the genesis
+  entry.** Unobservable: entry 0 aborts whenever the two differ, so no file can
+  tell the two readings apart. Recorded here because a reader will look.
 
 Everything else named in the table above ships, and the build fails if a path
 cited here is missing or a directory here is not named.

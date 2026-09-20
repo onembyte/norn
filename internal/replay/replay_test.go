@@ -466,3 +466,60 @@ func activeWg(t *testing.T) map[string]string {
 	}
 	return st.ActiveWg
 }
+
+// Cold-model gate run 5, defect G13. §4.3 gives `revoke` three *independent*
+// authorisations -- signer quorum, root quorum, or the device itself -- and
+// the fixture's `revoke-by-roots` met the root quorum outright, so pooling all
+// the signatures into one count gave the same answer everywhere.
+// `NORN_REVOKE_COMBINE` passed 597/597.
+func TestTheRevokeVectorSeparatesThreeQuorumsFromOne(t *testing.T) {
+	_, _, m := loadCase(t, filepath.Join(vectorRoot(), "log"))
+	const name = "bad-revoke-neither-quorum"
+
+	var found bool
+	for _, e := range m.Entries {
+		if !strings.Contains(e.Name, name) {
+			continue
+		}
+		found = true
+		if e.Reason != "threshold" {
+			t.Errorf("%s is refused %q, want threshold", e.Name, e.Reason)
+		}
+		env, err := entry.Decode(rawNamed(t, e.Name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var signers, roots int
+		for _, sig := range env.Sigs {
+			switch sig.Role {
+			case "signer":
+				signers++
+			case "root":
+				roots++
+			}
+		}
+		// Under three independent rules this is short on every one of them.
+		// Pooled into a single count it reaches the root threshold, which is
+		// the reading the suite could not previously rule out.
+		if signers == 0 || roots == 0 {
+			t.Errorf("%d signers and %d roots: the vector must carry some of each, or "+
+				"pooling them changes nothing", signers, roots)
+		}
+		if signers+roots < 3 {
+			t.Errorf("%d signatures in total; pooled they must reach a quorum, or the "+
+				"two readings still agree", signers+roots)
+		}
+	}
+	if !found {
+		t.Fatalf("the fixture has no %s entry", name)
+	}
+}
+
+func rawNamed(t *testing.T, name string) []byte {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(vectorRoot(), "log", name+".cbor"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return raw
+}

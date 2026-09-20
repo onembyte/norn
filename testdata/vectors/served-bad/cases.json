@@ -3,12 +3,12 @@
     {
       "file": "tampered-entry-bundle.bin",
       "name": "tampered-entry-bundle",
-      "path": "tile/entries/000.p/94",
+      "path": "tile/entries/000.p/97",
       "says": "one byte of one entry changed: the bundle still frames, and the tree it builds is not the one the checkpoint is signed over"
     },
     {
       "name": "missing-entry-bundle",
-      "path": "tile/entries/000.p/94",
+      "path": "tile/entries/000.p/97",
       "remove": true,
       "says": "a log that will not serve its entries cannot be replayed, and a verifier must refuse rather than report what it has"
     }

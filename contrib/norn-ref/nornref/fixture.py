@@ -20,7 +20,7 @@ DEVICES = ["nas", "laptop", "pi-cam"]
 WITNESSES = ["pi", "vps", "friend"]
 
 EXTRA_KEYS = (["signer3", "root4", "logkey", "logkey2", "spare", "printer", "nas-id2", "printer-id2", "escaped", "contractor", "halfsigned", "labelcap",
-              "rootrevoked", "stranger"]
+              "rootrevoked", "stranger", "astral"]
               + [f"witness-{w}" for w in WITNESSES])
 
 KEYS: dict[str, keys.Ed25519] = {
@@ -29,7 +29,7 @@ KEYS: dict[str, keys.Ed25519] = {
 }
 WG: dict[str, bytes] = {
     name: keys.x25519_public(name)
-    for name in DEVICES + ["laptop2", "nas2", "spare", "printer", "rogue", "escaped", "contractor", "halfsigned", "labelcap", "rootrevoked"]
+    for name in DEVICES + ["laptop2", "nas2", "spare", "printer", "rogue", "escaped", "contractor", "halfsigned", "labelcap", "rootrevoked", "astral"]
 }
 
 #: Every canonical-JSON escape rule (SPEC §14.2) in one value: the characters
@@ -581,6 +581,28 @@ def log() -> list[LogItem]:
         "rotate", {"device_id": "printer", "wg_pk": WG["nas2"]},
         [("printer", "device"), ("signer1", "signer")]), "threshold")
 
+    # §4.3 gives `revoke` three *independent* authorisations. One signer (of
+    # two) and two roots (of three) is short on every one of them, and reaches
+    # a quorum only if the three counts are pooled into one -- the reading the
+    # suite could not rule out until this entry existed.
+    b.add(f"{b.index}-bad-revoke-neither-quorum", b.build(
+        "revoke", {"device_id": "escaped", "reason": "short on every count"},
+        [("signer1", "signer"), ("root1", "root"), ("root2", "root")]), "threshold")
+
+    # §5.1's `params` rule requires a non-empty body. Stated, never refused.
+    b.add(f"{b.index}-bad-params-empty", b.build("params", {}, roots3), "decode")
+
+    # §14.1 sorts object keys bytewise over the **UTF-8** encoding. Until this
+    # entry, no key in the suite lay outside the basic multilingual plane, so
+    # UTF-16 code-unit order -- what a JavaScript implementation gets for free
+    # -- agreed everywhere. The two disagree only across U+E000: an astral
+    # character is a surrogate pair beginning 0xD800 in UTF-16, below U+E000,
+    # and begins 0xF0 in UTF-8, above it.
+    b.add(f"{b.index}-enroll-astral-labels", b.build(
+        "enroll", _enroll_body("astral", labels={"\ue000": "private use",
+                                                 "\U0001f512": "astral"}),
+        both))
+
     return b.items
 
 
@@ -723,6 +745,17 @@ def trust_rejections() -> list[tuple[str, dict[str, Any]]]:
               "url": "https://nowhere.example"}])),
         ("18-policy-names-an-unlisted-witness",
          damaged(witnesses=base["witnesses"][:2])),
+        # §9.1 marks exactly one key OPTIONAL. The rest were mandatory only by
+        # inference, and only `name` and `policy` were ever vectored missing,
+        # so an implementation treating the others as optional passed the
+        # whole suite.
+        ("19-missing-version", damaged(version=_REMOVE)),
+        ("20-missing-net", damaged(net=_REMOVE)),
+        ("21-missing-origin", damaged(origin=_REMOVE)),
+        ("22-missing-genesis-hash", damaged(genesis_hash=_REMOVE)),
+        ("23-missing-log-key", damaged(log_key=_REMOVE)),
+        ("24-missing-log-urls", damaged(log_urls=_REMOVE)),
+        ("25-missing-witnesses", damaged(witnesses=_REMOVE)),
     ]
 
 

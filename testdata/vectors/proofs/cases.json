@@ -1,6 +1,7 @@
 {
   "comment": "the served log and its proof bundles, produced by the Go implementation and validated by upstream libraries; see SPEC 12",
   "devices": [
+    "astral",
     "contractor",
     "escaped",
     "labelcap",
@@ -10,5 +11,5 @@
   ],
   "log_key": "keys.json ed25519.logkey — the key trust.cbor names",
   "origin": "norn/nzxxe3rnorsxg5domv2c2mbqge",
-  "size": 94
+  "size": 97
 }

@@ -23,7 +23,7 @@ func statusOutput(t *testing.T, args ...string) string {
 func TestStatusReportsTheNetworkAndItsPeers(t *testing.T) {
 	out := statusOutput(t)
 	for _, want := range []string{"norn-testnet", "norn/nzxx", "anchor", "checkpoint",
-		"94 entries", "peers", "proven", "revoked", "expired"} {
+		servedSize(t) + " entries", "peers", "proven", "revoked", "expired"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("status omits %q:\n%s", want, out)
 		}
