@@ -390,10 +390,16 @@ def log() -> list[LogItem]:
     b.add_raw("45-bad-missing-sigs", cbor.encode({                                      # D19
         "v": entry.VERSION, "t": "note", "net": NET, "ts": T0 + 9000, "after": 45,
         "body": {"text": "no sigs key at all"}}), "decode")
-    b.add("46-bad-rotate-no-new-key-sig", b.build(                                      # D20
+    # D20, and D-032: the *current* device key signs, so replay gets past the
+    # current-key check and reaches the proof-of-possession rule on the
+    # incoming `device_pk`, which nothing signs. Carrying no device signature
+    # at all -- as this vector did until 6.5c -- is refused three checks
+    # earlier and leaves D-032 untested, which is how gate run 5 deleted the
+    # check outright and still passed every vector.
+    b.add("46-bad-rotate-no-new-key-sig", b.build(
         "rotate", {"device_id": "printer", "wg_pk": WG["printer"],
                    "device_pk": KEYS["printer-id2"].public},
-        both), "no-device-sig")
+        [("printer", "device")] + both), "no-device-sig")
     b.add("47-bad-order-enroll", b.build(                                               # D21
         "enroll", _enroll_body("nas", wg="rogue", signer="signer1"),
         both), "no-device-sig")
@@ -1036,7 +1042,7 @@ def request_negatives() -> list[tuple[str, str, str]]:
         ("short-wg-pk", mutate(wg_pk=WG["pi-cam"][:31]), "not 32 bytes"),
         ("short-sig", mutate(sig=good["sig"][:63]), "not 64 bytes"),
         ("bool-expires", mutate(expires=True), "a CBOR bool where a uint is required"),
-        ("expires-at-ts", mutate(expires=good["ts"]), "expires must be after ts"),
+        ("expires-at-ts", _expires_at_ts(), "expires must be after ts"),
         ("too-many-labels", mutate(labels={f"k{i}": "v" for i in range(33)}), "over 32 labels"),
         ("oversize-label", mutate(labels={"ip": "x" * 257}), "label over 256 bytes"),
         ("non-string-label", mutate(labels={"ip": 1}), "label value is not text"),
@@ -1077,6 +1083,21 @@ def _as_bech32(hrp: str, payload: bytes) -> str:
     return hrp + "1" + "".join(bech32m.CHARSET[v] for v in data + checksum)
 
 
+def _expires_at_ts() -> str:
+    """`expires == ts`, re-signed so §16.1's rule is the only thing wrong.
+
+    Built by patching a valid request and signing again rather than through
+    `enrollreq.new`, which refuses the value at construction -- the reference
+    will not build an invalid request by accident, only on purpose.
+    """
+    from . import bech32m, enrollreq, keys as keymod
+    request = dict(_request("pi-cam", "pi-cam", "pi-cam", 10))
+    request["expires"] = request["ts"]
+    enrollreq.sign(request, KEYS["pi-cam"])
+    assert keymod.verify(KEYS["pi-cam"].public, enrollreq.preimage(request), request["sig"])
+    return bech32m.encode(enrollreq.HRP, enrollreq.encode(request))
+
+
 def _oversize_label_key() -> str:
     """A request whose label key is 24 bytes: one past the §4.0 cap.
 
@@ -1084,10 +1105,21 @@ def _oversize_label_key() -> str:
     this -- and the key is in `labels`, whose keys are free-form, rather than in
     a schema position where a closed-schema check would fire first.
     """
-    from . import bech32m, enrollreq
+    from . import bech32m, enrollreq, keys as keymod
     request = _request("labelcap", "labelcap", "labelcap", 10,
                        labels={"k" * 23: "at the cap"})
-    return bech32m.encode(enrollreq.HRP, _oversize_map_key(enrollreq.encode(request)))
+    # SPEC §4.0's construction rule: this patch cannot canonicalise, so the
+    # request is re-signed over the *patched* preimage. Without that the file
+    # is refused for its broken signature and the cap is never reached -- which
+    # is what cold gate run 5 found, having disabled the cap entirely and still
+    # passed every vector.
+    patched_preimage = _oversize_map_key(enrollreq.preimage(request))
+    signature = KEYS["labelcap"].sign(patched_preimage)
+    assert keymod.verify(KEYS["labelcap"].public, patched_preimage, signature)
+    patched = _oversize_map_key(enrollreq.encode(request))
+    assert request["sig"] in patched
+    patched = patched.replace(request["sig"], signature, 1)
+    return bech32m.encode(enrollreq.HRP, patched)
 
 
 def _mixed_case(text: str) -> str:

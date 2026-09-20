@@ -2,12 +2,15 @@ package replay
 
 import (
 	"bytes"
+	"crypto/ed25519"
 	"encoding/hex"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/onembyte/norn/internal/entry"
 )
 
 // Written from SPEC.md §5. The manifest is the oracle: every (index, reason)
@@ -234,6 +237,104 @@ func TestTheGatesNamedRejectionsAreAllExercised(t *testing.T) {
 		}
 		if !found {
 			t.Errorf("%s: no vector named *-%s", c.gateName, c.vectorSuffix)
+		}
+	}
+}
+
+// --- Cold-model gate run 5, defect G8 -----------------------------------
+//
+// D-032 requires a `rotate` that installs a new `device_pk` to carry a
+// signature by that incoming key: proof that whoever proposed it holds it.
+// The vector named for that rule carried no device signature at all, so it was
+// refused three checks earlier, at the *current* key. Run 5 deleted the D-032
+// check entirely and passed 597/597.
+//
+// The fixture turns `rotate_needs_signer` on at index 29, so under that
+// setting an implementation missing this check lets two signers install an
+// attacker-chosen identity key on a device with no proof the attacker holds
+// it, which is the whole of what D-032 exists to prevent.
+
+func publicKey(t *testing.T, name string) []byte {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(vectorRoot(), "keys.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var keys struct {
+		Ed25519 map[string]struct {
+			Public string `json:"public"`
+		} `json:"ed25519"`
+	}
+	if err := json.Unmarshal(raw, &keys); err != nil {
+		t.Fatal(err)
+	}
+	public, err := hex.DecodeString(keys.Ed25519[name].Public)
+	if err != nil || len(public) != ed25519.PublicKeySize {
+		t.Fatalf("keys.json has no usable %s public key", name)
+	}
+	return public
+}
+
+func deviceSignedBy(t *testing.T, env *entry.Envelope, public []byte) bool {
+	t.Helper()
+	kid := entry.Kid(public)
+	for _, sig := range env.Sigs {
+		if sig.Role != "device" || sig.Kid != kid {
+			continue
+		}
+		ok, err := entry.Verify(env, sig, public)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if ok {
+			return true
+		}
+	}
+	return false
+}
+
+func TestTheRotateVectorReachesTheProofOfPossessionRule(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join(vectorRoot(), "log", "46-bad-rotate-no-new-key-sig.cbor"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	env, err := entry.Decode(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if env.T != "rotate" {
+		t.Fatalf("entry 46 is a %q, not a rotate", env.T)
+	}
+	incoming, present := env.Body["device_pk"]
+	if !present {
+		t.Fatal("entry 46 installs no new device_pk, so it cannot test D-032 at all")
+	}
+	_ = incoming
+
+	// It must get *past* the current-key check, or it never reaches D-032.
+	if !deviceSignedBy(t, env, publicKey(t, "printer")) {
+		t.Error("entry 46 carries no valid signature by the device's current key, so it is " +
+			"refused at the current-key check and the rule it is named for is never reached")
+	}
+	// And it must fail exactly there.
+	if deviceSignedBy(t, env, publicKey(t, "printer-id2")) {
+		t.Error("entry 46 is signed by the incoming key, so it satisfies D-032 and tests nothing")
+	}
+}
+
+// The control: the positive rotate carries both, which is what D-032 asks for.
+func TestTheAcceptedRotateCarriesBothDeviceSignatures(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join(vectorRoot(), "log", "40-rotate-device-key-only.cbor"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	env, err := entry.Decode(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"nas", "nas-id2"} {
+		if !deviceSignedBy(t, env, publicKey(t, name)) {
+			t.Errorf("the accepted rotate is not signed by %s", name)
 		}
 	}
 }
