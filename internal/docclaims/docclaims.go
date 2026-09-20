@@ -1,11 +1,13 @@
-// Package readmedoc checks the factual claims in README.md against the
-// repository those claims describe.
+// Package docclaims checks the claims this project's own prose makes about
+// itself against the repository those claims describe.
 //
-// A specification is checked by its vectors and a plan by its gates. The
-// README had nothing checking it, and so it went on saying "planning complete,
-// not yet code" through six phases of work. The claims worth making about a
-// project are countable ones; countable claims can be verified on every build.
-package readmedoc
+// A specification is checked by its vectors and a plan by its gates. README.md
+// had nothing checking it, and so it went on saying "planning complete, not
+// yet code" through six phases of work. PUBLICATION.md sent reviewers to a
+// path that was never created and told them to run a make target that does not
+// exist. The claims worth making about a project are checkable ones, and
+// checkable claims can be verified on every build.
+package docclaims
 
 import (
 	"fmt"

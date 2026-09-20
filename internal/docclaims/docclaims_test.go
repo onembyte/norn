@@ -1,4 +1,4 @@
-package readmedoc
+package docclaims
 
 import (
 	"os"
