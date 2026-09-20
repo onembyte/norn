@@ -33,12 +33,13 @@ func main() {
 type command func(args []string) error
 
 var commands = map[string]command{
-	"enroll": enrollCmd,
-	"init":   initCmd,
-	"sign":   signCmd,
-	"status": statusCmd,
-	"submit": submitCmd,
-	"verify": verifyCmd,
+	"enroll":          enrollCmd,
+	"init":            initCmd,
+	"sign":            signCmd,
+	"status":          statusCmd,
+	"submit":          submitCmd,
+	"verify":          verifyCmd,
+	"verify-evidence": verifyEvidenceCmd,
 }
 
 func usage() {
@@ -51,6 +52,9 @@ commands:
   status   what this node can prove about the network right now
   submit   send a signed entry to the log and keep its receipt
   verify   fetch a log, check it against a trust anchor, and report its state
+
+  verify-evidence
+           check a fork evidence file offline, against a trust anchor alone
 
 Run "norn <command> -h" for a command's flags.
 `)

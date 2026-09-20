@@ -397,7 +397,8 @@ unknown until something cosigns. It closes **2.6b** too — an unmodified
 | 4.5c | §10 against the stored head | a checkpoint must be **no smaller** than the one held, and must contain it — the step gossip makes reachable by anyone | ✅ |
 | 4.5d | The gossip client | pull from `r` random **proven** peers and adopt a better checkpoint — trust is identical because the verification is the same code | ✅ |
 | 4.5e | Degraded polls harder | every source every 10 s while degraded (deferred from 4.2d, where there was only one source) | ✅ |
-| 4.6 | Fork detection and evidence | a consistency-proof failure freezes the node, alarms, and writes evidence a third party can check | ⬜ |
+| 4.6a | Fork evidence | the artifact and `norn verify-evidence`: two signed heads and a proof binding them, checkable offline by anyone holding `norn.trust` | ✅ |
+| 4.6b | A forked node freezes | §11's four duties, including the one that outlives a restart: refuse every inconsistent checkpoint **forever**, until an operator resets | ⬜ |
 | 4.7 | OpenTimestamps anchoring | `anchors/<size>.ots` and `norn verify --anchored`, advisory by D-009 | ⬜ |
 | 4.8 | Phase 4 gate audit | each line against what is actually tested, and what the lab still owes | ⬜ |
 
@@ -742,3 +743,12 @@ the signer keeps one job — decide, and place the entry in the log.
   - **A node that has not run a cycle reports `unknown`, not `fresh`.** The daemon reads the state to decide how hard to try, and starting out claiming to be fine is the wrong default for the one moment a node knows least.
   - **Phase 4's gossip work is now complete** — hold (4.5a), serve (4.5b), the rollback check that made it safe (4.5c), pull (4.5d), and try harder when stale (4.5e).
   - Go: 46 packages, 496 tests; `go test`, staticcheck and both halves of `vectors-check` green.
+- **4.6a fork evidence — written for a sceptical stranger, not for the node that produced it.**
+  - **`GOSSIP.md` says where this file goes**: "the witness operators, the log operator's boss, or a blog post". So the bar is not that the accusing node is convinced. It is that somebody holding only `norn.trust` — no running network, no reason to trust whoever is complaining — can check it offline and see for themselves. Every design decision here follows from that one sentence.
+  - **Two signed heads are not evidence.** At *different* sizes, different roots are exactly what a healthy log produces. What makes it a fork is a consistency proof showing the larger head's own tree had a **different root at the smaller head's size** than the smaller head claims — and because that proof chains to a head the log signed, the complainant cannot fabricate it. At equal sizes no proof is needed: the two signatures say it alone.
+  - **The quorum is checked on *both* heads, and that is the point of the artifact.** A log signing two things by itself is a log misbehaving in private; what makes a fork provable to a third party is that **independent witnesses vouched for both**. So the file carries the policy, and a reader sees which witnesses were meant to prevent this — because they are who they go to next.
+  - **A node cannot accuse a log of forking with its own earlier self.** `Build` refuses two consistent heads, which is the mistake an over-eager detector would make and the one that would destroy the artifact's credibility the first time somebody checked it.
+  - **Four fabrications are tested, each of which a weaker check would pass**: a head signed by another key, a head no quorum cosigned, a made-up consistency proof, and evidence held up against another network's anchor.
+  - **`norn verify-evidence` reports "does not prove a fork" as an outcome, not only as a failure.** For a reader checking somebody else's accusation, that is the *important* direction — and a command that could only say "error" would leave them unable to tell a bad file from a bad log.
+  - **`Build` takes the conflicting head already parsed**, the same discipline as `mirror.Write`: the node reaching this point got it through the verifier, and re-parsing it here would be this package deciding, with no keys, what it is looking at.
+  - Go: 47 packages, 504 tests; `go test`, staticcheck and both halves of `vectors-check` green.
