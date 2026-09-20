@@ -31,6 +31,7 @@ import (
 	"github.com/onembyte/norn/internal/tlog"
 	"github.com/onembyte/norn/internal/tlogstore"
 	"github.com/onembyte/norn/internal/trust"
+	upstream "golang.org/x/mod/sumdb/tlog"
 	"time"
 )
 
@@ -211,8 +212,172 @@ func run(root string) error {
 	if err := os.WriteFile(filepath.Join(bundles, "cases.json"), append(blob, '\n'), 0o644); err != nil {
 		return err
 	}
+	// §12.1 named four proof refusals and two served-log refusals and shipped
+	// none of them (G7). They are the same kind of gap as the note layer's:
+	// checked by this project's own tests, and invisible to anybody who
+	// receives only the suite.
+	first := ids[0]
+	firstIndex := int64(st.Devices[first].SinceIndex)
+	firstProof, err := store.InclusionProof(firstIndex)
+	if err != nil {
+		return err
+	}
+	if err := writeBadProofs(root, origin, key, entries, signed, signers,
+		first, firstIndex, firstProof); err != nil {
+		return err
+	}
+	if err := writeBadServed(root, served, store.Size()); err != nil {
+		return err
+	}
+
 	fmt.Printf("served %d entries to %s, %d proof bundles\n", store.Size(), served, len(ids))
 	return nil
+}
+
+// writeBadProofs ships §8's four refusals. Each differs from a valid bundle in
+// exactly one thing, so a verifier that skips one check accepts one file.
+func writeBadProofs(root, origin string, key ed25519.PrivateKey, entries [][]byte,
+	signed string, signers []cosignpkg.Signer, device string, index int64,
+	inclusion upstream.RecordProof) error {
+
+	dir := filepath.Join(root, "proofs-bad")
+	if err := os.RemoveAll(dir); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+
+	write := func(name string, b *proof.Bundle) error {
+		raw, err := b.Encode()
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(filepath.Join(dir, name+".bundle"), raw, 0o644)
+	}
+
+	// 1. The proof is for this index; the entry is a different one.
+	other := int64(0)
+	if index == 0 {
+		other = 1
+	}
+	wrongEntry, err := proof.Build(device, index, entries[other], inclusion, signed)
+	if err != nil {
+		return err
+	}
+	if err := write("wrong-entry", wrongEntry); err != nil {
+		return err
+	}
+
+	// 2. A checkpoint from another network: valid, and about a different log.
+	elsewhere, err := signedHeadOver(root, "norn/elsewhere", key, entries, signers)
+	if err != nil {
+		return err
+	}
+	foreign, err := proof.Build(device, index, entries[index], inclusion, elsewhere)
+	if err != nil {
+		return err
+	}
+	if err := write("foreign-checkpoint", foreign); err != nil {
+		return err
+	}
+
+	// 3. One hash of the inclusion path altered. Everything else is right,
+	// which is the only construction that separates checking the path from
+	// carrying it.
+	tampered := append(upstream.RecordProof(nil), inclusion...)
+	if len(tampered) == 0 {
+		return fmt.Errorf("the first device's inclusion proof is empty; pick another")
+	}
+	tampered[0][0] ^= 0x01
+	tamperedBundle, err := proof.Build(device, index, entries[index], tampered, signed)
+	if err != nil {
+		return err
+	}
+	if err := write("tampered-proof", tamperedBundle); err != nil {
+		return err
+	}
+
+	// 4. The right tree, signed by a key the anchor does not name.
+	stranger, err := seedKey(root, "stranger")
+	if err != nil {
+		return err
+	}
+	strangerHead, err := signedHeadOver(root, origin, stranger, entries, signers)
+	if err != nil {
+		return err
+	}
+	wrongKey, err := proof.Build(device, index, entries[index], inclusion, strangerHead)
+	if err != nil {
+		return err
+	}
+	if err := write("wrong-log-key", wrongKey); err != nil {
+		return err
+	}
+
+	meta := map[string]any{
+		"log_key": note.VerifierKey(origin, key.Public().(ed25519.PublicKey)),
+		"cases": []map[string]string{
+			{"name": "wrong-entry", "says": "inclusion proof"},
+			{"name": "foreign-checkpoint", "says": "no valid signature from a trusted key"},
+			{"name": "tampered-proof", "says": "inclusion proof"},
+			{"name": "wrong-log-key", "says": "no valid signature from a trusted key"},
+		},
+		"comment": "bundles that MUST be refused under the log key above. Each differs " +
+			"from a valid bundle in exactly one thing, so a verifier that skips one " +
+			"check accepts exactly one of them",
+	}
+	blob, err := json.MarshalIndent(meta, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, "cases.json"), append(blob, '\n'), 0o644)
+}
+
+// writeBadServed ships §6's two refusals. A served log is a directory rather
+// than a file, so the case says which path to replace or remove.
+func writeBadServed(root, served string, size int64) error {
+	dir := filepath.Join(root, "served-bad")
+	if err := os.RemoveAll(dir); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+
+	bundlePath := tlog.EntryBundlePath(0, int(size%tlog.TileWidth))
+	honest, err := os.ReadFile(filepath.Join(served, filepath.FromSlash(bundlePath)))
+	if err != nil {
+		return err
+	}
+	// One byte inside an entry, so the bundle still frames correctly and only
+	// the leaf hash it produces is wrong.
+	tampered := append([]byte(nil), honest...)
+	tampered[len(tampered)-1] ^= 0x01
+	if err := os.WriteFile(filepath.Join(dir, "tampered-entry-bundle.bin"),
+		tampered, 0o644); err != nil {
+		return err
+	}
+
+	meta := map[string]any{
+		"cases": []map[string]any{
+			{"name": "tampered-entry-bundle", "path": bundlePath,
+				"file": "tampered-entry-bundle.bin",
+				"says": "one byte of one entry changed: the bundle still frames, and the " +
+					"tree it builds is not the one the checkpoint is signed over"},
+			{"name": "missing-entry-bundle", "path": bundlePath, "remove": true,
+				"says": "a log that will not serve its entries cannot be replayed, and a " +
+					"verifier must refuse rather than report what it has"},
+		},
+		"comment": "a served log is a directory, so each case names the path to replace " +
+			"with `file` or to delete with `remove`, over an otherwise honest copy of " +
+			"`served/`. Every one MUST be refused",
+	}
+	blob, err := json.MarshalIndent(meta, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, "cases.json"), append(blob, '\n'), 0o644)
 }
 
 func loadFixture(root string) (replay.Anchor, [][]byte, string, error) {

@@ -1,0 +1,22 @@
+{
+  "cases": [
+    {
+      "name": "wrong-entry",
+      "says": "inclusion proof"
+    },
+    {
+      "name": "foreign-checkpoint",
+      "says": "no valid signature from a trusted key"
+    },
+    {
+      "name": "tampered-proof",
+      "says": "inclusion proof"
+    },
+    {
+      "name": "wrong-log-key",
+      "says": "no valid signature from a trusted key"
+    }
+  ],
+  "comment": "bundles that MUST be refused under the log key above. Each differs from a valid bundle in exactly one thing, so a verifier that skips one check accepts exactly one of them",
+  "log_key": "norn/nzxxe3rnorsxg5domv2c2mbqge+bea4a666+AV6v97lmGyW99eHglI8syFAU2uY+/HuHHq0VYz9Rmio1"
+}

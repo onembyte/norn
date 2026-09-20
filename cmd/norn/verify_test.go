@@ -273,3 +273,54 @@ func servedSize(t *testing.T) string {
 	}
 	return lines[1]
 }
+
+// §12.1 named "tampered bundle, missing bundle" for §6 and shipped neither.
+// A served directory is not one file, so `served-bad/` ships the replacement
+// bytes and says which path to put them at -- or to remove.
+
+func TestEveryServedNegativeIsRefused(t *testing.T) {
+	dir := filepath.Join(vectors(), "served-bad")
+	raw, err := os.ReadFile(filepath.Join(dir, "cases.json"))
+	if err != nil {
+		t.Fatalf("the served negatives are missing: %v", err)
+	}
+	var doc struct {
+		Cases []struct {
+			Name, Path, File string
+			Remove           bool
+		} `json:"cases"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	if len(doc.Cases) < 2 {
+		t.Fatalf("%d served negatives; §12.1 names a tampered and a missing bundle", len(doc.Cases))
+	}
+	bin := nornBinary(t)
+
+	for _, c := range doc.Cases {
+		t.Run(c.Name, func(t *testing.T) {
+			log := anchoredLog(t)
+			target := filepath.Join(log, filepath.FromSlash(c.Path))
+			if c.Remove {
+				if err := os.Remove(target); err != nil {
+					t.Fatalf("the case removes %s, which the honest log does not serve: %v",
+						c.Path, err)
+				}
+			} else {
+				body, err := os.ReadFile(filepath.Join(dir, c.File))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(target, body, 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			out, err := exec.Command(bin, "verify",
+				"-trust", filepath.Join(vectors(), "trust.cbor"), "-log", log).CombinedOutput()
+			if err == nil {
+				t.Fatalf("accepted a log serving %s:\n%s", c.Name, out)
+			}
+		})
+	}
+}

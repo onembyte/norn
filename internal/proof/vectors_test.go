@@ -1,6 +1,7 @@
 package proof
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -86,5 +87,50 @@ func TestTheBundleClaimsNoDomainItDoesNotCarry(t *testing.T) {
 		t.Error("§8.1 names a domain `norn/proof/v1` that appears in no field, covers " +
 			"no signature, and is emitted by nothing: an implementer cannot tell " +
 			"whether they must produce it")
+	}
+}
+
+// §12.1 named four proof-bundle refusals -- wrong entry, foreign checkpoint,
+// tampered proof, wrong log key -- and shipped none of them. Run 5 built two
+// itself to check its work, which is the reader doing the suite's job.
+
+func TestEveryProofNegativeIsRefused(t *testing.T) {
+	dir := filepath.Join("..", "..", "testdata", "vectors", "proofs-bad")
+	raw, err := os.ReadFile(filepath.Join(dir, "cases.json"))
+	if err != nil {
+		t.Fatalf("the proof negatives are missing: %v", err)
+	}
+	var doc struct {
+		LogKey string                        `json:"log_key"`
+		Cases  []struct{ Name, Says string } `json:"cases"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	if len(doc.Cases) < 4 {
+		t.Fatalf("%d proof negatives; §12.1 names four", len(doc.Cases))
+	}
+
+	for _, c := range doc.Cases {
+		t.Run(c.Name, func(t *testing.T) {
+			body, err := os.ReadFile(filepath.Join(dir, c.Name+".bundle"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			bundle, err := Decode(body)
+			if err != nil {
+				if !strings.Contains(err.Error(), c.Says) {
+					t.Errorf("refused for the wrong reason.\n  got:  %v\n  want: %s", err, c.Says)
+				}
+				return
+			}
+			err = bundle.Check([]string{doc.LogKey})
+			if err == nil {
+				t.Fatal("accepted a bundle that proves nothing about this log")
+			}
+			if !strings.Contains(err.Error(), c.Says) {
+				t.Errorf("refused for the wrong reason.\n  got:  %v\n  want: %s", err, c.Says)
+			}
+		})
 	}
 }

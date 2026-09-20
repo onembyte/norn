@@ -42,6 +42,8 @@ of having it.
 | `served/` | the log as a static site: `checkpoint`, entry bundles and hash tiles |
 | `checkpoints-bad/` | nine checkpoints that MUST be refused, each served in place of `served/checkpoint` over the honest tiles. `cases.json` says what each one is. **Start here if you are checking your verifier**: `04` and `08` are the only files in the suite that a verifier which never checks a note or cosignature signature will accept |
 | `proofs/` | one self-contained proof bundle per proven device (§8) |
+| `proofs-bad/` | four bundles that MUST be refused (§8): a wrong entry, a foreign checkpoint, a tampered proof and a checkpoint signed by a key the anchor does not name. `cases.json` gives the log key and what each refusal must be about |
+| `served-bad/` | §6's two refusals. A served log is a directory, so each case names the path to replace with `file` or delete with `remove`, over an otherwise honest copy of `served/` |
 | `fork/` | `evidence.cbor` and `conflicting.checkpoint`: a second branch of this same network, proving the evidence format (§11.1) is checkable by anybody holding `trust.cbor` — plus `bad-consistent` and `bad-other-origin`, which must be **refused**. `cases.json` says what each refusal must be about |
 | `anchors/` | OpenTimestamps proofs, and a calendar's reply, written by `python-opentimestamps` |
 
