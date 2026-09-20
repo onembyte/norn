@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -10,6 +11,7 @@ import (
 	"github.com/onembyte/norn/internal/peertable"
 	"github.com/onembyte/norn/internal/proven"
 	"github.com/onembyte/norn/internal/reconcile"
+	"github.com/onembyte/norn/internal/replay"
 )
 
 // `GOSSIP.md` part 5 gives each freshness state a behaviour, and a state with
@@ -224,5 +226,63 @@ func TestWithoutSHardANodeNeverGoesHardStale(t *testing.T) {
 	}
 	if got := rec.kinds()[HardStale]; got != 0 {
 		t.Errorf("%s fired with S_hard off", HardStale)
+	}
+}
+
+// A node keeps what it verified, so it has something to serve its peers
+// (GOSSIP part 6, full replication). The test that matters is not "files
+// appeared" but that what it wrote verifies on its own -- with the log gone.
+func TestANodeMirrorsTheLogItVerified(t *testing.T) {
+	dir, _, _ := writableLog(t)
+	runDir := t.TempDir()
+	rec := &recorder{}
+	a, err := New(Config{
+		Anchor: anchor(t), Fetcher: logclient.Dir(dir), Device: peertable.NewFake(),
+		Mode: reconcile.Observe, RunDir: runDir, Emit: rec.emit,
+		Now:  func() time.Time { return time.Unix(fixtureCosignedAt, 0) },
+		Mono: func() time.Duration { return 0 },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Once(); err != nil {
+		t.Fatal(err)
+	}
+
+	// Verified straight out of the node's own directory, with nothing running.
+	doc := anchor(t)
+	result, err := logclient.Verify(logclient.Dir(filepath.Join(runDir, proven.MirrorDir)),
+		logclient.Anchor{
+			Anchor:  replay.Anchor{Net: doc.Net, GenesisHash: doc.GenesisHash},
+			LogKeys: []string{doc.LogKey}, Policy: doc.Policy,
+		})
+	if err != nil {
+		t.Fatalf("what the node kept does not verify on its own: %v", err)
+	}
+	if result.Checkpoint.Size == 0 {
+		t.Error("the mirror is empty")
+	}
+}
+
+// Observe mode writes nothing to the interface, but it still mirrors: a node
+// that only watched is exactly the node you want serving the mesh, because it
+// is the one nobody is worried about.
+func TestObserveModeStillMirrors(t *testing.T) {
+	dir, _, _ := writableLog(t)
+	runDir := t.TempDir()
+	a, err := New(Config{
+		Anchor: anchor(t), Fetcher: logclient.Dir(dir), Device: peertable.NewFake(),
+		Mode: reconcile.Observe, RunDir: runDir, Emit: (&recorder{}).emit,
+		Now:  func() time.Time { return time.Unix(fixtureCosignedAt, 0) },
+		Mono: func() time.Duration { return 0 },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Once(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(runDir, proven.MirrorDir, "checkpoint")); err != nil {
+		t.Errorf("observe mode kept nothing to serve: %v", err)
 	}
 }

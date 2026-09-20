@@ -16,12 +16,14 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"time"
 
 	"github.com/onembyte/norn/internal/endpoint"
 	"github.com/onembyte/norn/internal/fight"
 	"github.com/onembyte/norn/internal/freshness"
 	"github.com/onembyte/norn/internal/logclient"
+	"github.com/onembyte/norn/internal/mirror"
 	"github.com/onembyte/norn/internal/peertable"
 	"github.com/onembyte/norn/internal/proven"
 	"github.com/onembyte/norn/internal/reconcile"
@@ -51,6 +53,9 @@ const (
 	// This is a deliberate outage: past that age this node would rather be
 	// disconnected than enforce a view nobody has vouched for since.
 	HardStale = "HARD_STALE"
+	// MirrorFailed: this node could not keep a copy of the log it verified, so
+	// it has nothing to serve its peers. Nothing it enforces is affected.
+	MirrorFailed = "MIRROR_FAILED"
 )
 
 // DefaultDegradedAlarmEvery is GOSSIP part 5's "alarm every 5 min".
@@ -257,6 +262,16 @@ func (a *Agent) Once() error {
 		}
 		if err := proven.Write(a.cfg.RunDir, set, result); err != nil {
 			return err
+		}
+		// Keep what was verified, so this node can serve it to peers rather
+		// than only vouch for it (GOSSIP part 6). Every mode does this,
+		// including observe: a node that only watches is exactly the one you
+		// want serving the mesh, because it is the one nobody is worried
+		// about. A failure here is worth reporting and not worth stopping a
+		// cycle for -- enforcement does not depend on it.
+		if err := mirror.Write(filepath.Join(a.cfg.RunDir, proven.MirrorDir),
+			result.Checkpoint, result.SignedCheckpoint, result.Served); err != nil {
+			a.emit(Event{Kind: MirrorFailed, Message: err.Error()})
 		}
 	}
 	return verifyErr

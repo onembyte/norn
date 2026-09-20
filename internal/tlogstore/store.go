@@ -15,7 +15,6 @@ package tlogstore
 
 import (
 	"crypto/ed25519"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"os"
@@ -177,7 +176,7 @@ func (s *Store) readBundle(index int64) ([][]byte, error) {
 
 	raw, err := os.ReadFile(base)
 	if err == nil {
-		return decodeBundle(raw)
+		return tlog.DecodeBundle(raw)
 	}
 	if !os.IsNotExist(err) {
 		return nil, err
@@ -192,37 +191,10 @@ func (s *Store) readBundle(index int64) ([][]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return decodeBundle(raw)
+	return tlog.DecodeBundle(raw)
 }
 
 // Bundles are sequences of big-endian uint16 length-prefixed entries (§6).
-func encodeBundle(entries [][]byte) []byte {
-	var out []byte
-	for _, raw := range entries {
-		var header [2]byte
-		binary.BigEndian.PutUint16(header[:], uint16(len(raw)))
-		out = append(out, header[:]...)
-		out = append(out, raw...)
-	}
-	return out
-}
-
-func decodeBundle(raw []byte) ([][]byte, error) {
-	var out [][]byte
-	for len(raw) > 0 {
-		if len(raw) < 2 {
-			return nil, storeErrorf("truncated entry bundle")
-		}
-		n := int(binary.BigEndian.Uint16(raw[:2]))
-		if len(raw) < 2+n {
-			return nil, storeErrorf("entry bundle claims %d bytes but has %d", n, len(raw)-2)
-		}
-		out = append(out, raw[2:2+n])
-		raw = raw[2+n:]
-	}
-	return out, nil
-}
-
 // Size is the number of entries in the log.
 func (s *Store) Size() int64 { return s.tree.Size() }
 
@@ -243,7 +215,7 @@ func (s *Store) Append(raw []byte) (int64, error) {
 
 	bundleIndex := index / tlog.TileWidth
 	if err := s.writeFile(tlog.EntryBundlePath(bundleIndex, len(s.bundle)),
-		encodeBundle(s.bundle)); err != nil {
+		tlog.EncodeBundle(s.bundle)); err != nil {
 		return 0, err
 	}
 	if len(s.bundle) == tlog.TileWidth {

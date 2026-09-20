@@ -11,7 +11,6 @@ package logclient
 import (
 	"bytes"
 	"crypto/sha256"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"os"
@@ -175,7 +174,7 @@ func fetchEntries(f Fetcher, size int64) ([][]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		entries, err := decodeBundle(raw)
+		entries, err := tlog.DecodeBundle(raw)
 		if err != nil {
 			return nil, err
 		}
@@ -201,22 +200,6 @@ func fetchBundle(f Fetcher, index int64, width int) ([]byte, error) {
 		return nil, logErrorf("fetching entry bundle %d: %v", index, err)
 	}
 	return raw, nil
-}
-
-func decodeBundle(raw []byte) ([][]byte, error) {
-	var out [][]byte
-	for len(raw) > 0 {
-		if len(raw) < 2 {
-			return nil, logErrorf("truncated entry bundle")
-		}
-		n := int(binary.BigEndian.Uint16(raw[:2]))
-		if len(raw) < 2+n {
-			return nil, logErrorf("entry bundle claims %d bytes but has %d", n, len(raw)-2)
-		}
-		out = append(out, raw[2:2+n])
-		raw = raw[2+n:]
-	}
-	return out, nil
 }
 
 // checkTiles requires every hash tile the tree implies to be served, and to be

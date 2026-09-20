@@ -50,6 +50,10 @@ const FileName = "proven.json"
 // ProofDir holds one self-contained bundle per proven device.
 const ProofDir = "proofs"
 
+// MirrorDir holds this node's copy of the log it verified, in `tlog-tiles`
+// layout -- what it serves to peers (GOSSIP part 6, full replication).
+const MirrorDir = "mirror"
+
 // Checkpoint is the head this view came from.
 type Checkpoint struct {
 	Origin string `json:"origin"`
