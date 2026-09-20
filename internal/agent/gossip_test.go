@@ -11,6 +11,7 @@ import (
 
 	"github.com/onembyte/norn/internal/cosign"
 	"github.com/onembyte/norn/internal/endpoint"
+	"github.com/onembyte/norn/internal/freshness"
 	"github.com/onembyte/norn/internal/gossip"
 	"github.com/onembyte/norn/internal/logclient"
 	"github.com/onembyte/norn/internal/peertable"
@@ -245,4 +246,129 @@ func prefixes(t *testing.T, texts ...string) []netip.Prefix {
 		out = append(out, prefix)
 	}
 	return out
+}
+
+// `GOSSIP.md` part 5: a degraded node polls **all sources** every 10 s.
+//
+// The part that matters is not the number, it is "all sources". A node whose
+// log is answering perfectly well with something *old* is exactly the node
+// that needs to ask its peers -- the log is up and stuck, which is what T2
+// describes, and only a peer can tell it so. Asking peers only when the log is
+// unreachable would leave the whole mesh stale behind a log that never stopped
+// answering.
+func TestADegradedNodeAsksItsPeersEvenWhenTheLogAnswers(t *testing.T) {
+	full, _, entries := writableLog(t)
+	stuck := shorterLog(t, entries[:45])
+	peerURL, asked := peerServing(t, full)
+
+	var mono time.Duration
+	rec := &recorder{}
+	a, err := New(Config{
+		Anchor: anchor(t), Fetcher: logclient.Dir(stuck), Device: peertable.NewFake(),
+		Mode: reconcile.Owner, Emit: rec.emit,
+		Now:   func() time.Time { return time.Unix(fixtureCosignedAt, 0).Add(mono) },
+		Mono:  func() time.Duration { return mono },
+		Peers: func() []string { return []string{peerURL} },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Once(); err != nil {
+		t.Fatal(err)
+	}
+	if a.last.Checkpoint.Size != 45 {
+		t.Fatalf("size = %d, want the stuck log's 45", a.last.Checkpoint.Size)
+	}
+	if asked() != 0 {
+		t.Error("peers were asked while the view was fresh")
+	}
+
+	// Time passes and nothing new is cosigned: the view goes stale even though
+	// the log is answering every request.
+	mono = 20 * time.Minute
+	if err := a.Once(); err != nil {
+		t.Fatal(err)
+	}
+
+	if asked() == 0 {
+		t.Fatal("a degraded node did not ask its peers; the mesh would stay stale " +
+			"behind a log that never stopped answering")
+	}
+	if a.last.Checkpoint.Size != 90 {
+		t.Errorf("size = %d, want the peer's 90", a.last.Checkpoint.Size)
+	}
+	if rec.kinds()[AdoptedFromPeer] == 0 {
+		t.Error("adopting from a peer should be said out loud")
+	}
+}
+
+// And a peer with nothing newer changes nothing: a degraded node that took a
+// peer's equal-size checkpoint would churn its peer table for no reason.
+func TestADegradedNodeIgnoresAPeerWithNothingNewer(t *testing.T) {
+	full, _, _ := writableLog(t)
+	peerURL, asked := peerServing(t, full)
+
+	var mono time.Duration
+	rec := &recorder{}
+	a, err := New(Config{
+		Anchor: anchor(t), Fetcher: logclient.Dir(full), Device: peertable.NewFake(),
+		Mode: reconcile.Owner, Emit: rec.emit,
+		Now:   func() time.Time { return time.Unix(fixtureCosignedAt, 0).Add(mono) },
+		Mono:  func() time.Duration { return mono },
+		Peers: func() []string { return []string{peerURL} },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Once(); err != nil {
+		t.Fatal(err)
+	}
+	mono = 20 * time.Minute
+	if err := a.Once(); err != nil {
+		t.Fatal(err)
+	}
+
+	if asked() == 0 {
+		t.Error("a degraded node should still ask")
+	}
+	if rec.kinds()[AdoptedFromPeer] != 0 {
+		t.Error("a peer with the same head is not an adoption")
+	}
+}
+
+// A daemon needs to know when to try harder, and a node that only reported
+// freshness in a file nobody was watching would carry on at its leisurely poll
+// through an outage.
+func TestFreshnessIsReadableByTheDaemon(t *testing.T) {
+	full, _, _ := writableLog(t)
+	var mono time.Duration
+	a, err := New(Config{
+		Anchor: anchor(t), Fetcher: logclient.Dir(full), Device: peertable.NewFake(),
+		Mode: reconcile.Observe, Emit: (&recorder{}).emit,
+		Now:  func() time.Time { return time.Unix(fixtureCosignedAt, 0).Add(mono) },
+		Mono: func() time.Duration { return mono },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Before the first cycle a node knows nothing, and says so rather than
+	// claiming to be fresh.
+	if got := a.Freshness(); got != freshness.Unknown {
+		t.Errorf("freshness before the first cycle = %q, want %q", got, freshness.Unknown)
+	}
+
+	if err := a.Once(); err != nil {
+		t.Fatal(err)
+	}
+	if got := a.Freshness(); got != freshness.Fresh {
+		t.Errorf("freshness = %q, want %q", got, freshness.Fresh)
+	}
+
+	mono = 20 * time.Minute
+	if err := a.Once(); err != nil {
+		t.Fatal(err)
+	}
+	if got := a.Freshness(); got != freshness.Degraded {
+		t.Errorf("freshness = %q, want %q", got, freshness.Degraded)
+	}
 }

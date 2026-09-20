@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/onembyte/norn/internal/reconcile"
+
+	"github.com/onembyte/norn/internal/freshness"
 )
 
 func write(t *testing.T, body string) string {
@@ -267,6 +269,28 @@ func TestParseMaxSkew(t *testing.T) {
 	for _, bad := range []string{"nope", "-5m"} {
 		if _, err := ParseMaxSkew(bad); err == nil {
 			t.Errorf("%q was accepted as Δclock", bad)
+		}
+	}
+}
+
+// A stale node tries harder -- but only ever harder. A node already polling
+// four times a second must not be slowed to once every ten because its view
+// went stale, which is what a naive "degraded means 10s" would do.
+func TestDegradedPollingOnlySpeedsUp(t *testing.T) {
+	for _, tc := range []struct {
+		interval time.Duration
+		state    string
+		want     time.Duration
+	}{
+		{200 * time.Millisecond, freshness.Fresh, 200 * time.Millisecond},
+		{200 * time.Millisecond, freshness.Degraded, 200 * time.Millisecond},
+		{5 * time.Minute, freshness.Fresh, 5 * time.Minute},
+		{5 * time.Minute, freshness.Degraded, DegradedPoll},
+		{5 * time.Minute, freshness.HardStale, DegradedPoll},
+		{5 * time.Minute, freshness.Unknown, 5 * time.Minute},
+	} {
+		if got := nextPoll(tc.interval, tc.state); got != tc.want {
+			t.Errorf("nextPoll(%s, %s) = %s, want %s", tc.interval, tc.state, got, tc.want)
 		}
 	}
 }

@@ -23,6 +23,7 @@ import (
 
 	"github.com/onembyte/norn/internal/agent"
 	"github.com/onembyte/norn/internal/endpoint"
+	"github.com/onembyte/norn/internal/freshness"
 	"github.com/onembyte/norn/internal/gossip"
 	"github.com/onembyte/norn/internal/logclient"
 	"github.com/onembyte/norn/internal/proven"
@@ -247,9 +248,6 @@ func providerFor(config Config) (endpoint.Provider, error) {
 // might be counting on it to — the agent has already made sure a failure does
 // not disturb the peer table.
 func loop(ctx context.Context, cycle *agent.Agent, interval time.Duration, logger *slog.Logger) error {
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-
 	cycles, failures := 0, 0
 	for {
 		if err := cycle.Once(); err != nil {
@@ -258,13 +256,37 @@ func loop(ctx context.Context, cycle *agent.Agent, interval time.Duration, logge
 		}
 		cycles++
 
+		wait := nextPoll(interval, cycle.Freshness())
+		timer := time.NewTimer(wait)
 		select {
 		case <-ctx.Done():
+			timer.Stop()
 			logger.Info("nornd stopping", "cycles", cycles, "failed", failures)
 			return nil
-		case <-ticker.C:
+		case <-timer.C:
 		}
 	}
+}
+
+// DegradedPoll is `GOSSIP.md` part 5's "poll all sources every 10 s" while
+// degraded.
+const DegradedPoll = 10 * time.Second
+
+// nextPoll is how long to wait before the next cycle.
+//
+// A stale node tries harder, but only ever *harder*: a node already polling
+// every 200 ms is not slowed down to ten seconds because its view went stale.
+// The rule exists for a node configured to poll slowly -- which is a
+// reasonable thing to do on a laptop, right up until the log goes quiet and
+// nobody notices for five minutes.
+func nextPoll(interval time.Duration, state string) time.Duration {
+	if state != freshness.Degraded && state != freshness.HardStale {
+		return interval
+	}
+	if interval < DegradedPoll {
+		return interval
+	}
+	return DegradedPoll
 }
 
 // report turns an agent event into a log line at the right level: a peer

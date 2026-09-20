@@ -263,16 +263,23 @@ func (a *Agent) Once() error {
 		Stored:  stored,
 	}
 	result, verifyErr := logclient.Verify(a.cfg.Fetcher, anchor)
-	if verifyErr != nil {
-		// The log is unreachable or serving something this node will not
-		// accept. Peers hold the same log and their copies are signed by the
-		// same keys, so ask them -- this is the liveness gossip exists for
-		// (GOSSIP T2), and it costs nothing while the log is answering
-		// because it only runs when it is not.
-		if fromPeer, peer := a.askPeers(anchor); fromPeer != nil {
+
+	// Ask peers when the log could not be used at all, and also when it could
+	// but what it gave is stale: `GOSSIP.md` part 5 has a degraded node poll
+	// **all sources**, and the reason is T2. A log that is up and stuck
+	// answers every request perfectly with something old, and only a peer can
+	// say so -- asking peers solely when the log is unreachable would leave a
+	// whole mesh stale behind a log that never stopped answering.
+	//
+	// While the view is fresh, peers are not asked at all. A node polling
+	// every 200 ms that also asked three neighbours each time would put a
+	// great deal of traffic on the link it is protecting, to learn nothing.
+	if verifyErr != nil || a.isStale(result) {
+		if fromPeer, peer := a.askPeers(anchor); fromPeer != nil &&
+			(verifyErr != nil || fromPeer.Checkpoint.Size > result.Checkpoint.Size) {
 			a.emit(Event{Kind: AdoptedFromPeer, Message: fmt.Sprintf(
-				"the log could not be used (%v); took size %d from peer %s, which is "+
-					"signed by the same keys", verifyErr, fromPeer.Checkpoint.Size, peer)})
+				"took size %d from peer %s, which is signed by the same keys: %s",
+				fromPeer.Checkpoint.Size, peer, whyPeer(verifyErr))})
 			result, verifyErr = fromPeer, nil
 		}
 	}
@@ -480,6 +487,43 @@ func keyOf(hexKey string) (peertable.Key, error) {
 		return peertable.Key{}, err
 	}
 	return peertable.KeyFromBytes(raw)
+}
+
+// Freshness is the state this node last computed, for a daemon deciding how
+// hard to try. `GOSSIP.md` part 5 has a degraded node poll every source every
+// 10 s, and a node that kept that state to itself would carry on at its
+// leisurely poll straight through an outage.
+//
+// Before the first cycle it is `unknown`, which is the honest answer rather
+// than `fresh`.
+func (a *Agent) Freshness() string {
+	if a.staleState == "" {
+		return freshness.Unknown
+	}
+	return a.staleState
+}
+
+// isStale reports whether the view this result would give is older than the
+// network's `staleness` -- the condition that makes a node reach past the log.
+//
+// It reads the clock without advancing it: whether to ask peers is a question
+// about the head just fetched, and adopting it as "now" before deciding would
+// answer it with itself.
+func (a *Agent) isStale(result *logclient.Result) bool {
+	if result == nil || result.QuorumTime == nil {
+		return false
+	}
+	limits := freshness.LimitsFrom(result.State.Params, a.cfg.Hard)
+	age, ok := a.clock.Age(*result.QuorumTime, a.cfg.Mono())
+	return ok && limits.State(age, true) != freshness.Fresh
+}
+
+// whyPeer explains an adoption in the terms that made it happen.
+func whyPeer(verifyErr error) string {
+	if verifyErr != nil {
+		return fmt.Sprintf("the log could not be used (%v)", verifyErr)
+	}
+	return "the log is answering but its head has gone stale, and this peer has a newer one"
 }
 
 // PeerAddresses is where this node's **proven** peers can be gossiped with:

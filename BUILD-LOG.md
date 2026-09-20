@@ -396,7 +396,7 @@ unknown until something cosigns. It closes **2.6b** too — an unmodified
 | 4.5b | The gossip server | `/norn/checkpoint` and `/norn/tile/…` on the **WireGuard address only**, serving bytes rather than claims | ✅ |
 | 4.5c | §10 against the stored head | a checkpoint must be **no smaller** than the one held, and must contain it — the step gossip makes reachable by anyone | ✅ |
 | 4.5d | The gossip client | pull from `r` random **proven** peers and adopt a better checkpoint — trust is identical because the verification is the same code | ✅ |
-| 4.5e | Degraded polls harder | every source every 10 s while degraded (deferred from 4.2d, where there was only one source) | ⬜ |
+| 4.5e | Degraded polls harder | every source every 10 s while degraded (deferred from 4.2d, where there was only one source) | ✅ |
 | 4.6 | Fork detection and evidence | a consistency-proof failure freezes the node, alarms, and writes evidence a third party can check | ⬜ |
 | 4.7 | OpenTimestamps anchoring | `anchors/<size>.ots` and `norn verify --anchored`, advisory by D-009 | ⬜ |
 | 4.8 | Phase 4 gate audit | each line against what is actually tested, and what the lab still owes | ⬜ |
@@ -734,3 +734,11 @@ the signer keeps one job — decide, and place the entry in the log.
   - **`nornd` has no second list to keep in step.** The peers it may ask are the ones the agent itself has proven, read back through `PeerAddresses`, so an unproven peer can never appear on a list somebody forgot to update.
   - **One broken neighbour is not an outage:** a peer that answers with nonsense is reported and skipped, and the node keeps the log's own checkpoint.
   - Go: 46 packages, 492 tests; `go test`, staticcheck and both halves of `vectors-check` green.
+- **4.5e a degraded node polls every source — and "every source" is the half that matters.**
+  - **The sentence deferred from 4.2d was "poll all sources every 10 s", and the important word is *all*.** A node whose log is answering perfectly well with something **old** is exactly the node that needs its peers: the log is up and stuck, which is precisely T2, and only a peer can say so. Asking peers solely when the log is *unreachable* would leave a whole mesh stale behind a log that never stopped answering — every request served, every answer current-looking, nothing moving.
+  - **So the trigger is the freshness of what was fetched, not whether the fetch worked.** `isStale` reads the clock **without advancing it**: whether to reach past the log is a question about the head just received, and adopting it as "now" before deciding would answer the question with itself.
+  - **A peer with nothing newer changes nothing.** Adoption needs a strictly larger checkpoint, or a degraded node would churn its peer table against an equal head every ten seconds for as long as the log stayed quiet.
+  - **The 10-second rule only ever speeds a node up.** A naive reading — "degraded means poll every 10 s" — would *slow* a node already polling four times a second, at the exact moment it should be trying hardest. `nextPoll` takes the faster of the two, and the table test pins both directions. The rule earns its keep on a node deliberately polling slowly, which is reasonable on a laptop right up until the log goes quiet and nobody notices for five minutes.
+  - **A node that has not run a cycle reports `unknown`, not `fresh`.** The daemon reads the state to decide how hard to try, and starting out claiming to be fine is the wrong default for the one moment a node knows least.
+  - **Phase 4's gossip work is now complete** — hold (4.5a), serve (4.5b), the rollback check that made it safe (4.5c), pull (4.5d), and try harder when stale (4.5e).
+  - Go: 46 packages, 496 tests; `go test`, staticcheck and both halves of `vectors-check` green.
