@@ -744,6 +744,28 @@ A node keeps the trust file's key **alongside** what it has learned rather than
 replacing it. A node whose trust file is current must never be worse off than
 one whose trust file is stale.
 
+**The witness policy rotates the same way and differs in one respect: it
+replaces.** A `policy` entry supersedes `norn.trust.policy` for every checkpoint
+a node accepts after replaying it, and for §5.3's `T`. Keys accumulate because
+an overlap is the point; policies do not, because a policy is one document and
+two in force at once is exactly the disagreement about the quorum that §4.5
+refuses to allow. Publishing one takes the root quorum (§4.3).
+
+A node holding only the trust file uses its policy. The bootstrap is the same
+as for keys and is what keeps it non-circular: accept under the policy you
+have, replay, and use what the roots published from the next checkpoint on.
+
+Two consequences worth stating rather than discovering:
+
+- **Raising a quorum binds the nodes that were already watching.** A node that
+  replayed the rotation will refuse a head that satisfies the old policy and
+  not the new one. If it did not, raising a quorum would protect only the nodes
+  that had not been paying attention.
+- **The roots can lower it too, including to `quorum none`.** That is their
+  prerogative — they are the network's authority — and it is visible: the
+  policy is in the log, every monitor replays it, and §5.3 gives a node with no
+  corroborated instant no clock at all.
+
 ## 10. Verifier procedure (normative outline)
 
 ```
@@ -873,6 +895,7 @@ suite is checked only against its own author.
 | `anchors/` | OpenTimestamps proofs written by `python-opentimestamps`: `checkpoint-<size>.ots` over the fixture's checkpoint body, `sample.ots` over an arbitrary digest, and a calendar's reply |
 | `proofs-bad/<name>.bundle` | bundles that MUST be refused (§8.1); `cases.json` gives the log key to check them under and what each refusal must be about |
 | `served-rotated/` | the served head signed by a published `log_key` (§9.4), with `cases.json` giving the key, its `since_index` and its `overlap`. Serve it over `served/`'s tiles |
+| `served-superseded/` | the served head cosigned by two of three witnesses, for §9.4's policy half. Serve it over `served/`'s tiles |
 | `served-bad/` | §6's refusals for a served log, which is a directory rather than a file: each case names the path to replace or delete over an honest copy of `served/` |
 | `SHA256SUMS` | every file above, for a reader who has the suite and not its generators |
 
@@ -893,6 +916,7 @@ this table drifted out of date the moment one was.
 | §4.0/§4.3 schemas | `enroll-laptop`, `enroll-unicode-labels` | `bad-kid-format`, `bad-missing-sigs`, `bad-empty-sigs`, `bad-unknown-role`, `bad-unknown-envelope-key`, `bad-unknown-body-key`, `bad-device_id-uppercase`, `bad-device_id-leading-dot`, `bad-pk-length`, `bad-sig-length`, `bad-text-too-long`, `bad-unsorted-sigs` |
 | §4.2 signatures, hashes, preimage | 16 entry mirrors | **`bad-forged-signer-sig`, `bad-forged-device-sig`** — syntactically perfect signatures that do not verify. Without these an implementation that never calls Ed25519 reproduces the whole manifest |
 | §4.0 the whole input is consumed | — | `bad-trailing-byte`: an accepted `log_key` entry with one byte after it. Its signatures still verify and its `entry_hash` differs, so a decoder that stops at the end of the item applies the same governance entry twice |
+| §9.4 the policy supersedes | `served-superseded/`: two of three cosignatures — enough for the trust file, short of what the roots published | the informed reader is the stricter one here |
 | §9.4 rotation | `served-rotated/`: the same head under a key the roots published — refused by a reader holding only `trust.cbor`, accepted by one that has replayed the rotation | a key that vouched for itself is what the ordering forbids |
 | §10 the checkpoint's origin | `served/checkpoint` | `checkpoints-bad/10-wrong-body-origin`: signed by this network's key under this network's name, naming another log |
 | §4.0 both limits, at the boundary | `entries-hostile/at-the-depth-limit` and `at-the-size-limit`, which MUST be accepted | `past-the-depth-limit` and `past-the-size-limit`, one step beyond each. Without the accepted half a decoder enforcing 4, 16 or 64 passes |

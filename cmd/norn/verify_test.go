@@ -372,3 +372,18 @@ func TestTheRotatedHeadIsRefusedUntilItsRotationIsReplayed(t *testing.T) {
 		t.Fatalf("the honest head over the same tiles was refused: %v\n%s", err, out)
 	}
 }
+
+// §9.4's policy half, from the other direction: here the *uninformed* reader
+// accepts. A one-shot verify holds only the trust file, which requires two of
+// three witnesses, and this head has two. A node that had replayed the roots
+// raising the quorum to three would refuse it -- which is what the agent test
+// covers, because only a node that keeps running has seen the rotation.
+func TestTheSupersededHeadSatisfiesTheTrustFilesPolicy(t *testing.T) {
+	dir := servedWithCheckpoint(t, filepath.Join(vectors(), "served-superseded", "checkpoint"))
+	out, err := exec.Command(nornBinary(t), "verify",
+		"-trust", filepath.Join(vectors(), "trust.cbor"), "-log", dir).CombinedOutput()
+	if err != nil {
+		t.Fatalf("a reader holding only the trust file refused a head that meets its "+
+			"own policy: %v\n%s", err, out)
+	}
+}

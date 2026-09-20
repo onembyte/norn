@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -474,5 +475,63 @@ func TestTheAgentFollowsALogKeyRotation(t *testing.T) {
 		t.Errorf("the node stopped at a rotation it had already replayed: %v\n"+
 			"A node that watched the roots publish a key must follow it, or every "+
 			"rotation is an outage for exactly the nodes that were paying attention.", err)
+	}
+}
+
+// D-020's other half: the witness policy supersedes inside the log.
+//
+// The fixture's roots raise the quorum from two of three to three of three at
+// entry 49. A node holding only the trust file requires two; a node that has
+// replayed the rotation requires three. A head cosigned by exactly two is
+// therefore acceptable to the first and not to the second -- which is the
+// whole point of being able to raise a quorum without re-provisioning anybody.
+func TestTheAgentFollowsAPolicyRotation(t *testing.T) {
+	dir, store, _ := writableLog(t)
+	doc := anchor(t)
+
+	rec := &recorder{}
+	a, err := New(Config{
+		Anchor: doc, Fetcher: logclient.Dir(dir), Device: peertable.NewFake(),
+		Mode: reconcile.Owner, Emit: rec.emit,
+		Now: func() time.Time { return time.Unix(fixtureCosignedAt, 0) },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Once(); err != nil {
+		t.Fatalf("the first round did not verify: %v", err)
+	}
+	if !strings.Contains(a.last.State.Policy, "group home 3") {
+		t.Fatalf("the fixture's roots do not raise the quorum, so nothing here is "+
+			"tested; state.policy is %q", a.last.State.Policy)
+	}
+
+	// The log publishes a head two of the three witnesses cosigned: enough for
+	// the trust file's policy, short of the one the roots published.
+	signed, err := store.SignedCheckpoint()
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _, err := note.Split(signed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	head, err := note.Sign(body, doc.Origin, fixtureKey(t, "logkey"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	head, err = cosign.Append(fixtureWitnesses(t)[:2],
+		cosign.At(time.Unix(fixtureCosignedAt, 0)))(head)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "checkpoint"), []byte(head), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := a.Once(); err == nil {
+		t.Error("a node that replayed the roots raising the quorum accepted a head " +
+			"short of it; raising a quorum would then protect nobody who was already " +
+			"watching")
 	}
 }

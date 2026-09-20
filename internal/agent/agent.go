@@ -285,14 +285,21 @@ func (a *Agent) Once() error {
 	// whole point, so a node whose trust file is current is never worse off
 	// than one whose is stale.
 	keys := []string{a.cfg.Anchor.LogKey}
+	policy := a.cfg.Anchor.Policy
 	if a.last != nil {
 		keys = append(keys, logclient.KeysFrom(a.cfg.Anchor.Origin, a.last.State)...)
+		// A published policy replaces the trust file's: one document, not two
+		// (§9.4). Raising a quorum has to bind the nodes already watching, or
+		// it protects only the ones who were not.
+		if published := logclient.PolicyFrom(a.last.State); published != "" {
+			policy = published
+		}
 	}
 	anchor := logclient.Anchor{
 		Anchor:  replay.Anchor{Net: a.cfg.Anchor.Net, GenesisHash: a.cfg.Anchor.GenesisHash},
 		LogKeys: keys,
 		Origin:  a.cfg.Anchor.Origin,
-		Policy:  a.cfg.Anchor.Policy,
+		Policy:  policy,
 		Stored:  stored,
 		Held:    heldTree,
 	}

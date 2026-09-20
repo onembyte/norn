@@ -44,6 +44,10 @@ type Watcher struct {
 	// happen without every reader being re-provisioned first.
 	learned []string
 
+	// policy is the witness policy the roots have published, if any. It
+	// replaces the trust file's rather than joining it (§9.4).
+	policy string
+
 	// reported is the log size already described, so an unchanged log is
 	// silent. A monitor that repeated ninety entries every thirty seconds
 	// would be turned off within the hour, and then it would be monitoring
@@ -188,14 +192,27 @@ func (w *Watcher) logKeys() []string {
 	return append([]string{w.anchor.LogKey}, w.learned...)
 }
 
-// learn records the keys a replayed state authorises, for the next round.
+// learn records what a replayed state authorises, for the next round: the keys
+// the roots published, and the policy if they published one.
 func (w *Watcher) learn(result *logclient.Result) {
 	w.learned = logclient.KeysFrom(w.anchor.Origin, result.State)
+	if published := logclient.PolicyFrom(result.State); published != "" {
+		w.policy = published
+	}
+}
+
+// witnessPolicy is the published policy if the roots have set one, and the
+// trust file's otherwise.
+func (w *Watcher) witnessPolicy() string {
+	if w.policy != "" {
+		return w.policy
+	}
+	return w.anchor.Policy
 }
 
 func (w *Watcher) logAnchor() logclient.Anchor {
 	return logclient.Anchor{
 		Anchor:  replay.Anchor{Net: w.anchor.Net, GenesisHash: w.anchor.GenesisHash},
-		LogKeys: w.logKeys(), Origin: w.anchor.Origin, Policy: w.anchor.Policy,
+		LogKeys: w.logKeys(), Origin: w.anchor.Origin, Policy: w.witnessPolicy(),
 	}
 }

@@ -388,6 +388,20 @@ func (e *ForkError) Error() string {
 
 func (e *ForkError) Unwrap() error { return ErrLog }
 
+// PolicyFrom is the witness policy a replayed state imposes, or "" if the log
+// has published none (D-020, §9.4).
+//
+// Unlike the log keys, a published policy **replaces** the trust file's rather
+// than joining it: a policy is one document, and two of them in force at once
+// is exactly the disagreement about the quorum that §4.5 refuses to allow.
+// Only the roots can publish one (§4.3), which is what makes that safe.
+func PolicyFrom(st *state.State) string {
+	if st == nil {
+		return ""
+	}
+	return st.Policy
+}
+
 // KeysFrom is the set of signed-note verifier keys a replayed state authorises
 // for signing this log's checkpoints, in log order (D-020, §9.4).
 //

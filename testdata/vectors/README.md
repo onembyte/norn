@@ -44,6 +44,7 @@ of having it.
 | `proofs/` | one self-contained proof bundle per proven device (§8) |
 | `proofs-bad/` | four bundles that MUST be refused (§8): a wrong entry, a foreign checkpoint, a tampered proof and a checkpoint signed by a key the anchor does not name. `cases.json` gives the log key and what each refusal must be about |
 | `served-rotated/` | the served head signed by a key the roots published in the log (§9.4). The only vector with two correct answers: refuse it holding only `trust.cbor`, accept it having replayed this log |
+| `served-superseded/` | the served head cosigned by two of three witnesses: accepted by a reader holding only `trust.cbor`, refused by one that has replayed the roots raising the quorum (§9.4) |
 | `served-bad/` | §6's two refusals. A served log is a directory, so each case names the path to replace with `file` or delete with `remove`, over an otherwise honest copy of `served/` |
 | `fork/` | `evidence.cbor` and `conflicting.checkpoint`: a second branch of this same network, proving the evidence format (§11.1) is checkable by anybody holding `trust.cbor` — plus six that must be **refused**: one per reader step, and one carrying a consistency proof where §11.1 requires none: `bad-other-origin` and `bad-unverifiable-conflicting` (step 1), `bad-size-mismatch` (step 2), `bad-forged-proof` (step 3), `bad-consistent` (step 4). `cases.json` says what each refusal must be about |
 | `anchors/` | OpenTimestamps proofs, and a calendar's reply, written by `python-opentimestamps` |
