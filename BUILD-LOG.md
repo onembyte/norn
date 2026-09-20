@@ -426,7 +426,7 @@ which a node may do.
 | 5.3 | The receipt inbox | a receipt whose deadline passed with no inclusion is **non-repudiable proof of A2**, and the monitor is what notices | ✅ |
 | 5.4 | Outputs | stdout JSON always; `ntfy`, Home Assistant, Alertmanager and email optional and each failing alone | ✅ |
 | 5.5 | The status page | read-only HTML on the tunnel address: sizes, ages, witness times, the device table and the last entries in plain words | ✅ |
-| 5.6 | `norn monitor` | the command, its config, and one run that produces a notification per rule | ⬜ |
+| 5.6 | `norn monitor` | the command, its config, and one run that produces a notification per rule | ✅ |
 | 5.7 | Phase 5 gate audit | each line against what is tested, and the demos named as the lab's | ⬜ |
 
 ## Decision taken — 2.9d: an `enroll` needs a device signature the device cannot make
@@ -882,3 +882,12 @@ the signer keeps one job — decide, and place the entry in the log.
   - **A monitor with nothing to show says so.** "nothing verified yet — this monitor has not managed to read the log since it started" beats a blank screen, which is indistinguishable from a broken one.
   - **The device table is judged at the checkpoint's time**, the same rule §5.3 gave the enforcement path in 4.8 — so the page and the peer table cannot disagree about who is expired.
   - **The recent entries use `plainlog.Describe`**, the renderer `norn status` already uses, so the page and the terminal never describe the same log differently.
+
+- **5.6 `norn monitor` — and one round over the fixture fires four of §3's rules.**
+  - **A real run, not a claim:** `monitor -once` against the shipped log produces `new-entry` × 59, `governance-entry` × 16, `rejected-entry` × 54 and `checkpoint-age`, each as a sentence — *"enroll: signer 83eba1f8 enrolled pi-cam (wireguard 651e98a3)"*. The gate line wants one notification per rule during a lab run; this is as close as a repository can get, and it is what makes that countable at all.
+  - **A misspelled setting is refused rather than ignored.** `ntfyy = "…"` stops the monitor from starting, because a typo in an output URL is otherwise a monitor that **silently never pages** — and the operator finds out during the incident. The same `Undecoded` check `nornd` uses.
+  - **The zero config is a working monitor.** Every output is optional and stdout is unconditional, so the smallest `monitor.toml` that does anything is a trust file and a log.
+  - **A dead output does not stop a round, and is not swallowed either.** The failing sink is named on stderr while stdout still gets everything — an output nobody knows is broken is an output nobody is reading.
+  - **Failing to bind the status page *is* fatal**, and the asymmetry is deliberate: an operator who asked for a page and did not get one goes looking for it during an incident, which is the worst possible moment to discover a typo in a port. A failed *delivery* is news; a page that was never going to exist is a misconfiguration.
+  - **A name collision the compiler caught**, worth a line only because it is the shape of thing a test file can hide: the test's helper and the config struct were both `monitorConfig`.
+  - Go: 49 packages, 586 tests; `go test`, staticcheck and both halves of `vectors-check` green.

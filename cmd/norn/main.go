@@ -35,6 +35,7 @@ type command func(args []string) error
 var commands = map[string]command{
 	"enroll":          enrollCmd,
 	"init":            initCmd,
+	"monitor":         monitorCmd,
 	"sign":            signCmd,
 	"stamp":           stampCmd,
 	"status":          statusCmd,
@@ -49,6 +50,7 @@ func usage() {
 commands:
   enroll   build a signed enrollment request for this device (SPEC §16)
   init     create a network: roots, thresholds, genesis and the trust file
+  monitor  watch a network and report what it sees (LAB.md §3)
   sign     verify a request and sign the enroll entry it asks for
   stamp    obtain an OpenTimestamps proof for a log's checkpoint (advisory)
   status   what this node can prove about the network right now
