@@ -16,12 +16,14 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math/rand"
 	"path/filepath"
 	"time"
 
 	"github.com/onembyte/norn/internal/endpoint"
 	"github.com/onembyte/norn/internal/fight"
 	"github.com/onembyte/norn/internal/freshness"
+	"github.com/onembyte/norn/internal/gossip"
 	"github.com/onembyte/norn/internal/logclient"
 	"github.com/onembyte/norn/internal/mirror"
 	"github.com/onembyte/norn/internal/peertable"
@@ -57,6 +59,14 @@ const (
 	// MirrorFailed: this node could not keep a copy of the log it verified, so
 	// it has nothing to serve its peers. Nothing it enforces is affected.
 	MirrorFailed = "MIRROR_FAILED"
+	// AdoptedFromPeer: this node could not reach the log and took a checkpoint
+	// from a peer instead. It is worth saying out loud -- the log being
+	// unreachable is news even when gossip covered for it.
+	AdoptedFromPeer = "ADOPTED_FROM_PEER"
+	// PeerRefused: one peer could not be used this round. Not an outage -- the
+	// point of asking several is that any of them may be broken, behind, or
+	// lying.
+	PeerRefused = "PEER_REFUSED"
 )
 
 // DefaultDegradedAlarmEvery is GOSSIP part 5's "alarm every 5 min".
@@ -126,7 +136,18 @@ type Config struct {
 	// DegradedAlarmEvery is how often a degraded view repeats its alarm.
 	// Defaults to DefaultDegradedAlarmEvery.
 	DegradedAlarmEvery time.Duration
-	Emit               func(Event)
+	// Peers returns the gossip addresses of this network's **proven** peers,
+	// re-evaluated each cycle because the proven set changes. An unproven peer
+	// is not somebody this network vouches for, so it is never asked
+	// (GOSSIP part 6).
+	//
+	// Nil means this node does not gossip, which is the correct configuration
+	// for a node alone on its tunnel.
+	Peers func() []string
+	// Fanout is `r`: how many peers to ask per round. Defaults to
+	// gossip.DefaultFanout.
+	Fanout int
+	Emit   func(Event)
 
 	// FightPolicy is what to do when the same key keeps coming back:
 	// PolicyAlarm (the default) or PolicyQuarantine.
@@ -149,6 +170,9 @@ type Agent struct {
 	// clock remembers the newest instant any quorum vouched for. It is the
 	// node's only clock for deciding whether what it holds is current.
 	clock freshness.Clock
+	// peerOrder decides which peers get asked, and is a node's own so two
+	// nodes started together do not walk the mesh in step.
+	peerOrder *rand.Rand
 	// staleState is the freshness state last reported, and staleSince the
 	// monotonic reading of the last `degraded` alarm -- together they are the
 	// alarm cadence.
@@ -207,7 +231,10 @@ func New(cfg Config) (*Agent, error) {
 			cfg.FightPolicy, PolicyAlarm, PolicyQuarantine)
 	}
 	return &Agent{cfg: cfg,
-		fights: fight.New(cfg.FightThreshold, cfg.FightWindow)}, nil
+		fights: fight.New(cfg.FightThreshold, cfg.FightWindow),
+		// Each node walks the mesh in its own order, so two nodes started
+		// together do not ask the same peers at the same moments.
+		peerOrder: rand.New(rand.NewSource(time.Now().UnixNano()))}, nil
 }
 
 // Mode reports the mode this agent runs in.
@@ -229,12 +256,26 @@ func (a *Agent) Once() error {
 		held := a.last.Checkpoint
 		stored = &held
 	}
-	result, verifyErr := logclient.Verify(a.cfg.Fetcher, logclient.Anchor{
+	anchor := logclient.Anchor{
 		Anchor:  replay.Anchor{Net: a.cfg.Anchor.Net, GenesisHash: a.cfg.Anchor.GenesisHash},
 		LogKeys: []string{a.cfg.Anchor.LogKey},
 		Policy:  a.cfg.Anchor.Policy,
 		Stored:  stored,
-	})
+	}
+	result, verifyErr := logclient.Verify(a.cfg.Fetcher, anchor)
+	if verifyErr != nil {
+		// The log is unreachable or serving something this node will not
+		// accept. Peers hold the same log and their copies are signed by the
+		// same keys, so ask them -- this is the liveness gossip exists for
+		// (GOSSIP T2), and it costs nothing while the log is answering
+		// because it only runs when it is not.
+		if fromPeer, peer := a.askPeers(anchor); fromPeer != nil {
+			a.emit(Event{Kind: AdoptedFromPeer, Message: fmt.Sprintf(
+				"the log could not be used (%v); took size %d from peer %s, which is "+
+					"signed by the same keys", verifyErr, fromPeer.Checkpoint.Size, peer)})
+			result, verifyErr = fromPeer, nil
+		}
+	}
 	if verifyErr != nil {
 		a.emit(Event{Kind: VerifyFailed, Message: verifyErr.Error()})
 		if a.last == nil {
@@ -439,6 +480,63 @@ func keyOf(hexKey string) (peertable.Key, error) {
 		return peertable.Key{}, err
 	}
 	return peertable.KeyFromBytes(raw)
+}
+
+// PeerAddresses is where this node's **proven** peers can be gossiped with:
+// the tunnel address the log itself put in each peer's allowed-ips.
+//
+// Only proven peers, and the distinction is the whole point. An unproven key
+// on the interface is exactly what Norn exists to notice; asking it for a
+// checkpoint would be asking the intruder what the network looks like.
+func (a *Agent) PeerAddresses(port int) []string {
+	if a.last == nil || port <= 0 {
+		return nil
+	}
+	desired, _ := a.desired(a.last)
+	out := make([]string, 0, len(desired))
+	for _, peer := range desired {
+		if addr, ok := gossip.Address(peer.AllowedIPs, port); ok {
+			out = append(out, addr)
+		}
+	}
+	return out
+}
+
+// askPeers tries this network's proven peers and returns the best checkpoint
+// any of them could prove, or nil.
+//
+// There is no gossip-specific verification here, and that is the whole design:
+// a peer's answer goes through `logclient.Verify` under the same anchor as the
+// log's, including §10's comparison with the head this node already holds. So
+// a lying peer is exactly as dangerous as a lying log, which is to say caught.
+//
+// Peers are asked only when the log could not be used. A node polling every
+// 200 ms that also asked three neighbours each time would put a great deal of
+// traffic on the link it is protecting, to learn nothing.
+func (a *Agent) askPeers(anchor logclient.Anchor) (*logclient.Result, string) {
+	if a.cfg.Peers == nil {
+		return nil, ""
+	}
+	fanout := a.cfg.Fanout
+	if fanout <= 0 {
+		fanout = gossip.DefaultFanout
+	}
+
+	var best *logclient.Result
+	var from string
+	for _, addr := range gossip.Choose(a.cfg.Peers(), fanout, a.peerOrder) {
+		result, err := logclient.Verify(gossip.Peer(addr), anchor)
+		if err != nil {
+			// One neighbour being broken, lying or behind is not an outage.
+			a.emit(Event{Kind: PeerRefused,
+				Message: fmt.Sprintf("peer %s: %v", addr, err)})
+			continue
+		}
+		if best == nil || result.Checkpoint.Size > best.Checkpoint.Size {
+			best, from = result, addr
+		}
+	}
+	return best, from
 }
 
 // checkClock compares this machine's wall clock against witness time and

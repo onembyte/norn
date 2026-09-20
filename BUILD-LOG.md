@@ -395,7 +395,7 @@ unknown until something cosigns. It closes **2.6b** too — an unmodified
 | 4.5a | A node holds what it verified | full replication (GOSSIP part 6): the checkpoint and every tile written down as it verifies, so a node has something to serve | ✅ |
 | 4.5b | The gossip server | `/norn/checkpoint` and `/norn/tile/…` on the **WireGuard address only**, serving bytes rather than claims | ✅ |
 | 4.5c | §10 against the stored head | a checkpoint must be **no smaller** than the one held, and must contain it — the step gossip makes reachable by anyone | ✅ |
-| 4.5d | The gossip client | pull from `r` random **proven** peers and adopt a better checkpoint — trust is identical because the verification is the same code | ⬜ |
+| 4.5d | The gossip client | pull from `r` random **proven** peers and adopt a better checkpoint — trust is identical because the verification is the same code | ✅ |
 | 4.5e | Degraded polls harder | every source every 10 s while degraded (deferred from 4.2d, where there was only one source) | ⬜ |
 | 4.6 | Fork detection and evidence | a consistency-proof failure freezes the node, alarms, and writes evidence a third party can check | ⬜ |
 | 4.7 | OpenTimestamps anchoring | `anchors/<size>.ots` and `norn verify --anchored`, advisory by D-009 | ⬜ |
@@ -723,3 +723,14 @@ the signer keeps one job — decide, and place the entry in the log.
   - **Nil means "first contact", and is now a documented hazard rather than a default.** Passing nil when a node does hold a head disables the one check that stops this.
   - **`SPEC.md` §10 now says what to compute, not what to trust.** The line used to say "verify consistency proof stored_cp → cp"; a node with every entry has no reason to take a proof from the party it is checking.
   - Go: 46 packages, 482 tests; `go test`, staticcheck and both halves of `vectors-check` green.
+- **4.5d the gossip client — a second source, not a second trust model.**
+  - **There is no new verification, and that is the deliverable.** A peer's answer goes through `logclient.Verify` under the same anchor as the log's — signature, quorum, tiles, tree, replay, **and §10's comparison with the head this node holds** (4.5c). So a lying peer is exactly as dangerous as a lying log: caught. The test suite for this checkpoint contains no cryptography at all, only *where a node looks* and *what it does with the answer*.
+  - **T2, demonstrated:** a node with a dead log and one healthy peer recovers, adopts the peer's checkpoint, and says so — the log being unreachable is news even when gossip covered for it.
+  - **And the attack it does not enable:** a peer serving the same log, earlier, cannot roll a node back. That test exists because it is the question a reviewer should ask the moment a second source appears, and it would have failed a checkpoint ago.
+  - **Peers are asked only when the log could not be used.** A node polling every 200 ms that also asked three neighbours each time would put a great deal of traffic on the very link it is protecting, to learn nothing. A test pins it: three healthy cycles, zero peer polls.
+  - **Random, not fixed.** A node that always asked the same three peers would let those three decide what it hears — and in a network small enough to fit in a house, "the same three" is often "all the ones an attacker owns". Each node also gets its own ordering, so two nodes started together do not walk the mesh in step.
+  - **"Unproven peers are not polled" is tested with the intruder *routed*.** The operator has written a route for it, so the only thing keeping it out of the round is that the log does not prove it. Asking it for a checkpoint would be asking the intruder what the network looks like.
+  - **A proven peer with no route is unreachable, and Norn does not invent an address for it.** Allowed-ips come from the endpoint provider, so gossip reaches exactly as far as the operator's routing does — which my first draft of the test got wrong, and the fixture corrected.
+  - **`nornd` has no second list to keep in step.** The peers it may ask are the ones the agent itself has proven, read back through `PeerAddresses`, so an unproven peer can never appear on a list somebody forgot to update.
+  - **One broken neighbour is not an outage:** a peer that answers with nonsense is reported and skipped, and the node keeps the log's own checkpoint.
+  - Go: 46 packages, 492 tests; `go test`, staticcheck and both halves of `vectors-check` green.

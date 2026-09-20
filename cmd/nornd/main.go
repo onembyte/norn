@@ -182,10 +182,18 @@ func build(config Config, logger *slog.Logger) (*agent.Agent, time.Duration, err
 		}
 	}
 
-	cycle, err := agent.New(agent.Config{
+	// A node asks its proven peers when the log cannot be used, at the same
+	// port it serves them on. The closure is filled in after the agent exists
+	// because the peers it may ask are the ones the agent itself has proven --
+	// there is no separate list to keep in step, and an unproven peer can
+	// never end up on it.
+	var cycle *agent.Agent
+	gossipPort := config.GossipPortOrDefault()
+	cycle, err = agent.New(agent.Config{
 		Anchor: anchor, Fetcher: fetcher, Device: device, Provider: provider,
 		Mode: mode, RunDir: config.RunDir, Now: time.Now,
 		Hard: hard, MaxSkew: maxSkew,
+		Peers:       func() []string { return cycle.PeerAddresses(gossipPort) },
 		FightPolicy: policy, FightThreshold: threshold, FightWindow: window,
 		Quarantine: quarantine,
 		Emit:       func(event agent.Event) { report(logger, event) },
@@ -199,8 +207,8 @@ func build(config Config, logger *slog.Logger) (*agent.Agent, time.Duration, err
 	// network survives a log outage, not how a node enforces, and refusing to
 	// start because peers cannot reach us would trade the second for the
 	// first.
-	if port := config.GossipPortOrDefault(); port > 0 {
-		addr, err := gossip.TunnelAddress(config.Interface, port)
+	if gossipPort > 0 {
+		addr, err := gossip.TunnelAddress(config.Interface, gossipPort)
 		if err != nil {
 			logger.Warn("not gossiping", "reason", err)
 		} else {
