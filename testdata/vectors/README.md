@@ -30,8 +30,8 @@ of having it.
 |---|---|
 | `keys.json` | every test key: Ed25519 `{seed, public, kid}` by name, X25519 public keys, and `net` |
 | `entries/` | one valid entry per type, canonical bytes, each with a `.json` mirror carrying its hashes and preimage |
-| `log/` | the 99-entry replay fixture. **Read the order from `manifest.json`**, never by sorting filenames; entries that must be refused carry a `.reason` file |
-| `state.json` | the state those 99 entries replay to, in canonical JSON (§14) |
+| `log/` | the 100-entry replay fixture. **Read the order from `manifest.json`**, never by sorting filenames; entries that must be refused carry a `.reason` file |
+| `state.json` | the state those 100 entries replay to, in canonical JSON (§14) |
 | `proven/` | the devices a node admits at four evaluation times, including the boundary where `expires == T`. `state.json` is clock-independent on purpose, so this is the only vector that exercises expiry — the rule that decides when a device stops being admitted |
 | `entries-hostile/` | input that is not an entry and never could be: an oversized one and a 200-deep nest, for §4.0's two resource limits. Neither limit is reachable by a valid entry, so these are the only vectors that reach them |
 | `genesis/` | twelve ways a genesis entry is refused |
@@ -40,7 +40,7 @@ of having it.
 | `requests/`, `requests-bad/` | enrollment requests (§16) and 23 refusals across all four layers |
 | `receipt.note`, `receipt.json` | a submission receipt (§7) and its parsed form |
 | `served/` | the log as a static site: `checkpoint`, entry bundles and hash tiles |
-| `checkpoints-bad/` | nine checkpoints that MUST be refused, each served in place of `served/checkpoint` over the honest tiles. `cases.json` says what each one is. **Start here if you are checking your verifier**: `04` and `08` are the only files in the suite that a verifier which never checks a note or cosignature signature will accept |
+| `checkpoints-bad/` | ten checkpoints that MUST be refused, each served in place of `served/checkpoint` over the honest tiles. `cases.json` says what each one is. **Start here if you are checking your verifier**: `04` and `08` are the only files in the suite that a verifier which never checks a note or cosignature signature will accept |
 | `proofs/` | one self-contained proof bundle per proven device (§8) |
 | `proofs-bad/` | four bundles that MUST be refused (§8): a wrong entry, a foreign checkpoint, a tampered proof and a checkpoint signed by a key the anchor does not name. `cases.json` gives the log key and what each refusal must be about |
 | `served-bad/` | §6's two refusals. A served log is a directory, so each case names the path to replace with `file` or delete with `remove`, over an otherwise honest copy of `served/` |

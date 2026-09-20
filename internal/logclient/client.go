@@ -86,6 +86,11 @@ type Anchor struct {
 	// checkpoint. More than one appears during a `log_key` rotation, where old
 	// and new are both valid for `overlap` (`ENROLLMENT.md` part 6).
 	LogKeys []string
+	// Origin is the network's origin line, verbatim from the trust file. A
+	// checkpoint says which log it is about in its first line, and until §10
+	// said to compare it nothing did: the note name and key id bind the
+	// *signer*, not the subject.
+	Origin string
 	// Policy is the network's `c2sp.org/tlog-policy`, verbatim from the trust
 	// file. It says which witnesses must have cosigned before this node will
 	// believe a checkpoint -- §10 step 3, and the difference between "the log
@@ -141,6 +146,10 @@ func Verify(f Fetcher, anchor Anchor) (*Result, error) {
 	if err != nil {
 		return nil, logErrorf("the checkpoint is not signed by a key this anchor "+
 			"trusts: %v", err)
+	}
+	if anchor.Origin != "" && cp.Origin != anchor.Origin {
+		return nil, logErrorf("the checkpoint is for origin %q, and this anchor is for %q",
+			cp.Origin, anchor.Origin)
 	}
 
 	// Then the witnesses. A log can sign anything it likes, including two

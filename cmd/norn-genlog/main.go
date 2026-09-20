@@ -951,6 +951,22 @@ func buildBadCheckpoints(root, origin string, key ed25519.PrivateKey,
 		"a fourth body line, signed and cosigned exactly as correctly as the real one: " +
 			"§6 allows origin, size and root and nothing else", extended})
 
+	// H8: the origin line says which log a checkpoint is about, and the note
+	// name and key id bind only the *signer*. This one is signed by the right
+	// key under the right name, and claims to be another network's head.
+	wrongBody := elsewhere + body[strings.Index(body, "\n"):]
+	wrongOrigin, err := note.Sign(wrongBody, origin, key)
+	if err != nil {
+		return nil, err
+	}
+	wrongOrigin, err = cosignWith(wrongOrigin, signers...)
+	if err != nil {
+		return nil, err
+	}
+	out = append(out, badCheckpoint{"10-wrong-body-origin",
+		"signed by this network's log key, under this network's name, and its origin " +
+			"line names another log", wrongOrigin})
+
 	out = append(out, badCheckpoint{"08-forged-cosignature",
 		"two cosignature lines, both naming witnesses the policy lists, one of which does not verify: " +
 			"the quorum is met only by a verifier that does not check them", forgedCosig})

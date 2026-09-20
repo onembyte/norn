@@ -8,6 +8,7 @@
     "06-no-cosignatures",
     "07-unnamed-witness-only",
     "09-extension-line",
+    "10-wrong-body-origin",
     "08-forged-cosignature"
   ],
   "comment": "each file is served in place of served/checkpoint, over the honest tiles, under trust.cbor; every one MUST be refused. 04 and 08 are the two that a verifier which never checks a signature will accept",
@@ -20,6 +21,7 @@
     "06-no-cosignatures": "signed by the log and cosigned by nobody",
     "07-unnamed-witness-only": "cosigned only by a witness the policy never names, which counts for nothing",
     "08-forged-cosignature": "two cosignature lines, both naming witnesses the policy lists, one of which does not verify: the quorum is met only by a verifier that does not check them",
-    "09-extension-line": "a fourth body line, signed and cosigned exactly as correctly as the real one: §6 allows origin, size and root and nothing else"
+    "09-extension-line": "a fourth body line, signed and cosigned exactly as correctly as the real one: §6 allows origin, size and root and nothing else",
+    "10-wrong-body-origin": "signed by this network's log key, under this network's name, and its origin line names another log"
   }
 }

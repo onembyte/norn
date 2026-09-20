@@ -178,6 +178,6 @@ func (w *Watcher) staleness(result *logclient.Result) time.Duration {
 func (w *Watcher) logAnchor() logclient.Anchor {
 	return logclient.Anchor{
 		Anchor:  replay.Anchor{Net: w.anchor.Net, GenesisHash: w.anchor.GenesisHash},
-		LogKeys: []string{w.anchor.LogKey}, Policy: w.anchor.Policy,
+		LogKeys: []string{w.anchor.LogKey}, Origin: w.anchor.Origin, Policy: w.anchor.Policy,
 	}
 }

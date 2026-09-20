@@ -441,6 +441,14 @@ def log() -> list[LogItem]:
     unsigned_enroll["sigs"] = []
     b.add_raw(f"{b.index}-bad-enroll-empty-sigs", cbor.encode(unsigned_enroll), "threshold")
 
+    # H6: the same governance entry, with one byte after it. Every signature
+    # still verifies -- a preimage covers the decoded envelope, not the raw
+    # bytes -- and the `entry_hash` differs, so `dup-entry` does not fire. A
+    # decoder that reads one item and stops applies this twice, which run 6
+    # used to grow `state.log_keys` from two to three.
+    doubled = _entry_raw(b, "log_key") + b"\x00"
+    b.add_raw(f"{b.index}-bad-trailing-byte", doubled, "decode")
+
     # E6: a malformed `kid` is a schema violation, not an unresolvable key.
     bad_kid = entry.new("note", NET, ts=T0 + 9000, after=53, body={"text": "bad kid"})
     entry.sign(bad_kid, KEYS["signer1"], "signer")
@@ -824,6 +832,21 @@ def _duplicate_key(raw: bytes) -> bytes:
     count = raw[0] & 0x1F
     assert count < 23, "map header must stay one byte"
     return bytes([0xA0 | (count + 1)]) + raw[1:at] + pair + raw[at:]
+
+
+def _entry_raw(b: Any, kind: str) -> bytes:
+    """The bytes of the first accepted entry of this type, already in the log.
+
+    Taken from the log rather than rebuilt, so the duplicate really is the
+    entry the log applied -- a fresh one would differ in `ts` and prove
+    nothing about replaying the same entry twice.
+    """
+    for item in b.items:
+        if item.reason:
+            continue
+        if cbor.decode(item.raw).get("t") == kind:
+            return item.raw
+    raise SystemExit(f"no accepted {kind} entry to duplicate")
 
 
 def _oversize_map_key(raw: bytes) -> bytes:

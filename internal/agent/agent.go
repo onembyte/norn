@@ -282,6 +282,7 @@ func (a *Agent) Once() error {
 	anchor := logclient.Anchor{
 		Anchor:  replay.Anchor{Net: a.cfg.Anchor.Net, GenesisHash: a.cfg.Anchor.GenesisHash},
 		LogKeys: []string{a.cfg.Anchor.LogKey},
+		Origin:  a.cfg.Anchor.Origin,
 		Policy:  a.cfg.Anchor.Policy,
 		Stored:  stored,
 		Held:    heldTree,

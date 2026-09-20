@@ -21,6 +21,7 @@ func anchorFor(t *trust.Trust) logclient.Anchor {
 	return logclient.Anchor{
 		Anchor:  replay.Anchor{Net: t.Net, GenesisHash: t.GenesisHash},
 		LogKeys: []string{t.LogKey},
+		Origin:  t.Origin,
 		Policy:  t.Policy,
 	}
 }

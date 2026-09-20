@@ -469,7 +469,7 @@ them, and then run the gate.
 | 6.5g-i | §11.1's unforced reader steps | H1: three of the four steps I wrote in 6.5e-i are forced by nothing — including a forged consistency proof, which is a permanent remote DoS | ✅ |
 | 6.5g-ii | Which policy, and which log keys | H2's fatal half closed: a `policy` entry must now be a policy. **The rest needs a decision — see the question below.** | ⚠️ |
 | 6.5g-iii | Two reason codes the prose gets wrong | H4 (§4.0 names `no-device-sig` where §5.1 gives `threshold`) and H5 (§5.2's validity rule makes §5.1's rotate proof-of-possession unsatisfiable) | ✅ |
-| 6.5g-iv | What a decoder accepts after the entry | H6 (trailing bytes) and H8 (the origin check exists only inside §11.1) | ⬜ |
+| 6.5g-iv | What a decoder accepts after the entry | H6 (trailing bytes) and H8 (the origin check exists only inside §11.1) | ✅ |
 | 6.5g-v | Time, again | H7 (`quorum none` makes `T` infinite by a literal reading; cosignature timestamps unruled) and H9 (§8's staleness MUST has no predicate) | ⬜ |
 | 6.5g-vi | **The class, not the instance** | H10 and every other rule-negative refused by its own signature — enforced over the whole directory rather than a list | ⬜ |
 | 6.5g-vii | Clear prose, no vector | the ten variants run 6 lists where the prose is unambiguous and nothing pins it | ⬜ |
@@ -1204,3 +1204,12 @@ code does not have.
   - **`bad-enroll-empty-sigs` ships**, refused `threshold`, and both implementations agree.
   - **Two more hardcoded indices found and derived.** Two `add_raw` entries carried `"after": 45` and `"after": 52` — literal values that D-041 was written about and had missed, and that would have silently rejected their own entries for `after` the next time anything was inserted above them.
   - **Two mutations, two reds**: believing §4.0 turns `bad-enroll-empty-sigs` into `no-device-sig`, and reading §5.2 literally reproduces run 6's exact failure on entry 40.
+
+
+- **6.5g-iv H6 and H8 — two checks the code had and the document did not, and one it had neither.**
+  - **H6 is the better bug, and it is not about parsing.** The profile never said a decoder must consume the whole input. Append one byte to a governance entry and **every signature still verifies** — a preimage covers the decoded envelope, not the raw bytes — while the `entry_hash` changes, so `dup-entry` never fires. A decoder that reads one item and stops **applies the same entry twice**; run 6 grew `state.log_keys` from two to three that way, and reading one item is `cbor2.loads`' default, which is what the Python reference is built on.
+  - **Our decoder already refused trailing bytes and the specification never said to.** §4.0 says it now, with the reason, because "the difference between reading one item and validating a document" is exactly the sentence a second implementer needs and would not have derived.
+  - **`bad-trailing-byte` is `27-log_key` with one byte after it**, taken from the log rather than rebuilt, so the duplicate really is the entry the log applied — a freshly built one would differ in `ts` and prove nothing about replaying *the same* entry. Allowing trailing bytes turns the manifest red **and** `state.json`, which is the doubling made visible.
+  - **H8 is the one the code did not have.** §10's procedure never compared the checkpoint's origin line with the network's, and neither did `logclient`: its `Anchor` had no origin field at all. `03-wrong-origin` is refused by the note name and key id — which bind the **signer**, not the subject. The origin line is the field that says *which log this is about*, and nothing was reading it.
+  - **`checkpoints-bad/10-wrong-body-origin`** is signed by this network's log key, under this network's name, and names another log in its first line. Every trust-file consumer — `verify`, the agent, the monitor — now carries the origin and compares it.
+  - **Two mutations, two reds.** Allowing trailing bytes accepts entry 55 and diverges the state; skipping the origin comparison accepts a checkpoint for another network.

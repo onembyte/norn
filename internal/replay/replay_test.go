@@ -582,3 +582,40 @@ func TestAnUnsignedEnrollIsRefusedForItsSignerCount(t *testing.T) {
 			"gives `threshold`, because the embedded request is still signed", reason)
 	}
 }
+
+// Cold-model gate run 6, defect H6. The encoding profile never said a decoder
+// must reject bytes after the CBOR item, and `allow-trailing` passed every
+// vector. The attack is not a parsing curiosity: append one byte to a
+// governance entry and it keeps its signatures -- the preimage is the decoded
+// envelope, not the raw bytes -- while its `entry_hash` changes, so `dup-entry`
+// does not fire and a lenient decoder **applies it twice**. Run 6 grew
+// `state.log_keys` from two to three that way.
+func TestAGovernanceEntryCannotBeReplayedByAppendingAByte(t *testing.T) {
+	_, _, m := loadCase(t, filepath.Join(vectorRoot(), "log"))
+	index, reason := entryNamed(t, m, "bad-trailing-byte")
+	if reason != "decode" {
+		t.Errorf("an entry with a byte after it is refused %q, want decode", reason)
+	}
+
+	// It must be a *duplicate* of an entry the log already applied, or it
+	// tests trailing bytes and not the doubling they enable.
+	raw, err := os.ReadFile(filepath.Join(vectorRoot(), "log",
+		fullName(t, m, "bad-trailing-byte")+".cbor"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	trimmed := raw[:len(raw)-1]
+	var twin string
+	for _, e := range m.Entries {
+		body, err := os.ReadFile(filepath.Join(vectorRoot(), "log", e.Name+".cbor"))
+		if err == nil && e.Reason == "" && string(body) == string(trimmed) {
+			twin = e.Name
+		}
+	}
+	if twin == "" {
+		t.Error("stripping the trailing byte does not yield an accepted entry, so the " +
+			"vector does not show that the byte is what makes a replay possible")
+	} else {
+		t.Logf("entry %d is %s with one byte appended", index, twin)
+	}
+}

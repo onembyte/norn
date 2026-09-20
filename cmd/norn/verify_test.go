@@ -324,3 +324,21 @@ func TestEveryServedNegativeIsRefused(t *testing.T) {
 		})
 	}
 }
+
+// Cold-model gate run 6, defect H8. §10's procedure never compared the
+// checkpoint's origin line with the network's, and `blind-origin-check` passed
+// every vector: `03-wrong-origin` is refused by the note name and key id, not
+// by any origin comparison. A checkpoint's origin is the field that says which
+// log it is about, and nothing was reading it.
+func TestACheckpointForAnotherOriginIsRefusedByTheOriginCheck(t *testing.T) {
+	dir := servedWithCheckpoint(t,
+		filepath.Join(vectors(), "checkpoints-bad", "10-wrong-body-origin.checkpoint"))
+	out, err := exec.Command(nornBinary(t), "verify",
+		"-trust", filepath.Join(vectors(), "trust.cbor"), "-log", dir).CombinedOutput()
+	if err == nil {
+		t.Fatalf("accepted a checkpoint whose origin names another log:\n%s", out)
+	}
+	if !strings.Contains(string(out), "origin") {
+		t.Errorf("refused, but not for its origin -- so the check is still unforced:\n%s", out)
+	}
+}
