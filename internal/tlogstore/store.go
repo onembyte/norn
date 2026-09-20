@@ -108,6 +108,17 @@ func Open(dir, origin string, key ed25519.PrivateKey, opts ...Option) (*Store, e
 	return s, nil
 }
 
+// Republish writes the current head again, passing it through the cosigner.
+//
+// Two things need this. A log wires its witness client *after* opening the
+// store -- the client needs consistency proofs from the tree the store holds,
+// so one of the two has to be built first -- and without a second publish the
+// head opened with would stay uncosigned until the next append. And a quiet
+// log has to refresh its cosignatures anyway: witness time is what every node
+// measures freshness against (`GOSSIP.md` part 5), so a log that stops asking
+// makes the whole network degrade without anything being wrong.
+func (s *Store) Republish() error { return s.publishCheckpoint() }
+
 // publishCheckpoint writes the current head as the file a verifier reads.
 func (s *Store) publishCheckpoint() error {
 	signed, err := s.SignedCheckpoint()
@@ -126,9 +137,13 @@ func (s *Store) SignedCheckpoint() (string, error) {
 	}
 	cosigned, err := s.cosigner.Cosign(signed)
 	if err != nil {
-		// Publishing the bare head here would serve a checkpoint the
-		// network's own policy rejects while looking like success.
-		return "", storeErrorf("no witness corroborated the head: %v", err)
+		// A cosigner that fails is a cosigner that is broken, not a witness
+		// that is down: `witness.Submitter` returns the head with whatever it
+		// collected and reports the rest, because `GOSSIP.md`'s T6 says a
+		// witness outage must not stop the log. So an error reaching here
+		// means the signing itself failed, and publishing a head that claims
+		// corroboration it does not have would be worse than not publishing.
+		return "", storeErrorf("cosigning the head failed: %v", err)
 	}
 	return cosigned, nil
 }
@@ -320,4 +335,22 @@ func (s *Store) InclusionProof(index int64) (upstream.RecordProof, error) {
 // ConsistencyProof proves the log at an earlier size is a prefix of this one.
 func (s *Store) ConsistencyProof(older int64) (upstream.TreeProof, error) {
 	return s.tree.ConsistencyProof(older)
+}
+
+// Cosigners runs several cosigners in order, each adding to what the last
+// produced. A log that both holds a witness key locally and asks others over
+// the network needs all of them on the checkpoint; two separate WithCosigner
+// options would mean the second silently replaced the first.
+func Cosigners(all ...Cosigner) Cosigner {
+	return CosignerFunc(func(signed string) (string, error) {
+		out := signed
+		for _, one := range all {
+			next, err := one.Cosign(out)
+			if err != nil {
+				return "", err
+			}
+			out = next
+		}
+		return out, nil
+	})
 }

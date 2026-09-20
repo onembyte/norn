@@ -63,6 +63,17 @@ a peer is as good as one from the log because the signatures are the same.
 Homelab default `2 of [pi, vps, friend]`: no single physical location and no single
 person can forge a quorum. A 1-of-1 self-witness is allowed only in observe mode.
 
+A log asks its witnesses over `c2sp.org/tlog-witness` at the `url` its own
+`norn.trust` gives them — the network already says where they are, so a log is not
+configured twice. An unreachable witness never stops the log: T6 below is explicit
+that a witness outage leaves the log publishing and the *nodes* degrading, so the
+head goes out with whatever corroboration was available. A log that refused to write
+instead would turn a witness outage into a log outage.
+
+An **idle** log still republishes every `checkpoint_interval`, because witness time
+is what freshness is measured against: a log that stopped asking would make its own
+network go `degraded` with nothing wrong, the quietest networks first.
+
 `norn-log -self-witness <policy name>=<keyfile>` is that first row, and it is how a
 network gets through its first minutes: a log with no witness publishes heads that
 every verifier refuses (§10 step 3), so something has to cosign before the network

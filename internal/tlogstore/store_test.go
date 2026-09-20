@@ -310,11 +310,13 @@ func TestACosignerReachesTheServedCheckpoint(t *testing.T) {
 	}
 }
 
-// A witness that cannot be reached must not be papered over: publishing the
-// bare log-signed head would serve a checkpoint the network's own policy
-// rejects, while looking like an ordinary successful append. What a log should
-// *do* about an unreachable witness -- retry, serve stale, degrade -- is 4.3's
-// question; refusing to pretend is this checkpoint's.
+// A cosigner that returns an error is broken, and a broken cosigner fails the
+// publish rather than silently producing a bare head.
+//
+// This is *not* the unreachable-witness case. `GOSSIP.md`'s T6 says a witness
+// outage must not stop a log, so `witness.Submitter` returns the head with
+// whatever it collected and never errors for a witness that is merely down.
+// An error arriving here means the cosigning machinery itself failed.
 func TestAFailingCosignerFailsTheAppend(t *testing.T) {
 	dir := t.TempDir()
 	unreachable := CosignerFunc(func(string) (string, error) {
@@ -376,5 +378,31 @@ func TestOpeningRepublishesTheCheckpoint(t *testing.T) {
 	if _, err := cosign.Verify(string(after),
 		[]string{note.CosignerVerifierKey("a-witness", witnessKey.Public().(ed25519.PublicKey))}); err != nil {
 		t.Errorf("opening with a cosigner left the old uncosigned head served: %v", err)
+	}
+}
+
+// A log may hold one witness key itself and ask others over the network. Both
+// have to reach the checkpoint: two calls to WithCosigner would otherwise mean
+// the second silently replaces the first, and an operator who configured both
+// would lose the remote witnesses without being told.
+func TestCosignersCombine(t *testing.T) {
+	dir := t.TempDir()
+	first := CosignerFunc(func(signed string) (string, error) { return signed + "one\n", nil })
+	second := CosignerFunc(func(signed string) (string, error) { return signed + "two\n", nil })
+
+	store, err := Open(dir, "norn/test", testLogKey(t), WithCosigner(Cosigners(first, second)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Append([]byte("an entry")); err != nil {
+		t.Fatal(err)
+	}
+
+	raw, err := os.ReadFile(filepath.Join(dir, "checkpoint"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), "one\n") || !strings.Contains(string(raw), "two\n") {
+		t.Errorf("both cosigners must reach the checkpoint:\n%s", raw)
 	}
 }

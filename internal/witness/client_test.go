@@ -80,6 +80,9 @@ func cosignWith(t *testing.T, body string) string {
 // this package does not.
 func aProof() [][]byte { return [][]byte{make([]byte, 32)} }
 
+// someInstant is the time the test witnesses cosign at.
+var someInstant = time.Unix(1_760_003_600, 0)
+
 func TestTheRequestIsTheDocumentedShape(t *testing.T) {
 	signed, body := aCheckpoint(t)
 	var path, method, sent string

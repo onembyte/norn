@@ -6,19 +6,24 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/onembyte/norn/internal/cosign"
 	"github.com/onembyte/norn/internal/enrollreq"
 	"github.com/onembyte/norn/internal/entry"
 	"github.com/onembyte/norn/internal/keyfile"
 	"github.com/onembyte/norn/internal/logserver"
+	"github.com/onembyte/norn/internal/note"
 	"github.com/onembyte/norn/internal/tlogstore"
 	"github.com/onembyte/norn/internal/trust"
 )
@@ -307,4 +312,232 @@ func TestASelfWitnessMustBeNamedByThePolicy(t *testing.T) {
 	if !strings.Contains(string(out), "nobody") {
 		t.Errorf("the error should name the witness: %s", out)
 	}
+}
+
+// The end of the self-witness crutch: a real `norn-log`, a real HTTP witness,
+// and a checkpoint that carries a cosignature the log did not make itself.
+//
+// The witness here is a stub rather than `transparency-dev/witness` -- that is
+// 4.4, and the point of keeping them separate is that this test proves the
+// *log* asks correctly, while that one proves an implementation nobody here
+// wrote is happy with what it asked.
+func TestTheLogCollectsACosignatureOverHTTP(t *testing.T) {
+	logBin := build(t, ".", "norn-log")
+	dir, _, anchor := seededLog(t)
+
+	// A witness at a real address, holding the fixture's `pi` key.
+	witnessKey := seed(t, "witness-pi")
+	var asked int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasSuffix(r.URL.Path, "/add-checkpoint") {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		asked++
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		_, checkpoint, ok := strings.Cut(string(body), "\n\n")
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		text, _, err := note.Split(checkpoint)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		line, err := cosign.Sign(text, "norn-witness/pi", witnessKey, time.Unix(1_760_003_600, 0))
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		_, _ = w.Write([]byte(line + "\n"))
+	}))
+	defer server.Close()
+
+	// A trust file whose `pi` witness points at that address.
+	trustFile := witnessedTrust(t, anchor, server.URL)
+
+	keyPath := filepath.Join(t.TempDir(), "log.key")
+	if err := keyfile.Write(keyPath, seed(t, "logkey"), "norn log key"); err != nil {
+		t.Fatal(err)
+	}
+	addr := freePort(t)
+	proc := exec.Command(logBin, "-dir", dir, "-key", keyPath,
+		"-trust", trustFile, "-listen", addr)
+	proc.Stderr = os.Stderr
+	if err := proc.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = proc.Process.Kill()
+		_, _ = proc.Process.Wait()
+	})
+
+	base := "http://" + addr
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		if resp, err := http.Get(base + "/checkpoint"); err == nil {
+			resp.Body.Close()
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("norn-log never came up")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	resp, err := http.Get(base + "/checkpoint")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	served, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if asked == 0 {
+		t.Fatal("the log never asked its witness")
+	}
+	public := witnessKey.Public().(ed25519.PublicKey)
+	got, err := cosign.Verify(string(served),
+		[]string{note.CosignerVerifierKey("norn-witness/pi", public)})
+	if err != nil || len(got) != 1 {
+		t.Fatalf("the served checkpoint carries no cosignature from the witness (%v):\n%s",
+			err, served)
+	}
+}
+
+// witnessedTrust rewrites the fixture's anchor so its `pi` witness lives at
+// `url`, and writes it where norn-log can read it.
+func witnessedTrust(t *testing.T, anchor *trust.Trust, url string) string {
+	t.Helper()
+	doc := *anchor
+	doc.Witnesses = append([]trust.Witness(nil), anchor.Witnesses...)
+	for i := range doc.Witnesses {
+		if doc.Witnesses[i].Name == "pi" {
+			doc.Witnesses[i].URL = url
+		} else {
+			doc.Witnesses[i].URL = ""
+		}
+	}
+	raw, err := doc.Encode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "norn.trust")
+	if err := os.WriteFile(path, raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// A log with nothing to add still has to keep asking. Witness time is what
+// every node measures freshness against (GOSSIP part 5), so cosignatures from
+// an hour ago make the whole network `degraded` with nothing actually wrong.
+// SPEC §4.5's `checkpoint_interval` is the promise: at most T_c between
+// checkpoints.
+func TestAQuietLogKeepsRefreshingItsCosignatures(t *testing.T) {
+	logBin := build(t, ".", "norn-log")
+	dir, _, anchor := seededLog(t)
+
+	witnessKey := seed(t, "witness-pi")
+	var mu sync.Mutex
+	var asked int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		_, checkpoint, ok := strings.Cut(string(body), "\n\n")
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		text, _, err := note.Split(checkpoint)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		mu.Lock()
+		asked++
+		at := time.Unix(1_760_003_600+int64(asked), 0)
+		mu.Unlock()
+		line, err := cosign.Sign(text, "norn-witness/pi", witnessKey, at)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		_, _ = w.Write([]byte(line + "\n"))
+	}))
+	defer server.Close()
+
+	keyPath := filepath.Join(t.TempDir(), "log.key")
+	if err := keyfile.Write(keyPath, seed(t, "logkey"), "norn log key"); err != nil {
+		t.Fatal(err)
+	}
+	addr := freePort(t)
+	proc := exec.Command(logBin, "-dir", dir, "-key", keyPath,
+		"-trust", witnessedTrust(t, anchor, server.URL), "-listen", addr,
+		"-checkpoint-interval", "300ms")
+	proc.Stderr = os.Stderr
+	if err := proc.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = proc.Process.Kill()
+		_, _ = proc.Process.Wait()
+	})
+
+	base := "http://" + addr
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		if resp, err := http.Get(base + "/checkpoint"); err == nil {
+			resp.Body.Close()
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("norn-log never came up")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	// Nothing is submitted; the log is idle.
+	first := cosignedAtOf(t, base)
+	deadline = time.Now().Add(5 * time.Second)
+	for {
+		if later := cosignedAtOf(t, base); later > first {
+			return // the witness time on the served head moved forward
+		}
+		if time.Now().After(deadline) {
+			mu.Lock()
+			count := asked
+			mu.Unlock()
+			t.Fatalf("an idle log never refreshed its cosignatures (%d asks); every "+
+				"node on this network would degrade for no reason", count)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+// cosignedAtOf reads the witness time off the currently served checkpoint.
+func cosignedAtOf(t *testing.T, base string) int64 {
+	t.Helper()
+	resp, err := http.Get(base + "/checkpoint")
+	if err != nil {
+		return 0
+	}
+	defer resp.Body.Close()
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return 0
+	}
+	public := seed(t, "witness-pi").Public().(ed25519.PublicKey)
+	got, err := cosign.Verify(string(raw),
+		[]string{note.CosignerVerifierKey("norn-witness/pi", public)})
+	if err != nil || len(got) == 0 {
+		return 0
+	}
+	return got[0].Time.Unix()
 }

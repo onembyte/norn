@@ -27,6 +27,7 @@ import (
 	"github.com/onembyte/norn/internal/replay"
 	"github.com/onembyte/norn/internal/tlogstore"
 	"github.com/onembyte/norn/internal/trust"
+	"github.com/onembyte/norn/internal/witness"
 )
 
 func main() {
@@ -42,6 +43,8 @@ func run(args []string) error {
 	listen := fs.String("listen", "127.0.0.1:8080", "address to listen on")
 	keyPath := fs.String("key", "", "the log's signing key, an OpenSSH private key file (required)")
 	trustPath := fs.String("trust", "", "a norn.trust naming this network (required)")
+	interval := fs.Duration("checkpoint-interval", DefaultCheckpointInterval,
+		"how often an idle log republishes, to refresh its witnesses' cosignatures")
 	var selfWitness repeated
 	fs.Var(&selfWitness, "self-witness",
 		"cosign this log's own checkpoints as `name=keyfile`; repeat for more")
@@ -88,19 +91,40 @@ func run(args []string) error {
 	if err != nil {
 		return err
 	}
-	var opts []tlogstore.Option
+	// The trust file already says where this network's witnesses live, so a
+	// log does not need to be told twice -- and a witness the policy does not
+	// name is one nothing would count anyway.
+	remote := witnessClients(anchor)
+	proofs := &storeProofs{}
+	// Both kinds of cosigner reach the checkpoint. A log bootstrapping with a
+	// local key while its remote witnesses come up is a real state, and
+	// setting the option twice would silently drop one of them.
+	var cosigners []tlogstore.Cosigner
+	if len(remote) > 0 {
+		cosigners = append(cosigners, witness.NewSubmitter(remote, proofs, func(err error) {
+			fmt.Fprintln(os.Stderr, "norn-log:", err)
+		}))
+		for _, client := range remote {
+			fmt.Fprintf(os.Stderr, "norn-log: witness %s at %s\n", client.Name, client.URL)
+		}
+	}
 	if len(signers) > 0 {
-		opts = append(opts, tlogstore.WithCosigner(
-			tlogstore.CosignerFunc(cosign.Append(signers, time.Now))))
+		cosigners = append(cosigners,
+			tlogstore.CosignerFunc(cosign.Append(signers, time.Now)))
 		for _, s := range signers {
 			fmt.Fprintf(os.Stderr, "norn-log: self-witnessing as %s -- this log cosigns "+
 				"its own checkpoints, which is independence from nothing (GOSSIP part 3)\n", s.Name)
 		}
 	}
+	var opts []tlogstore.Option
+	if len(cosigners) > 0 {
+		opts = append(opts, tlogstore.WithCosigner(tlogstore.Cosigners(cosigners...)))
+	}
 	store, err := tlogstore.Open(*dir, anchor.Origin, key, opts...)
 	if err != nil {
 		return err
 	}
+	proofs.store = store
 	server, err := logserver.New(store, *dir, anchor.Origin, key,
 		replay.Anchor{Net: anchor.Net, GenesisHash: anchor.GenesisHash})
 	if err != nil {
@@ -110,6 +134,19 @@ func run(args []string) error {
 	fmt.Fprintf(os.Stderr, "norn-log %s\n  dir    %s\n  size   %d\n  listen %s\n",
 		anchor.Origin, *dir, store.Size(), *listen)
 	fmt.Fprintf(os.Stderr, "  note   rate limiting (§7's 429) is not implemented\n")
+
+	// Refreshing happens in the background, starting at once.
+	//
+	// At once, because the head this store opened with was written before the
+	// witness client had a tree to build proofs from. In the background,
+	// because a log must not wait on a third party to start serving: with
+	// witnesses that are down, a synchronous first round would hold the
+	// listener closed for the whole timeout -- turning a witness outage into a
+	// log outage at exactly the moment an operator is trying to bring the log
+	// back (GOSSIP T6).
+	if len(remote) > 0 && *interval > 0 {
+		go refresh(store, *interval)
+	}
 	return http.ListenAndServe(*listen, server.Handler())
 }
 
@@ -185,4 +222,62 @@ func selfWitnesses(specs []string, anchor *trust.Trust) ([]cosign.Signer, error)
 		signers = append(signers, cosign.Signer{Name: verifier.Name, Key: key})
 	}
 	return signers, nil
+}
+
+// witnessClients builds a client per witness the trust file gives an address
+// for. A witness with no `url` is one this node cannot reach -- it may still
+// count towards the quorum when somebody else collects its cosignature, so it
+// is skipped rather than refused.
+func witnessClients(anchor *trust.Trust) []*witness.Client {
+	var out []*witness.Client
+	for _, w := range anchor.Witnesses {
+		if w.URL == "" {
+			continue
+		}
+		out = append(out, &witness.Client{Name: w.Name, URL: w.URL, Key: w.Key})
+	}
+	return out
+}
+
+// storeProofs supplies consistency proofs from the log's own tree.
+//
+// The store is filled in after it is opened, because the store is built *with*
+// the submitter that needs these proofs. Tying the two together afterwards is
+// the smaller knot: the alternative is a store that knows how to talk to
+// witnesses, which is the dependency `internal/witness` exists to avoid.
+type storeProofs struct{ store *tlogstore.Store }
+
+func (p *storeProofs) ConsistencyProof(old int64) ([][]byte, error) {
+	if p.store == nil {
+		return nil, fmt.Errorf("the log is not open yet")
+	}
+	if old == 0 {
+		return nil, nil // "The proof MUST be empty if the old size is zero."
+	}
+	proof, err := p.store.ConsistencyProof(old)
+	if err != nil {
+		return nil, err
+	}
+	out := make([][]byte, 0, len(proof))
+	for _, hash := range proof {
+		out = append(out, append([]byte(nil), hash[:]...))
+	}
+	return out, nil
+}
+
+// DefaultCheckpointInterval is SPEC §4.5's `checkpoint_interval` default: the
+// most time a log promises to leave between checkpoints.
+const DefaultCheckpointInterval = 60 * time.Second
+
+// refresh republishes the head on a tick, so an idle log's cosignatures stay
+// current. A failure is reported and the loop continues: the submitter already
+// treats an unreachable witness as survivable, and a log that stopped
+// refreshing because one tick failed would be the outage it is avoiding.
+func refresh(store *tlogstore.Store, every time.Duration) {
+	for {
+		if err := store.Republish(); err != nil {
+			fmt.Fprintln(os.Stderr, "norn-log: refreshing the checkpoint:", err)
+		}
+		time.Sleep(every)
+	}
 }
