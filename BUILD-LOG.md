@@ -422,7 +422,7 @@ which a node may do.
 | # | Checkpoint | Done when | ✔ |
 |---|---|---|---|
 | 5.1 | The rules engine | `LAB.md` §3's table as code: an observation in, a level and a sentence out, with the thresholds a homelab can change | ✅ |
-| 5.2 | Watching a network | the log, the witnesses and each node's `/norn/checkpoint` and `/norn/evidence` — read-only, over the tunnel, as an enrolled peer | ⬜ |
+| 5.2 | Watching a network | the log, the witnesses and each node's `/norn/checkpoint` and `/norn/evidence` — read-only, over the tunnel, as an enrolled peer | ✅ |
 | 5.3 | The receipt inbox | a receipt whose deadline passed with no inclusion is **non-repudiable proof of A2**, and the monitor is what notices | ⬜ |
 | 5.4 | Outputs | stdout JSON always; `ntfy`, Home Assistant, Alertmanager and email optional and each failing alone | ⬜ |
 | 5.5 | The status page | read-only HTML on the tunnel address: sizes, ages, witness times, the device table and the last entries in plain words | ⬜ |
@@ -846,3 +846,13 @@ the signer keeps one job — decide, and place the entry in the log.
   - **Every alert names its rule**, because the gate line asks for "one notification **per rule**" and nothing can count that otherwise. A test requires the names to be distinct, so a rule that cannot be told from another cannot hide inside it.
   - **Thresholds are fields, not constants.** A homelab changes the heartbeat window or the anchor-lag tolerance without editing Go, and a test sets both to prove it.
   - Go: 49 packages, 548 tests; `go test`, staticcheck and both halves of `vectors-check` green.
+
+- **5.2 watching a network — the monitor is an enrolled peer, not a privileged one.**
+  - **It verifies everything it reads with the same `logclient.Verify` a node runs, under the same anchor.** That is not code reuse for its own sake: a monitor that believed something a node would refuse would be reporting on a different network than the one that exists, and its alerts would be about nothing. A node's gossip endpoints are read through `gossip.Peer`, which is the same Fetcher a node uses on a neighbour — so the monitor has no privileged path to anything.
+  - **Nothing in a round returns an error.** A monitor that fell over when the thing it monitors fell over would be worse than no monitor, because somebody is relying on it. Every failure becomes an alert and the round carries on; a test runs one with the log gone and every node unreachable and requires alerts to come out.
+  - **An unchanged log is silent.** Ninety entries repeated every thirty seconds gets a monitor turned off within the hour, and then it is monitoring nothing — so the log size and the rejection count already described are remembered, and a second round over the same log says nothing new.
+  - **The fixture's rejected entries turned out to be a feature.** It contains entries replay refuses, and a log publishing those is its operator misbehaving or running something buggy — the one thing *only* a monitor would ever notice, since every node simply ignores them. The test requires them to be reported.
+  - **Evidence is read before the checkpoint**, because a node that has frozen may not be answering anything else usefully, and what it is holding is the loudest thing it could possibly say.
+  - **A monitor starting up does not accuse everybody of being down.** A node never yet seen is recorded as seen now, so the heartbeat rule measures silence rather than ignorance.
+  - **An architecture test for §3's own words.** "It never sits on the enforcement path": `agent`, `reconcile` and `nornd` may not import the monitor at all. The monitor is allowed to do things a node must not — poll witnesses, hold a receipt inbox, talk to a push service on the internet — and that is safe exactly because nothing it concludes can reach the peer table.
+  - Go: 49 packages, 557 tests; `go test`, staticcheck and both halves of `vectors-check` green.

@@ -146,3 +146,30 @@ func TestAnchoringNeverTouchesTheHandshakePath(t *testing.T) {
 			"Anchoring is advisory (D-009) and must not be able to decide anything.")
 	}
 }
+
+// `LAB.md` §3: the monitor "never sits on the enforcement path". Like D-009's
+// anchoring, that is a claim about what can influence whether a peer is
+// proven, so it is enforced rather than remembered.
+//
+// The monitor is allowed to do things a node must not: poll witnesses, hold a
+// receipt inbox, talk to a push service on the internet. All of that is safe
+// exactly because nothing it concludes reaches the peer table — and the way to
+// keep that true is for the code that drives an interface to be unable to
+// refer to it.
+func TestTheMonitorNeverReachesTheEnforcementPath(t *testing.T) {
+	for _, pkg := range []string{
+		"github.com/onembyte/norn/internal/agent",
+		"github.com/onembyte/norn/internal/reconcile",
+		"github.com/onembyte/norn/cmd/nornd",
+	} {
+		forbid(t, pkg, []string{"github.com/onembyte/norn/internal/monitor"},
+			"A monitor reports; it does not decide.")
+	}
+}
+
+// And the monitor does not drive interfaces either. It watches a network over
+// the tunnel as an enrolled peer, with no kernel in sight.
+func TestTheMonitorDoesNotCarryAKernelDriver(t *testing.T) {
+	forbid(t, "github.com/onembyte/norn/internal/monitor", kernelDriver,
+		"Watching a network is reading, not configuring.")
+}
