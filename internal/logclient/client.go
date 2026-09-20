@@ -17,6 +17,8 @@ import (
 	"path/filepath"
 	"time"
 
+	upstream "golang.org/x/mod/sumdb/tlog"
+
 	"github.com/onembyte/norn/internal/cosign"
 	"github.com/onembyte/norn/internal/freshness"
 	"github.com/onembyte/norn/internal/policy"
@@ -64,6 +66,10 @@ type Result struct {
 	// the time either, and a node with no witness clock must say so rather
 	// than fall back to its own (A11).
 	QuorumTime *time.Time
+	// Tree is the log as served, rebuilt from those entries. A node keeps it
+	// so it can speak for its own branch later -- which is what tells a fork
+	// apart from a rollback.
+	Tree *tlog.Tree
 	// Served is every entry the log served, in log order. A caller that has
 	// just verified a log usually wants to look something up in it -- an
 	// inclusion check, a proof bundle -- and re-fetching would be asking a
@@ -93,6 +99,14 @@ type Anchor struct {
 	// stops a log -- or a peer -- serving a correctly signed, correctly
 	// cosigned view of its own past.
 	Stored *tlog.Checkpoint
+	// Held is the node's own tree for the stored head, when it has one.
+	//
+	// Without it a log that forks by serving a **shorter** branch can only be
+	// refused for shrinking: at a smaller size the served tree cannot say what
+	// the node's branch had, so "consistent prefix" and "different history"
+	// are indistinguishable. With it they are told apart, and the second gets
+	// the evidence §11 requires.
+	Held *tlog.Tree
 }
 
 // Verify fetches a log, checks that the log operator signed the head, checks
@@ -156,7 +170,7 @@ func Verify(f Fetcher, anchor Anchor) (*Result, error) {
 	}
 
 	// §10: a log only grows, and it contains everything it used to contain.
-	if err := checkAgainstStored(anchor.Stored, cp, tree); err != nil {
+	if err := checkAgainstStored(anchor.Stored, cp, tree, string(raw), anchor.Held); err != nil {
 		return nil, err
 	}
 
@@ -169,7 +183,7 @@ func Verify(f Fetcher, anchor Anchor) (*Result, error) {
 		return nil, err
 	}
 
-	return &Result{Checkpoint: cp, SignedCheckpoint: string(raw),
+	return &Result{Checkpoint: cp, SignedCheckpoint: string(raw), Tree: tree,
 		Cosignatures: cosignatures, QuorumTime: quorumTime,
 		State: replay.Replay(anchor.Anchor, entries), Served: entries}, nil
 }
@@ -286,23 +300,78 @@ func checkQuorum(anchor Anchor, signed string) ([]cosign.Cosignature, *time.Time
 // (`GOSSIP.md` part 6, full replication), so it recomputes what the head at
 // the stored size must have been and compares. A mismatch means this log
 // cannot have produced the head the node is holding: a fork, not an error.
-func checkAgainstStored(stored *tlog.Checkpoint, cp tlog.Checkpoint, tree *tlog.Tree) error {
+func checkAgainstStored(stored *tlog.Checkpoint, cp tlog.Checkpoint, tree *tlog.Tree,
+	signed string, held *tlog.Tree) error {
 	if stored == nil {
 		return nil
+	}
+	// Compare where both trees can speak: the smaller of the two sizes. A
+	// disagreement there is a fork whichever way round the sizes fall, and
+	// checking it *before* the size rule matters -- a forking log that serves
+	// a shorter branch would otherwise be filed as an ordinary rollback and
+	// leave no evidence.
+	at := min(cp.Size, stored.Size)
+	served, err := tree.HeadAt(at)
+	if err != nil {
+		return logErrorf("checking the stored head against this log: %v", err)
+	}
+	mine := stored.Root
+	if at != stored.Size {
+		if held == nil {
+			// This node cannot speak for that size, so it cannot tell a fork
+			// from a rollback. Refusing as a rollback is the safe half of the
+			// answer, and saying so is better than claiming a fork it has not
+			// proved.
+			return logErrorf("this checkpoint has %d entries and this node already "+
+				"holds %d; a log does not shrink, and replaying an earlier view "+
+				"would undo every revocation since", cp.Size, stored.Size)
+		}
+		if mine, err = held.HeadAt(at); err != nil {
+			return logErrorf("checking this node's own branch at size %d: %v", at, err)
+		}
+	}
+	if served != mine {
+		return &ForkError{Stored: *stored, Conflicting: cp, Tree: tree,
+			At: at, Signed: signed, HeldRoot: mine, Held: held}
 	}
 	if cp.Size < stored.Size {
 		return logErrorf("this checkpoint has %d entries and this node already holds "+
 			"%d; a log does not shrink, and replaying an earlier view would undo "+
 			"every revocation since", cp.Size, stored.Size)
 	}
-	was, err := tree.HeadAt(stored.Size)
-	if err != nil {
-		return logErrorf("checking the stored head against this log: %v", err)
-	}
-	if was != stored.Root {
-		return logErrorf("FORK: at %d entries this log's head is %x, but this node "+
-			"holds %x at that size -- the two histories are not the same log (§11)",
-			stored.Size, was[:8], stored.Root[:8])
-	}
 	return nil
 }
+
+// ForkError reports two histories that cannot both be this log.
+//
+// It is typed rather than a message because §11 asks a node to *do* four
+// things about it -- write evidence, freeze, alarm, and keep refusing -- and
+// none of them can be driven off a formatted string. It carries what the
+// evidence needs: both heads, and the tree that can prove what this node held.
+type ForkError struct {
+	// Stored is the head this node was holding.
+	Stored tlog.Checkpoint
+	// Conflicting is the head that could not be reconciled with it.
+	Conflicting tlog.Checkpoint
+	// Tree is the log as served, for computing the proof that binds them.
+	Tree *tlog.Tree
+	// At is the size the two disagree at.
+	At int64
+	// Signed is the conflicting head exactly as the log published it, which is
+	// what evidence has to carry: a parsed checkpoint is a claim, the note is
+	// the signature somebody else can check.
+	Signed string
+	// HeldRoot is what this node's branch had at `At`, and Held is the tree
+	// that can prove it. Evidence is built from these: the *served* tree is
+	// the one under suspicion.
+	HeldRoot upstream.Hash
+	Held     *tlog.Tree
+}
+
+func (e *ForkError) Error() string {
+	return fmt.Sprintf("%s: FORK: at %d entries this log gives a different head than "+
+		"this node holds -- the two histories are not the same log (§11)",
+		ErrLog, e.At)
+}
+
+func (e *ForkError) Unwrap() error { return ErrLog }

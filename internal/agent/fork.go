@@ -1,0 +1,137 @@
+package agent
+
+import (
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/onembyte/norn/internal/forkevidence"
+	"github.com/onembyte/norn/internal/logclient"
+	"github.com/onembyte/norn/internal/policy"
+)
+
+// ForkDir holds the evidence a node wrote when it caught its log equivocating.
+//
+// Its presence is also the freeze: §11 says a forked node refuses every later
+// inconsistent checkpoint **forever**, and "forever" has to outlive the
+// process or it means "until somebody reboots the machine" -- which is a thing
+// an attacker can arrange.
+const ForkDir = "fork"
+
+// Fork alarms a proven equivocation. It is the loudest thing Norn can say: a
+// log signed two histories and a quorum of witnesses vouched for both.
+const Fork = "FORK"
+
+// Frozen reports that a node is refusing to move because of a fork it already
+// proved. It repeats, because a frozen node doing nothing looks exactly like a
+// working one.
+const Frozen = "FROZEN_BY_FORK"
+
+// Frozen reports whether this node has proof its log forked, and so will
+// accept nothing further under this anchor.
+func (a *Agent) Frozen() bool { return a.frozen }
+
+// loadFreeze looks for evidence this node wrote earlier under this anchor.
+//
+// Evidence is filed per network, so §11's escape hatch works as written:
+// "until an operator explicitly resets with a new trust file". A different
+// anchor is a different network to this node, and the old evidence stays on
+// disk, because it is still what an operator takes to the witness operators.
+func (a *Agent) loadFreeze() {
+	if a.cfg.RunDir == "" {
+		return
+	}
+	matches, err := filepath.Glob(filepath.Join(a.cfg.RunDir, ForkDir, "*.evidence"))
+	if err != nil {
+		return
+	}
+	for _, path := range matches {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		evidence, err := forkevidence.Parse(raw)
+		if err != nil {
+			continue
+		}
+		if !strings.HasPrefix(evidence.Held, a.cfg.Anchor.Origin+"\n") {
+			continue // somebody else's network
+		}
+		a.frozen, a.frozenBy = true, path
+		return
+	}
+}
+
+// recordFork carries out §11: evidence, alarm, freeze. The caller is
+// responsible for the fourth duty -- leaving the stored checkpoint and the
+// peer table exactly as they were -- which it does by returning without
+// touching either.
+func (a *Agent) recordFork(fork *logclient.ForkError) {
+	a.frozen = true
+
+	path, err := a.writeEvidence(fork)
+	if err != nil {
+		// A node that could not write the file is still forked, and saying so
+		// matters more than the file does.
+		a.emit(Event{Kind: Fork, Message: fmt.Sprintf(
+			"%v -- and the evidence could not be written (%v)", fork, err)})
+		return
+	}
+	a.emit(Event{Kind: Fork, Message: fmt.Sprintf(
+		"this log signed two histories: at %d entries it gives %s where this node "+
+			"holds %s, and a quorum of witnesses cosigned both. Evidence: %s. This "+
+			"node will accept nothing further until it is given a new trust file "+
+			"(§11); the peer table is unchanged.",
+		fork.At, short(fork.Conflicting.Root[:]), short(fork.HeldRoot[:]), path)})
+}
+
+// writeEvidence builds the artifact and puts it where an operator will find it.
+func (a *Agent) writeEvidence(fork *logclient.ForkError) (string, error) {
+	if a.cfg.RunDir == "" {
+		return "", errors.New("no run directory to write evidence to")
+	}
+	if a.last == nil {
+		return "", errors.New("nothing held to compare against")
+	}
+	// Built from **this node's** branch, not the served one: the served tree
+	// is the one under suspicion, and evidence drawn from it would be the
+	// accused certifying the accusation.
+	evidence, err := forkevidence.Build(fork.Held, a.last.SignedCheckpoint,
+		fork.Signed, fork.Conflicting)
+	if err != nil {
+		return "", err
+	}
+	evidence.Policy = a.cfg.Anchor.Policy
+
+	// Check the node's own work before filing it. Evidence that does not
+	// prove anything is worse than none: it is an accusation somebody will
+	// check and dismiss.
+	rules, err := policy.Parse(a.cfg.Anchor.Policy)
+	if err != nil {
+		return "", err
+	}
+	if _, err := forkevidence.Check(evidence, a.cfg.Anchor.Origin,
+		a.cfg.Anchor.LogKey, rules.Keys()); err != nil {
+		return "", fmt.Errorf("this node built evidence that does not prove a fork: %w", err)
+	}
+
+	raw, err := evidence.Encode()
+	if err != nil {
+		return "", err
+	}
+	dir := filepath.Join(a.cfg.RunDir, ForkDir)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+	path := filepath.Join(dir, fmt.Sprintf("%d.evidence", a.cfg.Now().Unix()))
+	if err := os.WriteFile(path, raw, 0o644); err != nil {
+		return "", err
+	}
+	a.frozenBy = path
+	return path, nil
+}
+
+func short(hash []byte) string { return hex.EncodeToString(hash[:8]) }

@@ -170,6 +170,10 @@ type Agent struct {
 	// clock remembers the newest instant any quorum vouched for. It is the
 	// node's only clock for deciding whether what it holds is current.
 	clock freshness.Clock
+	// frozen means this node has proof its log forked and will accept nothing
+	// further under this anchor (§11). frozenBy names the evidence.
+	frozen   bool
+	frozenBy string
 	// peerOrder decides which peers get asked, and is a node's own so two
 	// nodes started together do not walk the mesh in step.
 	peerOrder *rand.Rand
@@ -230,11 +234,14 @@ func New(cfg Config) (*Agent, error) {
 		return nil, fmt.Errorf("agent: %q is not a fight policy; use %q or %q",
 			cfg.FightPolicy, PolicyAlarm, PolicyQuarantine)
 	}
-	return &Agent{cfg: cfg,
+	agent := &Agent{cfg: cfg,
 		fights: fight.New(cfg.FightThreshold, cfg.FightWindow),
 		// Each node walks the mesh in its own order, so two nodes started
 		// together do not ask the same peers at the same moments.
-		peerOrder: rand.New(rand.NewSource(time.Now().UnixNano()))}, nil
+		peerOrder: rand.New(rand.NewSource(time.Now().UnixNano()))}
+	// A fork this node proved earlier outlives the process (§11).
+	agent.loadFreeze()
+	return agent, nil
 }
 
 // Mode reports the mode this agent runs in.
@@ -252,17 +259,39 @@ func (a *Agent) Once() error {
 	// correctly cosigned view of its own past -- un-revoking whoever was
 	// revoked since.
 	var stored *tlog.Checkpoint
+	var heldTree *tlog.Tree
 	if a.last != nil {
 		held := a.last.Checkpoint
-		stored = &held
+		stored, heldTree = &held, a.last.Tree
 	}
 	anchor := logclient.Anchor{
 		Anchor:  replay.Anchor{Net: a.cfg.Anchor.Net, GenesisHash: a.cfg.Anchor.GenesisHash},
 		LogKeys: []string{a.cfg.Anchor.LogKey},
 		Policy:  a.cfg.Anchor.Policy,
 		Stored:  stored,
+		Held:    heldTree,
 	}
+	// §11 duty 4: a node that has proved its log forked accepts nothing
+	// further. Not the forked log, and not the original either -- it has
+	// evidence that this log signs whatever suits it, and "it looks fine
+	// again" is not a reason to believe it.
+	if a.frozen {
+		a.emit(Event{Kind: Frozen, Message: fmt.Sprintf(
+			"refusing every checkpoint: this node holds proof that its log forked "+
+				"(%s). The peer table is left exactly as it is. Only a new trust "+
+				"file clears this (§11).", a.frozenBy)})
+		return errors.New("agent: frozen by a proven fork; the interface is untouched")
+	}
+
 	result, verifyErr := logclient.Verify(a.cfg.Fetcher, anchor)
+
+	// A fork is not an ordinary verification failure: it is proof the log
+	// equivocated, and §11 gives a node four things to do about it.
+	var fork *logclient.ForkError
+	if errors.As(verifyErr, &fork) {
+		a.recordFork(fork)
+		return verifyErr
+	}
 
 	// Ask peers when the log could not be used at all, and also when it could
 	// but what it gave is stale: `GOSSIP.md` part 5 has a degraded node poll
