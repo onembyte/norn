@@ -213,7 +213,8 @@ func build(config Config, logger *slog.Logger) (*agent.Agent, time.Duration, err
 		if err != nil {
 			logger.Warn("not gossiping", "reason", err)
 		} else {
-			serveGossip(logger, addr, filepath.Join(config.RunDir, proven.MirrorDir))
+			serveGossip(logger, addr, filepath.Join(config.RunDir, proven.MirrorDir),
+				filepath.Join(config.RunDir, agent.ForkDir))
 		}
 	}
 
@@ -330,7 +331,7 @@ func pick(values ...string) string {
 }
 
 // serveGossip runs the peer endpoints in the background.
-func serveGossip(logger *slog.Logger, addr, mirror string) {
+func serveGossip(logger *slog.Logger, addr, mirror, evidence string) {
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {
 		// The usual cause is a tunnel that is not up yet, which is a state
@@ -338,10 +339,10 @@ func serveGossip(logger *slog.Logger, addr, mirror string) {
 		logger.Warn("not gossiping", "addr", addr, "reason", err)
 		return
 	}
-	logger.Info("gossiping", "addr", addr, "mirror", mirror)
+	logger.Info("gossiping", "addr", addr, "mirror", mirror, "evidence", evidence)
 	go func() {
 		server := &http.Server{
-			Handler:           gossip.Handler(mirror),
+			Handler:           gossip.Handler(mirror, evidence),
 			ReadHeaderTimeout: 10 * time.Second,
 		}
 		if err := server.Serve(listener); err != nil {

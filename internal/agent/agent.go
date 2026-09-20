@@ -72,6 +72,11 @@ const (
 // DefaultDegradedAlarmEvery is GOSSIP part 5's "alarm every 5 min".
 const DefaultDegradedAlarmEvery = 5 * time.Minute
 
+// DefaultGossipEvery is T_g, the interval a node asks its peers on. It is not
+// the poll interval: polling the peer table four times a second is cheap and
+// local, while asking three neighbours over the tunnel that often is neither.
+const DefaultGossipEvery = 30 * time.Second
+
 const (
 	// InterfaceUnavailable: the WireGuard interface could not be read.
 	InterfaceUnavailable = "INTERFACE_UNAVAILABLE"
@@ -147,7 +152,12 @@ type Config struct {
 	// Fanout is `r`: how many peers to ask per round. Defaults to
 	// gossip.DefaultFanout.
 	Fanout int
-	Emit   func(Event)
+	// GossipEvery is T_g: how often to ask peers whether anybody has proved a
+	// fork. Unlike checkpoint gossip it runs whatever the log is doing, so it
+	// has its own interval rather than the poll's. Defaults to
+	// DefaultGossipEvery.
+	GossipEvery time.Duration
+	Emit        func(Event)
 
 	// FightPolicy is what to do when the same key keeps coming back:
 	// PolicyAlarm (the default) or PolicyQuarantine.
@@ -174,6 +184,8 @@ type Agent struct {
 	// further under this anchor (§11). frozenBy names the evidence.
 	frozen   bool
 	frozenBy string
+	// evidenceAsked is the monotonic reading of the last evidence round.
+	evidenceAsked time.Duration
 	// peerOrder decides which peers get asked, and is a node's own so two
 	// nodes started together do not walk the mesh in step.
 	peerOrder *rand.Rand
@@ -210,6 +222,9 @@ func New(cfg Config) (*Agent, error) {
 	}
 	if cfg.DegradedAlarmEvery <= 0 {
 		cfg.DegradedAlarmEvery = DefaultDegradedAlarmEvery
+	}
+	if cfg.GossipEvery <= 0 {
+		cfg.GossipEvery = DefaultGossipEvery
 	}
 	if cfg.Mono == nil {
 		// time.Since carries Go's monotonic reading, which does not move when
@@ -339,6 +354,14 @@ func (a *Agent) Once() error {
 	}
 	fresh := a.freshness(result)
 	a.reportFreshness(fresh)
+
+	// Ask whether anybody has proved a fork this node has not seen (T1b).
+	// This runs whatever the log is doing -- see pollEvidence for why that is
+	// the whole point.
+	a.pollEvidence()
+	if a.frozen {
+		return errors.New("agent: frozen by a fork a peer proved; the interface is untouched")
+	}
 
 	if err := a.reconcile(result, fresh); err != nil {
 		return err
@@ -560,6 +583,14 @@ func whyPeer(verifyErr error) string {
 	return "the log is answering but its head has gone stale, and this peer has a newer one"
 }
 
+// fanout is how many peers a round asks.
+func (a *Agent) fanout() int {
+	if a.cfg.Fanout > 0 {
+		return a.cfg.Fanout
+	}
+	return gossip.DefaultFanout
+}
+
 // PeerAddresses is where this node's **proven** peers can be gossiped with:
 // the tunnel address the log itself put in each peer's allowed-ips.
 //
@@ -595,14 +626,9 @@ func (a *Agent) askPeers(anchor logclient.Anchor) (*logclient.Result, string) {
 	if a.cfg.Peers == nil {
 		return nil, ""
 	}
-	fanout := a.cfg.Fanout
-	if fanout <= 0 {
-		fanout = gossip.DefaultFanout
-	}
-
 	var best *logclient.Result
 	var from string
-	for _, addr := range gossip.Choose(a.cfg.Peers(), fanout, a.peerOrder) {
+	for _, addr := range gossip.Choose(a.cfg.Peers(), a.fanout(), a.peerOrder) {
 		result, err := logclient.Verify(gossip.Peer(addr), anchor)
 		if err != nil {
 			// A second *history* is not a broken neighbour. §11 does not care

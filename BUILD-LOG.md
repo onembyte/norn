@@ -403,7 +403,7 @@ unknown until something cosigns. It closes **2.6b** too — an unmodified
 | 4.7b | `norn verify --anchored` | the `anchors/` layout and the trust file's `anchor` table — what a node checks, offline, about a proof somebody else obtained | ✅ |
 | 4.7c | Stamping | obtaining the proof: the calendar protocol, `anchors/<size>.ots` written by a monitor. Needs a network round trip, so it is a lab item (T8) | ✅ |
 | 4.8 | Phase 4 gate audit | each line against what is actually tested, and what the lab still owes | ✅ |
-| 4.9 | Evidence propagation | `GET /norn/evidence`: a node freezes on a fork **another node** proved, which is T1b and the one gate line with nothing behind it | ⬜ |
+| 4.9 | Evidence propagation | `GET /norn/evidence`: a node freezes on a fork **another node** proved, which is T1b and the one gate line with nothing behind it | ✅ |
 
 ## Decision taken — 2.9d: an `enroll` needs a device signature the device cannot make
 
@@ -803,3 +803,12 @@ the signer keeps one job — decide, and place the entry in the log.
   - **The rest are measurements or real hardware**, and each now records exactly which half is true: two log instances and 2·T_g timing, witnesses actually taken down, a real log server killed, a machine with a two-hour offset, a latency in milliseconds, and a calendar round trip that takes hours.
   - Go: 48 packages, 533 tests; `go test`, staticcheck and both halves of `vectors-check` green.
   - **The pattern held for the third phase running:** a gate made of measurements cannot be closed by a test suite, but auditing it against the code finds the lines whose *substance* was never checked — and two of them were wrong.
+- **4.9 evidence propagation — the one place gossip is needed *because* everything looks fine.**
+  - **T1b is not a variation on checkpoint gossip, it is the opposite case.** Checkpoints are fetched from peers when the log cannot be used. But node3 in T1b has a **healthy** log: it is being served one consistent history, has no reason to doubt it, and under the checkpoint rule would never ask anybody anything — while two other nodes have already proved that history is a fork. Evidence is needed precisely when nothing looks wrong, so it runs on its own schedule (`T_g`, 30 s) whatever the log is doing. Writing the test first is what made that obvious: it failed exactly as predicted, because a healthy node never asked.
+  - **A peer's evidence is believed only because it is checked** — by the same `forkevidence.Check` a stranger would run against the same trust file, which is why 4.6a was built for a sceptical stranger in the first place. Rubbish from a neighbour cannot freeze a network, and a test proves it: otherwise anybody on the tunnel could take the network down with a file of junk. Genuine evidence means there genuinely is a fork, whoever hands it over.
+  - **`/norn/evidence` is an exception to 4.5b's rule, and it is an exception by being named.** A node's evidence lives beside its `proven.json` and its proof bundles, none of which is a peer's business — so a *single file* is served from that directory, never the directory. Two traversal attempts are tested.
+  - **Newest wins.** A node freezes on the first fork it proves, so a second file means an operator reset with a new trust file and it happened again; the later one is about the network now running.
+  - **A node that froze keeps a copy**, so it can pass it on. That is what makes propagation transitive rather than a single hop, and it is what T1b's `≤ 3·T_g` is counting.
+  - **A node that learns of a fork before it ever enforced anything enforces nothing at all**, which the test asserts directly: the interface stays empty rather than being filled from a history already proved false.
+  - **`T_g` is not the poll interval, and now says so.** Polling the local peer table four times a second is cheap; asking three neighbours over the tunnel that often is neither cheap nor useful.
+  - Go: 48 packages, 538 tests; `go test`, staticcheck and both halves of `vectors-check` green.

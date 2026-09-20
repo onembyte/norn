@@ -30,7 +30,7 @@ func peerServing(t *testing.T, dir string) (string, func() int) {
 	t.Helper()
 	var mu sync.Mutex
 	var asked int
-	handler := gossip.Handler(dir)
+	handler := gossip.Handler(dir, "")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/checkpoint") {
 			mu.Lock()

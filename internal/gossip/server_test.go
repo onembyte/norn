@@ -20,7 +20,7 @@ func vectors() string { return filepath.Join("..", "..", "testdata", "vectors") 
 // verified it would hold it.
 func served(t *testing.T) *httptest.Server {
 	t.Helper()
-	server := httptest.NewServer(Handler(filepath.Join(vectors(), "served")))
+	server := httptest.NewServer(Handler(filepath.Join(vectors(), "served"), ""))
 	t.Cleanup(server.Close)
 	return server
 }
@@ -105,7 +105,7 @@ func TestNothingOutsideTheMirrorIsReachable(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	server := httptest.NewServer(Handler(mirror))
+	server := httptest.NewServer(Handler(mirror, ""))
 	t.Cleanup(server.Close)
 
 	for _, attempt := range []string{
@@ -129,7 +129,7 @@ func TestNothingOutsideTheMirrorIsReachable(t *testing.T) {
 
 // A node that has verified nothing yet has nothing to say, and says so.
 func TestAnEmptyMirrorIsNotFound(t *testing.T) {
-	server := httptest.NewServer(Handler(t.TempDir()))
+	server := httptest.NewServer(Handler(t.TempDir(), ""))
 	t.Cleanup(server.Close)
 
 	resp, err := http.Get(server.URL + "/norn/checkpoint")
@@ -231,4 +231,76 @@ func addressOf(t *testing.T, name string, ip net.IP) bool {
 		}
 	}
 	return false
+}
+
+// `GOSSIP.md` part 6 lists `GET /norn/evidence` — "any fork evidence it
+// holds". It is served from a different directory than the mirror on purpose:
+// a node's evidence lives beside its `proven.json` and its proof bundles, and
+// 4.5b established that none of that is reachable through the mirror. Evidence
+// is the one exception, and it is an exception by being named.
+func TestEvidenceIsServedWhenThereIsSome(t *testing.T) {
+	evidence := t.TempDir()
+	if err := os.WriteFile(filepath.Join(evidence, "1760000000.evidence"),
+		[]byte("proof bytes"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(Handler(filepath.Join(vectors(), "served"), evidence))
+	t.Cleanup(server.Close)
+
+	resp, err := http.Get(server.URL + "/norn/evidence")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /norn/evidence = %d", resp.StatusCode)
+	}
+	body := make([]byte, 64)
+	n, _ := resp.Body.Read(body)
+	if string(body[:n]) != "proof bytes" {
+		t.Errorf("served %q", body[:n])
+	}
+}
+
+// A node with nothing to report says so, and that is the normal case.
+func TestNoEvidenceIsNotFound(t *testing.T) {
+	server := httptest.NewServer(Handler(filepath.Join(vectors(), "served"), t.TempDir()))
+	t.Cleanup(server.Close)
+
+	resp, err := http.Get(server.URL + "/norn/evidence")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("a node holding no evidence answered %d", resp.StatusCode)
+	}
+}
+
+// Serving evidence must not open the directory it lives in. The rest of that
+// directory is a node's own business.
+func TestOnlyEvidenceIsReachableFromTheEvidenceDirectory(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "1760000000.evidence"),
+		[]byte("proof bytes"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("not yours"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(Handler(filepath.Join(vectors(), "served"), dir))
+	t.Cleanup(server.Close)
+
+	for _, attempt := range []string{"/norn/evidence/notes.txt", "/norn/evidence/"} {
+		resp, err := http.Get(server.URL + attempt)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body := make([]byte, 64)
+		n, _ := resp.Body.Read(body)
+		resp.Body.Close()
+		if strings.Contains(string(body[:n]), "not yours") {
+			t.Errorf("GET %s reached a file beside the evidence", attempt)
+		}
+	}
 }

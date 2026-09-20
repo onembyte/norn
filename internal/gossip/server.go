@@ -5,6 +5,9 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -21,14 +24,52 @@ const Prefix = "/norn/"
 // against the log. That is what makes a lying peer no more dangerous than a
 // lying log, and it is why this file is thirty lines rather than a protocol.
 //
-// `dir` is the mirror and the entire world this handler can see: a node's
-// `proven.json`, its proof bundles and its fork evidence are siblings, and
-// none of them is a peer's business to read off the filesystem.
-func Handler(dir string) http.Handler {
-	files := http.FileServer(http.Dir(dir))
+// `mirror` is the log this node holds, and the entire world the tile endpoints
+// can see: a node's `proven.json` and its proof bundles are siblings of it, and
+// none of that is a peer's business to read off the filesystem.
+//
+// `evidence` is the one deliberate exception (`GOSSIP.md` part 6's
+// `GET /norn/evidence`), and it is an exception by being **named**: a single
+// file is served from it, not the directory. Empty means this node has nothing
+// to say, which is the normal case.
+func Handler(mirror, evidence string) http.Handler {
+	files := http.FileServer(http.Dir(mirror))
 	mux := http.NewServeMux()
 	mux.Handle(Prefix, http.StripPrefix(Prefix, readOnly(noListing(files))))
+	mux.Handle(EvidencePath, readOnly(http.HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) {
+			serveEvidence(w, r, evidence)
+		})))
 	return mux
+}
+
+// EvidencePath is where a node publishes a fork it has proved.
+const EvidencePath = Prefix + "evidence"
+
+// serveEvidence hands over the newest evidence file, and only that.
+//
+// Newest because a node freezes on the first fork it proves, so a second file
+// means the operator reset with a new trust file and forked again -- and the
+// later one is the one about the network now running. A node with nothing to
+// report answers 404, which is what almost every node answers almost always.
+func serveEvidence(w http.ResponseWriter, r *http.Request, dir string) {
+	if dir == "" {
+		http.NotFound(w, r)
+		return
+	}
+	matches, err := filepath.Glob(filepath.Join(dir, "*.evidence"))
+	if err != nil || len(matches) == 0 {
+		http.NotFound(w, r)
+		return
+	}
+	sort.Strings(matches) // the names are unix seconds, so this is chronological
+	raw, err := os.ReadFile(matches[len(matches)-1])
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", "application/cbor")
+	_, _ = w.Write(raw)
 }
 
 // readOnly refuses anything but a read. A peer answers questions; it does not

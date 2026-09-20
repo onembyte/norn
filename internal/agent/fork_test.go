@@ -18,6 +18,7 @@ import (
 	"github.com/onembyte/norn/internal/peertable"
 	"github.com/onembyte/norn/internal/policy"
 	"github.com/onembyte/norn/internal/reconcile"
+	"github.com/onembyte/norn/internal/replay"
 	"github.com/onembyte/norn/internal/tlogstore"
 	"github.com/onembyte/norn/internal/trust"
 )
@@ -292,7 +293,7 @@ func TestAForkedPeerIsAForkNotABrokenNeighbour(t *testing.T) {
 	rec := &recorder{}
 	fake := peertable.NewFake()
 
-	peer := httptest.NewServer(gossip.Handler(forked))
+	peer := httptest.NewServer(gossip.Handler(forked, ""))
 	t.Cleanup(peer.Close)
 
 	a, err := New(Config{
@@ -329,5 +330,129 @@ func TestAForkedPeerIsAForkNotABrokenNeighbour(t *testing.T) {
 	after, _ := fake.Peers()
 	if len(after) != len(before) {
 		t.Errorf("the peer table changed on a fork: %d -> %d", len(before), len(after))
+	}
+}
+
+// T1b: "a node that never saw the second branch freezes via peer evidence".
+//
+// This is the case that makes evidence propagation a *different mechanism*
+// from checkpoint gossip, not a variation of it. Node3's log is healthy. It is
+// being served one consistent history and has no reason to doubt it — so
+// under the rule that governs checkpoints ("ask peers when the log cannot be
+// used") it would never ask anybody anything, and would go on enforcing a
+// branch two other nodes have already proved is a fork.
+//
+// Evidence is needed precisely when everything looks fine. That is why it is
+// polled on its own schedule rather than as a fallback.
+func TestANodeFreezesOnEvidenceFromAPeer(t *testing.T) {
+	real, _, entries := writableLog(t)
+	runDir := t.TempDir()
+
+	// A peer that has already proved the fork, and is serving the evidence.
+	peerEvidence := t.TempDir()
+	writeEvidenceFor(t, peerEvidence, real, entries)
+	peer := httptest.NewServer(gossip.Handler(real, peerEvidence))
+	t.Cleanup(peer.Close)
+
+	rec := &recorder{}
+	fake := peertable.NewFake()
+	a, err := New(Config{
+		// This node's log is perfectly healthy and consistent.
+		Anchor: anchor(t), Fetcher: logclient.Dir(real), Device: fake,
+		Mode: reconcile.Owner, RunDir: runDir, Emit: rec.emit,
+		Now:   func() time.Time { return time.Unix(fixtureCosignedAt, 0) },
+		Mono:  func() time.Duration { return 0 },
+		Peers: func() []string { return []string{peer.URL} },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Freezing is reported as an error from the cycle, which is what it is.
+	if err := a.Once(); err == nil {
+		t.Fatal("a node with a healthy log did not freeze on a peer's proof that " +
+			"its log has forked; nothing else would ever have told it")
+	}
+	if !a.Frozen() {
+		t.Fatal("the node did not freeze")
+	}
+	if rec.kinds()[Fork] == 0 {
+		t.Errorf("freezing on somebody else's evidence should be alarmed: %v", rec.kinds())
+	}
+	// §11 duty 2 holds however the fork was learned -- and a node that learns
+	// of a fork before it ever enforced anything enforces nothing at all.
+	after, _ := fake.Peers()
+	if len(after) != 0 {
+		t.Errorf("%d peers were installed from a history proved to be a fork", len(after))
+	}
+	// And the node keeps a copy, so it can pass it on.
+	files, _ := filepath.Glob(filepath.Join(runDir, ForkDir, "*.evidence"))
+	if len(files) != 1 {
+		t.Errorf("evidence files = %v; a node that froze on evidence should hold it", files)
+	}
+}
+
+// A peer serving rubbish, or evidence that proves nothing, must not be able to
+// freeze a network. Evidence is believed because it is *checked*, and the same
+// check a stranger would run is the one that runs here.
+func TestFabricatedEvidenceFromAPeerIsIgnored(t *testing.T) {
+	real, _, _ := writableLog(t)
+	bogus := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bogus, "1760000000.evidence"),
+		[]byte("not evidence of anything"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	peer := httptest.NewServer(gossip.Handler(real, bogus))
+	t.Cleanup(peer.Close)
+
+	rec := &recorder{}
+	a, err := New(Config{
+		Anchor: anchor(t), Fetcher: logclient.Dir(real), Device: peertable.NewFake(),
+		Mode: reconcile.Owner, RunDir: t.TempDir(), Emit: rec.emit,
+		Now:   func() time.Time { return time.Unix(fixtureCosignedAt, 0) },
+		Mono:  func() time.Duration { return 0 },
+		Peers: func() []string { return []string{peer.URL} },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Once(); err != nil {
+		t.Fatal(err)
+	}
+	if a.Frozen() {
+		t.Fatal("a peer froze this node with bytes that prove nothing; anybody on " +
+			"the tunnel could take the network down")
+	}
+}
+
+// writeEvidenceFor builds genuine evidence for the fixture's network and puts
+// it where a peer would serve it from.
+func writeEvidenceFor(t *testing.T, dir, logDir string, entries [][]byte) {
+	t.Helper()
+	held, err := logclient.Verify(logclient.Dir(logDir), logclient.Anchor{
+		Anchor:  replay.Anchor{Net: anchor(t).Net, GenesisHash: anchor(t).GenesisHash},
+		LogKeys: []string{anchor(t).LogKey}, Policy: anchor(t).Policy,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := logclient.Verify(logclient.Dir(forkedLog(t, entries, 40)), logclient.Anchor{
+		Anchor:  replay.Anchor{Net: anchor(t).Net, GenesisHash: anchor(t).GenesisHash},
+		LogKeys: []string{anchor(t).LogKey}, Policy: anchor(t).Policy,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	evidence, err := forkevidence.Build(held.Tree, held.SignedCheckpoint,
+		other.SignedCheckpoint, other.Checkpoint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	evidence.Policy = anchor(t).Policy
+	raw, err := evidence.Encode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "1760000000.evidence"), raw, 0o644); err != nil {
+		t.Fatal(err)
 	}
 }

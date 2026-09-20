@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/onembyte/norn/internal/forkevidence"
+	"github.com/onembyte/norn/internal/gossip"
 	"github.com/onembyte/norn/internal/logclient"
 	"github.com/onembyte/norn/internal/policy"
 )
@@ -63,6 +64,92 @@ func (a *Agent) loadFreeze() {
 		a.frozen, a.frozenBy = true, path
 		return
 	}
+}
+
+// pollEvidence asks peers whether anybody has proved a fork this node has not
+// seen. It is T1b: "a node that never saw the second branch freezes via peer
+// evidence".
+//
+// This is a **different mechanism** from checkpoint gossip, not a variation of
+// it. Checkpoints are fetched from peers when the log cannot be used; evidence
+// is needed precisely when everything looks fine. A node being served one
+// consistent history has no reason to doubt it and would never ask anybody
+// anything — while two other nodes have already proved that history is a fork.
+// So this runs on its own schedule, whatever the log is doing.
+//
+// A peer's evidence is believed only because it is **checked**, by the same
+// `forkevidence.Check` a stranger would run against the same trust file.
+// Rubbish from a neighbour cannot freeze a network; genuine evidence means
+// there genuinely is a fork, whoever hands it over.
+func (a *Agent) pollEvidence() {
+	if a.frozen || a.cfg.Peers == nil {
+		return
+	}
+	mono := a.cfg.Mono()
+	if a.evidenceAsked != 0 && mono-a.evidenceAsked < a.cfg.GossipEvery {
+		return
+	}
+	a.evidenceAsked = mono
+
+	rules, err := policy.Parse(a.cfg.Anchor.Policy)
+	if err != nil {
+		return
+	}
+	for _, addr := range gossip.Choose(a.cfg.Peers(), a.fanout(), a.peerOrder) {
+		raw, err := gossip.Peer(addr).Fetch("evidence")
+		if err != nil {
+			continue // almost every peer, almost always
+		}
+		evidence, err := forkevidence.Parse(raw)
+		if err != nil {
+			a.emit(Event{Kind: PeerRefused, Message: fmt.Sprintf(
+				"peer %s served something that is not evidence: %v", addr, err)})
+			continue
+		}
+		if _, err := forkevidence.Check(evidence, a.cfg.Anchor.Origin,
+			a.cfg.Anchor.LogKey, rules.Keys()); err != nil {
+			a.emit(Event{Kind: PeerRefused, Message: fmt.Sprintf(
+				"peer %s served evidence that proves nothing: %v", addr, err)})
+			continue
+		}
+		a.adoptEvidence(addr, raw)
+		return
+	}
+}
+
+// adoptEvidence freezes on a fork somebody else proved, and keeps a copy so
+// this node can pass it on in turn.
+func (a *Agent) adoptEvidence(from string, raw []byte) {
+	a.frozen = true
+	path, err := a.storeEvidence(raw)
+	if err != nil {
+		a.emit(Event{Kind: Fork, Message: fmt.Sprintf(
+			"peer %s proved this network's log forked, and the evidence could not "+
+				"be kept (%v). This node will accept nothing further (§11).", from, err)})
+		return
+	}
+	a.frozenBy = path
+	a.emit(Event{Kind: Fork, Message: fmt.Sprintf(
+		"peer %s proved this network's log signed two histories, and this node "+
+			"checked it against its own trust file. Evidence kept at %s. Nothing "+
+			"further will be accepted until a new trust file (§11); the peer table "+
+			"is unchanged.", from, path)})
+}
+
+// storeEvidence writes evidence this node did not produce.
+func (a *Agent) storeEvidence(raw []byte) (string, error) {
+	if a.cfg.RunDir == "" {
+		return "", errors.New("no run directory to keep evidence in")
+	}
+	dir := filepath.Join(a.cfg.RunDir, ForkDir)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+	path := filepath.Join(dir, fmt.Sprintf("%d.evidence", a.cfg.Now().Unix()))
+	if err := os.WriteFile(path, raw, 0o644); err != nil {
+		return "", err
+	}
+	return path, nil
 }
 
 // recordFork carries out §11: evidence, alarm, freeze. The caller is
