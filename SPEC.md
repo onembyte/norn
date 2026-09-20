@@ -749,6 +749,7 @@ this table drifted out of date the moment one was.
 | §5.1 seen set, §4.3 roles | — | `bad-repeat-of-rejected`, `bad-one-of-two-signers`, `bad-role-mismatch` |
 | §5.2 `bad-thr` | — | both halves: `bad-thr-zero` and `bad-thr` (value above the set size) |
 | §5.3 state, incl. D-028 and `expires` | `state.json`, `enroll-contractor` | `signer_remove-below-threshold` accepted, then `signer_add-recover` |
+| §5.3 evaluation time | `proven/cases.json`: the admitted set at four values of `T` — no clock, before, **exactly at**, and after the one deadline the fixture carries. `state.json` is clock-independent by design, so this is the only vector that exercises expiry | the `at-the-deadline` case, where `expires == T` and the device is **out** |
 | §7 receipt | `receipt.note` | — |
 | §9 trust file, fingerprint | `trust.cbor` | 18 rejected anchors in `trust-bad/`. **`15`** and **`16`** parse cleanly as verifier keys and are refused only by the algorithm rule; **`17`** and **`18`** are a witness the policy never names and a policy naming a witness the file does not list, each otherwise perfectly valid |
 | §14 canonical JSON | every `.json`; `policy-escaping`, `enroll-unicode-labels` | — |

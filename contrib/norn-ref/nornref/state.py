@@ -78,6 +78,25 @@ class State:
 
     # -- serialisation ----------------------------------------------------
 
+    def proven(self, at: int) -> list[str]:
+        """The devices a node would admit at evaluation time `at` (SPEC §5.3).
+
+        `at` is the checkpoint's quorum time, never a wall clock, and `0` means
+        there is no clock at all -- no instant satisfies the witness policy, so
+        expiry is not judged and every active device keeps the status replay
+        gave it. A device is expired exactly when `expires != 0 and expires <=
+        at`, so an `expires` equal to `at` has passed.
+        """
+        out = []
+        for device_id, device in sorted(self.devices.items()):
+            if device["status"] != "active":
+                continue
+            expires = device.get("expires") or 0
+            if at and expires and expires <= at:
+                continue
+            out.append(device_id)
+        return out
+
     def to_dict(self) -> dict[str, Any]:
         """Canonical, JSON-ready view. Byte strings become hex (SPEC §12)."""
         return {

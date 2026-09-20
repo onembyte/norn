@@ -32,7 +32,8 @@ func anchor(t *testing.T) *trust.Trust {
 	return doc
 }
 
-// verified returns a real verification of the shipped log: 90 entries, a
+// verified returns a real verification of the shipped log: the whole replay
+// fixture, a
 // signed checkpoint, six devices with a history behind them.
 func verified(t *testing.T) (*logclient.Result, *trust.Trust) {
 	t.Helper()

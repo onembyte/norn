@@ -34,7 +34,7 @@ OWNED = frozenset({
     "keys.json", "entries", "log", "genesis", "state.json",
     "trust.cbor", "trust.toml", "trust.fingerprint", "trust-bad",
     "receipt.note", "receipt.json", "requests", "requests-bad",
-    "entries-hostile",
+    "entries-hostile", "proven",
 })
 
 #: Produced by `make vectors-log` from the Go implementation, because building
@@ -126,7 +126,45 @@ def write_log(out: pathlib.Path) -> None:
         "entries": [{"index": i, "name": it.name, "reason": it.reason or ""}
                     for i, it in enumerate(items)],
     }) + "\n")
-    write(out / "state.json", replay.replay(anchor, raw).to_json() + "\n")
+    final = replay.replay(anchor, raw)
+    write(out / "state.json", final.to_json() + "\n")
+    write_proven(out, final)
+
+
+def write_proven(out: pathlib.Path, final: Any) -> None:
+    """The proven set at four evaluation times (SPEC §5.3).
+
+    `state.json` is deliberately clock-independent, so until this existed the
+    suite had no vector for expiry at all -- the rule that decides when a
+    device stops being admitted to the network. Cold gate run 5 named it the
+    one gap with a direct production consequence.
+
+    The deadlines are read from the state rather than written down: a fixture
+    that hardcodes an instant stops testing the boundary the moment the entry
+    behind it changes.
+    """
+    deadlines = sorted({d["expires"] for d in final.devices.values()
+                        if d["status"] == "active" and d.get("expires")})
+    if not deadlines:
+        raise SystemExit("no active device has an expiry; the proven fixture would prove nothing")
+    deadline = deadlines[0]
+
+    cases = [
+        (0, "no-clock",
+         "no instant satisfies the witness policy, so expiry is not judged at all"),
+        (deadline - 1, "before-the-deadline", "one second before it expires"),
+        (deadline, "at-the-deadline",
+         "expires == T has passed: the boundary two implementations disagree about"),
+        (deadline + 1, "after-the-deadline", "one second after"),
+    ]
+    write(out / "proven" / "cases.json", canonjson.dumps({
+        "comment": "the devices a node admits at evaluation time `t` (SPEC §5.3). "
+                   "`t` is the checkpoint's quorum time, never a wall clock, and "
+                   "t = 0 means there is no clock at all. A device is expired "
+                   "exactly when expires != 0 and expires <= t",
+        "cases": [{"name": name, "t": t, "why": why, "proven": final.proven(t)}
+                  for t, name, why in cases],
+    }) + "\n")
 
 
 def write_genesis_aborts(out: pathlib.Path) -> None:
