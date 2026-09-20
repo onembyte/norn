@@ -45,6 +45,10 @@ func run(args []string) error {
 	logLocation := fs.String("log", "", "log URL or directory; defaults to the anchor's log_urls")
 	runDir := fs.String("run-dir", "", "where to publish proven.json (default "+DefaultRunDir+")")
 	poll := fs.String("poll", "", "how often to reconcile (default "+DefaultPoll.String()+")")
+	hardStale := fs.String("hard-stale", "",
+		"age past which every peer is dropped, e.g. 6h; off unless set")
+	maxSkew := fs.String("max-skew", "",
+		"how far this machine's clock may be from witness time before CLOCK_SKEW")
 	once := fs.Bool("once", false, "run one cycle and exit")
 	asJSON := fs.Bool("json", false, "log as JSON instead of text")
 	if err := fs.Parse(args); err != nil {
@@ -66,6 +70,8 @@ func run(args []string) error {
 	config.Log = pick(*logLocation, config.Log)
 	config.RunDir = pick(*runDir, config.RunDir, DefaultRunDir)
 	config.Poll = pick(*poll, config.Poll)
+	config.HardStale = pick(*hardStale, config.HardStale)
+	config.MaxSkew = pick(*maxSkew, config.MaxSkew)
 
 	logger := newLogger(*asJSON)
 	cycle, interval, err := build(config, logger)
@@ -91,6 +97,14 @@ func build(config Config, logger *slog.Logger) (*agent.Agent, time.Duration, err
 		return nil, 0, errors.New("-trust is required: a node without an anchor proves nothing")
 	}
 	mode, err := ParseMode(config.Mode)
+	if err != nil {
+		return nil, 0, err
+	}
+	hard, err := ParseHardStale(config.HardStale)
+	if err != nil {
+		return nil, 0, err
+	}
+	maxSkew, err := ParseMaxSkew(config.MaxSkew)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -163,6 +177,7 @@ func build(config Config, logger *slog.Logger) (*agent.Agent, time.Duration, err
 	cycle, err := agent.New(agent.Config{
 		Anchor: anchor, Fetcher: fetcher, Device: device, Provider: provider,
 		Mode: mode, RunDir: config.RunDir, Now: time.Now,
+		Hard: hard, MaxSkew: maxSkew,
 		FightPolicy: policy, FightThreshold: threshold, FightWindow: window,
 		Quarantine: quarantine,
 		Emit:       func(event agent.Event) { report(logger, event) },

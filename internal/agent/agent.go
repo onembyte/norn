@@ -42,6 +42,21 @@ const (
 	// produce, and it changes nothing -- not the freshness state, not the
 	// proven set, not the peer table (A11, GOSSIP part 5 and T5).
 	ClockSkew = "CLOCK_SKEW"
+	// Degraded: the view is older than `staleness` and nothing newer has been
+	// cosigned. The proven set is kept -- a quiet log is not evidence that a
+	// peer stopped being proven -- but it is said out loud, on a cadence, for
+	// as long as it lasts (GOSSIP part 5).
+	Degraded = "DEGRADED"
+	// HardStale: the view aged past S_hard, so the enforcer drops every peer.
+	// This is a deliberate outage: past that age this node would rather be
+	// disconnected than enforce a view nobody has vouched for since.
+	HardStale = "HARD_STALE"
+)
+
+// DefaultDegradedAlarmEvery is GOSSIP part 5's "alarm every 5 min".
+const DefaultDegradedAlarmEvery = 5 * time.Minute
+
+const (
 	// InterfaceUnavailable: the WireGuard interface could not be read.
 	InterfaceUnavailable = "INTERFACE_UNAVAILABLE"
 	// NoStateYet: nothing has verified since start, so there is nothing to
@@ -102,7 +117,10 @@ type Config struct {
 	// MaxSkew is Δclock: how far this machine's wall clock may be from witness
 	// time before CLOCK_SKEW is raised. Zero means freshness.DefaultMaxSkew.
 	MaxSkew time.Duration
-	Emit    func(Event)
+	// DegradedAlarmEvery is how often a degraded view repeats its alarm.
+	// Defaults to DefaultDegradedAlarmEvery.
+	DegradedAlarmEvery time.Duration
+	Emit               func(Event)
 
 	// FightPolicy is what to do when the same key keeps coming back:
 	// PolicyAlarm (the default) or PolicyQuarantine.
@@ -125,6 +143,11 @@ type Agent struct {
 	// clock remembers the newest instant any quorum vouched for. It is the
 	// node's only clock for deciding whether what it holds is current.
 	clock freshness.Clock
+	// staleState is the freshness state last reported, and staleSince the
+	// monotonic reading of the last `degraded` alarm -- together they are the
+	// alarm cadence.
+	staleState string
+	staleSince time.Duration
 }
 
 // New checks what must be true before a node starts at all.
@@ -150,6 +173,9 @@ func New(cfg Config) (*Agent, error) {
 	}
 	if cfg.Now == nil {
 		cfg.Now = time.Now
+	}
+	if cfg.DegradedAlarmEvery <= 0 {
+		cfg.DegradedAlarmEvery = DefaultDegradedAlarmEvery
 	}
 	if cfg.Mono == nil {
 		// time.Since carries Go's monotonic reading, which does not move when
@@ -209,18 +235,23 @@ func (a *Agent) Once() error {
 		a.last = result
 	}
 
-	if err := a.reconcile(result); err != nil {
-		return err
-	}
 	// Witness time advances only on a checkpoint that actually verified; a
-	// head this node refused says nothing about what time it is.
+	// head this node refused says nothing about what time it is. This comes
+	// before reconciling because how old the view is decides what reconciling
+	// is allowed to do.
 	if verifyErr == nil && result.QuorumTime != nil {
 		a.clock.Observe(*result.QuorumTime, a.cfg.Mono())
 		a.checkClock(*result.QuorumTime, result.State.Params)
 	}
+	fresh := a.freshness(result)
+	a.reportFreshness(fresh)
+
+	if err := a.reconcile(result, fresh); err != nil {
+		return err
+	}
 
 	if verifyErr == nil && a.cfg.RunDir != "" {
-		set, err := proven.FromResult(result, a.cfg.Now(), a.freshness(result))
+		set, err := proven.FromResult(result, a.cfg.Now(), fresh)
 		if err != nil {
 			return err
 		}
@@ -231,9 +262,60 @@ func (a *Agent) Once() error {
 	return verifyErr
 }
 
+// reportFreshness says what state the view is in, on the cadence GOSSIP part 5
+// asks for.
+//
+// `degraded` is loud by design, but a daemon polling every minute must not
+// produce a page a minute -- and a degraded node that simply went quiet would
+// be indistinguishable from one that recovered. So it repeats every
+// DegradedAlarmEvery for as long as it lasts, and recovering resets the
+// cadence: the next degradation is announced at once, not five minutes later.
+func (a *Agent) reportFreshness(fresh proven.Freshness) {
+	mono := a.cfg.Mono()
+	switch fresh.State {
+	case freshness.HardStale:
+		if a.staleState != freshness.HardStale {
+			a.emit(Event{Kind: HardStale, Message: fmt.Sprintf(
+				"the view is %s old and nothing newer has been cosigned; dropping "+
+					"every peer, because past this age enforcing it would be a guess",
+				roundAge(fresh.Age))})
+		}
+	case freshness.Degraded:
+		if a.staleState != freshness.Degraded || mono-a.staleSince >= a.cfg.DegradedAlarmEvery {
+			a.emit(Event{Kind: Degraded, Message: fmt.Sprintf(
+				"the view is %s old; keeping the peer table, because a quiet log is "+
+					"not evidence that a peer stopped being proven",
+				roundAge(fresh.Age))})
+			a.staleSince = mono
+		}
+	}
+	if fresh.State != a.staleState {
+		a.staleState = fresh.State
+		if fresh.State == freshness.Degraded {
+			a.staleSince = mono
+		}
+	}
+}
+
+// roundAge renders an age for a human, or says it is unknown.
+func roundAge(age *time.Duration) string {
+	if age == nil {
+		return "of unknown age"
+	}
+	return age.Round(time.Second).String()
+}
+
 // reconcile turns a verified state into peer-table actions.
-func (a *Agent) reconcile(result *logclient.Result) error {
+//
+// Past S_hard the desired set is **empty**, which is exactly `GOSSIP.md` part
+// 5's "owner: ReplacePeers []; watchdog: evict all" -- the existing reconciler
+// already does both for an empty set, so hard-stale needs no second code path
+// that could disagree with the first.
+func (a *Agent) reconcile(result *logclient.Result, fresh proven.Freshness) error {
 	desired, report := a.desired(result)
+	if fresh.State == freshness.HardStale {
+		desired, report = nil, endpoint.Report{}
+	}
 	for _, id := range report.Unproven {
 		a.emit(Event{Kind: ProviderClaim,
 			Message: fmt.Sprintf("the endpoint provider has hints for %q, which the log does not prove", id)})

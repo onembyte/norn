@@ -30,8 +30,14 @@ type Config struct {
 	Trust  string `toml:"trust"`
 	Log    string `toml:"log"`
 	RunDir string `toml:"run_dir"`
-	Hints  string `toml:"hints_file"`
-	Peers  []Peer `toml:"peer"`
+	// HardStale is S_hard: the age past which this node drops every peer.
+	// Absent means never, and that default is load-bearing -- it is the one
+	// setting that lets Norn disconnect a node by itself.
+	HardStale string `toml:"hard_stale"`
+	// MaxSkew is Δclock. Absent means freshness.DefaultMaxSkew.
+	MaxSkew string `toml:"max_skew"`
+	Hints   string `toml:"hints_file"`
+	Peers   []Peer `toml:"peer"`
 
 	// FightPolicy is what to do when the same key keeps coming back:
 	// "alarm" (the default) or "quarantine".
@@ -138,6 +144,51 @@ func ParsePoll(text string) (time.Duration, error) {
 		return 0, fmt.Errorf("poll must be between %s and %s, got %s", MinPoll, MaxPoll, poll)
 	}
 	return poll, nil
+}
+
+// ParseHardStale reads S_hard, the age past which the enforcer drops every
+// peer (`GOSSIP.md` part 5).
+//
+// Empty or zero means never, because this is the one setting that lets Norn
+// take a node off its own network: an operator has to ask for it in writing.
+// A value below the §4.5 `staleness` default is refused -- it would drop every
+// peer before the network had even called the view degraded, which is a typo
+// with an outage attached rather than a configuration.
+func ParseHardStale(text string) (time.Duration, error) {
+	if text == "" {
+		return 0, nil
+	}
+	hard, err := time.ParseDuration(text)
+	if err != nil {
+		return 0, fmt.Errorf("hard_stale: %w", err)
+	}
+	if hard == 0 {
+		return 0, nil
+	}
+	if hard < MinHardStale {
+		return 0, fmt.Errorf("hard_stale must be at least %s (the §4.5 staleness "+
+			"default), or 0 to leave it off; got %s", MinHardStale, hard)
+	}
+	return hard, nil
+}
+
+// MinHardStale is SPEC §4.5's default `staleness`: below it, hard-stale would
+// fire before degraded.
+const MinHardStale = 600 * time.Second
+
+// ParseMaxSkew reads Δclock. Empty means the freshness package's default.
+func ParseMaxSkew(text string) (time.Duration, error) {
+	if text == "" {
+		return 0, nil
+	}
+	skew, err := time.ParseDuration(text)
+	if err != nil {
+		return 0, fmt.Errorf("max_skew: %w", err)
+	}
+	if skew <= 0 {
+		return 0, fmt.Errorf("max_skew must be positive, got %s", skew)
+	}
+	return skew, nil
 }
 
 // Polling bounds. 200 ms is the interval `ENFORCEMENT.md` part 2 calls free:

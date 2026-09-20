@@ -128,6 +128,16 @@ degraded   S < age ≤ S_hard, or S_hard off   keep proven set; alarm every 5 mi
 hard-stale age > S_hard (opt-in)       enforcer drops all peers (owner: ReplacePeers []; watchdog: evict all)
 ```
 
+`hard-stale` is a deliberate outage, so it is **opt-in twice**: `nornd` leaves S_hard
+unset unless `-hard-stale` or `hard_stale` says otherwise, and a value below §4.5's
+`staleness` default is refused — it would drop every peer before the network had even
+called the view degraded.
+
+The `degraded` alarm repeats on its cadence rather than once, because a degraded node
+that simply went quiet is indistinguishable from one that recovered; recovering resets
+it, so the next degradation is announced immediately rather than up to five minutes
+later.
+
 `degraded` is loud by design: `norn status` prints the age in red, the monitor
 pages, Home Assistant gets an event. The A1+A5 "all paths cut" residual is
 undetectable only if nobody looks; this makes not-looking hard.

@@ -224,3 +224,49 @@ func TestQuarantineNeedsACommandWhereThereIsNoDefault(t *testing.T) {
 		t.Errorf("the error should say what to configure: %v", err)
 	}
 }
+
+// S_hard is the one setting that lets a node disconnect itself, so it is
+// off unless an operator writes it down, and refused if it would fire before
+// `degraded` ever does.
+func TestParseHardStale(t *testing.T) {
+	for _, tc := range []struct {
+		text string
+		want time.Duration
+	}{
+		{"", 0}, // opt-in: absent means never
+		{"0", 0},
+		{"6h", 6 * time.Hour},
+	} {
+		got, err := ParseHardStale(tc.text)
+		if err != nil {
+			t.Errorf("%q: %v", tc.text, err)
+		}
+		if got != tc.want {
+			t.Errorf("%q = %v, want %v", tc.text, got, tc.want)
+		}
+	}
+
+	// Shorter than the §4.5 staleness default it would drop every peer before
+	// the network had even called the view degraded -- almost certainly a
+	// typo, and an expensive one.
+	for _, bad := range []string{"nonsense", "-1h", "30s"} {
+		if _, err := ParseHardStale(bad); err == nil {
+			t.Errorf("%q was accepted as S_hard", bad)
+		}
+	}
+}
+
+func TestParseMaxSkew(t *testing.T) {
+	got, err := ParseMaxSkew("")
+	if err != nil || got != 0 {
+		t.Errorf("an absent max_skew must leave the default in place, got %v, %v", got, err)
+	}
+	if got, err := ParseMaxSkew("30m"); err != nil || got != 30*time.Minute {
+		t.Errorf("max_skew = %v, %v", got, err)
+	}
+	for _, bad := range []string{"nope", "-5m"} {
+		if _, err := ParseMaxSkew(bad); err == nil {
+			t.Errorf("%q was accepted as Δclock", bad)
+		}
+	}
+}

@@ -1,0 +1,228 @@
+package agent
+
+import (
+	"path/filepath"
+	"testing"
+	"time"
+
+	"github.com/onembyte/norn/internal/freshness"
+	"github.com/onembyte/norn/internal/logclient"
+	"github.com/onembyte/norn/internal/peertable"
+	"github.com/onembyte/norn/internal/proven"
+	"github.com/onembyte/norn/internal/reconcile"
+)
+
+// `GOSSIP.md` part 5 gives each freshness state a behaviour, and a state with
+// no behaviour is a label:
+//
+//	degraded    keep the proven set; alarm every 5 min
+//	hard-stale  the enforcer drops all peers (owner: ReplacePeers []; watchdog: evict all)
+
+// agingAgent runs against a log built now, with a monotonic clock the test
+// drives. Hard is set, so hard-stale is reachable -- which it is not on a
+// default node, by design.
+func agingAgent(t *testing.T, mode reconcile.Mode, mono *time.Duration,
+	hard time.Duration) (*Agent, *recorder, *peertable.Fake) {
+	t.Helper()
+	dir, _, _ := writableLog(t)
+	rec := &recorder{}
+	fake := peertable.NewFake()
+	a, err := New(Config{
+		Anchor: anchor(t), Fetcher: logclient.Dir(dir), Device: fake,
+		Mode: mode, RunDir: t.TempDir(), Emit: rec.emit, Hard: hard,
+		Now:  func() time.Time { return time.Unix(fixtureCosignedAt, 0).Add(*mono) },
+		Mono: func() time.Duration { return *mono },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Adopt once at monotonic zero. A node's *first* sight of a checkpoint is
+	// age zero by construction -- it has no history to measure against, and
+	// its own clock is not evidence (A11). Freshness is a property of a
+	// running node, so every test below starts it running.
+	if err := a.Once(); err != nil {
+		t.Fatal(err)
+	}
+	return a, rec, fake
+}
+
+// A daemon polling every minute must not produce a page a minute. The alarm is
+// on a five-minute cadence, measured monotonically like everything else here.
+func TestDegradedAlarmsOnACadenceNotEveryCycle(t *testing.T) {
+	var mono time.Duration
+	a, rec, _ := agingAgent(t, reconcile.Observe, &mono, 0)
+
+	// Sixteen minutes is past the fixture log's 900s staleness.
+	for i := 0; i < 10; i++ {
+		mono = 16*time.Minute + time.Duration(i)*30*time.Second
+		if err := a.Once(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := rec.kinds()[Degraded]; got != 1 {
+		t.Errorf("%d degraded alarms in under five minutes, want 1", got)
+	}
+
+	// Past the cadence it says so again: a degraded node that went quiet
+	// would be indistinguishable from one that recovered.
+	mono = 22 * time.Minute
+	if err := a.Once(); err != nil {
+		t.Fatal(err)
+	}
+	if got := rec.kinds()[Degraded]; got != 2 {
+		t.Errorf("degraded alarms = %d, want 2 once the cadence has passed", got)
+	}
+}
+
+// Recovering and degrading again alarms at once. Carrying the suppression
+// across a recovery would silence the very transition an operator needs.
+//
+// This drives the cadence directly rather than through a log, because the
+// state it needs -- the same node degraded, recovered and degraded again --
+// takes a log that is re-cosigned between cycles, and what is under test here
+// is when the alarm fires, not how the state was reached.
+func TestRecoveringResetsTheAlarmCadence(t *testing.T) {
+	var mono time.Duration
+	rec := &recorder{}
+	a, err := New(Config{
+		Anchor: anchor(t), Fetcher: logclient.Dir(servedLog(t)), Device: peertable.NewFake(),
+		Mode: reconcile.Observe, Emit: rec.emit,
+		Mono: func() time.Duration { return mono },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	age := 20 * time.Minute
+	degraded := proven.Freshness{State: freshness.Degraded, Age: &age}
+	fresh := proven.Freshness{State: freshness.Fresh, Age: new(time.Duration)}
+
+	for _, step := range []struct {
+		name string
+		mono time.Duration
+		in   proven.Freshness
+		want int
+	}{
+		{"first degradation alarms", 0, degraded, 1},
+		{"a minute later, silent", time.Minute, degraded, 1},
+		{"four minutes later, still silent", 4 * time.Minute, degraded, 1},
+		{"past the cadence, alarms again", 5 * time.Minute, degraded, 2},
+		{"recovered, nothing said here", 6 * time.Minute, fresh, 2},
+		{"degrading again alarms at once", 7 * time.Minute, degraded, 3},
+	} {
+		mono = step.mono
+		a.reportFreshness(step.in)
+		if got := rec.kinds()[Degraded]; got != step.want {
+			t.Errorf("%s: alarms = %d, want %d", step.name, got, step.want)
+		}
+	}
+}
+
+// Degraded keeps the proven set. That is the whole point of the state: the log
+// being quiet is not evidence that a peer stopped being proven.
+func TestDegradedKeepsThePeerTable(t *testing.T) {
+	var mono time.Duration
+	a, _, fake := agingAgent(t, reconcile.Owner, &mono, 0)
+
+	before, err := fake.Peers()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(before) == 0 {
+		t.Fatal("no peers to keep")
+	}
+
+	mono = 20 * time.Minute
+	if err := a.Once(); err != nil {
+		t.Fatal(err)
+	}
+	after, err := fake.Peers()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(after) != len(before) {
+		t.Errorf("degraded dropped peers: %d -> %d", len(before), len(after))
+	}
+}
+
+// Past S_hard the enforcer drops everything, in both enforcing modes. This is
+// a deliberate outage: the node would rather be disconnected than enforce a
+// view nobody has vouched for in that long.
+func TestHardStaleDropsEveryPeer(t *testing.T) {
+	for _, mode := range []reconcile.Mode{reconcile.Owner, reconcile.Watchdog} {
+		t.Run(string(mode), func(t *testing.T) {
+			var mono time.Duration
+			a, rec, fake := agingAgent(t, mode, &mono, time.Hour)
+
+			// Watchdog installs nothing, so give it a table to guard.
+			if mode == reconcile.Watchdog {
+				fake.Inject(provenKeys(t)...)
+			}
+			if peers, _ := fake.Peers(); len(peers) == 0 {
+				t.Fatal("no peers installed to begin with")
+			}
+
+			mono = 2 * time.Hour
+			if err := a.Once(); err != nil {
+				t.Fatal(err)
+			}
+			peers, err := fake.Peers()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(peers) != 0 {
+				t.Errorf("%d peers survived hard-stale", len(peers))
+			}
+			// And it says why, once: an operator left with a dozen
+			// UNPROVEN_PEER lines would not know the cause was the clock.
+			if got := rec.kinds()[HardStale]; got != 1 {
+				t.Errorf("%s alarms = %d, want 1", HardStale, got)
+			}
+			set, err := proven.Read(filepath.Join(a.cfg.RunDir, proven.FileName))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if set.Freshness != freshness.HardStale {
+				t.Errorf("freshness = %q, want %q", set.Freshness, freshness.HardStale)
+			}
+		})
+	}
+}
+
+// Observe never writes, however stale it gets: a mode that started changing
+// the table under a long outage would be the one mode nobody asked to enforce.
+func TestHardStaleStillWritesNothingInObserve(t *testing.T) {
+	var mono time.Duration
+	a, rec, fake := agingAgent(t, reconcile.Observe, &mono, time.Hour)
+
+	fake.Inject(provenKeys(t)...)
+	mono = 2 * time.Hour
+	if err := a.Once(); err != nil {
+		t.Fatal(err)
+	}
+	if peers, _ := fake.Peers(); len(peers) == 0 {
+		t.Error("observe mode emptied the table")
+	}
+	if got := rec.kinds()[HardStale]; got != 1 {
+		t.Errorf("observe must still report hard-stale, got %d", got)
+	}
+}
+
+// S_hard is opt-in: a node that was never configured for it stays degraded
+// forever rather than taking its own network down after a long enough outage.
+func TestWithoutSHardANodeNeverGoesHardStale(t *testing.T) {
+	var mono time.Duration
+	a, rec, fake := agingAgent(t, reconcile.Owner, &mono, 0)
+
+	mono = 30 * 24 * time.Hour // a month
+	if err := a.Once(); err != nil {
+		t.Fatal(err)
+	}
+
+	if peers, _ := fake.Peers(); len(peers) == 0 {
+		t.Error("a node with no S_hard configured dropped its peers anyway")
+	}
+	if got := rec.kinds()[HardStale]; got != 0 {
+		t.Errorf("%s fired with S_hard off", HardStale)
+	}
+}

@@ -47,6 +47,13 @@ func TestRefusalsBeforeTheFirstCycle(t *testing.T) {
 			"-trust", trustFile, "-poll", "0s", "-once"}, "poll must be between"},
 		{"a trust file that is not there", []string{"-iface", "wg-nonexistent0",
 			"-trust", filepath.Join(t.TempDir(), "absent"), "-once"}, "reading the trust file"},
+		// S_hard below the staleness default would drop every peer before the
+		// network had called the view degraded. Refusing it here proves the
+		// flag reaches the parser, not only that the parser is correct.
+		{"an S_hard that fires before degraded", []string{"-iface", "wg-nonexistent0",
+			"-trust", trustFile, "-hard-stale", "30s", "-once"}, "hard_stale must be at least"},
+		{"a negative clock-skew bound", []string{"-iface", "wg-nonexistent0",
+			"-trust", trustFile, "-max-skew", "-5m", "-once"}, "max_skew must be positive"},
 	}
 	for _, c := range cases {
 		t.Run(c.why, func(t *testing.T) {
