@@ -123,8 +123,15 @@ func TestNornLogServesAndAccepts(t *testing.T) {
 	}
 	addr := freePort(t)
 
+	// The fixture's policy needs two of three witnesses (§10 step 3), so the
+	// log has to be able to obtain cosignatures or nothing will accept its
+	// head. Here it holds two witness keys itself -- GOSSIP part 3's "same
+	// host as the log" row, independent from nothing, which is why a real
+	// deployment pushes to witnesses elsewhere instead (4.3).
 	server := exec.Command(logBin, "-dir", dir, "-key", keyPath,
-		"-trust", filepath.Join(vectors(), "trust.cbor"), "-listen", addr)
+		"-trust", filepath.Join(vectors(), "trust.cbor"), "-listen", addr,
+		"-self-witness", "pi="+witnessKeyFile(t, "pi"),
+		"-self-witness", "vps="+witnessKeyFile(t, "vps"))
 	server.Stderr = os.Stderr
 	if err := server.Start(); err != nil {
 		t.Fatal(err)
@@ -240,5 +247,64 @@ func TestNornLogNeedsItsFlags(t *testing.T) {
 		if !strings.Contains(string(out), missing+" is required") {
 			t.Errorf("the error should name %s:\n%s", missing, out)
 		}
+	}
+}
+
+// witnessKeyFile writes one of the fixture's witness keys where norn-log can
+// read it, and returns the path.
+func witnessKeyFile(t *testing.T, name string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), name+".key")
+	if err := keyfile.Write(path, seed(t, "witness-"+name), "norn witness key"); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// A self-witness key that is not the one the trust file names would produce
+// cosignatures no node on this network counts -- a log that looks healthy to
+// its operator and is refused by every verifier. Catch it at startup.
+func TestASelfWitnessKeyMustMatchTheTrustFile(t *testing.T) {
+	logBin := build(t, ".", "norn-log")
+	dir, _, _ := seededLog(t)
+	keyPath := filepath.Join(t.TempDir(), "log.key")
+	if err := keyfile.Write(keyPath, seed(t, "logkey"), "norn log key"); err != nil {
+		t.Fatal(err)
+	}
+
+	// The right witness name, the wrong key.
+	wrong := filepath.Join(t.TempDir(), "wrong.key")
+	if err := keyfile.Write(wrong, seed(t, "witness-friend"), "norn witness key"); err != nil {
+		t.Fatal(err)
+	}
+	out, err := exec.Command(logBin, "-dir", dir, "-key", keyPath,
+		"-trust", filepath.Join(vectors(), "trust.cbor"), "-listen", freePort(t),
+		"-self-witness", "pi="+wrong).CombinedOutput()
+	if err == nil {
+		t.Fatal("norn-log started with a witness key the trust file does not name")
+	}
+	if !strings.Contains(string(out), "witness pi") {
+		t.Errorf("the error should name the witness: %s", out)
+	}
+}
+
+// A witness name the policy never mentions is the same mistake wearing a
+// different hat: the cosignatures would be ignored by everyone.
+func TestASelfWitnessMustBeNamedByThePolicy(t *testing.T) {
+	logBin := build(t, ".", "norn-log")
+	dir, _, _ := seededLog(t)
+	keyPath := filepath.Join(t.TempDir(), "log.key")
+	if err := keyfile.Write(keyPath, seed(t, "logkey"), "norn log key"); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := exec.Command(logBin, "-dir", dir, "-key", keyPath,
+		"-trust", filepath.Join(vectors(), "trust.cbor"), "-listen", freePort(t),
+		"-self-witness", "nobody="+witnessKeyFile(t, "pi")).CombinedOutput()
+	if err == nil {
+		t.Fatal("norn-log started as a witness this network has never heard of")
+	}
+	if !strings.Contains(string(out), "nobody") {
+		t.Errorf("the error should name the witness: %s", out)
 	}
 }

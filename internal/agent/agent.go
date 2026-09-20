@@ -160,6 +160,7 @@ func (a *Agent) Once() error {
 	result, verifyErr := logclient.Verify(a.cfg.Fetcher, logclient.Anchor{
 		Anchor:  replay.Anchor{Net: a.cfg.Anchor.Net, GenesisHash: a.cfg.Anchor.GenesisHash},
 		LogKeys: []string{a.cfg.Anchor.LogKey},
+		Policy:  a.cfg.Anchor.Policy,
 	})
 	if verifyErr != nil {
 		a.emit(Event{Kind: VerifyFailed, Message: verifyErr.Error()})

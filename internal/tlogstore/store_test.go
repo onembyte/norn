@@ -4,13 +4,16 @@ import (
 	"bytes"
 	"crypto/ed25519"
 	"crypto/sha256"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	upstream "golang.org/x/mod/sumdb/tlog"
 
+	"github.com/onembyte/norn/internal/cosign"
 	"github.com/onembyte/norn/internal/note"
 	"github.com/onembyte/norn/internal/tlog"
 )
@@ -25,8 +28,12 @@ import (
 // key; deriving it keeps failures reproducible.
 func testLogKey(t *testing.T) ed25519.PrivateKey {
 	t.Helper()
-	seed := sha256.Sum256([]byte("norn/tlogstore-test/log-key"))
-	return ed25519.NewKeyFromSeed(seed[:])
+	return ed25519.NewKeyFromSeed(seedOf("norn/tlogstore-test/log-key"))
+}
+
+func seedOf(label string) []byte {
+	seed := sha256.Sum256([]byte(label))
+	return seed[:]
 }
 
 func suiteEntries(t *testing.T) [][]byte {
@@ -253,5 +260,121 @@ func TestSizeKeepsCountingAcrossARestart(t *testing.T) {
 	}
 	if !bytes.Equal(first, entries[0]) {
 		t.Error("the first entry is not the one that was appended first")
+	}
+}
+
+// A log that has witnesses must serve a checkpoint carrying their
+// cosignatures, not just its own signature: §10 step 3 makes the quorum part
+// of what a verifier checks, so a head no witness has corroborated is a head
+// no correctly-configured node will accept. The store does not know how a
+// cosignature is obtained -- over `tlog-witness` from a real witness (4.3), or
+// from a key held locally in a test -- so it asks a Cosigner.
+func TestACosignerReachesTheServedCheckpoint(t *testing.T) {
+	dir := t.TempDir()
+	witnessKey := ed25519.NewKeyFromSeed(seedOf("norn/tlogstore-test/witness"))
+	store, err := Open(dir, "norn/test", testLogKey(t), WithCosigner(CosignerFunc(func(signed string) (string, error) {
+		body, _, err := note.Split(signed)
+		if err != nil {
+			return "", err
+		}
+		line, err := cosign.Sign(body, "a-witness", witnessKey, time.Unix(1_760_003_600, 0))
+		if err != nil {
+			return "", err
+		}
+		return signed + line + "\n", nil
+	})))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, raw := range suiteEntries(t)[:3] {
+		if _, err := store.Append(raw); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	raw, err := os.ReadFile(filepath.Join(dir, "checkpoint"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Every republished checkpoint carries it, not only the first.
+	cosignatures, err := cosign.Verify(string(raw),
+		[]string{note.CosignerVerifierKey("a-witness", witnessKey.Public().(ed25519.PublicKey))})
+	if err != nil || len(cosignatures) != 1 {
+		t.Errorf("the served checkpoint lost its cosignature (%v):\n%s", err, raw)
+	}
+	// And the log's own signature still verifies over the same body.
+	public := testLogKey(t).Public().(ed25519.PublicKey)
+	if _, err := tlog.Verify(string(raw), []string{note.VerifierKey("norn/test", public)}); err != nil {
+		t.Errorf("cosigning broke the log's own signature: %v", err)
+	}
+}
+
+// A witness that cannot be reached must not be papered over: publishing the
+// bare log-signed head would serve a checkpoint the network's own policy
+// rejects, while looking like an ordinary successful append. What a log should
+// *do* about an unreachable witness -- retry, serve stale, degrade -- is 4.3's
+// question; refusing to pretend is this checkpoint's.
+func TestAFailingCosignerFailsTheAppend(t *testing.T) {
+	dir := t.TempDir()
+	unreachable := CosignerFunc(func(string) (string, error) {
+		return "", errors.New("witness unreachable")
+	})
+	if _, err := Open(dir, "norn/test", testLogKey(t), WithCosigner(unreachable)); err == nil {
+		t.Fatal("opening with an unreachable witness looked like success")
+	}
+
+	store, err := Open(dir, "norn/test", testLogKey(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.cosigner = unreachable
+	if _, err := store.Append([]byte("an entry")); err == nil {
+		t.Fatal("an append succeeded although no witness corroborated the head")
+	}
+}
+
+// A store that gains a witness -- a log that was running before the network
+// had one, or one restarted with new keys -- must republish its head, not wait
+// for the next append. Otherwise it serves a checkpoint produced under the old
+// configuration, which here means one no verifier will accept, while every
+// status line reports a healthy log.
+func TestOpeningRepublishesTheCheckpoint(t *testing.T) {
+	dir := t.TempDir()
+	store, err := Open(dir, "norn/test", testLogKey(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, raw := range suiteEntries(t)[:4] {
+		if _, err := store.Append(raw); err != nil {
+			t.Fatal(err)
+		}
+	}
+	before, err := os.ReadFile(filepath.Join(dir, "checkpoint"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(before), "a-witness") {
+		t.Fatal("this log has no witness yet")
+	}
+
+	witnessKey := ed25519.NewKeyFromSeed(seedOf("norn/tlogstore-test/witness"))
+	reopened, err := Open(dir, "norn/test", testLogKey(t), WithCosigner(CosignerFunc(
+		cosign.Append([]cosign.Signer{{Name: "a-witness", Key: witnessKey}},
+			cosign.At(time.Unix(1_760_003_600, 0))))))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reopened.Size() != 4 {
+		t.Fatalf("size = %d, want 4", reopened.Size())
+	}
+
+	after, err := os.ReadFile(filepath.Join(dir, "checkpoint"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cosign.Verify(string(after),
+		[]string{note.CosignerVerifierKey("a-witness", witnessKey.Public().(ed25519.PublicKey))}); err != nil {
+		t.Errorf("opening with a cosigner left the old uncosigned head served: %v", err)
 	}
 }

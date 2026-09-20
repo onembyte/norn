@@ -40,6 +40,7 @@ func verified(t *testing.T) (*logclient.Result, *trust.Trust) {
 		logclient.Anchor{
 			Anchor:  replay.Anchor{Net: doc.Net, GenesisHash: doc.GenesisHash},
 			LogKeys: []string{doc.LogKey},
+			Policy:  doc.Policy,
 		})
 	if err != nil {
 		t.Fatal(err)

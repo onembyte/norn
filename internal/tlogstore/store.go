@@ -33,13 +33,49 @@ func storeErrorf(format string, args ...any) error {
 	return fmt.Errorf("%w: %s", ErrStore, fmt.Sprintf(format, args...))
 }
 
+// A Cosigner turns a log-signed checkpoint into a cosigned one -- SPEC §6,
+// `c2sp.org/tlog-cosignature`. A log that serves an uncosigned head serves one
+// that §10 step 3 makes every correctly-configured verifier refuse, so the
+// store treats corroboration as part of publishing rather than as something
+// that happens afterwards.
+//
+// The store deliberately does not know *how*: a real log asks its witnesses
+// over `c2sp.org/tlog-witness` (4.3), a test holds the witness keys itself.
+// Keeping that behind an interface is what lets the HTTP client arrive later
+// without the store learning about HTTP.
+type Cosigner interface {
+	// Cosign returns the signed note with cosignature lines appended. It must
+	// not alter the body or the log's own signature.
+	Cosign(signed string) (string, error)
+}
+
+// CosignerFunc adapts a function to Cosigner.
+type CosignerFunc func(signed string) (string, error)
+
+func (f CosignerFunc) Cosign(signed string) (string, error) { return f(signed) }
+
 // Store is an append-only log on disk, served as static files.
 type Store struct {
-	dir    string
-	origin string
-	key    ed25519.PrivateKey
-	tree   *tlog.Tree
-	bundle [][]byte // entries of the tile currently being filled
+	dir      string
+	origin   string
+	key      ed25519.PrivateKey
+	tree     *tlog.Tree
+	bundle   [][]byte // entries of the tile currently being filled
+	cosigner Cosigner
+}
+
+// An Option configures a store at open time.
+type Option func(*Store)
+
+// WithCosigner attaches the cosigner every published checkpoint passes
+// through. A store without one publishes a bare log-signed head, which is
+// correct only for a network whose policy asks for no corroboration.
+//
+// It is an open-time option rather than a setter because the store republishes
+// its head on open: a log that gains a witness must serve a corroborated
+// checkpoint immediately, not from its next append onwards.
+func WithCosigner(c Cosigner) Option {
+	return func(s *Store) { s.cosigner = c }
 }
 
 // Open opens or creates a log directory and recovers its state.
@@ -49,7 +85,7 @@ type Store struct {
 // something no verifier is allowed to believe -- and an unsigned file sitting
 // at `checkpoint` is worse than none, because a verifier that forgot to check
 // would read it happily.
-func Open(dir, origin string, key ed25519.PrivateKey) (*Store, error) {
+func Open(dir, origin string, key ed25519.PrivateKey, opts ...Option) (*Store, error) {
 	if len(key) != ed25519.PrivateKeySize {
 		return nil, storeErrorf("a log needs its signing key to publish checkpoints (§6)")
 	}
@@ -57,15 +93,44 @@ func Open(dir, origin string, key ed25519.PrivateKey) (*Store, error) {
 		return nil, err
 	}
 	s := &Store{dir: dir, origin: origin, key: key, tree: &tlog.Tree{}}
+	for _, opt := range opts {
+		opt(s)
+	}
 	if err := s.recover(); err != nil {
+		return nil, err
+	}
+	// Republish the head under this store's current configuration. The file on
+	// disk was written by whatever was running last, which may have had no
+	// witness, a different one, or an older key.
+	if err := s.publishCheckpoint(); err != nil {
 		return nil, err
 	}
 	return s, nil
 }
 
-// SignedCheckpoint is the current head as the note §6 requires.
+// publishCheckpoint writes the current head as the file a verifier reads.
+func (s *Store) publishCheckpoint() error {
+	signed, err := s.SignedCheckpoint()
+	if err != nil {
+		return err
+	}
+	return s.writeFile("checkpoint", []byte(signed))
+}
+
+// SignedCheckpoint is the current head as the note §6 requires: signed by the
+// log, and cosigned by the witnesses if this log has any.
 func (s *Store) SignedCheckpoint() (string, error) {
-	return s.Checkpoint().Sign(s.key)
+	signed, err := s.Checkpoint().Sign(s.key)
+	if err != nil || s.cosigner == nil {
+		return signed, err
+	}
+	cosigned, err := s.cosigner.Cosign(signed)
+	if err != nil {
+		// Publishing the bare head here would serve a checkpoint the
+		// network's own policy rejects while looking like success.
+		return "", storeErrorf("no witness corroborated the head: %v", err)
+	}
+	return cosigned, nil
 }
 
 // recover rebuilds the tree from the entry bundles on disk. The bundles are the
@@ -177,11 +242,7 @@ func (s *Store) Append(raw []byte) (int64, error) {
 	}
 	// The checkpoint goes last: a crash before it leaves a log whose
 	// advertised size is behind what is on disk, never ahead of it.
-	signed, err := s.SignedCheckpoint()
-	if err != nil {
-		return 0, err
-	}
-	if err := s.writeFile("checkpoint", []byte(signed)); err != nil {
+	if err := s.publishCheckpoint(); err != nil {
 		return 0, err
 	}
 	return index, nil

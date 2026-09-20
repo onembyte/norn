@@ -19,10 +19,12 @@ import (
 	"path/filepath"
 	"sort"
 
+	cosignpkg "github.com/onembyte/norn/internal/cosign"
 	"github.com/onembyte/norn/internal/proof"
 	"github.com/onembyte/norn/internal/replay"
 	"github.com/onembyte/norn/internal/state"
 	"github.com/onembyte/norn/internal/tlogstore"
+	"time"
 )
 
 // logKey is the key the shipped `trust.cbor` names as this network's log key.
@@ -33,7 +35,8 @@ import (
 // named a different key. Nothing noticed, because no verifier checked a
 // checkpoint signature until 2.9e-i. A suite whose two halves disagree is a
 // suite that cannot be followed.
-func logKey(root string) (ed25519.PrivateKey, error) {
+// seedKey reads one test key out of keys.json.
+func seedKey(root, name string) (ed25519.PrivateKey, error) {
 	raw, err := os.ReadFile(filepath.Join(root, "keys.json"))
 	if err != nil {
 		return nil, err
@@ -46,14 +49,39 @@ func logKey(root string) (ed25519.PrivateKey, error) {
 	if err := json.Unmarshal(raw, &keys); err != nil {
 		return nil, err
 	}
-	seed, err := hex.DecodeString(keys.Ed25519["logkey"].Seed)
+	seed, err := hex.DecodeString(keys.Ed25519[name].Seed)
 	if err != nil {
 		return nil, err
 	}
 	if len(seed) != ed25519.SeedSize {
-		return nil, fmt.Errorf("keys.json has no usable logkey seed")
+		return nil, fmt.Errorf("keys.json has no usable %s seed", name)
 	}
 	return ed25519.NewKeyFromSeed(seed), nil
+}
+
+// WitnessNames are the fixture's witnesses, in the order the policy lists them.
+var WitnessNames = []string{"pi", "vps", "friend"}
+
+// CosignedAt is the fixed instant the fixture's witnesses cosign at.
+//
+// Fixed, because a vector whose bytes changed with the clock could not be
+// compared to anything. Witness time is the clock elsewhere (GOSSIP.md part
+// 5); here it is a number the suite agrees on.
+const CosignedAt = 1_760_003_600
+
+// witnessSigners loads the fixture's witnesses in the order the policy lists
+// them, so the cosignature lines land in a fixed order and the fixture stays
+// byte-reproducible.
+func witnessSigners(root string) ([]cosignpkg.Signer, error) {
+	signers := make([]cosignpkg.Signer, 0, len(WitnessNames))
+	for _, name := range WitnessNames {
+		key, err := seedKey(root, "witness-"+name)
+		if err != nil {
+			return nil, err
+		}
+		signers = append(signers, cosignpkg.Signer{Name: "norn-witness/" + name, Key: key})
+	}
+	return signers, nil
 }
 
 func main() {
@@ -78,11 +106,18 @@ func run(root string) error {
 	if err := os.RemoveAll(served); err != nil {
 		return err
 	}
-	key, err := logKey(root)
+	key, err := seedKey(root, "logkey")
 	if err != nil {
 		return err
 	}
-	store, err := tlogstore.Open(served, origin, key)
+	// The fixture's witnesses cosign every head this store publishes, at a
+	// fixed instant so a regenerated fixture is byte-identical (§6).
+	signers, err := witnessSigners(root)
+	if err != nil {
+		return err
+	}
+	store, err := tlogstore.Open(served, origin, key, tlogstore.WithCosigner(
+		tlogstore.CosignerFunc(cosignpkg.Append(signers, cosignpkg.At(time.Unix(CosignedAt, 0))))))
 	if err != nil {
 		return err
 	}
@@ -92,9 +127,10 @@ func run(root string) error {
 		}
 	}
 
-	// `checkpoint` is the signed note itself (§6). There is no unsigned
-	// sibling: a file a verifier is not allowed to believe should not exist
-	// where one might read it by mistake.
+	// `checkpoint` is the signed note itself, written by the store as it
+	// appends (§6). There is no unsigned sibling: a file a verifier is not
+	// allowed to believe should not exist where one might read it by mistake.
+	// The proof bundles quote it, so read back exactly what is served.
 	signed, err := store.SignedCheckpoint()
 	if err != nil {
 		return err

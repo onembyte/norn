@@ -237,3 +237,42 @@ func TestANoteKeyIsNotAWitnessKey(t *testing.T) {
 		t.Errorf("the error should say what is wrong: %v", err)
 	}
 }
+
+// A log holding witness keys locally -- the fixture generator, a single-host
+// lab -- appends one cosignature per witness to the head it just signed. That
+// loop is the same everywhere it appears, so it lives here rather than being
+// rewritten in each caller.
+func TestAppendCosignsForEveryWitness(t *testing.T) {
+	signed, _ := signedCheckpoint(t)
+	names := []string{"norn-witness/pi", "norn-witness/vps"}
+
+	var signers []Signer
+	var keys []string
+	for _, name := range names {
+		signers = append(signers, Signer{Name: name, Key: key(t, name)})
+		keys = append(keys, witnessVerifier(t, name))
+	}
+
+	cosigned, err := Append(signers, At(time.Unix(1_800_000_000, 0)))(signed)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := Verify(cosigned, keys)
+	if err != nil {
+		t.Fatalf("what Append produced does not verify: %v", err)
+	}
+	if len(got) != len(names) {
+		t.Fatalf("cosignatures = %d, want %d", len(got), len(names))
+	}
+	// The log's own signature must survive untouched: cosigning adds lines,
+	// it does not re-sign.
+	if _, err := note.Verify(cosigned, []string{logVerifier(t)}); err != nil {
+		t.Errorf("Append disturbed the log's signature: %v", err)
+	}
+	for _, c := range got {
+		if !c.Time.Equal(time.Unix(1_800_000_000, 0)) {
+			t.Errorf("%s cosigned at %v, want the instant asked for", c.Name, c.Time)
+		}
+	}
+}

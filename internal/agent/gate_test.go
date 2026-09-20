@@ -7,7 +7,9 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
+	"github.com/onembyte/norn/internal/cosign"
 	"github.com/onembyte/norn/internal/entry"
 	"github.com/onembyte/norn/internal/logclient"
 	"github.com/onembyte/norn/internal/peertable"
@@ -20,6 +22,24 @@ import (
 // itself is measurements -- a p99 over a thousand runs, two 24-hour soaks --
 // and those belong to the lab. What does not belong to the lab is whether the
 // behaviour being measured happens at all.
+
+// fixtureCosignedAt is the instant norn-genlog has the fixture's witnesses
+// cosign at; reusing it keeps a rebuilt log byte-identical to the shipped one.
+const fixtureCosignedAt = 1_760_003_600
+
+// fixtureWitnesses are the three witnesses the fixture's policy names, in the
+// order it names them.
+func fixtureWitnesses(t *testing.T) []cosign.Signer {
+	t.Helper()
+	var signers []cosign.Signer
+	for _, name := range []string{"pi", "vps", "friend"} {
+		signers = append(signers, cosign.Signer{
+			Name: "norn-witness/" + name,
+			Key:  fixtureKey(t, "witness-"+name),
+		})
+	}
+	return signers
+}
 
 func fixtureKey(t *testing.T, name string) ed25519.PrivateKey {
 	t.Helper()
@@ -45,7 +65,13 @@ func writableLog(t *testing.T) (dir string, store *tlogstore.Store, entries [][]
 	t.Helper()
 	doc := anchor(t)
 	dir = t.TempDir()
-	store, err := tlogstore.Open(dir, doc.Origin, fixtureKey(t, "logkey"))
+	// The fixture's anchor requires two of three witnesses (§10 step 3), so a
+	// log built here must be corroborated exactly as the shipped one is --
+	// otherwise these tests would be exercising a verifier with its quorum
+	// check disabled, which is the check most worth not disabling.
+	store, err := tlogstore.Open(dir, doc.Origin, fixtureKey(t, "logkey"),
+		tlogstore.WithCosigner(tlogstore.CosignerFunc(
+			cosign.Append(fixtureWitnesses(t), cosign.At(time.Unix(fixtureCosignedAt, 0))))))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,7 +177,7 @@ func keyOfDevice(t *testing.T, id string) peertable.Key {
 	t.Helper()
 	doc := anchor(t)
 	result, err := logclient.Verify(logclient.Dir(filepath.Join(vectors(), "served")),
-		logclient.Anchor{Anchor: replay.Anchor{Net: doc.Net, GenesisHash: doc.GenesisHash}, LogKeys: []string{doc.LogKey}})
+		logclient.Anchor{Anchor: replay.Anchor{Net: doc.Net, GenesisHash: doc.GenesisHash}, LogKeys: []string{doc.LogKey}, Policy: doc.Policy})
 	if err != nil {
 		t.Fatal(err)
 	}

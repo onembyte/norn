@@ -4,13 +4,17 @@ import (
 	"bytes"
 	"crypto/ed25519"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/onembyte/norn/internal/cosign"
 	"github.com/onembyte/norn/internal/note"
 	"github.com/onembyte/norn/internal/replay"
 	"github.com/onembyte/norn/internal/tlog"
@@ -80,7 +84,11 @@ func servedLog(t *testing.T) (string, Anchor) {
 	inner, entries := loadFixture(t)
 	dir := t.TempDir()
 	key := logKey(t)
-	store, err := tlogstore.Open(dir, "norn/test", key)
+	// A log with a witness, because a verifier checks the quorum: every test
+	// below that expects a *healthy* log needs one that a correctly
+	// configured node would actually accept.
+	store, err := tlogstore.Open(dir, "norn/test", key, tlogstore.WithCosigner(
+		tlogstore.CosignerFunc(cosign.Append(witnesses(t), cosign.At(cosignedAt)))))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +97,51 @@ func servedLog(t *testing.T) (string, Anchor) {
 			t.Fatal(err)
 		}
 	}
-	return dir, Anchor{Anchor: inner, LogKeys: []string{verifierKey(t, key, "norn/test")}}
+	return dir, Anchor{Anchor: inner, LogKeys: []string{verifierKey(t, key, "norn/test")},
+		Policy: policyOver(t, "norn/test", witnessNames, 2)}
+}
+
+// This package's logs are cosigned by three witnesses, of which the policy
+// requires two -- the same shape as the shipped fixture, so the quorum tests
+// exercise a real threshold rather than a one-witness special case.
+var witnessNames = []string{"pi", "vps", "friend"}
+
+const cosignedAtUnix = 1_760_003_600
+
+var cosignedAt = time.Unix(cosignedAtUnix, 0)
+
+func witnessKey(t *testing.T, name string) ed25519.PrivateKey {
+	t.Helper()
+	seed := sha256.Sum256([]byte("norn/logclient-test/witness/" + name))
+	return ed25519.NewKeyFromSeed(seed[:])
+}
+
+func witnesses(t *testing.T) []cosign.Signer {
+	t.Helper()
+	var out []cosign.Signer
+	for _, name := range witnessNames {
+		out = append(out, cosign.Signer{Name: "norn-witness/" + name, Key: witnessKey(t, name)})
+	}
+	return out
+}
+
+// policyOver writes the policy an anchor carries: the log, every witness, and
+// a threshold group over them.
+func policyOver(t *testing.T, origin string, names []string, threshold int) string {
+	t.Helper()
+	var b strings.Builder
+	fmt.Fprintf(&b, "log %s %s\n", origin, verifierKey(t, logKey(t), origin))
+	for _, name := range names {
+		public := witnessKey(t, name).Public().(ed25519.PublicKey)
+		fmt.Fprintf(&b, "witness norn-witness/%s %s\n", name,
+			note.CosignerVerifierKey("norn-witness/"+name, public))
+	}
+	fmt.Fprintf(&b, "group all %d", threshold)
+	for _, name := range names {
+		fmt.Fprintf(&b, " norn-witness/%s", name)
+	}
+	b.WriteString("\nquorum all\n")
+	return b.String()
 }
 
 func TestVerifyOverAServedDirectoryReproducesStateJSON(t *testing.T) {
@@ -201,8 +253,12 @@ func TestSurvivingARestartStillVerifies(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Reopen the store, append nothing, and verify again: a restart must
-	// neither lose entries nor reorder them.
-	if _, err := tlogstore.Open(dir, "norn/test", logKey(t)); err != nil {
+	// neither lose entries nor reorder them. It is reopened with the same
+	// witnesses it had, because that is what restarting a log does -- and a
+	// restart that dropped them would republish an uncosigned head, which is
+	// its own hazard and the reason norn-log says so on startup.
+	if _, err := tlogstore.Open(dir, "norn/test", logKey(t), tlogstore.WithCosigner(
+		tlogstore.CosignerFunc(cosign.Append(witnesses(t), cosign.At(cosignedAt))))); err != nil {
 		t.Fatal(err)
 	}
 	after, err := Verify(Dir(dir), anchor)
@@ -417,5 +473,138 @@ func TestTheStoreServesExactlyTheTilesTheTreeImplies(t *testing.T) {
 		if !bytes.Equal(served, tile.Data) {
 			t.Errorf("%s differs from what the tree implies", tile.Path())
 		}
+	}
+}
+
+// SPEC §10 step 3 -- the step this project carried unimplemented from 2.9e
+// until 4.1c. A checkpoint the log signed is only half of what a node is
+// allowed to believe: GOSSIP.md part 1 makes witnesses the guard against the
+// log itself, so a head no quorum of witnesses has cosigned must be refused
+// however well-formed it is.
+
+// cosignedLog builds a served log whose checkpoint carries cosignatures from
+// exactly the named witnesses, and an anchor requiring `threshold` of them.
+func cosignedLog(t *testing.T, cosigners []string, threshold int) (string, Anchor) {
+	t.Helper()
+	inner, entries := loadFixture(t)
+	dir := t.TempDir()
+	key := logKey(t)
+	var signers []cosign.Signer
+	for _, name := range cosigners {
+		signers = append(signers, cosign.Signer{
+			Name: "norn-witness/" + name, Key: witnessKey(t, name)})
+	}
+	var opts []tlogstore.Option
+	if len(signers) > 0 {
+		opts = append(opts, tlogstore.WithCosigner(
+			tlogstore.CosignerFunc(cosign.Append(signers, cosign.At(cosignedAt)))))
+	}
+	store, err := tlogstore.Open(dir, "norn/test", key, opts...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, raw := range entries[:10] {
+		if _, err := store.Append(raw); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return dir, Anchor{Anchor: inner, LogKeys: []string{verifierKey(t, key, "norn/test")},
+		Policy: policyOver(t, "norn/test", witnessNames, threshold)}
+}
+
+func TestAQuorumOfWitnessesIsAccepted(t *testing.T) {
+	dir, anchor := cosignedLog(t, []string{"pi", "vps"}, 2)
+
+	result, err := Verify(Dir(dir), anchor)
+	if err != nil {
+		t.Fatalf("a checkpoint two of three witnesses cosigned was refused: %v", err)
+	}
+	if len(result.Cosignatures) != 2 {
+		t.Fatalf("cosignatures = %+v, want the two that signed", result.Cosignatures)
+	}
+	// The result must carry *which* witnesses, not just how many: 4.2 reads
+	// the freshness clock off these, and a count would not survive that.
+	for _, c := range result.Cosignatures {
+		if c.Time.Unix() != cosignedAtUnix {
+			t.Errorf("%s cosigned at %v, want the fixture's instant", c.Name, c.Time)
+		}
+	}
+}
+
+func TestOneCosignatureShortIsRefused(t *testing.T) {
+	dir, anchor := cosignedLog(t, []string{"pi"}, 2)
+
+	if _, err := Verify(Dir(dir), anchor); err == nil {
+		t.Fatal("a checkpoint one witness short of the quorum was accepted")
+	} else if !strings.Contains(err.Error(), "witness policy") {
+		t.Errorf("the error should name the quorum as the reason: %v", err)
+	}
+}
+
+// A log that no witness has seen is the case the quorum exists for: it is
+// exactly what a log serving a private fork produces.
+func TestAnUncosignedCheckpointIsRefused(t *testing.T) {
+	dir, anchor := cosignedLog(t, nil, 2)
+
+	if _, err := Verify(Dir(dir), anchor); err == nil {
+		t.Fatal("a checkpoint no witness cosigned was accepted")
+	}
+}
+
+// Cosignatures from witnesses this network has not named cannot make up the
+// numbers -- otherwise a forking log would simply bring its own witnesses.
+func TestUnnamedWitnessesDoNotCountTowardTheQuorum(t *testing.T) {
+	dir, anchor := cosignedLog(t, []string{"pi", "stranger", "interloper"}, 2)
+
+	if _, err := Verify(Dir(dir), anchor); err == nil {
+		t.Fatal("witnesses the policy never named were counted toward the quorum")
+	}
+}
+
+// A forged cosignature is worse than a missing one: it claims a witness this
+// network trusts said something it did not, so it is an error rather than a
+// line that simply fails to count.
+func TestAForgedCosignatureIsRefused(t *testing.T) {
+	dir, anchor := cosignedLog(t, []string{"pi", "vps"}, 2)
+
+	path := filepath.Join(dir, "checkpoint")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Flip a byte inside the last cosignature's signature, leaving its key id
+	// -- and so the witness it claims to be -- intact.
+	lines := strings.Split(strings.TrimRight(string(raw), "\n"), "\n")
+	last := lines[len(lines)-1]
+	blob := last[strings.LastIndex(last, " ")+1:]
+	decoded, err := base64.StdEncoding.DecodeString(blob)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded[len(decoded)-1] ^= 0x01
+	lines[len(lines)-1] = last[:strings.LastIndex(last, " ")+1] +
+		base64.StdEncoding.EncodeToString(decoded)
+	if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := Verify(Dir(dir), anchor); err == nil {
+		t.Fatal("a forged cosignature was accepted")
+	}
+}
+
+// `quorum none` is in the grammar, and it means what it says: a network may
+// decide it wants no corroboration. Refusing to honour that would be Norn
+// overriding the operator's own policy.
+func TestQuorumNoneAcceptsAnUncosignedCheckpoint(t *testing.T) {
+	dir, anchor := cosignedLog(t, nil, 2)
+	anchor.Policy = "log norn/test " + verifierKey(t, logKey(t), "norn/test") + "\nquorum none\n"
+
+	result, err := Verify(Dir(dir), anchor)
+	if err != nil {
+		t.Fatalf("`quorum none` must accept an uncosigned checkpoint: %v", err)
+	}
+	if len(result.Cosignatures) != 0 {
+		t.Errorf("cosignatures = %+v, want none", result.Cosignatures)
 	}
 }

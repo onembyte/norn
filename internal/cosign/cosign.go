@@ -106,3 +106,47 @@ func Sign(body string, name string, key ed25519.PrivateKey, at time.Time) (strin
 	payload = append(payload, signature...)
 	return note.SignatureLine(name, payload), nil
 }
+
+// Signer is one witness's signing identity: the name its cosignature carries
+// and the key that produces it.
+type Signer struct {
+	Name string
+	Key  ed25519.PrivateKey
+}
+
+// Append returns the step a log takes once its witnesses have answered: one
+// cosignature line per witness, appended to the head the log signed (§6). The
+// body and the log's own signature are left exactly as they were.
+//
+// A log whose witnesses run elsewhere gets those lines over
+// `c2sp.org/tlog-witness` instead; this is for the case where the keys are
+// held locally -- the fixture generator, and a lab where the witness is a
+// process on the same host.
+//
+// The clock is a parameter because a live log stamps each checkpoint with the
+// time it was cosigned -- that stamp is the only clock a verifier trusts (A11)
+// -- while a fixture needs the same instant every run to stay reproducible.
+func Append(signers []Signer, now func() time.Time) func(signed string) (string, error) {
+	return func(signed string) (string, error) {
+		at := now()
+		body, _, err := note.Split(signed)
+		if err != nil {
+			return "", err
+		}
+		out := signed
+		for _, s := range signers {
+			line, err := Sign(body, s.Name, s.Key, at)
+			if err != nil {
+				return "", cosignErrorf("%s could not cosign: %v", s.Name, err)
+			}
+			out += line + "\n"
+		}
+		return out, nil
+	}
+}
+
+// At is the clock a fixture uses: the same instant every time, so a regenerated
+// fixture is byte-identical to the shipped one.
+func At(instant time.Time) func() time.Time {
+	return func() time.Time { return instant }
+}

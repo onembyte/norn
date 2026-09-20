@@ -17,6 +17,9 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/onembyte/norn/internal/cosign"
+	"github.com/onembyte/norn/internal/note"
+	"github.com/onembyte/norn/internal/policy"
 	"github.com/onembyte/norn/internal/replay"
 	"github.com/onembyte/norn/internal/state"
 	"github.com/onembyte/norn/internal/tlog"
@@ -51,6 +54,10 @@ type Result struct {
 	// checkpoint is a fact; the note is the *evidence* for it, and a proof
 	// bundle has to carry the evidence (§8.1).
 	SignedCheckpoint string
+	// Cosignatures are the witnesses that vouched for this head, with the
+	// times they said it was. Witness time is the only clock a node may use
+	// (A11), so this is what freshness is computed from.
+	Cosignatures []cosign.Cosignature
 	// Served is every entry the log served, in log order. A caller that has
 	// just verified a log usually wants to look something up in it -- an
 	// inclusion check, a proof bundle -- and re-fetching would be asking a
@@ -67,21 +74,22 @@ type Anchor struct {
 	// checkpoint. More than one appears during a `log_key` rotation, where old
 	// and new are both valid for `overlap` (`ENROLLMENT.md` part 6).
 	LogKeys []string
+	// Policy is the network's `c2sp.org/tlog-policy`, verbatim from the trust
+	// file. It says which witnesses must have cosigned before this node will
+	// believe a checkpoint -- §10 step 3, and the difference between "the log
+	// operator says this is the log" and "somebody else saw this too".
+	Policy string
 }
 
 // Verify fetches a log, checks that the log operator signed the head, checks
-// that the entries it serves really do hash to that head, and replays them
-// under the anchor.
+// that enough witnesses cosigned it, checks that the entries it serves really
+// do hash to that head, and replays them under the anchor.
 //
 // The order matters twice over. The **signature comes first**: an unsigned
 // head is a claim nobody made, and everything below it would be arithmetic
 // about an anonymous document. Then integrity BEFORE replay -- replaying first
 // and checking afterwards would mean acting on entries that were never shown
 // to belong to the log, exactly the trust a transparency log exists to remove.
-//
-// Not yet done here: §10's witness-policy check. A cosignature needs a witness
-// to produce, which is Phase 4; until then this verifies who wrote the head,
-// not that the head was shown to anybody else.
 func Verify(f Fetcher, anchor Anchor) (*Result, error) {
 	if len(anchor.LogKeys) == 0 {
 		return nil, logErrorf("the anchor carries no log key; §10 requires the " +
@@ -105,6 +113,14 @@ func Verify(f Fetcher, anchor Anchor) (*Result, error) {
 	if err != nil {
 		return nil, logErrorf("the checkpoint is not signed by a key this anchor "+
 			"trusts: %v", err)
+	}
+
+	// Then the witnesses. A log can sign anything it likes, including two
+	// different histories for two different nodes; what it cannot do is get a
+	// quorum of witnesses to cosign both at the same size.
+	cosignatures, err := checkQuorum(anchor, string(raw))
+	if err != nil {
+		return nil, err
 	}
 
 	entries, err := fetchEntries(f, cp.Size)
@@ -135,7 +151,8 @@ func Verify(f Fetcher, anchor Anchor) (*Result, error) {
 	}
 
 	return &Result{Checkpoint: cp, SignedCheckpoint: string(raw),
-		State: replay.Replay(anchor.Anchor, entries), Served: entries}, nil
+		Cosignatures: cosignatures,
+		State:        replay.Replay(anchor.Anchor, entries), Served: entries}, nil
 }
 
 // fetchEntries reads entry bundles until it has `size` entries.
@@ -214,4 +231,41 @@ func checkTiles(f Fetcher, tree *tlog.Tree) error {
 		}
 	}
 	return nil
+}
+
+// checkQuorum applies the network's policy to the checkpoint's cosignatures.
+func checkQuorum(anchor Anchor, signed string) ([]cosign.Cosignature, error) {
+	if anchor.Policy == "" {
+		return nil, logErrorf("the anchor carries no policy; §10 requires the witness " +
+			"quorum to be checked, and there is nothing to check it against")
+	}
+	rules, err := policy.Parse(anchor.Policy)
+	if err != nil {
+		return nil, logErrorf("the anchor's policy is unusable: %v", err)
+	}
+
+	cosignatures, err := cosign.Verify(signed, rules.Keys())
+	if err != nil {
+		return nil, logErrorf("%v", err)
+	}
+	names := make([]string, 0, len(cosignatures))
+	for _, c := range cosignatures {
+		names = append(names, witnessName(rules, c))
+	}
+	if !rules.Satisfied(names) {
+		return nil, logErrorf("the checkpoint does not satisfy the witness policy: "+
+			"quorum %q, cosigned by %v", rules.Quorum(), names)
+	}
+	return cosignatures, nil
+}
+
+// witnessName maps a cosignature back to the local name the policy uses, which
+// is what a quorum is expressed in.
+func witnessName(rules *policy.Policy, c cosign.Cosignature) string {
+	for _, w := range rules.Witnesses {
+		if v, err := note.ParseVerifierKey(w.Key); err == nil && v.Name == c.Name {
+			return w.Name
+		}
+	}
+	return c.Name
 }

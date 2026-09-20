@@ -599,7 +599,8 @@ A10) cannot grind a substitute trust file with a matching fingerprint.
 loop every T_g or on demand:
   cp := fetch checkpoint (log_urls, then peers)         # part 6
   verify log signature (torchwood VerifyCheckpoint)
-  verify witness policy (ThresholdPolicy / ParsePolicy)   # NOT YET IMPLEMENTED — Phase 4
+  verify witness policy: every cosignature by a witness the policy names
+      must verify, and the quorum must be satisfied  # refuse otherwise
   if stored_cp exists:
       require cp.size >= stored_cp.size
       verify consistency proof stored_cp → cp; on failure → FORK (§11)
@@ -681,6 +682,7 @@ this table drifted out of date the moment one was.
 | §6 tiles and bundles | `served/`, read back to reproduce `state.json` | forged head, tampered bundle, missing bundle |
 | §8 proof bundles | `proofs/`, one per active device | wrong entry, foreign checkpoint, tampered proof, wrong log key |
 | §10 verifier loop, steps 1–4 | `served/` verified end to end, **signature first** | wrong anchor aborts and yields no devices; an unsigned checkpoint, one signed by another key, and one signed under another origin's name are each refused |
+| §10 step 3, the witness quorum | `served/checkpoint`, cosigned by all three witnesses | one cosignature short, none at all, cosignatures only from witnesses the policy does not name, and a forged one carrying a named witness's key id are each refused; `quorum none` accepts an uncosigned head |
 | §16 enrollment requests | `requests/`, four cases including a 64-byte `device_id` and non-ASCII labels | `requests-bad/`, 23 cases across all four layers, including **`forged-signature`** (structurally perfect, signed by another key) and `oversize-label-key` (§4.0's map-key cap) |
 | §16.2 bech32m | the text form of every request | `wrong-hrp`, `plain-bech32` (the same bytes under bech32's constant), `mixed-case`, `corrupt-character`. BIP-350's own vectors are in both implementations' unit tests |
 
@@ -688,12 +690,15 @@ this table drifted out of date the moment one was.
 
 | area | missing | owed by |
 |---|---|---|
-| §6 | **cosignatures** on a checkpoint — a witness must run to produce one | Phase 4 |
 | §11 | fork evidence: two conflicting cosigned checkpoints and the expected evidence file | Phase 4 |
 
-Both remaining rows wait on a witness **process**, not on a format: a
-cosignature and a fork proof are things a second party produces, and faking
-either here would test this implementation against itself and prove nothing.
+`served/checkpoint` now carries three cosignatures, so §6's format *is*
+vectored — and the encoding is checked against `transparency-dev/formats`
+rather than against itself. What the fixture cannot show is a witness
+**process**: these cosignatures come from keys the generator holds, so they
+prove the format is right, not that an unmodified witness will produce one.
+That is 4.4, and it is the reason the row above still waits: a fork proof is
+something a second party produces, and faking it here would prove nothing.
 
 ## 13. Open items
 

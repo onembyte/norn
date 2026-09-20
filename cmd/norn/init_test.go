@@ -70,8 +70,13 @@ func TestBootstrapANetworkAndEnrolADevice(t *testing.T) {
 	}
 
 	// 2. The log, started on an empty directory with that trust file.
+	// A one-witness network in its first minutes: the log holds the witness
+	// key itself, which GOSSIP part 3 allows as a 1-of-1 self-witness and
+	// which protects against nothing. Without it nothing this log publishes
+	// would satisfy the policy the ceremony just wrote (§10 step 3).
 	server := exec.Command(logBin, "-dir", logDir, "-key", filepath.Join(keys, "log.key"),
-		"-trust", trustFile, "-listen", addr)
+		"-trust", trustFile, "-listen", addr,
+		"-self-witness", "pi="+filepath.Join(keys, "witness-pi.key"))
 	server.Stderr = os.Stderr
 	if err := server.Start(); err != nil {
 		t.Fatal(err)

@@ -63,6 +63,15 @@ a peer is as good as one from the log because the signatures are the same.
 Homelab default `2 of [pi, vps, friend]`: no single physical location and no single
 person can forge a quorum. A 1-of-1 self-witness is allowed only in observe mode.
 
+`norn-log -self-witness <policy name>=<keyfile>` is that first row, and it is how a
+network gets through its first minutes: a log with no witness publishes heads that
+every verifier refuses (§10 step 3), so something has to cosign before the network
+works at all. The log says so on every start, because a witness sharing the log's
+host cannot detect the one thing witnesses exist to detect — that log serving two
+different views. Moving those keys onto a second machine is the whole improvement;
+the key is refused at startup if the policy does not name it, or names it under a
+different key, since either produces cosignatures nothing counts.
+
 ## 4. Policy
 
 `norn.trust.policy` is **verbatim `c2sp.org/tlog-policy`** — no Norn dialect.

@@ -58,8 +58,12 @@ func runningLog(t *testing.T) (base string, anchor *trust.Trust) {
 	if out, err := exec.Command("go", "build", "-o", bin, "../norn-log").CombinedOutput(); err != nil {
 		t.Fatalf("building norn-log: %v\n%s", err, out)
 	}
+	// The fixture's policy needs two of three witnesses, so the log must be
+	// able to produce their cosignatures or no verifier will read it.
 	server := exec.Command(bin, "-dir", dir, "-key", keyPath,
-		"-trust", filepath.Join(vectors(), "trust.cbor"), "-listen", addr)
+		"-trust", filepath.Join(vectors(), "trust.cbor"), "-listen", addr,
+		"-self-witness", "pi="+witnessKeyFile(t, "pi"),
+		"-self-witness", "vps="+witnessKeyFile(t, "vps"))
 	if err := server.Start(); err != nil {
 		t.Fatal(err)
 	}
@@ -300,4 +304,15 @@ func TestSubmitRefusals(t *testing.T) {
 			}
 		})
 	}
+}
+
+// witnessKeyFile writes one of the fixture's witness keys where norn-log can
+// read it, and returns the path.
+func witnessKeyFile(t *testing.T, name string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), name+".key")
+	if err := keyfile.Write(path, fixtureKey(t, "witness-"+name), "norn witness key"); err != nil {
+		t.Fatal(err)
+	}
+	return path
 }

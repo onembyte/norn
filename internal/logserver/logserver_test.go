@@ -16,7 +16,9 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
+	"github.com/onembyte/norn/internal/cosign"
 	"github.com/onembyte/norn/internal/enrollreq"
 	"github.com/onembyte/norn/internal/entry"
 	"github.com/onembyte/norn/internal/logclient"
@@ -53,6 +55,21 @@ func fixtureSeed(t *testing.T, name string) ed25519.PrivateKey {
 	return ed25519.NewKeyFromSeed(seed)
 }
 
+// testWitnessName is the single witness this package's logs are cosigned by.
+const testWitnessName = "norn-witness/logserver-test"
+
+// testPolicy is the anchor's side of that arrangement: one witness, and it
+// must have cosigned. `quorum` may name a witness directly, so no group is
+// needed for a one-witness network.
+func testPolicy(t *testing.T, origin string) string {
+	t.Helper()
+	public := logKey(t).Public().(ed25519.PublicKey)
+	return "log " + origin + " " + note.VerifierKey(origin, public) + "\n" +
+		"witness " + testWitnessName + " " +
+		note.CosignerVerifierKey(testWitnessName, public) + "\n" +
+		"quorum " + testWitnessName + "\n"
+}
+
 // theLog builds a server over the fixture's 90 entries: a real log, not a stub.
 func theLog(t *testing.T) (*Server, *httptest.Server, replay.Anchor, string) {
 	t.Helper()
@@ -79,7 +96,14 @@ func theLog(t *testing.T) (*Server, *httptest.Server, replay.Anchor, string) {
 
 	origin := "norn/logserver-test"
 	dir := t.TempDir()
-	store, err := tlogstore.Open(dir, origin, logKey(t))
+	// This log has one witness, and it runs in-process. A verifier checks the
+	// quorum (§10 step 3), so a log that no witness corroborates is one these
+	// tests could not verify -- and pretending otherwise here would hide the
+	// very check the anchor exists to make.
+	store, err := tlogstore.Open(dir, origin, logKey(t), tlogstore.WithCosigner(
+		tlogstore.CosignerFunc(cosign.Append(
+			[]cosign.Signer{{Name: testWitnessName, Key: logKey(t)}},
+			cosign.At(time.Unix(1_760_003_600, 0))))))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -197,7 +221,7 @@ func TestASubmissionIsAcceptedAndTheLogStillVerifies(t *testing.T) {
 
 	// And the log a verifier reads is still whole, and now has the device.
 	anchorWithKey := logclient.Anchor{Anchor: anchor,
-		LogKeys: []string{note.VerifierKey(origin, public)}}
+		LogKeys: []string{note.VerifierKey(origin, public)}, Policy: testPolicy(t, origin)}
 	result, err := logclient.Verify(logclient.HTTP(ts.URL), anchorWithKey)
 	if err != nil {
 		t.Fatalf("the log stopped verifying after a submission: %v", err)
@@ -354,7 +378,8 @@ func TestConcurrentSubmissionsAllLand(t *testing.T) {
 
 	public := logKey(t).Public().(ed25519.PublicKey)
 	result, err := logclient.Verify(logclient.HTTP(ts.URL),
-		logclient.Anchor{Anchor: anchor, LogKeys: []string{note.VerifierKey(origin, public)}})
+		logclient.Anchor{Anchor: anchor, LogKeys: []string{note.VerifierKey(origin, public)},
+			Policy: testPolicy(t, origin)})
 	if err != nil {
 		t.Fatalf("the log is not verifiable after concurrent writes: %v", err)
 	}
