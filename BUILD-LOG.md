@@ -472,7 +472,9 @@ them, and then run the gate.
 | 6.5g-iv | What a decoder accepts after the entry | H6 (trailing bytes) and H8 (the origin check exists only inside §11.1) | ✅ |
 | 6.5g-v | Time, again | H7 (`quorum none` makes `T` infinite by a literal reading; cosignature timestamps unruled) and H9 (§8's staleness MUST has no predicate) | ✅ |
 | 6.5g-vi | **The class, not the instance** | H10 and every other rule-negative refused by its own signature — enforced over the whole directory rather than a list | ✅ |
-| 6.5g-vii | Clear prose, no vector | the ten variants run 6 lists where the prose is unambiguous and nothing pins it | ⬜ |
+| 6.5g-vii-a | The checkpoint and evidence layer | `skip-cosig-verify` (refuse vs merely not count — one broken witness is fail-closed under one reading and business as usual under the other), `allow-proof-at-same-size`, and §6's unstated tile-hash rule | ✅ |
+| 6.5g-vii-b | The replay layer | `after-loose`, `skip-request-net`, `enroll-wg-before-id`, `ignore-kid-match` — four log entries, each splitting the canonical state | ⬜ |
+| 6.5g-vii-c | The boundaries | `depth-limit-*` and `size-limit-*` at their exact values, and §16.2's bech32m padding rules | ⬜ |
 | 6.5g-viii | Cold-model gate run 7 | a *fresh* agent on a *new* copy; the target remains `SPEC SUFFICIENT` | ⬜ |
 | 6.6 | Phase 6 gate audit | what is true, and what needs two people | ⬜ |
 
@@ -1231,3 +1233,11 @@ code does not have.
   - **The test enforces the rule over the directory**: every case must declare, the declaration must match the file, and **only a case about the signature may declare it broken**. A negative added later cannot avoid the question.
   - **One case cannot be fixed, and §12.1 says so.** `short-device-pk` carries a 31-byte key, and a 31-byte key verifies nothing — so no construction separates "refused by the length rule" from "refused because the key is unusable". It is refused-but-not-pinned, which is different from covered, and the not-vectored list now distinguishes the two.
   - **The proof it worked**: with the 32-label cap removed from both places that enforce it, `too-many-labels` is now **accepted**. Run 6's `no-label-count-cap` variant passed 285/285 precisely because the signature refused the file first; it would fail now.
+
+
+- **6.5g-vii-a — three rules the prose pins and no vector did.**
+  - **`skip-cosig-verify` is the one with an operational consequence.** §10 says every cosignature by a named witness must verify; a reader could instead decline to count a bad one and carry on. `08-forged-cosignature` cannot tell those apart — one valid line falls short of two either way, so both readings refuse it. The difference is whether **one witness with a bad build means fail-closed or business as usual**, on a network whose purpose is to notice.
+  - **`11-forged-cosignature-with-quorum` separates them**: three named witnesses sign, two verify, so the quorum is met *without* the third and §10 refuses the checkpoint anyway. A reader that merely skips the bad line accepts it.
+  - **`allow-proof-at-same-size` was a malleability in the artifact strangers exchange.** §11.1 says the `proof` is empty when the disagreement is at the held checkpoint's own size, because the two signatures say it alone — and `Check` *ignored* the field there rather than refusing a populated one. Two encodings of the same accusation, one of them undocumented. `fork/bad-proof-at-same-size` needed a branch with the same number of entries as the held log, which the generator did not have and now builds.
+  - **§6 never said a verifier checks the hash tiles at all.** It says so now, with the reason that makes it a MUST rather than a nicety: a node serves the tiles it fetched onward to its peers, so one that accepted tiles it never checked would **pass on a lie it had the means to catch**. That is why `checkTiles` exists and why 6.5e-iv found the served negatives defended twice over.
+  - **Two mutations, two reds — and the first tripped the wrong assertion.** Not counting a bad cosignature instead of refusing failed on a *structural* check before reaching the §10 one, because my probe treated "no error and no cosignatures" as a valid line. Reordered so the rule under test fires first, and the probe counts what it returns.

@@ -40,11 +40,11 @@ of having it.
 | `requests/`, `requests-bad/` | enrollment requests (§16) and 23 refusals across all four layers |
 | `receipt.note`, `receipt.json` | a submission receipt (§7) and its parsed form |
 | `served/` | the log as a static site: `checkpoint`, entry bundles and hash tiles |
-| `checkpoints-bad/` | ten checkpoints that MUST be refused, each served in place of `served/checkpoint` over the honest tiles. `cases.json` says what each one is. **Start here if you are checking your verifier**: `04` and `08` are the only files in the suite that a verifier which never checks a note or cosignature signature will accept |
+| `checkpoints-bad/` | eleven checkpoints that MUST be refused, each served in place of `served/checkpoint` over the honest tiles. `cases.json` says what each one is. **Start here if you are checking your verifier**: `04` and `08` are the only files in the suite that a verifier which never checks a note or cosignature signature will accept |
 | `proofs/` | one self-contained proof bundle per proven device (§8) |
 | `proofs-bad/` | four bundles that MUST be refused (§8): a wrong entry, a foreign checkpoint, a tampered proof and a checkpoint signed by a key the anchor does not name. `cases.json` gives the log key and what each refusal must be about |
 | `served-bad/` | §6's two refusals. A served log is a directory, so each case names the path to replace with `file` or delete with `remove`, over an otherwise honest copy of `served/` |
-| `fork/` | `evidence.cbor` and `conflicting.checkpoint`: a second branch of this same network, proving the evidence format (§11.1) is checkable by anybody holding `trust.cbor` — plus five that must be **refused**, one per reader step: `bad-other-origin` and `bad-unverifiable-conflicting` (step 1), `bad-size-mismatch` (step 2), `bad-forged-proof` (step 3), `bad-consistent` (step 4). `cases.json` says what each refusal must be about |
+| `fork/` | `evidence.cbor` and `conflicting.checkpoint`: a second branch of this same network, proving the evidence format (§11.1) is checkable by anybody holding `trust.cbor` — plus six that must be **refused**: one per reader step, and one carrying a consistency proof where §11.1 requires none: `bad-other-origin` and `bad-unverifiable-conflicting` (step 1), `bad-size-mismatch` (step 2), `bad-forged-proof` (step 3), `bad-consistent` (step 4). `cases.json` says what each refusal must be about |
 | `anchors/` | OpenTimestamps proofs, and a calendar's reply, written by `python-opentimestamps` |
 
 ## `SHA256SUMS`

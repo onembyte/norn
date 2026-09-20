@@ -142,9 +142,19 @@ func Check(ev *Evidence, origin, logVKey string, witnessVKeys []string) (*Findin
 				"head this log signed at size %d: %v", heldRoot[:8], ev.Size,
 				held.Size, err)
 		}
-	} else if heldRoot != held.Root {
-		return nil, evidenceErrorf("the evidence claims a root at size %d that is not "+
-			"the one the held checkpoint is signed over", ev.Size)
+	} else {
+		if heldRoot != held.Root {
+			return nil, evidenceErrorf("the evidence claims a root at size %d that is not "+
+				"the one the held checkpoint is signed over", ev.Size)
+		}
+		// §11.1: the proof is empty at this size, because the two signatures
+		// say it alone. A file carrying one anyway is a second encoding of the
+		// same accusation, and evidence is the artifact strangers exchange.
+		if len(ev.Proof) != 0 {
+			return nil, evidenceErrorf("the evidence carries a %d-hash consistency proof "+
+				"at the held checkpoint's own size, where §11.1 requires none",
+				len(ev.Proof))
+		}
 	}
 
 	if heldRoot == conflicting.Root {

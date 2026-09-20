@@ -8,7 +8,7 @@
 > that isn't in it. Works beside Headscale, NetBird or plain `wg-quick`. Changes
 > nothing in WireGuard.
 
-*Status (2026-09-20): 49 Go packages, 654 tests, a frozen `SPEC.md`, and a
+*Status (2026-09-20): 49 Go packages, 655 tests, a frozen `SPEC.md`, and a
 vector suite a second implementer can use without this repository. **14 of 38
 gate lines** in `PLAN.md` are ticked — every gate that needs a running lab, a
 measurement or a second pair of eyes is still open. No Norn has ever guarded a

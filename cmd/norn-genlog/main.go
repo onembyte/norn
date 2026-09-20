@@ -734,8 +734,42 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 		return err
 	}
 
+	// §11.1 requires an empty `proof` when the disagreement is at the held
+	// checkpoint's own size: the two signatures say it alone. A file carrying
+	// one anyway is a second encoding of the same accusation, and nothing
+	// refused it.
+	sameSize, err := signedHeadOver(root, origin, key, sameSizeBranch(entries, divergent), signers)
+	if err != nil {
+		return err
+	}
+	sameSizeCP, err := tlog.Verify(sameSize, []string{note.VerifierKey(origin,
+		key.Public().(ed25519.PublicKey))})
+	if err != nil {
+		return err
+	}
+	if sameSizeCP.Size != int64(len(entries)) {
+		return fmt.Errorf("the same-size branch is %d entries, the held log is %d",
+			sameSizeCP.Size, len(entries))
+	}
+	atSameSize := &forkevidence.Evidence{
+		Held: heldSigned, Conflicting: sameSize, Size: sameSizeCP.Size,
+		HeldRoot: heldHeadBytes(heldTree),
+		Proof:    [][]byte{append([]byte(nil), evidence.HeldRoot...)},
+		Policy:   policyOf(root),
+	}
+	rawSameSize, err := atSameSize.Encode()
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(dir, "bad-proof-at-same-size.cbor"),
+		rawSameSize, 0o644); err != nil {
+		return err
+	}
+
 	manifest := map[string]any{
 		"cases": []map[string]string{
+			{"name": "bad-proof-at-same-size",
+				"says": "requires none"},
 			{"name": "bad-consistent",
 				"says": "nothing here is a fork"},
 			{"name": "bad-other-origin",
@@ -758,6 +792,20 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 		return err
 	}
 	return os.WriteFile(filepath.Join(dir, "cases.json"), append(encoded, '\n'), 0o644)
+}
+
+// heldHeadBytes is the held tree's own head, as bytes.
+func heldHeadBytes(tree *tlog.Tree) []byte {
+	head := tree.Head()
+	return append([]byte(nil), head[:]...)
+}
+
+// sameSizeBranch is a divergent log with the *same* number of entries as the
+// one held, so evidence about it needs no consistency proof (§11.1).
+func sameSizeBranch(entries [][]byte, divergent []byte) [][]byte {
+	branch := append([][]byte(nil), entries[:forkAt]...)
+	branch = append(branch, divergent)
+	return append(branch, entries[forkAt+1:]...)
 }
 
 // signedHeadOver builds a cosigned checkpoint over exactly these entries.
@@ -1003,6 +1051,23 @@ func buildBadCheckpoints(root, origin string, key ed25519.PrivateKey,
 	out = append(out, badCheckpoint{"10-wrong-body-origin",
 		"signed by this network's log key, under this network's name, and its origin " +
 			"line names another log", wrongOrigin})
+
+	// `skip-cosig-verify`: all three named witnesses sign, two of them verify.
+	// A reader that merely declines to count the bad line still has its quorum
+	// of two and carries on; §10 says the checkpoint is refused. `08` cannot
+	// tell those apart, because one valid line falls short either way.
+	withQuorum, err := cosignWith(base, byName["norn-witness/pi"],
+		byName["norn-witness/vps"], byName["norn-witness/friend"])
+	if err != nil {
+		return nil, err
+	}
+	withQuorum, err = forgeLastSignature(withQuorum, "norn-witness/friend")
+	if err != nil {
+		return nil, err
+	}
+	out = append(out, badCheckpoint{"11-forged-cosignature-with-quorum",
+		"three named witnesses, two of whose cosignatures verify: the quorum is met " +
+			"without the third, and §10 refuses the checkpoint anyway", withQuorum})
 
 	out = append(out, badCheckpoint{"08-forged-cosignature",
 		"two cosignature lines, both naming witnesses the policy lists, one of which does not verify: " +

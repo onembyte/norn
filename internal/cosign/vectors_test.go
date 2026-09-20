@@ -129,3 +129,62 @@ func TestTheServedCheckpointsCosignaturesAllVerify(t *testing.T) {
 		t.Errorf("%d of 3 cosignatures verified on the honest checkpoint", len(valid))
 	}
 }
+
+// Cold-model gate run 6, `skip-cosig-verify`. §10 says every cosignature by a
+// witness the policy names **must verify**; a reader could instead not count a
+// bad one and carry on. `08-forged-cosignature` cannot tell the two apart: it
+// carries one valid line and one forged, so counting-without-checking still
+// falls short of two and both readings refuse it.
+//
+// The difference is operational, not academic. One witness with a broken clock
+// or a bad build means fail-closed under one reading and business as usual
+// under the other, on a network whose whole purpose is to notice.
+func TestAQuorumOfValidCosignaturesDoesNotExcuseABadOne(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join(vectorRoot(), "checkpoints-bad",
+		"11-forged-cosignature-with-quorum.checkpoint"))
+	if err != nil {
+		t.Fatalf("the vector that separates refusing from not counting is missing: %v", err)
+	}
+	signed := string(raw)
+
+	// The assertion that matters, first: §10 refuses the checkpoint, quorum or
+	// no quorum.
+	if _, err := Verify(signed, witnessKeys(t)); err == nil {
+		t.Error("a checkpoint carrying a cosignature that does not verify was accepted " +
+			"because the others made a quorum; §10 says every named witness's " +
+			"cosignature must verify")
+	}
+
+	// And the shape that makes it a real distinction: three named witnesses
+	// sign, two verify, so a reader that merely declines to count the third
+	// still has its quorum of two and would carry on.
+	if got := countCosignatureLines(signed); got != 3 {
+		t.Errorf("the vector carries %d cosignature lines, want 3", got)
+	}
+	valid := 0
+	for _, name := range []string{"pi", "vps", "friend"} {
+		one := keepOnlyCosignature(signed, "norn-witness/"+name)
+		got, err := Verify(one, witnessKeys(t))
+		if err == nil && len(got) == 1 {
+			valid++
+		}
+	}
+	if valid != 2 {
+		t.Errorf("%d of three cosignatures verify, want exactly 2 -- with fewer, not "+
+			"counting the bad one would fall short of the quorum anyway and the two "+
+			"readings would agree again", valid)
+	}
+}
+
+// keepOnlyCosignature drops every cosignature line but one, so a single
+// witness's line can be checked on its own.
+func keepOnlyCosignature(signed, keep string) string {
+	var out []string
+	for _, line := range strings.Split(signed, "\n") {
+		if strings.HasPrefix(line, "— norn-witness/") && !strings.HasPrefix(line, "— "+keep+" ") {
+			continue
+		}
+		out = append(out, line)
+	}
+	return strings.Join(out, "\n")
+}

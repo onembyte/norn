@@ -1,6 +1,10 @@
 {
   "cases": [
     {
+      "name": "bad-proof-at-same-size",
+      "says": "requires none"
+    },
+    {
       "name": "bad-consistent",
       "says": "nothing here is a fork"
     },
