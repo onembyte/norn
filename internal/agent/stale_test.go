@@ -6,12 +6,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/onembyte/norn/internal/cosign"
 	"github.com/onembyte/norn/internal/freshness"
 	"github.com/onembyte/norn/internal/logclient"
 	"github.com/onembyte/norn/internal/peertable"
 	"github.com/onembyte/norn/internal/proven"
 	"github.com/onembyte/norn/internal/reconcile"
 	"github.com/onembyte/norn/internal/replay"
+	"github.com/onembyte/norn/internal/tlogstore"
 )
 
 // `GOSSIP.md` part 5 gives each freshness state a behaviour, and a state with
@@ -285,4 +287,70 @@ func TestObserveModeStillMirrors(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(runDir, proven.MirrorDir, "checkpoint")); err != nil {
 		t.Errorf("observe mode kept nothing to serve: %v", err)
 	}
+}
+
+// The check only protects a node that uses it, so the agent must pass the head
+// it holds on every cycle. A node that dropped it would accept a correctly
+// signed, correctly cosigned view of its own past -- and un-revoke whoever was
+// revoked since.
+func TestANodeRefusesALogThatWentBackwards(t *testing.T) {
+	full, store, entries := writableLog(t)
+	rec := &recorder{}
+	fake := peertable.NewFake()
+	a, err := New(Config{
+		Anchor: anchor(t), Fetcher: logclient.Dir(full), Device: fake,
+		Mode: reconcile.Owner, Emit: rec.emit,
+		Now:  func() time.Time { return time.Unix(fixtureCosignedAt, 0) },
+		Mono: func() time.Duration { return 0 },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Once(); err != nil {
+		t.Fatal(err)
+	}
+	held, _ := fake.Peers()
+	if len(held) == 0 {
+		t.Fatal("nothing was enforced to begin with")
+	}
+	_ = store
+
+	// The same network's log, truncated: every signature and cosignature on it
+	// is valid, because it is this log, earlier.
+	short := shorterLog(t, entries[:len(entries)/2])
+	a.cfg.Fetcher = logclient.Dir(short)
+
+	err = a.Once()
+	if err == nil {
+		t.Fatal("a node accepted its own log rolled back")
+	}
+	if rec.kinds()[VerifyFailed] == 0 {
+		t.Error("the rollback should have been reported")
+	}
+	// And the table it was already enforcing is untouched.
+	after, _ := fake.Peers()
+	if len(after) != len(held) {
+		t.Errorf("the peer table changed on a refused checkpoint: %d -> %d",
+			len(held), len(after))
+	}
+}
+
+// shorterLog builds a valid, cosigned log over a prefix of the fixture's
+// entries -- the same network, at an earlier size.
+func shorterLog(t *testing.T, entries [][]byte) string {
+	t.Helper()
+	doc := anchor(t)
+	dir := t.TempDir()
+	store, err := tlogstore.Open(dir, doc.Origin, fixtureKey(t, "logkey"),
+		tlogstore.WithCosigner(tlogstore.CosignerFunc(
+			cosign.Append(fixtureWitnesses(t), cosign.At(time.Unix(fixtureCosignedAt, 0))))))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, raw := range entries {
+		if _, err := store.Append(raw); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return dir
 }

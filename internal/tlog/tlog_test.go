@@ -204,3 +204,35 @@ func loadLogEntries(t *testing.T) [][]byte {
 	}
 	return out
 }
+
+// A tree can say what its head was at any earlier size, which is how a node
+// with every entry checks a new checkpoint against the one it already holds
+// without needing a proof from anybody.
+func TestHeadAtEarlierSizesMatchesTheTreeThatSizeWouldHaveBuilt(t *testing.T) {
+	entries := [][]byte{}
+	for i := 0; i < 30; i++ {
+		entries = append(entries, []byte{byte(i)})
+	}
+	full, err := Build(entries)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, size := range []int64{0, 1, 2, 7, 16, 29, 30} {
+		prefix, err := Build(entries[:size])
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := full.HeadAt(size)
+		if err != nil {
+			t.Fatalf("HeadAt(%d): %v", size, err)
+		}
+		if got != prefix.Head() {
+			t.Errorf("head at %d differs from the tree of that size", size)
+		}
+	}
+
+	if _, err := full.HeadAt(31); err == nil {
+		t.Error("a head was produced for a size larger than the tree")
+	}
+}

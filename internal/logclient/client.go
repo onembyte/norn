@@ -85,6 +85,14 @@ type Anchor struct {
 	// believe a checkpoint -- §10 step 3, and the difference between "the log
 	// operator says this is the log" and "somebody else saw this too".
 	Policy string
+	// Stored is the head this node already holds, if any. §10 requires a new
+	// checkpoint to be at least as large and to contain it.
+	//
+	// Nil means "nothing held yet", which is only true at first contact.
+	// Passing nil when a node *does* hold a head disables the one check that
+	// stops a log -- or a peer -- serving a correctly signed, correctly
+	// cosigned view of its own past.
+	Stored *tlog.Checkpoint
 }
 
 // Verify fetches a log, checks that the log operator signed the head, checks
@@ -145,6 +153,11 @@ func Verify(f Fetcher, anchor Anchor) (*Result, error) {
 	}
 	if tree.Head() != cp.Root {
 		return nil, logErrorf("the served entries do not hash to the advertised head")
+	}
+
+	// §10: a log only grows, and it contains everything it used to contain.
+	if err := checkAgainstStored(anchor.Stored, cp, tree); err != nil {
+		return nil, err
 	}
 
 	// The hash tiles must match the tree too. A verifier could skip them --
@@ -254,4 +267,42 @@ func checkQuorum(anchor Anchor, signed string) ([]cosign.Cosignature, *time.Time
 		return cosignatures, &at, nil
 	}
 	return cosignatures, nil, nil
+}
+
+// checkAgainstStored is SPEC §10's comparison with the head this node already
+// holds:
+//
+//	require cp.size >= stored_cp.size
+//	verify consistency stored_cp → cp; on failure → FORK (§11)
+//
+// Both halves matter, and the first is the one that is easy to miss. A
+// checkpoint older than the one a node holds is not malformed: it is the same
+// log, earlier, signed and cosigned exactly as correctly. Replaying it rolls
+// the node's peer table backwards -- a device revoked at entry 80 is active
+// again if somebody serves the log as it stood at entry 70. Once a node has
+// peers to ask as well as a log, that is a move anybody in the mesh can make.
+//
+// The consistency half needs no proof from anyone. A node holds every entry
+// (`GOSSIP.md` part 6, full replication), so it recomputes what the head at
+// the stored size must have been and compares. A mismatch means this log
+// cannot have produced the head the node is holding: a fork, not an error.
+func checkAgainstStored(stored *tlog.Checkpoint, cp tlog.Checkpoint, tree *tlog.Tree) error {
+	if stored == nil {
+		return nil
+	}
+	if cp.Size < stored.Size {
+		return logErrorf("this checkpoint has %d entries and this node already holds "+
+			"%d; a log does not shrink, and replaying an earlier view would undo "+
+			"every revocation since", cp.Size, stored.Size)
+	}
+	was, err := tree.HeadAt(stored.Size)
+	if err != nil {
+		return logErrorf("checking the stored head against this log: %v", err)
+	}
+	if was != stored.Root {
+		return logErrorf("FORK: at %d entries this log's head is %x, but this node "+
+			"holds %x at that size -- the two histories are not the same log (§11)",
+			stored.Size, was[:8], stored.Root[:8])
+	}
+	return nil
 }

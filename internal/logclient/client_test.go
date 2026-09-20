@@ -683,3 +683,111 @@ func cosignedLogAt(t *testing.T, when map[string]int64, threshold int) (string, 
 	return dir, Anchor{Anchor: inner, LogKeys: []string{verifierKey(t, key, "norn/test")},
 		Policy: policyOver(t, "norn/test", witnessNames, threshold)}
 }
+
+// SPEC §10, the step after the signature and the quorum:
+//
+//	if stored_cp exists:
+//	    require cp.size >= stored_cp.size
+//	    verify consistency proof stored_cp → cp; on failure → FORK (§11)
+//
+// Without it, a log -- or, once gossip exists, any peer -- can serve an older
+// checkpoint that is perfectly signed and perfectly cosigned, and a node will
+// replay it and roll its own peer table backwards. A device revoked at entry
+// 80 becomes active again by handing the node the log as it stood at entry 70.
+// Every signature checks out, because it is the *same log*, earlier.
+func TestACheckpointOlderThanTheStoredOneIsRefused(t *testing.T) {
+	dir, anchor := cosignedLog(t, []string{"pi", "vps"}, 2)
+
+	current, err := Verify(Dir(dir), anchor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The node now holds this head, and is offered the same log ten entries
+	// shorter -- signed and cosigned exactly as correctly.
+	older, olderAnchor := cosignedLogOfSize(t, 5, []string{"pi", "vps"}, 2)
+	olderAnchor.Stored = &current.Checkpoint
+
+	if _, err := Verify(Dir(older), olderAnchor); err == nil {
+		t.Fatal("a node accepted a checkpoint older than the one it already held; " +
+			"a revoked device would come back")
+	} else if !strings.Contains(err.Error(), "does not shrink") {
+		t.Errorf("the refusal should say the log went backwards: %v", err)
+	}
+}
+
+// The same size and the same root is not a rollback: it is the ordinary case
+// of nothing having changed since the last poll.
+func TestTheSameCheckpointIsAcceptedAgain(t *testing.T) {
+	dir, anchor := cosignedLog(t, []string{"pi", "vps"}, 2)
+	current, err := Verify(Dir(dir), anchor)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	anchor.Stored = &current.Checkpoint
+	if _, err := Verify(Dir(dir), anchor); err != nil {
+		t.Fatalf("re-verifying the head a node already holds failed: %v", err)
+	}
+}
+
+// Growing is what a log does.
+func TestAGrownLogIsAccepted(t *testing.T) {
+	small, anchor := cosignedLogOfSize(t, 5, []string{"pi", "vps"}, 2)
+	held, err := Verify(Dir(small), anchor)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	bigger, biggerAnchor := cosignedLogOfSize(t, 20, []string{"pi", "vps"}, 2)
+	biggerAnchor.Stored = &held.Checkpoint
+	if _, err := Verify(Dir(bigger), biggerAnchor); err != nil {
+		t.Fatalf("a log that grew was refused: %v", err)
+	}
+}
+
+// A log the same size or larger whose earlier history differs is a **fork**:
+// the node held a head this log cannot have produced. This is the case §11
+// exists for, and it must be refused loudly rather than replayed.
+func TestALogThatRewroteItsHistoryIsRefused(t *testing.T) {
+	dir, anchor := cosignedLogOfSize(t, 20, []string{"pi", "vps"}, 2)
+	held, err := Verify(Dir(dir), anchor)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// A head of the same size whose root is not this log's root at that size.
+	forked := held.Checkpoint
+	forked.Root[0] ^= 0x01
+	anchor.Stored = &forked
+
+	if _, err := Verify(Dir(dir), anchor); err == nil {
+		t.Fatal("a log inconsistent with the head this node held was accepted")
+	} else if !strings.Contains(err.Error(), "FORK") {
+		t.Errorf("the refusal should raise a fork: %v", err)
+	}
+}
+
+// cosignedLogOfSize builds a cosigned log of the first `n` fixture entries.
+func cosignedLogOfSize(t *testing.T, n int, cosigners []string, threshold int) (string, Anchor) {
+	t.Helper()
+	inner, entries := loadFixture(t)
+	dir := t.TempDir()
+	key := logKey(t)
+	var signers []cosign.Signer
+	for _, name := range cosigners {
+		signers = append(signers, cosign.Signer{
+			Name: "norn-witness/" + name, Key: witnessKey(t, name)})
+	}
+	store, err := tlogstore.Open(dir, "norn/test", key, tlogstore.WithCosigner(
+		tlogstore.CosignerFunc(cosign.Append(signers, cosign.At(cosignedAt)))))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, raw := range entries[:n] {
+		if _, err := store.Append(raw); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return dir, Anchor{Anchor: inner, LogKeys: []string{verifierKey(t, key, "norn/test")},
+		Policy: policyOver(t, "norn/test", witnessNames, threshold)}
+}

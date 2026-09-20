@@ -28,6 +28,7 @@ import (
 	"github.com/onembyte/norn/internal/proven"
 	"github.com/onembyte/norn/internal/reconcile"
 	"github.com/onembyte/norn/internal/replay"
+	"github.com/onembyte/norn/internal/tlog"
 	"github.com/onembyte/norn/internal/trust"
 )
 
@@ -218,10 +219,21 @@ func (a *Agent) Mode() reconcile.Mode { return a.cfg.Mode }
 // whatever was safe: an error here means "this cycle learned nothing", never
 // "the peer table has been abandoned".
 func (a *Agent) Once() error {
+	// The head this node already holds goes with every request: §10 requires a
+	// new checkpoint to be at least as large and to contain it, and a node
+	// that forgot to say what it holds would accept a correctly signed,
+	// correctly cosigned view of its own past -- un-revoking whoever was
+	// revoked since.
+	var stored *tlog.Checkpoint
+	if a.last != nil {
+		held := a.last.Checkpoint
+		stored = &held
+	}
 	result, verifyErr := logclient.Verify(a.cfg.Fetcher, logclient.Anchor{
 		Anchor:  replay.Anchor{Net: a.cfg.Anchor.Net, GenesisHash: a.cfg.Anchor.GenesisHash},
 		LogKeys: []string{a.cfg.Anchor.LogKey},
 		Policy:  a.cfg.Anchor.Policy,
+		Stored:  stored,
 	})
 	if verifyErr != nil {
 		a.emit(Event{Kind: VerifyFailed, Message: verifyErr.Error()})

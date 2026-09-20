@@ -135,3 +135,19 @@ func (t *Tree) tileData(level int, index int64) ([]byte, int, error) {
 	}
 	return out, width, nil
 }
+
+// HeadAt is this tree's root as it stood at `size` entries.
+//
+// A node with full replication does not need a consistency proof: it holds
+// every entry, so it can simply recompute what the earlier head must have been
+// and compare. That is stronger than checking a proof somebody else supplied,
+// and it is the check `GOSSIP.md` part 6 means by "consistency proofs are
+// computed locally from tiles (the node has them), so a peer serves data,
+// never claims".
+func (t *Tree) HeadAt(size int64) (upstream.Hash, error) {
+	if size < 0 || size > t.size {
+		return upstream.Hash{}, formatErrorf("no head at size %d in a tree of %d",
+			size, t.size)
+	}
+	return upstream.TreeHash(size, t)
+}

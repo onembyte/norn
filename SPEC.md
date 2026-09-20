@@ -602,8 +602,14 @@ loop every T_g or on demand:
   verify witness policy: every cosignature by a witness the policy names
       must verify, and the quorum must be satisfied  # refuse otherwise
   if stored_cp exists:
-      require cp.size >= stored_cp.size
-      verify consistency proof stored_cp → cp; on failure → FORK (§11)
+      require cp.size >= stored_cp.size    # an earlier view undoes every
+                                           # revocation made since, and is
+                                           # signed and cosigned correctly
+      require the head this log had at stored_cp.size == stored_cp.root
+                                           # a node holds every entry, so it
+                                           # recomputes this rather than
+                                           # trusting a supplied proof
+      on mismatch → FORK (§11)
   fetch new tiles / entry bundles (TileFetcher / TileFS + PermanentCache)
   state := replay(trust, entries[0:cp.size])
   proven := { d ∈ state.devices : status == active && not expired(now) }
