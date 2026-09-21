@@ -143,8 +143,19 @@ type decoder struct {
 // Decode reads exactly one value, rejecting anything non-canonical or outside
 // the profile, and refusing trailing bytes.
 func Decode(raw []byte) (any, error) {
-	if len(raw) > MaxEntryBytes {
-		return nil, profileErrorf("input exceeds %d bytes", MaxEntryBytes)
+	return DecodeWithin(raw, MaxEntryBytes)
+}
+
+// DecodeWithin decodes with the caller's own size bound.
+//
+// §4.0's `MAX_ENTRY_BYTES` is §6's uint16 entry framing, and it belongs to
+// entries: a proof bundle *wraps* an entry and is necessarily larger, so a
+// decoder that applied one cap everywhere refused a bundle the protocol
+// requires it to accept. Every artifact states its own bound; none goes
+// unbounded, because that is what the cap is for.
+func DecodeWithin(raw []byte, max int) (any, error) {
+	if len(raw) > max {
+		return nil, profileErrorf("input exceeds %d bytes", max)
 	}
 	d := &decoder{buf: raw}
 	value, err := d.value()

@@ -1,6 +1,14 @@
 {
   "cases": [
     {
+      "name": "no-quorum",
+      "says": "no quorum cosigned"
+    },
+    {
+      "name": "wrong-origin",
+      "says": "is for origin"
+    },
+    {
       "name": "wrong-entry",
       "says": "inclusion proof"
     },
@@ -18,5 +26,6 @@
     }
   ],
   "comment": "bundles that MUST be refused under the log key above. Each differs from a valid bundle in exactly one thing, so a verifier that skips one check accepts exactly one of them",
-  "log_key": "norn/nzxxe3rnorsxg5domv2c2mbqge+bea4a666+AV6v97lmGyW99eHglI8syFAU2uY+/HuHHq0VYz9Rmio1"
+  "log_key": "norn/nzxxe3rnorsxg5domv2c2mbqge+bea4a666+AV6v97lmGyW99eHglI8syFAU2uY+/HuHHq0VYz9Rmio1",
+  "origin": "norn/nzxxe3rnorsxg5domv2c2mbqge"
 }

@@ -343,9 +343,9 @@ func TestTheServedLogIsSignedByTheKeyTheTrustFileNames(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", filepath.Base(name), err)
 		}
-		if err := bundle.Check([]string{anchor.LogKey}); err != nil {
-			t.Errorf("%s does not check under trust.cbor's log key: %v",
-				filepath.Base(name), err)
+		if err := bundle.Check(proof.Anchor{Origin: anchor.Origin,
+			LogKey: anchor.LogKey, Policy: anchor.Policy}); err != nil {
+			t.Errorf("%s does not check under trust.cbor: %v", filepath.Base(name), err)
 		}
 	}
 }

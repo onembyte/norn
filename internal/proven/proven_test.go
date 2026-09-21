@@ -168,8 +168,12 @@ func TestEveryDeviceGetsACheckableBundle(t *testing.T) {
 			t.Fatalf("%s: %v", device.DeviceID, err)
 		}
 		// Checkable by someone holding only norn.trust -- which is the whole
-		// point of a bundle (§8).
-		if err := bundle.Check([]string{doc.LogKey}); err != nil {
+		// point of a bundle (§8), and which means the origin and the witness
+		// quorum too, not just the log's signature (§8.1, 6.5h-iii). This
+		// assertion passed the log key alone while its own comment claimed
+		// otherwise.
+		if err := bundle.Check(proof.Anchor{Origin: doc.Origin, LogKey: doc.LogKey,
+			Policy: doc.Policy}); err != nil {
 			t.Errorf("%s: the bundle does not check out: %v", device.DeviceID, err)
 		}
 		if bundle.Device != device.DeviceID {

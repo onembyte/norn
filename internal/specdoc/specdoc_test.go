@@ -435,7 +435,8 @@ var reTicked = regexp.MustCompile("`([^`]+)`")
 // looking for them.
 func TestEveryVectorPathTheSpecCitesExists(t *testing.T) {
 	// Extensions the suite uses; a citation may omit one.
-	suffixes := []string{"", ".cbor", ".checkpoint", ".txt", ".json", ".note", ".ots", ".toml"}
+	suffixes := []string{"", ".cbor", ".checkpoint", ".bundle", ".txt", ".json",
+		".note", ".ots", ".toml"}
 
 	// Only paths rooted in the suite. `transparency-dev/formats` is a library
 	// this project checks itself against, not a vector, and a checker that

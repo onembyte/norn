@@ -15,8 +15,10 @@ import (
 	upstream "golang.org/x/mod/sumdb/tlog"
 
 	"github.com/onembyte/norn/internal/cbor"
+	"github.com/onembyte/norn/internal/cosign"
 	"github.com/onembyte/norn/internal/entry"
 	"github.com/onembyte/norn/internal/note"
+	"github.com/onembyte/norn/internal/policy"
 	"github.com/onembyte/norn/internal/tlog"
 )
 
@@ -62,7 +64,7 @@ func (b *Bundle) Encode() ([]byte, error) {
 
 // Decode parses a bundle, enforcing its closed schema.
 func Decode(raw []byte) (*Bundle, error) {
-	value, err := cbor.Decode(raw)
+	value, err := cbor.DecodeWithin(raw, MaxBundleBytes)
 	if err != nil {
 		return nil, err
 	}
@@ -120,10 +122,56 @@ func Decode(raw []byte) (*Bundle, error) {
 //
 // It deliberately does NOT consult any log. A bundle that only checks out
 // while its log is reachable is not evidence.
-func (b *Bundle) Check(logKeys []string) error {
-	cp, err := tlog.Verify(b.Checkpoint, logKeys)
+// MaxBundleBytes bounds a proof bundle. It cannot be `MAX_ENTRY_BYTES`: a
+// bundle *wraps* an entry that may itself be that large, plus a checkpoint and
+// an inclusion proof, so the largest legal bundle necessarily exceeds the
+// largest legal entry. §4.0's entry cap is §6's uint16 framing and belongs to
+// entries alone (§8.1).
+const MaxBundleBytes = cbor.MaxEntryBytes + 16384
+
+// Anchor is what a reader of a bundle must already hold: the network's origin,
+// its log key and its witness policy — everything in `norn.trust` that decides
+// whether a checkpoint counts.
+type Anchor struct {
+	Origin string
+	LogKey string
+	Policy string
+}
+
+// Check verifies a bundle against a network's anchor.
+//
+// The checkpoint inside is checked exactly as §11.1 checks the ones inside
+// fork evidence: this network's origin, this network's log key, **and a
+// satisfied witness quorum**. §8 sells a bundle as checkable by somebody
+// holding only the trust file, and a checkpoint with no corroboration proves
+// only that the log said so — which is the one thing a transparency log may
+// not be believed about alone. Until cold gate run 7, §8.1 asked for the log
+// signature and nothing else, and two variants that skipped the quorum and the
+// origin passed every vector.
+func (b *Bundle) Check(anchor Anchor) error {
+	cp, err := tlog.Verify(b.Checkpoint, []string{anchor.LogKey})
 	if err != nil {
 		return proofErrorf("checkpoint: %v", err)
+	}
+	if cp.Origin != anchor.Origin {
+		return proofErrorf("the checkpoint is for origin %q, and this anchor is for %q",
+			cp.Origin, anchor.Origin)
+	}
+	rules, err := policy.Parse(anchor.Policy)
+	if err != nil {
+		return proofErrorf("the anchor's policy does not parse: %v", err)
+	}
+	cosignatures, err := cosign.Verify(b.Checkpoint, rules.Keys())
+	if err != nil {
+		return proofErrorf("checkpoint: %v", err)
+	}
+	names := make([]string, 0, len(cosignatures))
+	for _, c := range cosignatures {
+		names = append(names, rules.Label(c.Name))
+	}
+	if !rules.Satisfied(names) {
+		return proofErrorf("no quorum cosigned the bundle's checkpoint (quorum %q, "+
+			"cosigned by %v)", rules.Quorum(), names)
 	}
 	if b.Index < 0 || b.Index >= cp.Size {
 		return proofErrorf("index %d is outside a log of %d entries", b.Index, cp.Size)

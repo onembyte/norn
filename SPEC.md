@@ -150,7 +150,12 @@ A decoder MUST bound its own resource use. Two limits, both normative:
   make an entry's validity depend on the shape of something it merely carries.
   The deepest structure the entry schema itself allows is a request's `labels`
   map, at depth 2 of that inner document.
-- **`MAX_ENTRY_BYTES` is 65535**, and an entry is at most that many bytes. Not
+- **`MAX_ENTRY_BYTES` is 65535**, and an **entry** is at most that many bytes —
+  as is an enrollment request, which travels inside one. It does **not** bound
+  the other CBOR artifacts that cite this section: a proof bundle (§8.1), a
+  trust file (§9.1) and fork evidence (§11.1) each wrap or exceed an entry, and
+  each states its own bound. Every one of them is bounded; none shares this
+  number. Not
   65536: §6 frames entries in `tlog-tiles` entry bundles behind a **uint16**
   length prefix, so 65535 is the largest entry that can be served at all. A
   limit above it would admit an entry that is valid and unpublishable, and an
@@ -608,9 +613,25 @@ why there is no domain prefix here — there is nothing for one to separate.
 | `proof` | array of 32-byte strings | RFC 6962 inclusion proof, leaf to root |
 | `checkpoint` | text | the signed checkpoint note, verbatim |
 
-Checking a bundle: verify the checkpoint note under `norn.trust.log_key`;
-confirm `SHA-256(0x00 ‖ entry)` and `proof` reach the checkpoint's root at
-`index` for that size; then apply the rules below.
+Checking a bundle: **verify its checkpoint per §10** — this network's origin,
+this network's log key, and a satisfied witness quorum — then confirm
+`SHA-256(0x00 ‖ entry)` and `proof` reach that checkpoint's root at `index` for
+that size, and apply the rules below.
+
+The quorum is not optional here, and saying "verify the checkpoint note" was
+not enough. §8 sells a bundle as self-contained, checkable by somebody holding
+only `norn.trust`; a checkpoint carrying no corroboration proves only that the
+log said so, which is the one thing a transparency log may not be believed
+about on its own. §11.1 asks exactly the same three questions of the
+checkpoints inside fork evidence, and for the same reason.
+
+**`MAX_ENTRY_BYTES` does not apply to a bundle.** §4.0's cap is §6's uint16
+entry framing and belongs to entries: a bundle *wraps* an entry that may
+itself be 65535 bytes, so the largest legal bundle is necessarily larger than
+the largest legal entry. A reader still MUST bound what it decodes — an
+unbounded parse is what §4.0's limits exist to prevent — but the bound is this
+artifact's, not the entry's. The same holds for §9's trust file and §11.1's
+evidence.
 
 > **This is Norn's own format, and v1 says so rather than deferring it again.**
 > The shape is the same as `c2sp.org/tlog-proof` — checkpoint, index, inclusion
@@ -971,6 +992,7 @@ this table drifted out of date the moment one was.
 | §10 a bad cosignature is refused, not merely uncounted | `served/checkpoint` | `checkpoints-bad/11-forged-cosignature-with-quorum`: three named witnesses, two verifying, so the quorum is met without the third and §10 refuses it anyway. `08` cannot tell the two readings apart, because one valid line falls short either way |
 | §11.1 the proof is empty at the held size | `fork/evidence.cbor` uses the non-degenerate branch | `fork/bad-proof-at-same-size`: a consistency proof where the two signatures say it alone |
 | §6 tiles and bundles | `served/`, read back to reproduce `state.json`; a forged head is `checkpoints-bad/04-forged-log-signature` and a fourth body line is `checkpoints-bad/09-extension-line` | `served-bad/`: an entry bundle with one byte changed, and one the log will not serve at all |
+| §8.1 a bundle's checkpoint is checked per §10 | `proofs/`, whose checkpoints carry the quorum | `proofs-bad/no-quorum` (the log's signature and nobody else's) and `proofs-bad/wrong-origin` (this network's key over another network's origin line) |
 | §8 proof bundles | `proofs/`, one per active device | `proofs-bad/`: a wrong entry, a foreign checkpoint, a tampered proof and a checkpoint signed by a key the anchor does not name — each differing from a valid bundle in exactly one thing |
 | §10 verifier loop, steps 1–4 | `served/` verified end to end, **signature first** | `checkpoints-bad/01-unsigned`, `02-wrong-log-key`, `03-wrong-origin` and **`04-forged-log-signature`** — the last one being a signature of the right shape under the right key id that does not verify. Without it a verifier that never checks the log signature reproduces the whole suite |
 | §10 step 3, the witness quorum | `served/checkpoint`, cosigned by all three witnesses | `checkpoints-bad/05-one-cosignature-short`, `06-no-cosignatures`, `07-unnamed-witness-only` and **`08-forged-cosignature`**, which carries two lines naming witnesses the policy lists, one of which does not verify: the quorum is met by counting and refused by checking. `quorum none` accepting an uncosigned head needs a second anchor and is **not vectored** |

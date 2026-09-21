@@ -2,6 +2,7 @@ package proof
 
 import (
 	"encoding/json"
+	"github.com/onembyte/norn/internal/trust"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -124,7 +125,7 @@ func TestEveryProofNegativeIsRefused(t *testing.T) {
 				}
 				return
 			}
-			err = bundle.Check([]string{doc.LogKey})
+			err = bundle.Check(shippedAnchor(t))
 			if err == nil {
 				t.Fatal("accepted a bundle that proves nothing about this log")
 			}
@@ -132,5 +133,76 @@ func TestEveryProofNegativeIsRefused(t *testing.T) {
 				t.Errorf("refused for the wrong reason.\n  got:  %v\n  want: %s", err, c.Says)
 			}
 		})
+	}
+}
+
+// Cold-model gate run 7, defect J3. §8 sells a bundle as self-contained --
+// "checked by someone holding only `norn.trust`" -- and §8.1's procedure said
+// only "verify the checkpoint note under `norn.trust.log_key`". §11.1, for the
+// same kind of embedded checkpoint, says "verify both checkpoints per §10 --
+// this network's origin, this network's log key, and a satisfied witness
+// quorum." Two variants passed the whole suite: one that never checked the
+// quorum, and one that never checked the origin.
+//
+// A bundle whose checkpoint carries no witness corroboration proves only that
+// the log said so, which is the one thing a transparency log is not allowed to
+// be believed about on its own.
+// shippedAnchor is the fixture's trust file, as a bundle reader holds it.
+func shippedAnchor(t *testing.T) Anchor {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join("..", "..", "testdata", "vectors", "trust.cbor"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, err := trust.Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return Anchor{Origin: doc.Origin, LogKey: doc.LogKey, Policy: doc.Policy}
+}
+
+func TestABundleNeedsTheSameCheckpointChecksAsEvidence(t *testing.T) {
+	dir := filepath.Join("..", "..", "testdata", "vectors", "proofs-bad")
+	for _, name := range []string{"no-quorum", "wrong-origin"} {
+		t.Run(name, func(t *testing.T) {
+			raw, err := os.ReadFile(filepath.Join(dir, name+".bundle"))
+			if err != nil {
+				t.Fatalf("the vector for this check is missing: %v", err)
+			}
+			bundle, err := Decode(raw)
+			if err != nil {
+				return // refused at the encoding layer, which is also a refusal
+			}
+			if err := bundle.Check(shippedAnchor(t)); err == nil {
+				t.Error("accepted a bundle whose checkpoint is not this network's, or " +
+					"carries no quorum; §8 promises it can be checked by somebody " +
+					"holding only the trust file")
+			}
+		})
+	}
+}
+
+// Cold-model gate run 7, defect J8. §4.0 states `MAX_ENTRY_BYTES` and §8.1,
+// §11.1 and §9 each say "deterministic CBOR per §4.0" -- so a reader applies
+// the entry cap to every artifact, and a *valid* bundle wrapping a maximal
+// entry necessarily exceeds it. Our own decoder did exactly that.
+func TestABundleMayWrapAMaximalEntry(t *testing.T) {
+	// An entry at the largest size §6 can serve, wrapped in a bundle. The
+	// bundle is necessarily larger, and refusing it would make the largest
+	// legal entry unprovable.
+	entry := make([]byte, cbor.MaxEntryBytes)
+	bundle := &Bundle{Device: "d", Index: 0, Entry: entry, Checkpoint: "x\n1\nAA==\n\n"}
+	raw, err := bundle.Encode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(raw) <= cbor.MaxEntryBytes {
+		t.Fatalf("this bundle is %d bytes, which does not exceed the entry cap; the "+
+			"test proves nothing", len(raw))
+	}
+	if _, err := Decode(raw); err != nil {
+		t.Errorf("a bundle wrapping the largest servable entry was refused: %v\n"+
+			"The entry cap is §6's uint16 framing and cannot apply to a document "+
+			"that wraps an entry.", err)
 	}
 }

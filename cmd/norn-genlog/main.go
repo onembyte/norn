@@ -506,9 +506,47 @@ func writeBadProofs(root, origin string, key ed25519.PrivateKey, entries [][]byt
 		return err
 	}
 
+	// J3: §8 sells a bundle as checkable by somebody holding only the trust
+	// file, and §8.1 asked only for the log signature. A checkpoint with no
+	// witness corroboration, or one for another network, is exactly what a
+	// lying log would produce -- and nothing here refused either.
+	uncosigned, err := note.Sign(mustBody(signed), origin, key)
+	if err != nil {
+		return err
+	}
+	noQuorum, err := proof.Build(device, index, entries[index], inclusion, uncosigned)
+	if err != nil {
+		return err
+	}
+	if err := write("no-quorum", noQuorum); err != nil {
+		return err
+	}
+
+	otherOrigin := "norn/elsewhere"
+	body := mustBody(signed)
+	wrongBody := otherOrigin + body[strings.Index(body, "\n"):]
+	wrongHead, err := note.Sign(wrongBody, origin, key)
+	if err != nil {
+		return err
+	}
+	wrongHead, err = staggeredCosigner(signers)(wrongHead)
+	if err != nil {
+		return err
+	}
+	wrongOrigin, err := proof.Build(device, index, entries[index], inclusion, wrongHead)
+	if err != nil {
+		return err
+	}
+	if err := write("wrong-origin", wrongOrigin); err != nil {
+		return err
+	}
+
 	meta := map[string]any{
 		"log_key": note.VerifierKey(origin, key.Public().(ed25519.PublicKey)),
+		"origin":  origin,
 		"cases": []map[string]string{
+			{"name": "no-quorum", "says": "no quorum cosigned"},
+			{"name": "wrong-origin", "says": "is for origin"},
 			{"name": "wrong-entry", "says": "inclusion proof"},
 			{"name": "foreign-checkpoint", "says": "no valid signature from a trusted key"},
 			{"name": "tampered-proof", "says": "inclusion proof"},

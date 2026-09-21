@@ -34,6 +34,11 @@ func evidenceErrorf(format string, args ...any) error {
 	return fmt.Errorf("%w: %s", ErrEvidence, fmt.Sprintf(format, args...))
 }
 
+// MaxEvidenceBytes bounds an evidence file: two signed checkpoints, a
+// consistency proof and the network's policy. It is stated here rather than
+// inherited from §4.0, whose cap is §6's entry framing (§11.1).
+const MaxEvidenceBytes = 1 << 16
+
 // Version is the schema version of an evidence file.
 const Version = 1
 
@@ -216,7 +221,7 @@ func (e *Evidence) Encode() ([]byte, error) {
 
 // Parse reads an evidence file.
 func Parse(raw []byte) (*Evidence, error) {
-	value, err := cbor.Decode(raw)
+	value, err := cbor.DecodeWithin(raw, MaxEvidenceBytes)
 	if err != nil {
 		return nil, evidenceErrorf("%v", err)
 	}

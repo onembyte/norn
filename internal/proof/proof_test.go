@@ -48,7 +48,7 @@ func TestABundleChecksOutOnItsOwn(t *testing.T) {
 		if err != nil {
 			t.Fatalf("index %d: %v", index, err)
 		}
-		if err := back.Check(vkeyFor(origin, key)); err != nil {
+		if err := back.Check(testAnchor(t, origin, key)); err != nil {
 			t.Errorf("index %d: a valid bundle must check out: %v", index, err)
 		}
 	}
@@ -65,7 +65,7 @@ func TestABundleWithTheWrongEntryIsRefused(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := bundle.Check(vkeyFor(origin, key)); err == nil {
+	if err := bundle.Check(testAnchor(t, origin, key)); err == nil {
 		t.Error("a bundle whose entry does not match its proof must be refused")
 	}
 }
@@ -78,7 +78,7 @@ func TestABundleWithAForeignCheckpointIsRefused(t *testing.T) {
 	signed, _ := tree.Checkpoint(origin).Sign(other)
 
 	bundle, _ := Build("dev", 3, entries[3], p, signed)
-	if err := bundle.Check(vkeyFor(origin, key)); err == nil {
+	if err := bundle.Check(testAnchor(t, origin, key)); err == nil {
 		t.Error("a checkpoint signed by an untrusted key must be refused")
 	}
 }
@@ -93,7 +93,7 @@ func TestABundleWithATamperedProofIsRefused(t *testing.T) {
 		t.Skip("no proof hashes to tamper with at this size")
 	}
 	bundle.Proof[0][0] ^= 0x01
-	if err := bundle.Check(vkeyFor(origin, key)); err == nil {
+	if err := bundle.Check(testAnchor(t, origin, key)); err == nil {
 		t.Error("a bundle with an altered proof must be refused")
 	}
 }
@@ -123,4 +123,17 @@ func TestBundlesRoundTripCanonically(t *testing.T) {
 
 func vkeyFor(origin string, key ed25519.PrivateKey) []string {
 	return []string{noteKey(origin, key.Public().(ed25519.PublicKey))}
+}
+
+// testAnchor is the anchor these tests check against.
+//
+// They are about the inclusion proof and the encoding, not about
+// corroboration, so the policy is `quorum none`: it requires no witness and
+// keeps the checkpoints here uncosigned. The quorum rule §8.1 gained in
+// 6.5h-iii is covered by `proofs-bad/no-quorum`, against the shipped anchor.
+func testAnchor(t *testing.T, origin string, key ed25519.PrivateKey) Anchor {
+	t.Helper()
+	keys := vkeyFor(origin, key)
+	return Anchor{Origin: origin, LogKey: keys[0],
+		Policy: "log " + keys[0] + "\nquorum none\n"}
 }

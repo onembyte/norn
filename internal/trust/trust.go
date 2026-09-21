@@ -20,6 +20,11 @@ import (
 	"github.com/onembyte/norn/internal/policy"
 )
 
+// MaxTrustBytes bounds a trust file: keys, urls, a witness list and a policy
+// of at most 4096 bytes. Stated here rather than inherited from §4.0, whose
+// cap is §6's entry framing (§9.1).
+const MaxTrustBytes = 1 << 16
+
 // Version is the only trust-file version this package speaks.
 const Version = uint64(1)
 
@@ -84,7 +89,7 @@ var knownKeys = map[string]bool{
 
 // Parse reads a trust file, enforcing the §9.1 shape.
 func Parse(raw []byte) (*Trust, error) {
-	value, err := cbor.Decode(raw)
+	value, err := cbor.DecodeWithin(raw, MaxTrustBytes)
 	if err != nil {
 		return nil, err
 	}
