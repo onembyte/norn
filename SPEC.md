@@ -375,7 +375,7 @@ than one way, so the first matching step decides the reason code.
 Replay of an **empty** list of entries yields the zero state of §5.3 with
 `size` 0 and `rejected` empty: there is nothing to reject.
 
-**Entry 0 (genesis).** In order:
+**Entry 0 (genesis).** In order — though unlike §5.2's ordering, **every failure here is `bad-genesis`**, so no artifact distinguishes one arrangement of these steps from another. The order below is the one that reads most naturally; it is not a guarantee, and §12.1 records it as unvectored.
 
 1. `entry_hash` is recorded as seen.
 2. Decode per §4.0 and check the envelope per §4.1. Any failure → **abort** (`bad-genesis`).
@@ -1235,6 +1235,26 @@ admits its holes, so:
 
 - **`quorum none` accepting an uncosigned head.** It needs a second trust
   anchor, and one is not shipped.
+- **§4.3's "a key contributes at most once".** `sigs` is sorted by `kid` with
+  no repeats (§4.1), and `kid` is `SHA-256(pk)[0:8]` — a function of the key —
+  so one key cannot appear twice in one entry and the de-duplication in
+  signature counting never fires. Confirmed by deleting it: every check stays
+  green. It is written down because a reader who counts signatures without it
+  is relying on a rule two sections away, and that is worth saying once.
+- **§5.3's "must not count it even **in the moment before that refusal**".**
+  §10 refuses the whole checkpoint over an unverified line from a named
+  witness, unconditionally and before `T` is used, so no conforming reader has
+  such a moment. This implementation guards the clause at its API boundary —
+  a refused checkpoint yields no cosignatures at all — but that is a property
+  of one function's return value, not of any file: a second implementation
+  that returned the timestamp and then ignored the error is indistinguishable
+  from one that did not, on every artifact here.
+- **The order of entry 0's steps (§5.1).** §5.2's ordering is observable
+  because the first matching step decides the reason code; entry 0 has one
+  reason code, `bad-genesis`, so its ordering decides nothing a file can see.
+  Confirmed by rearranging four of the steps: every check stays green. §5.1
+  now says so where the steps are listed, rather than leaving "in order" to
+  imply the guarantee §5.2 gives.
 - **A **blank line inside a note's text**, as distinct from the one that ends
   it.** §7 says the first blank line ends the text because text lines are
   non-empty; a reader that took the *last* one would sign a different string.

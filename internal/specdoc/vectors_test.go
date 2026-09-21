@@ -1253,3 +1253,53 @@ func TestTheWitnessMatchRuleNamesBothHalves(t *testing.T) {
 			"that refuses lets anyone deny a head to the whole network")
 	}
 }
+
+// --- Cold-model gate run 10, defect D12 ---------------------------------
+//
+// Normative rules no artifact can reach. Each was confirmed by deleting it and
+// watching all 236 checks stay green — which is not a reason to delete the
+// rule, but is a reason to stop counting it as covered. §12.1's standard is
+// that a suite admitting its holes is worth more than one that looks complete.
+
+func TestTheDeadNormativeRulesAreAdmitted(t *testing.T) {
+	doc := load(t)
+	section, ok := doc.Section("12.1")
+	if !ok {
+		t.Fatal("§12.1 is missing")
+	}
+	for _, c := range []struct{ needle, why string }{
+		{"a key contributes at most once",
+			"`sigs` is sorted by `kid` with no repeats and `kid` is a hash of the " +
+				"key, so one key cannot appear twice in one entry and the " +
+				"de-duplication never fires"},
+		{"in the moment before that refusal",
+			"§10 refuses the checkpoint over an unverified line unconditionally, so " +
+				"no `T` is ever produced from one and the clause guards a moment " +
+				"a conforming reader does not have"},
+		{"order of entry 0's steps",
+			"every entry-0 failure is `bad-genesis`, so unlike §5.2's ordering this " +
+				"one changes no reason code and no file can see it"},
+	} {
+		if !strings.Contains(section.Body, c.needle) {
+			t.Errorf("§12.1's `What is not vectored` list does not mention %q — %s",
+				c.needle, c.why)
+		}
+	}
+}
+
+// §5.1 says entry 0's steps are "in order" and gives §5.2's justification for
+// saying so — the first matching step decides the reason code. Entry 0 has one
+// reason code, so that justification does not apply to it, and a reader who
+// takes the phrase at face value believes the suite pins something it cannot.
+func TestEntryZerosStepsDoNotClaimAnObservableOrder(t *testing.T) {
+	doc := load(t)
+	section, ok := doc.Section("5.1")
+	if !ok {
+		t.Fatal("§5.1 is missing")
+	}
+	if !strings.Contains(section.Body, "every failure here is `bad-genesis`") {
+		t.Error("§5.1 presents entry 0's steps as ordered without saying that the " +
+			"order carries nothing: every one of them aborts with the same reason " +
+			"code, so no artifact distinguishes one arrangement from another")
+	}
+}
