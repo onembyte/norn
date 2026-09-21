@@ -655,3 +655,74 @@ func TestTheFreshnessLadderIsDefinedHere(t *testing.T) {
 			"log from taking a network down by itself")
 	}
 }
+
+// --- Cold-model gate run 8, defect D27 ----------------------------------
+//
+// The preamble lists the specifications Norn reuses "verbatim; where they
+// conflict with this document, they win". Three the document depends on were
+// not in it: BIP-350 (§16.2 cites it once and states only Norn's choices
+// within it — no charset, no HRP expansion, no polymod, no separator rule, no
+// checksum length), RFC 4648 (named in §2 and §9.1, alphabet never given,
+// while §9.3 gives Crockford's in full), and RFC 6962's proof-verification
+// subsections — §11.1's consistency `proof` carried no citation at all.
+//
+// Run 8 implemented all three from prior knowledge and said so. A rule a
+// reader has to already know is a rule this document failed to state.
+
+func TestThePreambleNamesEveryExternalSpecTheBodyUses(t *testing.T) {
+	text := specText(t)
+	// The preamble is everything before §1.
+	end := strings.Index(text, "\n## 1.")
+	if end < 0 {
+		t.Fatal("SPEC.md has no §1, so the preamble cannot be bounded")
+	}
+	preamble := text[:end]
+
+	external := regexp.MustCompile(`BIP-\d+|RFC \d+|c2sp\.org/[a-z-]+`)
+	seen := map[string]bool{}
+	for _, ref := range external.FindAllString(text[end:], -1) {
+		if seen[ref] {
+			continue
+		}
+		seen[ref] = true
+		if !strings.Contains(preamble, ref) {
+			t.Errorf("the body depends on %s and the preamble never names it. A "+
+				"reader who does not already know that specification cannot tell it "+
+				"is needed, which is how it gets implemented from memory instead.", ref)
+		}
+	}
+	if len(seen) < 8 {
+		t.Errorf("found %d external references in the body; the scan is not working",
+			len(seen))
+	}
+}
+
+// §16.2 and §11.1 are the two places run 8 had to supply an algorithm the
+// document names but does not give. Each must say so, and say where it comes
+// from, or a reader who does not recognise the name writes their own.
+func TestTheBorrowedAlgorithmsSayWhereTheyComeFrom(t *testing.T) {
+	doc := load(t)
+	// Scoped to the section that needs it, not to the document. The first
+	// version of this check looked everywhere, so deleting §11.1's citation
+	// left it green -- the preamble still named the RFC. Presence somewhere is
+	// not the same as a citation where a reader is standing.
+	for _, c := range []struct{ section, needle, why string }{
+		{"16.2", "everything else in the encoding is BIP-350's",
+			"the section states only Norn's choices — HRP, constant, padding, case — " +
+				"and reads as though that is all of it"},
+		{"11.1", "RFC 6962 §2.1.2",
+			"the `proof` field named a consistency proof and cited nothing, so its " +
+				"algorithm and its node ordering were a reader's to guess"},
+		{"2", "abcdefghijklmnopqrstuvwxyz234567",
+			"§9.3 gives Crockford's alphabet in full and this one was never given"},
+	} {
+		section, ok := doc.Section(c.section)
+		if !ok {
+			t.Errorf("§%s is missing", c.section)
+			continue
+		}
+		if !strings.Contains(section.Body, c.needle) {
+			t.Errorf("§%s does not state %q — %s", c.section, c.needle, c.why)
+		}
+	}
+}

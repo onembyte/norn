@@ -20,8 +20,19 @@ they win:
 - `c2sp.org/tlog-policy` — witness quorum policy (§9.1)
 - `c2sp.org/tlog-proof` (v1) — self-contained inclusion proof bundles. Referenced for comparison only: §8.1 is Norn's own format and is **not** claimed byte-compatible
 - RFC 6962 §2.1 — Merkle tree hashing (SHA-256)
+- RFC 6962 §2.1.1 — inclusion-proof verification, used by §8.1
+- RFC 6962 §2.1.2 — consistency-proof verification, used by §11.1. Both proof
+  algorithms, and the node ordering each expects, are that document's and are
+  not restated here
 - RFC 8949 §4.2.1 — deterministic CBOR ("core deterministic encoding")
+- RFC 4648 §6 — base32, for `origin` (§2, §9.1). The alphabet is given in §2
+  because this document also uses a *different* base32 in §9.3
+- BIP-350 — bech32m, the text form of an enrollment request (§16.2). §16.2
+  states Norn's choices within it and nothing else about it
 - RFC 8032 — Ed25519 · RFC 7748 — X25519
+
+Referenced but **not** reused: BIP-173, whose 90-character limit §16.2
+explains does not apply here.
 
 ---
 
@@ -41,7 +52,7 @@ they win:
 | Name | Form | Rule |
 |---|---|---|
 | `net_id` | 16 random bytes | generated at genesis; never changes |
-| `origin` | `norn/` + **RFC 4648** base32 of `net_id`, lowercased, padding stripped | checkpoint origin line; the log key's signed-note name MUST equal it. Note this document also uses *Crockford* base32, in §9.3 only — they are different alphabets. |
+| `origin` | `norn/` + **RFC 4648 §6** base32 of `net_id`, lowercased, padding stripped — alphabet `abcdefghijklmnopqrstuvwxyz234567` | checkpoint origin line; the log key's signed-note name MUST equal it. Note this document also uses *Crockford* base32, in §9.3 only. The two alphabets are given in full, in both places, because they differ and a reader who assumes one is the other produces an origin no log will match. |
 | `device_id` | UTF-8 string, 1–64 bytes, `[a-z0-9][a-z0-9.-]*` | unique among `active` devices; MAY be reused after `revoke` |
 
 ## 3. Keys
@@ -932,7 +943,7 @@ Deterministic CBOR per §4.0, a closed map of exactly these seven keys:
 | `conflicting` | text | the signed checkpoint that could not be reconciled with it |
 | `size` | uint | where the two disagree: the **conflicting** head's size |
 | `held_root` | bytes (32) | what the held branch had at `size` |
-| `proof` | array of bytes (32 each) | consistency proof chaining (`size`, `held_root`) to `held`'s own head. **Empty when `size` equals `held`'s size**, where the two signatures say it alone |
+| `proof` | array of bytes (32 each) | **RFC 6962 §2.1.2** consistency proof chaining (`size`, `held_root`) to `held`'s own head, in that document's node order — the algorithm is not restated here and a reader implementing their own ordering will reject sound evidence. **Empty when `size` equals `held`'s size**, where the two signatures say it alone |
 | `policy` | text | the `tlog-policy` the **accuser** was verifying under, so a reader can see which witnesses were meant to prevent this. **Informational.** It MUST parse as `c2sp.org/tlog-policy` — a closed schema with a stated grammar is part of the format — and a reader MUST NOT verify anything under it. The reader uses **its own** policy: the trust file's, or one it has replayed (§9.4). Verifying under the carried field hands the accuser the quorum rule, and an accuser writing `quorum none` then gets two uncosigned checkpoints accepted as proof of equivocation — which, by §11 rule 4, takes the network down until an operator installs a new trust file. This implementation did exactly that until cold-model gate run 7 |
 
 A reader MUST, in this order:
@@ -1263,6 +1274,15 @@ chooses the text of.
 bech32m (BIP-350), HRP `norn`, data = the request bytes regrouped from 8-bit to
 5-bit groups, zero-padded to the next group boundary. A decoder MUST reject a
 payload whose padding is 5 bits or more, or whose padding bits are not zero.
+
+**This section states Norn's choices within bech32m and nothing more:
+everything else in the encoding is BIP-350's** — the 32-character data charset,
+the human-readable-part expansion, the generator polynomial and polymod, the
+separator being the **last** `1` in the string, the six-character checksum, and
+the printable-ASCII range a character may fall in. None of it is restated here,
+and a reader who does not fetch BIP-350 cannot implement this section: the
+checksum constant and the padding rule below are the only parts of it Norn
+narrows.
 
 - The checksum constant is `0x2bc830a3`. bech32 (constant `1`) MUST be rejected:
   the two encodings differ **only** in that constant, so accepting either would
