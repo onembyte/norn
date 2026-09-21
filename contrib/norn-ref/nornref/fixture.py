@@ -987,7 +987,53 @@ def policy_grammar() -> list[tuple[str, str, bool, str]]:
          "every line is one of the four directives"),
         ("bad-quorum-undefined", f"{log}\n{pi}\nquorum nobody\n", False,
          "the quorum names something the policy defines"),
+        # Cold gate run 9, D7: five rules §9.1 states with no negative at all,
+        # two of which change what a quorum *means*.
+        ("bad-duplicate-member", f"{log}\n{pi}\n{vps}\ngroup home 2 pi pi\nquorum home\n",
+         False, "no member twice -- `2 of pi pi` is met by one witness"),
+        ("bad-k-zero", f"{log}\n{pi}\n{vps}\ngroup home 0 pi vps\nquorum home\n",
+         False, "1 <= k <= n -- k=0 is met by nobody, so an uncosigned head passes"),
+        ("bad-k-leading-zero",
+         f"{log}\n{pi}\n{vps}\ngroup home 02 pi vps\nquorum home\n", False,
+         "k is canonical decimal: two spellings of a quorum are two policies "
+         "that look different and are not"),
+        ("bad-carriage-return",
+         f"{log}\nwitness pi {witness_vkey('pi')} https://example/\rw\nquorum pi\n",
+         False, "only ASCII space and tab; `bad-vertical-tab` covers only one of the three"),
+        ("bad-uppercase-keyword", f"{log}\nWITNESS pi {witness_vkey('pi')}\nquorum pi\n",
+         False, "the four directives are lowercase"),
     ]
+
+
+def policy_evaluations() -> dict[str, list[dict[str, Any]]]:
+    """(case) -> what a quorum means, for the policies that parse.
+
+    Cold gate run 9, D7. `policies/` asked one question -- does this parse --
+    so three readings that change the *arithmetic* all passed. Nothing in the
+    suite took a policy and a set of cosigners and asked for a verdict.
+    """
+    return {
+        "minimal": [
+            {"cosigners": ["pi"], "satisfied": True, "why": "the quorum names pi"},
+            {"cosigners": [], "satisfied": False, "why": "nobody cosigned"},
+            {"cosigners": ["vps"], "satisfied": False,
+             "why": "a witness the quorum does not name counts for nothing"},
+        ],
+        # The case that separates a nested group from a flattened one. `outer`
+        # is `all` of ONE member, and that member is `inner`, which is `any` of
+        # two -- so pi alone satisfies it. Flatten `outer` to {pi, vps} and
+        # `all` becomes two, which pi alone does not.
+        "nested-group": [
+            {"cosigners": ["pi"], "satisfied": True,
+             "why": "a nested group counts as one member, met as its own threshold decides"},
+            {"cosigners": ["vps"], "satisfied": True, "why": "inner is `any` of pi and vps"},
+            {"cosigners": [], "satisfied": False, "why": "inner is met by nobody"},
+        ],
+        "no-log-line": [
+            {"cosigners": ["pi"], "satisfied": True,
+             "why": "the log line is not what a quorum is about"},
+        ],
+    }
 
 
 def trust_rejections() -> list[tuple[str, dict[str, Any]]]:

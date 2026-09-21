@@ -205,6 +205,12 @@ func parseThreshold(keyword string, members int) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("%q is not all, any or a number", keyword)
 	}
+	// Canonical decimal, like §6's size line: `02` and `2` are the same number
+	// and two spellings of a quorum are two policies that look different and
+	// are not (cold gate run 9, D7).
+	if keyword != strconv.Itoa(k) {
+		return 0, fmt.Errorf("%q is not canonical decimal", keyword)
+	}
 	if k < 1 || k > members {
 		return 0, fmt.Errorf("a threshold of %d over %d member(s) can never be met", k, members)
 	}

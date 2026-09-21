@@ -102,3 +102,82 @@ func TestOnlySpaceAndTabSeparateFields(t *testing.T) {
 		})
 	}
 }
+
+// --- Cold-model gate run 9, defect D7 -----------------------------------
+//
+// `policies/` tested one thing: does this text parse. Nothing in the suite
+// ever took a policy and a set of cosigners and asked whether the quorum was
+// met — so three readings that change what a quorum *means* all passed.
+//
+// `pol-dup-member-ok`: §9.1 says no member twice, and `group home 2 pi pi` is
+// then satisfied by **one** witness. `pol-k-zero-ok`: §9.1 says `1 ≤ k ≤ n`,
+// and `k = 0` is satisfied by **nobody**, so an uncosigned head passes.
+// `pol-nested-group-flat`: §9.1 says a nested group counts as one member, and
+// flattening it changes the arithmetic. The first two are parse rules with no
+// negative; the third is an evaluation rule and parsing cannot reach it.
+
+func TestEveryPolicyEvaluationCaseGetsTheStatedVerdict(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join(vectorRoot(), "policies", "cases.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Cases []struct {
+			Name     string `json:"name"`
+			Accept   bool   `json:"accept"`
+			Evaluate []struct {
+				Cosigners []string `json:"cosigners"`
+				Satisfied bool     `json:"satisfied"`
+				Why       string   `json:"why"`
+			} `json:"evaluate"`
+		} `json:"cases"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+
+	var evaluated int
+	for _, c := range doc.Cases {
+		if len(c.Evaluate) == 0 {
+			continue
+		}
+		evaluated++
+		body, err := os.ReadFile(filepath.Join(vectorRoot(), "policies", c.Name+".txt"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		rules, err := Parse(string(body))
+		if err != nil {
+			t.Fatalf("%s must parse before it can be evaluated: %v", c.Name, err)
+		}
+		for _, e := range c.Evaluate {
+			t.Run(c.Name+"/"+strings.Join(e.Cosigners, "+"), func(t *testing.T) {
+				if got := rules.Satisfied(e.Cosigners); got != e.Satisfied {
+					t.Errorf("quorum satisfied = %v, want %v (%s)", got, e.Satisfied, e.Why)
+				}
+			})
+		}
+	}
+	if evaluated == 0 {
+		t.Error("no policy case carries an `evaluate` table, so the suite still only " +
+			"tests whether a policy parses -- and what a quorum *means* is unpinned")
+	}
+}
+
+// ...and the parse rules §9.1 states that had no negative at all.
+func TestTheQuorumArithmeticRulesHaveNegatives(t *testing.T) {
+	for _, want := range []string{
+		"bad-duplicate-member", "bad-k-zero", "bad-k-leading-zero",
+		"bad-carriage-return", "bad-uppercase-keyword",
+	} {
+		t.Run(want, func(t *testing.T) {
+			body, err := os.ReadFile(filepath.Join(vectorRoot(), "policies", want+".txt"))
+			if err != nil {
+				t.Fatalf("§9.1 states this rule and no vector reaches it: %v", err)
+			}
+			if _, err := Parse(string(body)); err == nil {
+				t.Errorf("%s parsed; §9.1 says it must not", want)
+			}
+		})
+	}
+}

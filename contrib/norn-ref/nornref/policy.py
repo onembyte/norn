@@ -59,6 +59,11 @@ def parse(text: str) -> None:
             if threshold not in ("all", "any"):
                 if not threshold.isdigit():
                     raise PolicyError(f"line {number}: {threshold!r} is not all, any or a count")
+                # Canonical decimal: `02` and `2` are the same number, and two
+                # spellings of a quorum are two policies that look different
+                # and are not.
+                if threshold != str(int(threshold)):
+                    raise PolicyError(f"line {number}: {threshold!r} is not canonical decimal")
                 if not 1 <= int(threshold) <= len(members):
                     raise PolicyError(
                         f"line {number}: a threshold of {threshold} over "
