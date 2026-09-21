@@ -364,6 +364,15 @@ def write_policies(out: pathlib.Path) -> None:
         "section": "9.1", "says": "previously-defined witnesses or groups"}
     policy_rules["bad-unknown-keyword"] = {
         "section": "9.1", "says": "the four directives"}
+    for name in ("bad-vertical-tab", "bad-carriage-return"):
+        policy_rules[name] = {
+            "section": "9.1", "says": "is an **error**, not a separator and not content"}
+    policy_rules["bad-extra-field"] = {
+        "section": "9.1", "says": "a line with more is an **error**"}
+    for name in ("bad-trailing-comment", "witness-url-fragment"):
+        policy_rules[name] = {"section": "9.1", "says": "an ordinary character"}
+    policy_rules["comment-tab-indented"] = {
+        "section": "9.1", "says": "first character other than ASCII space or tab"}
     write(out / "policies" / "cases.json", canonjson.dumps({
         "rules": policy_rules,
         "comment": "SPEC 9.1's restated `tlog-policy` grammar, one whole policy "

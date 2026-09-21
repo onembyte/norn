@@ -1039,3 +1039,42 @@ func TestMapKeyOrderIsStatedAsStrictlyIncreasing(t *testing.T) {
 		}
 	}
 }
+
+// --- Cold-model gate run 10, defects D9 and D10 -------------------------
+//
+// Both are §9.1's restated `tlog-policy` grammar, and both are the same
+// failure: a rule the parser enforces, the vectors depend on, and the prose
+// never contains.
+
+func TestThePolicyGrammarBoundsEachDirectivesFieldCount(t *testing.T) {
+	doc := load(t)
+	section, ok := doc.Section("9.1")
+	if !ok {
+		t.Fatal("§9.1 is missing")
+	}
+	if !strings.Contains(section.Body, "field count") {
+		t.Error("§9.1 never bounds a directive's field count — and that unstated rule " +
+			"is what was refusing the whitespace negatives, so the rule the section " +
+			"states in bold was pinned by nothing")
+	}
+}
+
+func TestThePolicyCommentRuleSaysWhereAHashIsNotAComment(t *testing.T) {
+	doc := load(t)
+	section, ok := doc.Section("9.1")
+	if !ok {
+		t.Fatal("§9.1 is missing")
+	}
+	// "First non-space character" is the one rule in that table that does not
+	// say "space or tab", and it says nothing at all about a `#` further along
+	// the line. Three readings survived it.
+	for _, needle := range []string{
+		"first character other than ASCII space or tab",
+		"an ordinary character",
+	} {
+		if !strings.Contains(section.Body, needle) {
+			t.Errorf("§9.1 does not say %q, so a tab-indented comment and a trailing "+
+				"`#` are both a reader's to guess", needle)
+		}
+	}
+}

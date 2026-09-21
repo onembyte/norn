@@ -979,11 +979,13 @@ def policy_grammar() -> list[tuple[str, str, bool, str]]:
          f"{log}\n  # a comment, indented\n\t{pi}\nquorum pi\n", True,
          "a line whose first non-space character is `#` is ignored, and leading "
          "spaces and tabs are not part of a field"),
-        # The vertical tab goes in the URL, which nothing else constrains: put
-        # it in the keyword and the entry is refused for not being a keyword,
-        # so the whitespace rule is never reached and the case pins nothing.
-        ("bad-vertical-tab",
-         f"{log}\nwitness pi {witness_vkey('pi')} https://example/\vw\nquorum pi\n",
+        # The stray character goes between a two-field directive's two fields,
+        # where reading it as a separator yields a policy that *parses*. In the
+        # URL -- where it used to be -- a separator reading gives a four-field
+        # `witness` line, which the field-count rule refuses; the whitespace
+        # rule was then pinned by nothing and could be deleted with the suite
+        # still green (cold gate run 10, D9).
+        ("bad-vertical-tab", f"{log}\n{pi}\nquorum\vpi\n",
          False, "only ASCII space and tab separate fields, anywhere in a line"),
         ("bad-duplicate-name", f"{log}\n{pi}\nwitness pi {witness_vkey('vps')}\nquorum pi\n",
          False, "a name is defined once"),
@@ -1010,11 +1012,24 @@ def policy_grammar() -> list[tuple[str, str, bool, str]]:
          f"{log}\n{pi}\n{vps}\ngroup home 02 pi vps\nquorum home\n", False,
          "k is canonical decimal: two spellings of a quorum are two policies "
          "that look different and are not"),
-        ("bad-carriage-return",
-         f"{log}\nwitness pi {witness_vkey('pi')} https://example/\rw\nquorum pi\n",
+        ("bad-carriage-return", f"{log}\n{pi}\nquorum\rpi\n",
          False, "only ASCII space and tab; `bad-vertical-tab` covers only one of the three"),
         ("bad-uppercase-keyword", f"{log}\nWITNESS pi {witness_vkey('pi')}\nquorum pi\n",
          False, "the four directives are lowercase"),
+        # Cold gate run 10, D9 and D10. Arity was the rule doing the work and
+        # §9.1 did not contain it; the comment rule left three readings alive.
+        ("bad-extra-field", f"{log}\n{pi}\nquorum pi extra\n", False,
+         "a directive takes the fields its production allows and no more"),
+        ("comment-tab-indented", f"{log}\n\t# a comment, tab-indented\n{pi}\nquorum pi\n",
+         True, "the indent before a `#` is spaces *and tabs*; only-U+0020 reads "
+         "this line as a directive named `#`"),
+        ("bad-trailing-comment", f"{log}\n{pi}\nquorum pi # note\n", False,
+         "`#` after a directive's fields is an ordinary character, so this is a "
+         "`quorum` line with two names; a reader that strips from `#` accepts it"),
+        ("witness-url-fragment",
+         f"{log}\nwitness pi {witness_vkey('pi')} https://example/w#tag\nquorum pi\n",
+         True, "a `#` inside a field is content: a reader for which `#` is illegal "
+         "anywhere refuses a URL with a fragment in it"),
     ]
 
 

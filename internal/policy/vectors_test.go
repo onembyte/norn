@@ -181,3 +181,121 @@ func TestTheQuorumArithmeticRulesHaveNegatives(t *testing.T) {
 		})
 	}
 }
+
+// --- Cold-model gate run 10, defects D9 and D10 -------------------------
+//
+// §9.1's most emphatic rule — "ASCII space and tab **only**, in runs. Any
+// other whitespace character anywhere in a line is an **error**" — was pinned
+// by no vector at all. `V112_AnyWhitespaceSep`, the reading the sentence
+// forbids in bold, passed all 236 checks: both whitespace negatives put the
+// stray character inside an optional URL, so a reader that treats it as a
+// separator sees a five-field `witness` line and refuses it for **arity** —
+// a rule §9.1 never stated.
+//
+// One unstated rule was standing in for another, which is the worst shape a
+// specification can have: delete the rule the vector is named after and the
+// vector stays green.
+
+// policyText reads one grammar vector verbatim. The bytes are the case — some
+// of these turn on a trailing newline, or on a character `strings.TrimSpace`
+// would take away.
+func policyText(t *testing.T, name string) string {
+	t.Helper()
+	body, err := os.ReadFile(filepath.Join(vectorRoot(), "policies", name+".txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(body)
+}
+
+// D9. A whitespace negative earns its name only if the stray character is the
+// *only* thing wrong with it — so putting an ASCII space there instead must
+// leave a policy that parses. That is the whole test: if the substitution does
+// not parse, some other rule is doing the refusing and a reader may drop the
+// whitespace rule entirely without the suite noticing.
+func TestAWhitespaceNegativeIsRefusedForItsWhitespaceAndNothingElse(t *testing.T) {
+	for _, c := range []struct{ name, ch string }{
+		{"bad-vertical-tab", "\v"},
+		{"bad-carriage-return", "\r"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			text := policyText(t, c.name)
+			if !strings.Contains(text, c.ch) {
+				t.Fatalf("%s carries no %q", c.name, c.ch)
+			}
+			if _, err := Parse(text); err == nil {
+				t.Fatal("the vector must be refused")
+			}
+			// The reading §9.1 forbids: treat it as a separator like any other
+			// whitespace. A conforming reader refuses this text; a reader
+			// holding `V112_AnyWhitespaceSep` sees exactly what follows.
+			asSeparator := strings.ReplaceAll(text, c.ch, " ")
+			if _, err := Parse(asSeparator); err != nil {
+				t.Errorf("reading %q as a separator gives a policy this parser refuses "+
+					"anyway (%v), so the vector pins that rule instead and the "+
+					"whitespace rule can be deleted without the suite noticing", c.ch, err)
+			}
+		})
+	}
+}
+
+// D9's other half. Arity is what was silently doing the work, so it has to be
+// stated and given its own negative — otherwise the fix moves the unstated
+// rule rather than removing it.
+func TestADirectiveWithTooManyFieldsIsRefused(t *testing.T) {
+	text := policyText(t, "bad-extra-field")
+	if _, err := Parse(text); err == nil {
+		t.Error("a `quorum` line with two names was accepted; §9.1 bounds each " +
+			"directive's field count")
+	}
+	// ...and the line is otherwise exactly a valid one, so nothing else can be
+	// refusing it.
+	fields := strings.Fields(text)
+	if len(fields) == 0 {
+		t.Fatal("empty vector")
+	}
+	trimmed := strings.Replace(text, "quorum pi extra\n", "quorum pi\n", 1)
+	if _, err := Parse(trimmed); err != nil {
+		t.Errorf("dropping the extra field leaves a policy this parser still refuses "+
+			"(%v), so the vector is not about arity", err)
+	}
+}
+
+// D10. "A line whose first non-space character is `#` is ignored" left three
+// readings alive, each passing 236/236: only U+0020 counts as the indent, so a
+// tab-indented comment is a directive; strip from the first `#` anywhere,
+// which turns a trailing `#` into a comment; and both at once, which needs no
+// leading-`#` rule at all. Two vectors separate all three.
+func TestTheCommentRuleIsPinnedInBothDirections(t *testing.T) {
+	// A tab-indented comment MUST be ignored. A reader for whom only a space
+	// counts sees the keyword `#` and refuses the file.
+	tabbed := policyText(t, "comment-tab-indented")
+	if !strings.Contains(tabbed, "\t#") {
+		t.Fatal("comment-tab-indented carries no tab-indented comment")
+	}
+	if _, err := Parse(tabbed); err != nil {
+		t.Errorf("a tab-indented comment was not ignored: %v", err)
+	}
+
+	// A `#` after the fields is an ordinary character, so the line has one
+	// field too many and the file is refused. A reader that strips from the
+	// first `#` sees `quorum pi` and accepts it.
+	trailing := policyText(t, "bad-trailing-comment")
+	if _, err := Parse(trailing); err == nil {
+		t.Error("a `#` after a directive's fields was treated as a comment; §9.1 " +
+			"ignores a `#` line, not a `#` tail")
+	}
+	// And stripping from the `#` is exactly what makes it parse, which is what
+	// makes this vector the one that separates the two readings.
+	stripped := ""
+	for _, line := range strings.Split(trailing, "\n") {
+		if at := strings.Index(line, "#"); at >= 0 {
+			line = strings.TrimRight(line[:at], " \t")
+		}
+		stripped += line + "\n"
+	}
+	if _, err := Parse(strings.TrimSuffix(stripped, "\n")); err != nil {
+		t.Errorf("stripping from the `#` still does not parse (%v), so the vector "+
+			"does not separate the comment readings", err)
+	}
+}
