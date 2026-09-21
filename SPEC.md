@@ -159,8 +159,11 @@ A decoder MUST bound its own resource use. Two limits, both normative:
   are parsed separately, and its own nesting **restarts at 1**: the two
   documents are decoded by two calls, and a limit that leaked across them would
   make an entry's validity depend on the shape of something it merely carries.
-  The deepest structure the entry schema itself allows is a request's `labels`
-  map, at depth 2 of that inner document.
+  An **entry** reaches depth 3 at most: the envelope map is 1, its `sigs` array
+  is 2, and each `{kid, role, sig}` element is 3 — every signed entry in the
+  suite is that deep. A **request** reaches depth 2: its own map, and `labels`
+  inside it. Both are far under the limit, which is why the limit is vectored
+  only by `entries-hostile/` — no valid artifact comes near it.
 - **`MAX_ENTRY_BYTES` is 65535**, and an **entry** is at most that many bytes —
   as is an enrollment request, which travels inside one. It does **not** bound
   the other CBOR artifacts that cite this section: a proof bundle (§8.1), a
@@ -540,7 +543,7 @@ devices on a number nobody signed.
 ## 6. The log
 
 - Layout, tiles, entry bundles, and `checkpoint` exactly per `tlog-tiles`. Tile height 8 (width 256), as torchwood requires.
-- Leaf hash = `H(0x00 ‖ entry_bytes)` (RFC 6962 §2.1). Entry bundles are uint16-length-prefixed entry bytes.
+- Leaf hash = `H(0x00 ‖ entry_bytes)` (RFC 6962 §2.1). An entry bundle is each entry's length as a **big-endian** uint16 followed by that many bytes, repeated — the framing `c2sp.org/tlog-tiles` defines, and the reason §4.0's `MAX_ENTRY_BYTES` is 65535 rather than 65536. Tile and bundle **paths** are that document's too: this one neither restates them nor varies them.
 - A verifier rebuilds the tree from the **entry bundles** and compares its head with the signed checkpoint; that comparison is what binds the entries to the head. The served `tile/<L>/…` hashes MUST also agree with the tree it rebuilt. They are not needed to reach the head, and checking them is not optional: a node serves the tiles it fetched onward to its peers (`GOSSIP.md`), so a node that accepted tiles it never checked would pass on a lie it had the means to catch.
 - The checkpoint is a `tlog-checkpoint` note: `origin` line = §2 `origin`, size, root; **no extension lines**. Signed by the log key; cosigned by witnesses per `tlog-cosignature` v1.
 - The log MUST issue a new checkpoint after every append and at least every `checkpoint_interval`.
@@ -1028,7 +1031,7 @@ suite is checked only against its own author.
 | `keys.json` | every test key: Ed25519 `{seed, public, kid}` by name, X25519 public keys by name, and `net` |
 | `entries/NN-<type>.cbor` | one valid entry per type, canonical bytes |
 | `entries/NN-<type>.json` | mirror: `{entry, entry_hash, leaf_hash, preimage_sha256, size}` where `size` is the byte length of the `.cbor`. The `entry` object mirrors the **CBOR**, so an optional field absent from the entry is absent here too — unlike `state.json`, where §5.3's schema fields are always emitted |
-| `log/NN-<name>.cbor` | the replay fixture, **123 entries** in order. The file names are labels, not the order: **read the sequence from `manifest.json`**, never by globbing and sorting |
+| `log/NN-<name>.cbor` | the replay fixture, **124 entries** in order. The file names are labels, not the order: **read the sequence from `manifest.json`**, never by globbing and sorting |
 | `log/NN-<name>.reason` | beside each entry that must be rejected: its §5.2 reason code |
 | `log/manifest.json` | `{"anchor": {"net", "genesis_hash"}, "entries": [{"index", "name", "reason"}]}` — the replay input and expected outcome; `reason` is `""` for an accepted entry |
 | `state.json` | canonical replay output for `log/` (§5.3) |
@@ -1101,7 +1104,7 @@ this table drifted out of date the moment one was.
 | §5.3 genesis `params` is **overlaid** | `state.json`'s `checkpoint_interval`, which the genesis body does not set and the §4.5 default supplies | a reader that *replaces* the defaults instead loses the key entirely |
 | §4.3 the request's `ts` is unconstrained | `enroll-request-from-the-future`: an accepted `enroll` whose embedded request is dated ten days after the entry carrying it | the check a reader is most likely to add unasked |
 | §4.4 `after` is a floor | `after-below-index` | `bad-after` |
-| §5 replay, 15 of the 16 reason codes | the log | **81 rejecting entries** |
+| §5 replay, 15 of the 16 reason codes | the log | **82 rejecting entries** |
 | §5 `bad-genesis` | — | `genesis/`; it cannot appear in the log, since it aborts replay |
 | §5.1 genesis | the log's entry 0 | **18 abort paths** in `genesis/`, one single-entry log each |
 | §5.1 seen set, §4.3 roles | — | `bad-repeat-of-rejected`, `bad-one-of-two-signers`, `bad-role-mismatch`. Step 1's two stated properties are `bad-repeat-of-undecodable` (the hash is recorded **before** the entry is decoded, so a copy of one that never decoded is `dup-entry` and not a second `decode`) and `bad-repeat-of-genesis` (entry 0's hash is recorded too, so a byte copy of it is `dup-entry` and not `dup-genesis`) |
@@ -1137,6 +1140,9 @@ this table drifted out of date the moment one was.
 | §10 step 3, the witness quorum | `served/checkpoint`, cosigned by all three witnesses | `checkpoints-bad/05-one-cosignature-short`, `06-no-cosignatures`, `07-unnamed-witness-only` and **`08-forged-cosignature`**, which carries two lines naming witnesses the policy lists, one of which does not verify: the quorum is met by counting and refused by checking. `quorum none` accepting an uncosigned head needs a second anchor and is **not vectored** |
 | §16 enrollment requests | `requests/`, **5 request cases** including a 64-byte `device_id`, non-ASCII labels and an uppercase text form | `requests-bad/`, **25 request refusals** across all four layers, including **`forged-signature`** (structurally perfect, signed by another key) and `oversize-label-key` (§4.0's map-key cap) |
 | §11.1 fork evidence | `fork/evidence.cbor` and `fork/conflicting.checkpoint`: a second branch of this same network, diverging at entry 40, signed by the same log key and cosigned by the same witnesses. Checking it needs only `trust.cbor` | one per reader step: `fork/bad-other-origin` and `fork/bad-unverifiable-conflicting` (step 1, each half), `fork/bad-size-mismatch` (step 2), `fork/bad-forged-proof` (step 3 — both checkpoints verify and the sizes agree, so nothing but the proof can refuse it), and `fork/bad-consistent` (step 4: a log and its own earlier self) |
+| §16.1's `expires > ts`, at the entry layer | every `enroll` | `bad-enroll-request-expires-at-ts`: an entry whose embedded request breaks §16.1. The only other vector for the rule is a *request*, and an `enroll` decodes its request under §16.1 too |
+| §4.0's map-key cap in **bytes** | `entries-hostile/at-the-key-limit`: 23 bytes and 12 characters | `past-the-key-limit` is 24 bytes and 13 characters. Both were ASCII until run 9, so "23 bytes" and "23 characters" gave the same answer everywhere |
+| §10 a reader that does not hold `at` | — | `detect/shorter-with-no-held-branch`: the same served branch as the fork case, read by a node holding the stored head and **not** the entries. It refuses and MUST NOT accuse. Inside §10's own loop the node always holds `at`; this clause is for a monitor handed a checkpoint, or a node restarted from its stored one |
 | §10 a line the reader does not know | `served-extra-witness/`: the honest head plus one more line, from a witness the policy never names and the trust file does not list. It verifies under its own key, counts for nothing, and the head MUST be **accepted** | `07-unnamed-witness-only` cannot pin this: it is refused for want of a quorum either way, so it separates nothing |
 | §8.1 `S_hard` unconfigured | `detect/staleness.json`'s `unconfigured-hard-stays-degraded` and `-still-fresh`, which carry `hard: 0` | every other case carries 3600, so a reader that read 0 as a limit of zero passed while dropping every peer — the outcome the asymmetry exists to prevent |
 | §9.1 what a quorum **means** | the `evaluate` tables in `policies/cases.json`: a set of cosigner names and whether they satisfy the policy. `nested-group` is the one that separates a nested group from a flattened one — `outer` is `all` of **one** member, and that member is `any` of two, so `pi` alone satisfies it and a flattening reader needs both | `bad-duplicate-member` (met by one witness), `bad-k-zero` (met by **nobody**, so an uncosigned head passes) and `bad-k-leading-zero`. Parsing alone could not reach any of the three |
@@ -1166,6 +1172,11 @@ admits its holes, so:
   violates §4.0, and is `decode` at step 2 before any hash of a canonical form
   could be taken. `60-bad-trailing-byte` is caught by the whole-input rule, not
   by the hash.
+- **`MAX_ENTRY_BYTES` applied to an embedded request, as distinct from the
+  entry.** §4.0 requires both, and a request travels *inside* an entry — so a
+  request over the cap implies an entry over the cap, and the entry rule
+  refuses it first. The two can never disagree, and no file can show the
+  request rule doing the work.
 - **`MAX_BUNDLE_BYTES`, as distinct from the other two byte caps.** A valid
   bundle has no slack: `device` is bound to the entry, `entry` fixes the leaf
   hash, `checkpoint` and `proof` are what they are, and `v` is 1 — so an

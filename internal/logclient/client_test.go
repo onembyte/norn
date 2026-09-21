@@ -949,6 +949,7 @@ func TestEveryDetectVectorReachesItsOutcome(t *testing.T) {
 	var doc struct {
 		Cases []struct {
 			Name, Stored, Serve, Outcome, Says string
+			Held                               string `json:"held"`
 		} `json:"cases"`
 	}
 	if err := json.Unmarshal(raw, &doc); err != nil {
@@ -971,6 +972,13 @@ func TestEveryDetectVectorReachesItsOutcome(t *testing.T) {
 			stored := checkpointIn(t, dir, c.Stored, anchor)
 			with := anchor
 			with.Stored, with.Held = &stored, held.Tree
+			if c.Held == "none" {
+				// §10's "MUST NOT accuse": a reader holding a stored head
+				// without the branch cannot tell a fork from a rollback, so it
+				// refuses and does not accuse. Unreachable inside §10's own
+				// loop, where the node always holds `at` (run 9, D10).
+				with.Held = nil
+			}
 
 			// Each branch is served with its own tiles, as a real log would.
 			_, err := Verify(Dir(filepath.Join(dir, c.Serve)), with)

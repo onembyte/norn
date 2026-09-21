@@ -632,6 +632,16 @@ func writeDetectCases(root, origin string, key ed25519.PrivateKey, entries [][]b
 			{"name": "fork-on-a-shorter-branch", "stored": "current.checkpoint",
 				"serve": "fork-shorter", "outcome": "fork",
 				"says": "shorter and divergent is a fork, not a rollback"},
+			// Cold gate run 9, D10. §10 says a node that does not hold `at`
+			// MUST NOT accuse -- and inside §10's own loop it always holds
+			// `at`, because it stores a checkpoint only after replaying to it.
+			// The clause is for a reader holding a stored head WITHOUT the
+			// branch: a monitor that has been handed a checkpoint, or a node
+			// restarted from its stored one. Such a reader cannot tell a fork
+			// from a rollback, so it refuses and says so.
+			{"name": "shorter-with-no-held-branch", "stored": "current.checkpoint",
+				"serve": "fork-shorter", "outcome": "refuse", "held": "none",
+				"says": "a log does not shrink"},
 		},
 		"comment": "pairs, not single artifacts. `stored` is the checkpoint this reader " +
 			"already holds, over the entries in `../served`; `serve` is the log it is " +

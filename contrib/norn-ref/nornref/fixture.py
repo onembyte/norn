@@ -824,6 +824,19 @@ def log() -> list[LogItem]:
     b.add(f"{b.index}-bad-root_add-existing-signer", b.build(
         "root_add", {"pk": KEYS["signer1"].public}, roots3), "dup-key")
 
+    # Cold gate run 9, D15. §16.1 requires `expires > ts`, and the only vector
+    # for it is a *request* (`requests-bad/expires-at-ts`). An `enroll` decodes
+    # its embedded request under §16.1, so the rule applies at the entry layer
+    # too -- and `enroll-skip-expires-rule` passed, because no entry ever
+    # carried a request that broke it.
+    expired = _raw_enroll_body({
+        "v": 1, "ts": T0, "net": NET, "device_id": "halfsigned",
+        "device_pk": KEYS["halfsigned"].public, "wg_pk": WG["halfsigned"],
+        "expires": T0,
+    }, "halfsigned")
+    b.add(f"{b.index}-bad-enroll-request-expires-at-ts", b.build(
+        "enroll", expired, both), "decode")
+
     return b.items
 
 
@@ -1726,9 +1739,17 @@ def hostile_inputs() -> list[tuple[str, bytes, str]]:
     # refuses first -- so the decoder-level cap was unobservable and cold gate
     # run 7's `no-key-cap` passed (J12). A one-pair map with a uint value, so
     # the key length is the only thing about it that can be wrong.
-    at_key = b"\xa1" + bytes([0x60 + cbor.MAX_KEY_LEN]) + b"k" * cbor.MAX_KEY_LEN + b"\x00"
-    past_key = b"\xa1\x78" + bytes([cbor.MAX_KEY_LEN + 1]) + \
-        b"k" * (cbor.MAX_KEY_LEN + 1) + b"\x00"
+    # Cold gate run 9, D18: both boundary keys were ASCII, so `1-23 bytes` and
+    # `1-23 characters` gave the same answer and `key-cap-runes` passed. These
+    # are multi-byte: 11 two-byte characters plus one ASCII is 23 bytes and 12
+    # runes, and one more ASCII character is 24 bytes and 13 runes -- which a
+    # rune-counting reader accepts and this profile does not.
+    at_text = ("\u00e9" * 11 + "k").encode("utf-8")
+    past_text = ("\u00e9" * 11 + "kk").encode("utf-8")
+    assert len(at_text) == cbor.MAX_KEY_LEN, len(at_text)
+    assert len(past_text) == cbor.MAX_KEY_LEN + 1, len(past_text)
+    at_key = b"\xa1" + bytes([0x60 + len(at_text)]) + at_text + b"\x00"
+    past_key = b"\xa1\x78" + bytes([len(past_text)]) + past_text + b"\x00"
 
     # Cold gate run 8, D15. Every banned item had a negative *inside an entry*
     # and every one of those is refused by a later rule too -- `65-bad-cbor-null`

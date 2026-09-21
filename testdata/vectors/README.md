@@ -6,8 +6,14 @@ byte that matters, and one that does not has found either a bug or a hole in
 the specification — both of which are worth knowing.
 
 Nothing here needs this repository. The files are plain CBOR, JSON, text and
-`tlog-tiles` directories; `SPEC.md` beside them is the only document required
-to interpret any of it.
+`tlog-tiles` directories, and `SPEC.md` beside them is the only document *of
+this project* required to interpret any of it.
+
+It is not self-contained, and says so: §16.2 states plainly that "a reader who
+does not fetch BIP-350 cannot implement this section", and §8.1 and §11.1 defer
+their proof algorithms to RFC 6962 rather than restating them. The preamble
+lists every such dependency. `SPEC.md` tells you what Norn decides; the
+standards it names tell you what it reuses.
 
 ## Provenance — three, stated plainly
 
@@ -30,8 +36,8 @@ of having it.
 |---|---|
 | `keys.json` | every test key: Ed25519 `{seed, public, kid}` by name, X25519 public keys, and `net` |
 | `entries/` | one valid entry per type, canonical bytes, each with a `.json` mirror carrying its hashes and preimage |
-| `log/` | the 123-entry replay fixture. **Read the order from `manifest.json`**, never by sorting filenames; entries that must be refused carry a `.reason` file |
-| `state.json` | the state those 123 entries replay to, in canonical JSON (§14) |
+| `log/` | the 124-entry replay fixture. **Read the order from `manifest.json`**, never by sorting filenames; entries that must be refused carry a `.reason` file |
+| `state.json` | the state those 124 entries replay to, in canonical JSON (§14) |
 | `proven/` | the devices a node admits at four evaluation times, including the boundary where `expires == T`. `state.json` is clock-independent on purpose, so this is the only vector that exercises expiry — the rule that decides when a device stops being admitted |
 | `entries-hostile/` | input the profile must refuse: the eight `bare-` cases are one banned item each — null, undefined, float, negative integer, tag, indefinite length, a non-text map key and invalid UTF-8 — with no schema above them, so only the profile can refuse. The rest are input at and past §4.0's three resource limits — the entry size, the nesting depth and the map-key cap. A case with `says` must be refused for that reason; one marked `accepted` sits exactly at a limit and must be accepted, which is what bounds the limit from below |
 | `genesis/` | eighteen ways a genesis entry is refused |

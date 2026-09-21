@@ -468,6 +468,14 @@ func TestEveryVectorPathTheSpecCitesExists(t *testing.T) {
 				break
 			}
 		}
+		// A citation may name a *case* rather than a file: `detect/` and
+		// `policies/` keep theirs inside a manifest, and `detect/shorter-with-
+		// no-held-branch` is as real a citation as any path (cold gate run 9).
+		if !found {
+			if _, base, ok := strings.Cut(cited, "/"); ok && shippedVectorNames(t)[base] {
+				found = true
+			}
+		}
 		if !found {
 			t.Errorf("§12 cites %q, which does not ship. A coverage claim for a file "+
 				"nobody receives is the failure §12.1 opens by warning about.", cited)
