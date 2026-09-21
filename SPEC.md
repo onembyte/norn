@@ -485,7 +485,8 @@ the network.
 
 `T` is the **quorum time** of the checkpoint the state was replayed from: the
 newest instant such that the witnesses whose cosignature timestamp is at or
-after it satisfy the policy (§9). A `tlog-checkpoint` body carries no timestamp
+after it satisfy the policy (§9). The timestamp is the 8-byte big-endian field
+of the witness's signature line, laid out in §7. A `tlog-checkpoint` body carries no timestamp
 of its own — the `tlog-cosignature` lines are the only timestamps in the
 artifact, and `T` is the only value derived from them.
 
@@ -548,9 +549,31 @@ spec's rules produce.
   the last text line. It does **not** include the blank separator line.
 - The text is followed by one blank line, then one signature line per signer.
 - A signature line is `\u2014 ` (em dash U+2014, then one space), the key name, one
-  space, then base64 of `key_id ‖ signature` — 4 + 64 = 68 bytes.
-- `key_id` = `SHA-256(name ‖ 0x0A ‖ alg ‖ pk)[0:4]`, with `alg` = `0x01` for Ed25519.
-  Note that the key id binds the **name**, so the same key under two names has two ids.
+  space, then base64 of a payload that begins with a 4-byte `key_id`. **What
+  follows the key id depends on the algorithm the key was published under**,
+  and this document uses two:
+  - **algorithm `0x01`**, a plain Ed25519 note signature (the log's, and a
+    receipt's): `key_id ‖ signature` — 4 + 64 = 68 bytes, signed over the note
+    text.
+  - **algorithm `0x04`**, a `c2sp.org/tlog-cosignature` v1 line (every
+    witness's): `key_id ‖ timestamp ‖ signature` — 4 + 8 + 64 = 76 bytes. The
+    timestamp is an unsigned 64-bit **big-endian** count of seconds since the
+    Unix epoch, and it is the only timestamp in the artifact: §5.3's `T` is
+    derived from these eight bytes and from nothing else. The signature is
+    **not** over the note text. It is over
+    `"cosignature/v1\n" ‖ "time " ‖ <timestamp as decimal, no leading zeroes> ‖ "\n" ‖ <note text>`
+    — two newline-terminated header lines, then the whole note text through
+    its final newline, with no signature lines.
+- `key_id` = `SHA-256(name ‖ 0x0A ‖ alg ‖ pk)[0:4]`, with `alg` the algorithm
+  byte above. The algorithm is part of the id, so the same public key published
+  under `0x01` and `0x04` is two different verifiers — §9.1 turns that into a
+  rule about which key may appear where. Note also that the id binds the
+  **name**, so the same key under two names has two ids.
+- A restatement is only as useful as it is complete. §9.1 restates the policy
+  grammar because a verifier cannot be written without it; the same is true of
+  the cosignature line, and until v1 this list described only the note
+  signature and called itself sufficient. A reader who believed it parsed every
+  witness line as malformed and could not verify the served checkpoint.
 - A verifier key string is `<name>+<key_id as 8 hex digits>+<base64(alg ‖ pk)>`.
   Split it on `+` **at most twice**: standard base64 contains `+`.
 

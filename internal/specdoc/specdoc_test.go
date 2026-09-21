@@ -549,3 +549,38 @@ func TestTheProseDoesNotRestateRulesItGetsWrong(t *testing.T) {
 			"an enroll body carries only `request`, and §4.3 says inside it")
 	}
 }
+
+// --- Cold-model gate run 7, defect J2 ------------------------------------
+//
+// §9.1 restates the whole `tlog-policy` grammar because "a verifier cannot be
+// written without it", and §7 restates the signed-note framing "so an
+// implementer needs nothing else" -- and then describes a signature line as
+// 4 + 64 = 68 bytes, which is a *note* signature. A `tlog-cosignature` line is
+// 76 bytes over a different signed message, and this document said nothing
+// about it, though §5.3's evaluation time is derived from nothing else. Run 7
+// passed only because it already knew the C2SP spec.
+func TestTheCosignatureLineIsStatedNotLinked(t *testing.T) {
+	// Whitespace-normalised, emphasis stripped: a checker must not dictate
+	// where a sentence breaks.
+	// Emphasis and code markers are formatting, not content.
+	stripped := strings.NewReplacer("*", "", "`", "").Replace(rawSpec(t))
+	flat := strings.Join(strings.Fields(stripped), " ")
+
+	for _, want := range []string{
+		// The layout, with the width of every field.
+		"4 + 8 + 64 = 76 bytes",
+		// The signed message, which is not the note text.
+		"cosignature/v1",
+		// The timestamp's encoding, which is where §5.3's T comes from.
+		"big-endian",
+	} {
+		if !strings.Contains(flat, want) {
+			t.Errorf("SPEC.md never states %q; a reader taking §7 at its word parses every "+
+				"cosignature line as malformed and refuses the served checkpoint", want)
+		}
+	}
+	// And §7's own restatement must say what it is a restatement *of*.
+	if !strings.Contains(flat, "algorithm 0x01") || !strings.Contains(flat, "algorithm 0x04") {
+		t.Error("the two signature-line formats are not told apart by algorithm byte")
+	}
+}
