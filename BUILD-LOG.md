@@ -515,7 +515,7 @@ them, and then run the gate.
 | 6.5k-v-a | D12's three separable §9.1 rules | `11`, `13` and `16` each carry their damaged key in the **policy** too, so only the rule the case names can refuse it | ✅ |
 | 6.5k-v-b | D12's dead text that stays dead | the rules no artifact can reach — §4.3's "a key contributes at most once", §5.3's timestamp clause, §5.1's entry-0 ordering — admitted in §12.1 | ✅ |
 | 6.5k-v-c | D14's two missing precedence pairs | an entry wrong in `after` **and** envelope, and one wrong in `after` **and** threshold — or the orderings recorded as unvectored | ✅ |
-| 6.5k-v-d | D15's entry-0 bootstrap key set | a genesis signed only by keys in `signers` declaring `role: "root"` — a valid network under one reading and `bad-genesis` under the other | ⬜ |
+| 6.5k-v-d | D15's entry-0 bootstrap key set | a genesis signed only by keys in `signers` declaring `role: "root"` — a valid network under one reading and `bad-genesis` under the other | ✅ |
 | 6.5k-vi | Cold-model gate run 11 | a *fresh* agent on a *new* copy; the target remains `SPEC SUFFICIENT` | ⬜ |
 | 6.6 | Phase 6 gate audit | what is true, and what needs two people | ⬜ |
 
@@ -1623,3 +1623,9 @@ code does not have.
   - **The control shows the increment exactly.** Move the closedness check past steps 4 and 5 and `99` flips alone — that pair was already covered. Move it past step 6 as well and `100` flips too. One vector, one step of ordering, nothing else.
   - **A reference guard had to learn the exception.** `NegativesAreNotOverDetermined.test_after_never_exceeds_the_index` refuses any `bad-` entry whose `after` is past its index, because a stale `after` rejects an entry before its own rule — which is right everywhere except in a precedence vector, where being wrong in two ways at once *is* the rule. The exemption is by name and lists four entries.
   - **126 entries, 84 rejecting**, and `anchors/checkpoint-126.ots` rebuilt again: the anchor commits to the checkpoint body and the body carries the tree size.
+
+- **6.5k-v-d — entry 0's bootstrap resolves against the `roots` and against nothing else.**
+  - **The one place signature checking has no earlier state to consult, and *which key set* it consults was pinned by nothing.** Every genesis in the suite is signed by keys that are in `roots`, so a reader that also bootstrap-resolved a `role: "root"` line against the body's `signers` reproduced all 236 checks. `18-bootstrap-sigs-wrong-role` varies the role **string**; nothing varied the key **set**.
+  - **Step 6 makes the two sets disjoint, which is what turns this into a real fork.** `19-bootstrap-sigs-from-signers` is signed by `signer1` and `signer2` — both listed under `signers` — each line declaring `root`. Under the lax reading that is a working network with a full root quorum; under this document it is `bad-genesis`. The test asserts the shape before the verdict: every signature declares `root`, every kid is in `signers`, and none is in `roots`.
+  - **One control, one red**, on that case alone.
+  - **A guard had to be narrowed.** Writing "`18` and `19` are step 7's two halves" in the vectors README made `TestTheSignatureBlindClaimNamesTheRightFiles` fail: it scanned the whole file for "`NN` and", and the signature-blind claim lives in the `checkpoints-bad/` row. It now reads that row and only that row — a claim about one directory checked against the whole document is a claim that can be broken by a sentence about another.

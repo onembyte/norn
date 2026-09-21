@@ -929,6 +929,19 @@ def genesis_aborts() -> list[tuple[str, bytes, "replay.Anchor"]]:
     cases.append(("18-bootstrap-sigs-wrong-role", raw,
                   replay.Anchor(NET, entry.leaf_hash(raw))))
 
+    # §5.1 entry-0 step 7 resolves genesis signatures against the `roots` in
+    # the body -- and which key SET it resolves against was pinned by nothing:
+    # every genesis in the suite was signed by keys that are in `roots`, so a
+    # reader that also bootstrap-resolved against `signers` reproduced the whole
+    # suite (run 10, D15). Step 6 requires the two disjoint, so this is a real
+    # fork: signed only by `signers`, each line declaring `root`, it is a
+    # working network under that reading and `bad-genesis` under this one.
+    from_signers = _signed(entry.new("genesis", NET, ts=T0, body=genesis()["body"]),
+                           [(SIGNERS[0], "root"), (SIGNERS[1], "root")])
+    raw = entry.encode(from_signers)
+    cases.append(("19-bootstrap-sigs-from-signers", raw,
+                  replay.Anchor(NET, entry.leaf_hash(raw))))
+
     def bad_body(case: str, **changes: Any) -> None:
         body = dict(genesis()["body"], **changes)
         env = _signed(entry.new("genesis", NET, ts=T0, body=body),

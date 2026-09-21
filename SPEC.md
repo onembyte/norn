@@ -1191,7 +1191,7 @@ this table drifted out of date the moment one was.
 | §4.4 `after` is a floor | `after-below-index` | `bad-after` |
 | §5 replay, 15 of the 16 reason codes | the log | **84 rejecting entries** |
 | §5 `bad-genesis` | — | `genesis/`; it cannot appear in the log, since it aborts replay |
-| §5.1 genesis | the log's entry 0 | **18 abort paths** in `genesis/`, one single-entry log each |
+| §5.1 genesis | the log's entry 0 | **19 abort paths** in `genesis/`, one single-entry log each. Two of them are step 7's two halves: `18-bootstrap-sigs-wrong-role` varies the **role string** a signature declares, `19-bootstrap-sigs-from-signers` varies the **key set** it resolves against — signed only by keys the body lists under `signers`, each line declaring `root`. Step 6 requires the two sets disjoint, so a reader that bootstrap-resolves against `signers` too admits a network this one aborts on (cold gate run 10, D15) |
 | §5.1 seen set, §4.3 roles | — | `bad-repeat-of-rejected`, `bad-one-of-two-signers`, `bad-role-mismatch`. Step 1's two stated properties are `bad-repeat-of-undecodable` (the hash is recorded **before** the entry is decoded, so a copy of one that never decoded is `dup-entry` and not a second `decode`) and `bad-repeat-of-genesis` (entry 0's hash is recorded too, so a byte copy of it is `dup-entry` and not `dup-genesis`) |
 | §5.2 `bad-thr` | — | both halves: `bad-thr-zero` and `bad-thr` (value above the set size) |
 | §5.1 a `policy` entry is a policy | `policy-rotated`, which raises the quorum from 2 of 3 to 3 of 3 | `bad-policy-unparseable`: text that is well-formed, under the size cap, and not a `tlog-policy` |

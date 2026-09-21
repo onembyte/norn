@@ -200,6 +200,10 @@ def write_genesis_aborts(out: pathlib.Path) -> None:
         "14-name-too-long": step6, "15-name-empty": step6,
         "16-params-wrong-type": step6params, "17-params-empty": step6params,
         "18-bootstrap-sigs-wrong-role": step7,
+        # The role string and the key SET are two different halves of step 7;
+        # `18` varies the first and `19` the second (run 10, D15).
+        "19-bootstrap-sigs-from-signers": {
+            "section": "5.1", "says": "*in its own body*"},
     }
     for name, _, _ in fixture.genesis_aborts():
         if name not in genesis_rules:

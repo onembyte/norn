@@ -40,7 +40,7 @@ of having it.
 | `state.json` | the state those 126 entries replay to, in canonical JSON (§14) |
 | `proven/` | the devices a node admits at four evaluation times, including the boundary where `expires == T`. `state.json` is clock-independent on purpose, so this is the only vector that exercises expiry — the rule that decides when a device stops being admitted |
 | `entries-hostile/` | input the profile must refuse: the eight `bare-` cases are one banned item each — null, undefined, float, negative integer, tag, indefinite length, a non-text map key and invalid UTF-8 — with no schema above them, so only the profile can refuse. The rest are input at and past §4.0's three resource limits — the entry size, the nesting depth and the map-key cap. A case with `says` must be refused for that reason; one marked `accepted` sits exactly at a limit and must be accepted, which is what bounds the limit from below |
-| `genesis/` | eighteen ways a genesis entry is refused |
+| `genesis/` | nineteen ways a genesis entry is refused. `18` and `19` are step 7's two halves — the **role** a signature declares and the **key set** it resolves against |
 | `trust.cbor`, `trust.toml`, `trust.fingerprint` | the anchor in both encodings, and the fingerprint an operator compares out of band (§9.3) |
 | `log-empty/` | a log with no entries at all, and the zero state §5.1 says it replays to. A reader that treats no genesis as a missing one reports `bad-genesis` instead |
 | `trust-good/` | trust files §9.1 **permits**: a witness with no `url`, and an `anchor` whose `type` this version does not know. A reader that requires an optional member refuses files this document allows, and only a positive shows it |

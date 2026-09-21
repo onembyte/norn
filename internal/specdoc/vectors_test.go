@@ -553,10 +553,16 @@ func TestTheSignatureBlindClaimNamesTheRightFiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The claim lives in the `checkpoints-bad/` row and nowhere else, so that
+	// is where it is read from: scanning the whole file made a number in an
+	// unrelated row — `genesis/`'s two halves of entry-0 step 7 — look like a
+	// blind-accept claim.
+	row := readmeRow(t, string(readme), "`checkpoints-bad/`")
+
 	// The sentence names them by their numeric prefix.
 	for _, name := range doc.Blind {
 		prefix, _, _ := strings.Cut(name, "-")
-		if !strings.Contains(string(readme), "`"+prefix+"`") {
+		if !strings.Contains(row, "`"+prefix+"`") {
 			t.Errorf("a signature-blind verifier accepts %s and the vectors README "+
 				"does not name `%s`", name, prefix)
 		}
@@ -576,12 +582,26 @@ func TestTheSignatureBlindClaimNamesTheRightFiles(t *testing.T) {
 		if listed[prefix] {
 			continue
 		}
-		if strings.Contains(string(readme), "`"+prefix+"` and") ||
-			strings.Contains(string(readme), "and `"+prefix+"`") {
+		if strings.Contains(row, "`"+prefix+"` and") ||
+			strings.Contains(row, "and `"+prefix+"`") {
 			t.Errorf("the vectors README lists `%s` among the files a signature-blind "+
 				"verifier accepts; it does not", prefix)
 		}
 	}
+}
+
+// readmeRow returns the single line of the vectors README describing one
+// directory. A claim about one directory is checked against that directory's
+// row, never against the whole file.
+func readmeRow(t *testing.T, readme, marker string) string {
+	t.Helper()
+	for _, line := range strings.Split(readme, "\n") {
+		if strings.HasPrefix(line, "| "+marker) {
+			return line
+		}
+	}
+	t.Fatalf("the vectors README has no row for %s", marker)
+	return ""
 }
 
 // --- Cold-model gate run 8, defects D3 and D4 ---------------------------

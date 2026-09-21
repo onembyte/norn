@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/onembyte/norn/internal/cbor"
+	"github.com/onembyte/norn/internal/entry"
 )
 
 // --- Cold-model gate run 10, defect D14 ---------------------------------
@@ -125,3 +126,100 @@ var errNoIndex = &indexError{}
 type indexError struct{}
 
 func (*indexError) Error() string { return "no leading index" }
+
+// --- Cold-model gate run 10, defect D15 ---------------------------------
+//
+// §5.1's entry-0 step 7 counts genesis signatures against the `roots` and
+// `root_thr` **in its own body** — the one place signature checking has no
+// earlier state to consult. Which key *set* it resolves against was pinned by
+// nothing: `V216_GenesisCountSigners`, which bootstrap-resolves a `role:
+// "root"` signature against the body's `signers` as well as its `roots`,
+// passed all 236 checks. `18-bootstrap-sigs-wrong-role` varies the role
+// **string**, not the key set, and every genesis in the suite was signed by
+// keys that are in `roots`.
+//
+// Genesis requires the two sets disjoint (step 6), so this is a real fork in
+// the reading: a genesis signed only by `signers` declaring `role: "root"` is
+// a working network under one and `bad-genesis` under the other.
+
+func TestGenesisSignaturesResolveAgainstTheRootsOnly(t *testing.T) {
+	root := filepath.Join("..", "..", "testdata", "vectors", "genesis")
+	raw, err := os.ReadFile(filepath.Join(root, "cases.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Cases []string `json:"cases"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	var name string
+	for _, c := range doc.Cases {
+		if strings.HasSuffix(c, "-bootstrap-sigs-from-signers") {
+			name = c
+		}
+	}
+	if name == "" {
+		t.Fatal("no genesis is signed only by keys in its own `signers`, so a reader " +
+			"that bootstrap-resolves a `root` signature against `signers` too " +
+			"reproduces the whole suite")
+	}
+
+	entries, err := filepath.Glob(filepath.Join(root, name, "*.cbor"))
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("a genesis case is a one-entry log; found %d (%v)", len(entries), err)
+	}
+	body, err := os.ReadFile(entries[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	value, err := cbor.Decode(body)
+	if err != nil {
+		t.Fatalf("the entry must decode: only step 7 may refuse it: %v", err)
+	}
+	env, _ := value.(map[string]any)
+	bodyMap, _ := env["body"].(map[string]any)
+	roots := kidSet(t, bodyMap, "roots")
+	signers := kidSet(t, bodyMap, "signers")
+
+	sigs, _ := env["sigs"].([]any)
+	if len(sigs) == 0 {
+		t.Fatal("the entry carries no signatures, so step 7 refuses it for being " +
+			"unsigned rather than for the set its keys are in")
+	}
+	for _, item := range sigs {
+		sig, _ := item.(map[string]any)
+		role, _ := sig["role"].(string)
+		kid, _ := sig["kid"].(string)
+		if role != "root" {
+			t.Errorf("a signature declares role %q; the case is about the key set, "+
+				"not the role string — that is `18-bootstrap-sigs-wrong-role`", role)
+		}
+		if roots[kid] {
+			t.Errorf("signature %s is in `roots`, so it counts under either reading", kid)
+		}
+		if !signers[kid] {
+			t.Errorf("signature %s is in neither set, so it is refused for being a "+
+				"stranger's rather than for being a signer's", kid)
+		}
+	}
+}
+
+// kidSet returns the kids of a genesis body's key array.
+func kidSet(t *testing.T, body map[string]any, field string) map[string]bool {
+	t.Helper()
+	list, ok := body[field].([]any)
+	if !ok {
+		t.Fatalf("the genesis body has no `%s` array", field)
+	}
+	out := map[string]bool{}
+	for _, item := range list {
+		pk, ok := item.([]byte)
+		if !ok {
+			t.Fatalf("`%s` holds a non-byte-string", field)
+		}
+		out[entry.Kid(pk)] = true
+	}
+	return out
+}
