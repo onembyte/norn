@@ -483,12 +483,12 @@ aad3fbaf774bbc9e3b85b0edfcfc0614f844dea09ca2c931f4720191668e25ef  trust-bad/04-o
 87e704e80564be4dfc6d2737d14c47be6202833bf0b1b69b7351e1966cbab080  trust-bad/08-duplicate-witness-name.cbor
 1265b056f11b15d1f74a069ea12ee538b620a79d85fbfd2cd98cf75f4aba2fa3  trust-bad/09-policy-without-quorum.cbor
 2d421efe1c951f4b33c9218d7768766f5b440b5e4a210bebd32730f129bba46b  trust-bad/10-missing-policy.cbor
-909d00340cd571f28142875098eef27598fd7977a207ac25b7b7b1a1e9bba8ba  trust-bad/11-log-key-name-mismatch.cbor
+ea423e4e7f7126c71ad3456b475e80dbf976e09db140d76e7d75eed4409bb884  trust-bad/11-log-key-name-mismatch.cbor
 0a9193c932dc8a4c86499ec98c2b59e951ad7db3831c0e11dd445c68cd63ad28  trust-bad/12-witness-key-unparseable.cbor
-7df9bbc4f52534d85c99477e70a837ad398cdd4ec223c56e9d315fa8c7efb06f  trust-bad/13-origin-only.cbor
+d8581b32d8f20808c0e194a8e334a267949a017bfefac1c19fd66bea530d6efe  trust-bad/13-origin-only.cbor
 b7defc244ec6f5e500d80d8b6e62544643c9b7b1d406c9365f0428213dcb0a29  trust-bad/14-missing-name.cbor
 5106b09ddfe85f29d78567f2e0191ccd9c87c3a64aee3496dd80d7c1db838207  trust-bad/15-witness-key-is-a-note-key.cbor
-8758f36ab361dde0aa6a92d45995ce4df1d2644d3568ec37e820b0a313523e85  trust-bad/16-log-key-is-a-cosignature-key.cbor
+88fbdf064ce2237018c767bc23e854b7dce17ff303d0ccfff548f2fe9701fcdf  trust-bad/16-log-key-is-a-cosignature-key.cbor
 2c90ee1ca3de64d86ba621c50514c7159d18e44f6e58461bb498e6e543dca2b3  trust-bad/17-witness-not-in-policy.cbor
 da724cc57281e1d0469430d83d80428f09f94f961e0b75151428c8d7e9efd5d8  trust-bad/18-policy-names-an-unlisted-witness.cbor
 eea14fab65de7f1e5f781a357e2ea3c420bc2fd1a7d5a571173960c4f221e258  trust-bad/19-missing-version.cbor

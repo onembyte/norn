@@ -512,7 +512,10 @@ them, and then run the gate.
 | 6.5k-iv-a | The served log's three checks | D11: a `served-bad` case tampered *consistently* so only rebuild-vs-head refuses it, the root line's length with a negative of its own, and §10's supplied-proof clause admitted as unvectored | ✅ |
 | 6.5k-iv-b | The note's five framing splits | D13: blank line ends the text, a key name has no space, padded standard base64, the payload is **exactly** 68 or 76 bytes, at least one signature line | ✅ |
 | 6.5k-iv-c | Which cosignature lines count | D16: a line names a listed witness when **both** its name and its key id match | ✅ |
-| 6.5k-v | Dead text and unobservable order | D12's seven dead rules, D14 (§5.1's steps 3/6/7) and D15 (entry-0's bootstrap key set) | ⬜ |
+| 6.5k-v-a | D12's three separable §9.1 rules | `11`, `13` and `16` each carry their damaged key in the **policy** too, so only the rule the case names can refuse it | ✅ |
+| 6.5k-v-b | D12's dead text that stays dead | the rules no artifact can reach — §4.3's "a key contributes at most once", §5.3's timestamp clause, §5.1's entry-0 ordering — admitted in §12.1 | ⬜ |
+| 6.5k-v-c | D14's two missing precedence pairs | an entry wrong in `after` **and** envelope, and one wrong in `after` **and** threshold — or the orderings recorded as unvectored | ⬜ |
+| 6.5k-v-d | D15's entry-0 bootstrap key set | a genesis signed only by keys in `signers` declaring `role: "root"` — a valid network under one reading and `bad-genesis` under the other | ⬜ |
 | 6.5k-vi | Cold-model gate run 11 | a *fresh* agent on a *new* copy; the target remains `SPEC SUFFICIENT` | ⬜ |
 | 6.6 | Phase 6 gate audit | what is true, and what needs two people | ⬜ |
 
@@ -1602,3 +1605,9 @@ code does not have.
   - **`served-name-collision/` is the separating file, and it MUST be *accepted*.** The served head plus one more line carrying `norn-witness/pi`'s name under the **same key `served-extra-witness/` uses**. That pairing is §7's point made twice: one key, two names, two key ids, both lines ignored — one because the name is unknown, this one because the id is. The test asserts the shape before the verdict: two lines carry the name, exactly one carries the key id.
   - **One control, one red.** Dropping the key-id half of the match refuses the head, and nothing else in the suite moves.
   - Also fixed: `served-name-collision` had to join the Makefile's `GO_VECTOR_DIRS`, or `make vectors-check` reports the Go-generated directory as a difference from the Python reference — which it did, immediately.
+
+- **6.5k-v-a — three §9.1 MUSTs about the log key, each deletable with the suite still green.**
+  - **The cause was the same in all three, and it was the *policy*.** `11-log-key-name-mismatch`, `13-origin-only` and `16-log-key-is-a-cosignature-key` damage `log_key` or `origin` and left the policy carrying the *original* key — so §9.1's correspondence rule ("a `log` line, if present, MUST be `norn.trust.log_key`") refused the file before the rule the case is named after was ever reached. `13`'s own comment claimed "ONLY 'origin derives from net' can reject this", and it was wrong.
+  - **`V90`/`V93` is the pair run 10 called the sharpest.** Two separate MUSTs, each with no observable effect, and only deleting *both* lets `04-origin-mismatch` through — because `04` breaks both at once and §12.1 counted it among its 38 refusals without noticing.
+  - **Each case now carries its damaged key in its policy too.** Three controls, three reds, **one vector each**: dropping the derivation fails `13` alone, dropping the note-name equality fails `11` alone, dropping the cosignature-key ban fails `16` alone — all three in `TestEveryDamagedAnchorIsRejected`, which reads the manifest.
+  - **A guard from the previous checkpoint fired here.** `make vectors` refuses to run with a vector directory in neither `OWNED` nor `FOREIGN`, and `served-name-collision` was in neither — 6.5k-iv-c ran `vectors-check` and `vectors-log` but not `vectors`, so the gap surfaced one checkpoint late. It is registered now, and the lesson is that the four checks are not interchangeable.

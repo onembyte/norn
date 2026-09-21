@@ -1088,15 +1088,27 @@ def trust_rejections() -> list[tuple[str, dict[str, Any]]]:
             dict(base["witnesses"][0]), dict(base["witnesses"][0])])),
         ("09-policy-without-quorum", damaged(policy="log x\nwitness pi y\n")),
         ("10-missing-policy", damaged(policy=_REMOVE)),
+        # Isolated the same way `13` is, and for the same reason: the policy
+        # carries the damaged key too, so §9.1's correspondence rule is
+        # satisfied and ONLY "the log key's note name MUST equal `origin`" can
+        # refuse this file. Without that, the rule was deletable with no vector
+        # noticing (cold gate run 10, D12/V93).
         ("11-log-key-name-mismatch",
-         damaged(log_key=note.vkey("someone/else", KEYS["logkey"].public))),
+         damaged(log_key=note.vkey("someone/else", KEYS["logkey"].public),
+                 policy=_policy_with(
+                     log_key=note.vkey("someone/else", KEYS["logkey"].public)))),
         ("12-witness-key-unparseable",
          damaged(witnesses=[dict(base["witnesses"][0], key="nonsense")])),
-        # Isolated: `net` stays 16 bytes and `log_key` is renamed to agree with
-        # the wrong origin, so ONLY "origin derives from net" can reject this.
+        # Isolated: `net` stays 16 bytes, `log_key` is renamed to agree with
+        # the wrong origin, and the POLICY carries that same renamed key -- so
+        # the correspondence rule agrees too and ONLY "origin derives from net"
+        # can reject this. The policy was the half this case forgot, which left
+        # the derivation rule deletable (cold gate run 10, D12/V90).
         ("13-origin-only", damaged(
             origin="norn/aaaaaaaaaaaaaaaaaaaaaaaaaa",
-            log_key=note.vkey("norn/aaaaaaaaaaaaaaaaaaaaaaaaaa", KEYS["logkey"].public))),
+            log_key=note.vkey("norn/aaaaaaaaaaaaaaaaaaaaaaaaaa", KEYS["logkey"].public),
+            policy=_policy_with(log_key=note.vkey(
+                "norn/aaaaaaaaaaaaaaaaaaaaaaaaaa", KEYS["logkey"].public)))),
         # Isolated: a missing key that no other rule also catches.
         ("14-missing-name", damaged(name=_REMOVE)),
         # The two kinds of key are not interchangeable: a witness signs
@@ -1114,8 +1126,13 @@ def trust_rejections() -> list[tuple[str, dict[str, Any]]]:
                             key=note.vkey("norn-witness/pi", KEYS["witness-pi"].public))]
                       + base["witnesses"][1:],
             policy=_policy_with_pi_note_key())),
+        # Isolated: the policy names the same cosignature key, so the
+        # correspondence rule agrees and ONLY "`log_key` MUST NOT be a
+        # cosignature key" can refuse it (cold gate run 10, D12/V92).
         ("16-log-key-is-a-cosignature-key",
-         damaged(log_key=note.vkey(ORIGIN, KEYS["logkey"].public, note.ALG_COSIGNATURE))),
+         damaged(log_key=note.vkey(ORIGIN, KEYS["logkey"].public, note.ALG_COSIGNATURE),
+                 policy=_policy_with(log_key=note.vkey(
+                     ORIGIN, KEYS["logkey"].public, note.ALG_COSIGNATURE)))),
         # `witnesses` and `policy` must name the same parties: a quorum over
         # a witness the node cannot reach, or a listed witness nothing
         # requires, is an operator believing they configured something.
