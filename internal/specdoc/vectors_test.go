@@ -935,7 +935,10 @@ func TestEveryNegativeDeclaresTheSectionThatStatesItsRule(t *testing.T) {
 	// The directories whose rules run 10 found missing. The rest are named in
 	// BUILD-LOG 6.5k-i-b; a directory joins this list when its manifest grows
 	// a `rules` map, and can never leave it.
-	for _, dir := range []string{"checkpoints-bad", "proofs-bad"} {
+	for _, dir := range []string{
+		"checkpoints-bad", "proofs-bad", "served-bad", "fork",
+		"entries-hostile", "policies", "genesis", "trust-bad",
+	} {
 		t.Run(dir, func(t *testing.T) {
 			var manifest struct {
 				Cases json.RawMessage `json:"cases"`

@@ -914,6 +914,11 @@ func writeBadServed(root, served string, size int64) error {
 	}
 
 	meta := map[string]any{
+		"rules": map[string]map[string]string{
+			"tampered-entry-bundle": {"section": "6", "says": "The served `tile/<L>/"},
+			"missing-entry-bundle":  {"section": "6", "says": "The served `tile/<L>/"},
+			"tampered-hash-tile":    {"section": "6", "says": "checking them is not optional"},
+		},
 		"cases": []map[string]any{
 			{"name": "tampered-entry-bundle", "path": bundlePath,
 				"file": "tampered-entry-bundle.bin",
@@ -1441,6 +1446,20 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 	}
 
 	manifest := map[string]any{
+		"rules": map[string]map[string]string{
+			"bad-oversize":                 {"section": "11.1", "says": "MAX_EVIDENCE_BYTES"},
+			"bad-open-schema":              {"section": "11.1", "says": "a closed map of exactly these seven keys"},
+			"bad-wrong-version":            {"section": "11.1", "says": "| `version` | uint | `1` |"},
+			"bad-size-above-held":          {"section": "11.1", "says": "not above `held`'s own size"},
+			"bad-policy-says-quorum-none":  {"section": "11.1", "says": "never the one in the file"},
+			"bad-policy-unparseable":       {"section": "11.1", "says": "MUST parse as `c2sp.org/tlog-policy`"},
+			"bad-proof-at-same-size":       {"section": "11.1", "says": "Empty when `size` equals"},
+			"bad-consistent":               {"section": "11.1", "says": "only if `held_root` differs"},
+			"bad-other-origin":             {"section": "11.1", "says": "this network's origin"},
+			"bad-forged-proof":             {"section": "11.1", "says": "check `proof` chains"},
+			"bad-unverifiable-conflicting": {"section": "11.1", "says": "verify **both** checkpoints"},
+			"bad-size-mismatch":            {"section": "11.1", "says": "`conflicting`'s size equals `size`"},
+		},
 		"cases": []map[string]string{
 			{"name": "bad-oversize", "says": "exceeds"},
 			{"name": "bad-open-schema", "says": "unknown field"},

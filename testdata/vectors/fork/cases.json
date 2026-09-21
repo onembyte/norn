@@ -49,5 +49,55 @@
       "says": "claims a disagreement"
     }
   ],
-  "comment": "evidence that MUST NOT be acted on, checked against trust.cbor. bad-consistent is a log and its own earlier self -- every signature valid, both heads cosigned, the roots agreeing. bad-other-origin is a real fork of another network, which this anchor has no business accepting. `says` is what the refusal must be about. `policy-not-the-readers.cbor` is not listed here: it carries a policy the reader does not share and MUST still prove the fork, because the field is informational and the reader's own policy decides"
+  "comment": "evidence that MUST NOT be acted on, checked against trust.cbor. bad-consistent is a log and its own earlier self -- every signature valid, both heads cosigned, the roots agreeing. bad-other-origin is a real fork of another network, which this anchor has no business accepting. `says` is what the refusal must be about. `policy-not-the-readers.cbor` is not listed here: it carries a policy the reader does not share and MUST still prove the fork, because the field is informational and the reader's own policy decides",
+  "rules": {
+    "bad-consistent": {
+      "says": "only if `held_root` differs",
+      "section": "11.1"
+    },
+    "bad-forged-proof": {
+      "says": "check `proof` chains",
+      "section": "11.1"
+    },
+    "bad-open-schema": {
+      "says": "a closed map of exactly these seven keys",
+      "section": "11.1"
+    },
+    "bad-other-origin": {
+      "says": "this network's origin",
+      "section": "11.1"
+    },
+    "bad-oversize": {
+      "says": "MAX_EVIDENCE_BYTES",
+      "section": "11.1"
+    },
+    "bad-policy-says-quorum-none": {
+      "says": "never the one in the file",
+      "section": "11.1"
+    },
+    "bad-policy-unparseable": {
+      "says": "MUST parse as `c2sp.org/tlog-policy`",
+      "section": "11.1"
+    },
+    "bad-proof-at-same-size": {
+      "says": "Empty when `size` equals",
+      "section": "11.1"
+    },
+    "bad-size-above-held": {
+      "says": "not above `held`'s own size",
+      "section": "11.1"
+    },
+    "bad-size-mismatch": {
+      "says": "`conflicting`'s size equals `size`",
+      "section": "11.1"
+    },
+    "bad-unverifiable-conflicting": {
+      "says": "verify **both** checkpoints",
+      "section": "11.1"
+    },
+    "bad-wrong-version": {
+      "says": "| `version` | uint | `1` |",
+      "section": "11.1"
+    }
+  }
 }

@@ -181,7 +181,30 @@ def write_genesis_aborts(out: pathlib.Path) -> None:
         }) + "\n")
         write(folder / "state.json", replay.replay(anchor, [raw]).to_json() + "\n")
         index.append(name)
+    # Every abort names the entry-0 step that states its rule (run 10).
+    step2 = {"section": "5.1", "says": "Decode per §4.0 and check the envelope per §4.1"}
+    step3 = {"section": "5.1", "says": "`t` MUST be `genesis`, and `net` MUST equal `anchor.net`"}
+    step4 = {"section": "5.1", "says": "`leaf_hash` MUST equal `anchor.genesis_hash`"}
+    step5 = {"section": "5.1", "says": "`after`, if present, MUST be 0"}
+    step6 = {"section": "5.1", "says": "Body checks: `roots` and `signers` are non-empty"}
+    step6params = {"section": "5.1", "says": "`params`, if present, is **non-empty**"}
+    step7 = {"section": "5.1", "says": "genesis signatures are counted against the `roots`"}
+    genesis_rules = {
+        "01-hash-mismatch": step4, "02-not-genesis": step3, "03-wrong-net": step3,
+        "04-after-nonzero": step5, "05-root-thr-above-set": step6,
+        "06-under-root-threshold": step7, "07-undecodable": step2,
+        "08-duplicate-root": step6, "09-role-overlap": step6,
+        "10-duplicate-signer": step6, "11-signer-thr-above-set": step6,
+        "12-empty-roots": step6, "13-params-unknown-key": step6params,
+        "14-name-too-long": step6, "15-name-empty": step6,
+        "16-params-wrong-type": step6params, "17-params-empty": step6params,
+        "18-bootstrap-sigs-wrong-role": step7,
+    }
+    for name, _, _ in fixture.genesis_aborts():
+        if name not in genesis_rules:
+            raise SystemExit(f"genesis case {name} names no entry-0 step")
     write(out / "genesis" / "cases.json", canonjson.dumps({
+        "rules": genesis_rules,
         "comment": "each subdirectory is a one-entry log whose replay MUST abort "
                    "with bad-genesis; an abort stops replay, so cases cannot share a log",
         "cases": index,
@@ -194,7 +217,50 @@ def write_trust_rejections(out: pathlib.Path) -> None:
     for name, doc in fixture.trust_rejections():
         write(out / "trust-bad" / f"{name}.cbor", trust.encode(doc))
         cases.append(name)
+    # Every damaged anchor names the §9.1 row that states its rule (run 10).
+    closed = {"section": "9.1", "says": "Unknown keys MUST cause rejection"}
+    version = {"section": "9.1", "says": "| `version` | uint | `1` |"}
+    net = {"section": "9.1", "says": "| `net` | 16 bytes |"}
+    origin = {"section": "9.1", "says": "MUST equal `norn/` + lowercase unpadded"}
+    ghash = {"section": "9.1", "says": "| `genesis_hash` | 32 bytes |"}
+    logkey = {"section": "9.1", "says": "MUST parse as one, MUST NOT be a cosignature key"}
+    logname = {"section": "9.1", "says": "its note name MUST equal `origin`"}
+    urls = {"section": "9.1", "says": "URL is non-empty"}
+    witnesses = {"section": "9.1", "says": "A file with no witnesses MUST be rejected"}
+    wkey = {"section": "9.1", "says": "is a **cosignature** verifier key"}
+    wname = {"section": "9.1", "says": "a witness `name` is 1–64 bytes"}
+    corr = {"section": "9.1", "says": "MUST name **exactly** the witnesses"}
+    polkey = {"section": "9.1", "says": "it MUST be `norn.trust.log_key`"}
+    polparse = {"section": "9.1", "says": "verbatim `c2sp.org/tlog-policy`; MUST parse"}
+    name = {"section": "9.1", "says": "| `name` | text, 1–64 bytes |"}
+    anchor = {"section": "9.1", "says": "All three members are required"}
+    mode = {"section": "9.1", "says": "`mode` MUST be"}
+    size = {"section": "9.1", "says": "MAX_TRUST_BYTES"}
+    trust_rules = {
+        "01-unknown-key": closed, "02-wrong-version": version, "03-short-net": net,
+        "04-origin-mismatch": origin, "05-short-genesis-hash": ghash,
+        "06-bad-log-key": logkey, "07-no-witnesses": corr,
+        "08-duplicate-witness-name": corr, "09-policy-without-quorum": polparse,
+        "10-missing-policy": polparse, "11-log-key-name-mismatch": logname,
+        "12-witness-key-unparseable": wkey, "13-origin-only": origin,
+        "14-missing-name": name, "15-witness-key-is-a-note-key": wkey,
+        "16-log-key-is-a-cosignature-key": logkey, "17-witness-not-in-policy": corr,
+        "18-policy-names-an-unlisted-witness": corr, "19-missing-version": version,
+        "20-missing-net": net, "21-missing-origin": origin,
+        "22-missing-genesis-hash": ghash, "23-missing-log-key": logkey,
+        "24-missing-log-urls": urls, "25-missing-witnesses": witnesses,
+        "26-name-too-long": name, "27-name-empty": name, "28-empty-log-urls": urls,
+        "29-no-witnesses-only": witnesses, "30-duplicate-witness-name-only": wname,
+        "31-witness-open-schema": closed, "32-witness-name-too-long": wname,
+        "33-log-url-empty-string": urls, "34-anchor-missing-member": anchor,
+        "35-anchor-unknown-mode": mode, "36-policy-log-key-mismatch": polkey,
+        "37-log-key-id-mismatch": logkey, "38-oversize": size,
+    }
+    for name_, _ in fixture.trust_rejections():
+        if name_ not in trust_rules:
+            raise SystemExit(f"trust case {name_} names no §9.1 rule")
     write(out / "trust-bad" / "cases.json", canonjson.dumps({
+        "rules": trust_rules,
         "comment": "every file here MUST be refused as a trust anchor -- by the "
                    "CBOR schema of SPEC 9.1 or by validation, whichever owns the "
                    "rule; the file name says which rule it is about",
@@ -287,7 +353,19 @@ def write_policies(out: pathlib.Path) -> None:
         if evaluations.get(name):
             case["evaluate"] = evaluations[name]
         cases.append(case)
+    grammar = {"section": "9.1", "says": "The rest of the grammar, stated because"}
+    policy_rules = {name: dict(grammar) for name, _, _, _ in fixture.policy_grammar()}
+    policy_rules["bad-quorum-undefined"] = {
+        "section": "9.1", "says": "it names a witness, a group, or the reserved name `none`"}
+    policy_rules["bad-two-quorums"] = {
+        "section": "9.1", "says": "there is **exactly one** `quorum` line"}
+    policy_rules["bad-no-quorum"] = policy_rules["bad-two-quorums"]
+    policy_rules["bad-forward-reference"] = {
+        "section": "9.1", "says": "previously-defined witnesses or groups"}
+    policy_rules["bad-unknown-keyword"] = {
+        "section": "9.1", "says": "the four directives"}
     write(out / "policies" / "cases.json", canonjson.dumps({
+        "rules": policy_rules,
         "comment": "SPEC 9.1's restated `tlog-policy` grammar, one whole policy "
                    "per rule, each differing from a valid one in exactly one way. "
                    "A case with `accept` true MUST parse; the rest MUST be "
@@ -368,7 +446,29 @@ def write_requests(out: pathlib.Path) -> None:
             hostile.append({"name": name, "accepted": True})
         else:
             hostile.append({"name": name, "says": says})
+    hostile_rules = {
+        "bare-null": {"section": "4.0", "says": "an OPTIONAL field is *absent*, never `null`"},
+        "bare-undefined": {"section": "4.0", "says": "Floats, tags, `undefined`, indefinite-length items"},
+        "bare-float": {"section": "4.0", "says": "Floats, tags, `undefined`, indefinite-length items"},
+        "bare-negative-integer": {"section": "4.0", "says": "**No negative integers.**"},
+        "bare-tag": {"section": "4.0", "says": "Floats, tags, `undefined`, indefinite-length items"},
+        "bare-indefinite-text": {"section": "4.0", "says": "Floats, tags, `undefined`, indefinite-length items"},
+        "bare-nontext-map-key": {"section": "4.0", "says": "every **map key** is a text string"},
+        "bare-invalid-utf8": {"section": "4.0", "says": "valid UTF-8"},
+        "oversize-entry": {"section": "4.0", "says": "MAX_ENTRY_BYTES"},
+        "deep-nesting": {"section": "4.0", "says": "Nesting depth is at most 8"},
+        "at-the-depth-limit": {"section": "4.0", "says": "Nesting depth is at most 8"},
+        "past-the-depth-limit": {"section": "4.0", "says": "Nesting depth is at most 8"},
+        "at-the-size-limit": {"section": "4.0", "says": "MAX_ENTRY_BYTES"},
+        "past-the-size-limit": {"section": "4.0", "says": "MAX_ENTRY_BYTES"},
+        "at-the-key-limit": {"section": "4.0", "says": "every **map key** is a text string of 1–23 bytes"},
+        "past-the-key-limit": {"section": "4.0", "says": "every **map key** is a text string of 1–23 bytes"},
+    }
+    for name, _, _ in fixture.hostile_inputs():
+        if name not in hostile_rules:
+            raise SystemExit(f"hostile case {name} names no section")
     write(out / "entries-hostile" / "cases.json", canonjson.dumps({
+        "rules": hostile_rules,
         "comment": "input at and past SPEC 4.0's resource limits: a case with `says` MUST be "
                    "refused for that reason, and a case marked `accepted` sits exactly at a limit "
                    "and MUST be accepted, which is what bounds it from below. Neither limit is "

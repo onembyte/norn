@@ -19,5 +19,19 @@
       "says": "one byte of one leaf hash changed: the entries and the signed head are untouched, so a verifier that reaches the head without opening `tile/0/...` sees nothing wrong, and serves the corrupt tile onward to peers asking it for proofs"
     }
   ],
-  "comment": "a served log is a directory, so each case names the path to replace with `file` or to delete with `remove`, over an otherwise honest copy of `served/`. Every one MUST be refused"
+  "comment": "a served log is a directory, so each case names the path to replace with `file` or to delete with `remove`, over an otherwise honest copy of `served/`. Every one MUST be refused",
+  "rules": {
+    "missing-entry-bundle": {
+      "says": "The served `tile/\u003cL\u003e/",
+      "section": "6"
+    },
+    "tampered-entry-bundle": {
+      "says": "The served `tile/\u003cL\u003e/",
+      "section": "6"
+    },
+    "tampered-hash-tile": {
+      "says": "checking them is not optional",
+      "section": "6"
+    }
+  }
 }
