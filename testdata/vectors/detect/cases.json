@@ -1,0 +1,33 @@
+{
+  "cases": [
+    {
+      "name": "accept-grown",
+      "outcome": "accept",
+      "says": "a head that grows on the one this node holds",
+      "serve": "../served",
+      "stored": "earlier.checkpoint"
+    },
+    {
+      "name": "refuse-shrunk",
+      "outcome": "refuse",
+      "says": "a log does not shrink",
+      "serve": "honest-earlier",
+      "stored": "current.checkpoint"
+    },
+    {
+      "name": "fork-at-the-same-size",
+      "outcome": "fork",
+      "says": "two roots at one size",
+      "serve": "fork-same-size",
+      "stored": "earlier.checkpoint"
+    },
+    {
+      "name": "fork-on-a-shorter-branch",
+      "outcome": "fork",
+      "says": "shorter and divergent is a fork, not a rollback",
+      "serve": "fork-shorter",
+      "stored": "current.checkpoint"
+    }
+  ],
+  "comment": "pairs, not single artifacts. `stored` is the checkpoint this reader already holds, over the entries in `../served`; `serve` is the log it is then offered, tiles and all, as a real log would serve it. §10's stored-checkpoint block and §11's duties are reached by nothing else here. fork-on-a-shorter-branch is the one that matters most: it is what a forking log looks like when it hides behind \"logs do not shrink\""
+}

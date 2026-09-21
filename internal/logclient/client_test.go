@@ -7,7 +7,9 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"github.com/onembyte/norn/internal/trust"
 	"os"
 	"path/filepath"
 	"strings"
@@ -921,4 +923,119 @@ func servedWithHead(t *testing.T, from, head string) string {
 		t.Fatal(err)
 	}
 	return to
+}
+
+// --- Cold-model gate run 7, defect J11 -----------------------------------
+//
+// §10's stored-checkpoint block -- the size rule, the recomputed head, the
+// FORK trigger -- and §11's rules 1-4 were exercised by no vector at all. Run
+// 7's implementation contained none of them and scored 241/241, because
+// `served/` ships **one** checkpoint and nothing in the suite is a *sequence*
+// of them presented to the same reader.
+//
+// The material was already here: the honest head at size 41 and
+// `fork/conflicting.checkpoint` are both in the suite, so it carried a
+// ready-made fork for the detector and only ever asked the reader to check the
+// finished accusation. §11 rule 4 makes that conclusion permanent until an
+// operator ships a new trust file, so the detector matters at least as much as
+// the reader.
+
+func TestEveryDetectVectorReachesItsOutcome(t *testing.T) {
+	dir := filepath.Join(vectorRoot(), "detect")
+	raw, err := os.ReadFile(filepath.Join(dir, "cases.json"))
+	if err != nil {
+		t.Fatalf("the detector vectors are missing: %v", err)
+	}
+	var doc struct {
+		Cases []struct {
+			Name, Stored, Serve, Outcome, Says string
+		} `json:"cases"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	if len(doc.Cases) < 4 {
+		t.Fatalf("%d cases; a reader must tell apart accepting, refusing a shrunk "+
+			"view, and proving a fork from either side", len(doc.Cases))
+	}
+
+	served := filepath.Join(vectorRoot(), "served")
+	anchor := shippedLogAnchor(t)
+	held, err := Verify(Dir(served), anchor)
+	if err != nil {
+		t.Fatalf("the honest log does not verify: %v", err)
+	}
+
+	for _, c := range doc.Cases {
+		t.Run(c.Name, func(t *testing.T) {
+			stored := checkpointIn(t, dir, c.Stored, anchor)
+			with := anchor
+			with.Stored, with.Held = &stored, held.Tree
+
+			// Each branch is served with its own tiles, as a real log would.
+			_, err := Verify(Dir(filepath.Join(dir, c.Serve)), with)
+
+			var fork *ForkError
+			switch c.Outcome {
+			case "accept":
+				if err != nil {
+					t.Errorf("refused a checkpoint that grows the log this node holds: %v", err)
+				}
+			case "fork":
+				if !errors.As(err, &fork) {
+					t.Errorf("did not prove a fork; §11 rule 1 owes evidence here. got: %v", err)
+				}
+			case "refuse":
+				if err == nil {
+					t.Fatal("accepted a checkpoint older than the one this node holds")
+				}
+				if errors.As(err, &fork) {
+					t.Error("called this a fork; it is an older view of the same log, " +
+						"and an accusation that cannot be proved must not be made")
+				}
+				if !strings.Contains(err.Error(), c.Says) {
+					t.Errorf("refused for the wrong reason.\n  got:  %v\n  want: %s", err, c.Says)
+				}
+			default:
+				t.Fatalf("unknown outcome %q", c.Outcome)
+			}
+		})
+	}
+}
+
+func readFile(t *testing.T, path string) string {
+	t.Helper()
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(raw)
+}
+
+func checkpointIn(t *testing.T, dir, name string, anchor Anchor) tlog.Checkpoint {
+	t.Helper()
+	cp, err := tlog.Verify(readFile(t, filepath.Join(dir, name)), anchor.LogKeys)
+	if err != nil {
+		t.Fatalf("%s does not verify under the shipped anchor: %v", name, err)
+	}
+	return cp
+}
+
+// shippedLogAnchor is the fixture's own anchor, exactly as a node holds it.
+func shippedLogAnchor(t *testing.T) Anchor {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(vectorRoot(), "trust.cbor"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, err := trust.Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return Anchor{
+		Anchor:  replay.Anchor{Net: doc.Net, GenesisHash: doc.GenesisHash},
+		LogKeys: []string{doc.LogKey},
+		Origin:  doc.Origin,
+		Policy:  doc.Policy,
+	}
 }

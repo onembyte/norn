@@ -274,6 +274,9 @@ func run(root string) error {
 	if err := writeSupersededHead(root, origin, signed, key, signers); err != nil {
 		return err
 	}
+	if err := writeDetectCases(root, origin, key, entries, signed, signers); err != nil {
+		return err
+	}
 
 	fmt.Printf("served %d entries to %s, %d proof bundles\n", store.Size(), served, len(ids))
 	return nil
@@ -390,6 +393,125 @@ func writeSupersededHead(root, origin, signed string, key ed25519.PrivateKey,
 			"refuse it (SPEC 9.4). Serve it in place of served/checkpoint over the same " +
 			"tiles. Two correct answers again, and here the informed reader is the " +
 			"stricter one",
+	}
+	blob, err := json.MarshalIndent(meta, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, "cases.json"), append(blob, '\n'), 0o644)
+}
+
+// writeDetectCases ships the sequences §10's stored-checkpoint block needs.
+//
+// Everything else in the suite is one artifact judged on its own. These are
+// *pairs*: what a node already holds, and what it is then offered. Cold gate
+// run 7's implementation contained none of §10's stored block, none of §11's
+// four duties and no staleness rule, and scored 241/241 -- because nothing in
+// the suite was ever a second checkpoint shown to the same reader.
+//
+// The four outcomes a reader has to tell apart:
+//
+//   - a larger consistent head: accept it;
+//   - a smaller head of the same log: refuse it, and do not call it a fork --
+//     an accusation that cannot be proved must not be made;
+//   - a different root at the same size: prove a fork;
+//   - a *shorter* divergent branch: prove a fork, not a rollback. This is the
+//     one a careless reader files under "logs do not shrink", and it is how a
+//     forking log would hide.
+func writeDetectCases(root, origin string, key ed25519.PrivateKey, entries [][]byte,
+	signed string, signers []cosignpkg.Signer) error {
+
+	dir := filepath.Join(root, "detect")
+	if err := os.RemoveAll(dir); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+
+	divergent, err := forkEntry(root)
+	if err != nil {
+		return err
+	}
+
+	// An honest earlier view of this same log, served with its own tiles.
+	honest, err := serveInto(filepath.Join(dir, "honest-earlier"), origin, key,
+		entries[:forkAt], signers)
+	if err != nil {
+		return err
+	}
+	// A branch that diverges at the same size as that earlier view.
+	sameSize := append(append([][]byte(nil), entries[:forkAt-1]...), divergent)
+	if _, err := serveInto(filepath.Join(dir, "fork-same-size"), origin, key,
+		sameSize, signers); err != nil {
+		return err
+	}
+	// A branch that diverges and is *shorter* than the full log: the case a
+	// careless reader files under "logs do not shrink".
+	shorter := append(append([][]byte(nil), entries[:forkAt]...), divergent)
+	if _, err := serveInto(filepath.Join(dir, "fork-shorter"), origin, key,
+		shorter, signers); err != nil {
+		return err
+	}
+
+	if err := os.WriteFile(filepath.Join(dir, "earlier.checkpoint"),
+		[]byte(honest), 0o644); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(dir, "current.checkpoint"),
+		[]byte(signed), 0o644); err != nil {
+		return err
+	}
+
+	// §8.1's condition 4: the staleness ladder. `params.staleness` travels all
+	// the way into `state.json` and, until this file, was read by nothing.
+	// `elapsed` is monotonic time since the quorum time was learned (§5.3), so
+	// these cases are a table over a pure function and need no artifacts.
+	stale := map[string]any{
+		"staleness": 900,
+		"hard":      3600,
+		"cases": []map[string]any{
+			{"name": "fresh", "elapsed": 0, "expect": "fresh"},
+			{"name": "at-the-staleness-boundary", "elapsed": 900, "expect": "fresh"},
+			{"name": "one-second-past", "elapsed": 901, "expect": "degraded"},
+			{"name": "past-hard", "elapsed": 3601, "expect": "hard_stale"},
+			{"name": "no-clock", "elapsed": 0, "have_clock": false, "expect": "unknown"},
+		},
+		"comment": "SPEC 8.1 condition 4 and 5.3's ladder, as a table: `elapsed` is the " +
+			"node's monotonic time since it learned the checkpoint's quorum time, " +
+			"`staleness` is the network's own from params, and `hard` is this node's " +
+			"local S_hard. The rule is `elapsed > staleness`, so the boundary is still " +
+			"fresh. A node with no corroborated instant has no clock and reports " +
+			"`unknown` rather than guessing",
+	}
+	staleBlob, err := json.MarshalIndent(stale, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(dir, "staleness.json"),
+		append(staleBlob, '\n'), 0o644); err != nil {
+		return err
+	}
+
+	meta := map[string]any{
+		"cases": []map[string]string{
+			{"name": "accept-grown", "stored": "earlier.checkpoint", "serve": "../served",
+				"outcome": "accept", "says": "a head that grows on the one this node holds"},
+			{"name": "refuse-shrunk", "stored": "current.checkpoint", "serve": "honest-earlier",
+				"outcome": "refuse", "says": "a log does not shrink"},
+			{"name": "fork-at-the-same-size", "stored": "earlier.checkpoint",
+				"serve": "fork-same-size", "outcome": "fork",
+				"says": "two roots at one size"},
+			{"name": "fork-on-a-shorter-branch", "stored": "current.checkpoint",
+				"serve": "fork-shorter", "outcome": "fork",
+				"says": "shorter and divergent is a fork, not a rollback"},
+		},
+		"comment": "pairs, not single artifacts. `stored` is the checkpoint this reader " +
+			"already holds, over the entries in `../served`; `serve` is the log it is " +
+			"then offered, tiles and all, as a real log would serve it. §10's " +
+			"stored-checkpoint block and §11's duties are reached by nothing else here. " +
+			"fork-on-a-shorter-branch is the one that matters most: it is what a forking " +
+			"log looks like when it hides behind \"logs do not shrink\"",
 	}
 	blob, err := json.MarshalIndent(meta, "", "  ")
 	if err != nil {
@@ -996,6 +1118,28 @@ func sameSizeBranch(entries [][]byte, divergent []byte) [][]byte {
 	branch := append([][]byte(nil), entries[:forkAt]...)
 	branch = append(branch, divergent)
 	return append(branch, entries[forkAt+1:]...)
+}
+
+// serveInto writes a complete tlog-tiles directory over exactly these entries
+// and returns its signed head. A branch that is offered to a reader has to
+// come with the tiles that back it, exactly as a real log would serve them.
+func serveInto(dir, origin string, key ed25519.PrivateKey, entries [][]byte,
+	signers []cosignpkg.Signer) (string, error) {
+
+	if err := os.RemoveAll(dir); err != nil {
+		return "", err
+	}
+	store, err := tlogstore.Open(dir, origin, key, tlogstore.WithCosigner(
+		tlogstore.CosignerFunc(staggeredCosigner(signers))))
+	if err != nil {
+		return "", err
+	}
+	for _, raw := range entries {
+		if _, err := store.Append(raw); err != nil {
+			return "", err
+		}
+	}
+	return store.SignedCheckpoint()
 }
 
 // signedHeadOver builds a cosigned checkpoint over exactly these entries.

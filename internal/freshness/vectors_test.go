@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/onembyte/norn/internal/cosign"
 	"github.com/onembyte/norn/internal/policy"
@@ -159,4 +160,61 @@ func servedTimestamps(t *testing.T) []int64 {
 		out = append(out, c.Time.Unix())
 	}
 	return out
+}
+
+// Cold-model gate run 7, defect J11's other half. §8.1's condition 4 says a
+// peer is proven only if its checkpoint "is not stale", and 6.5g-v gave that
+// MUST a predicate: `elapsed > params.staleness`. Nothing vectored it. The
+// network's `staleness` is carried all the way into `state.json` and was then
+// read by no test and no file -- a number shipped to every implementer with
+// nothing saying what to do with it.
+func TestTheStalenessLadderIsVectored(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join(vectorRoot(), "detect", "staleness.json"))
+	if err != nil {
+		t.Fatalf("the staleness vectors are missing: %v", err)
+	}
+	var doc struct {
+		Staleness int64 `json:"staleness"`
+		Hard      int64 `json:"hard"`
+		Cases     []struct {
+			Name      string `json:"name"`
+			Elapsed   int64  `json:"elapsed"`
+			HaveClock *bool  `json:"have_clock"`
+			Expect    string `json:"expect"`
+		} `json:"cases"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	if len(doc.Cases) < 4 {
+		t.Fatalf("%d cases; the ladder has fresh, degraded, hard-stale and no-clock",
+			len(doc.Cases))
+	}
+
+	limits := Limits{
+		Staleness: time.Duration(doc.Staleness) * time.Second,
+		Hard:      time.Duration(doc.Hard) * time.Second,
+	}
+	var sawBoundary bool
+	for _, c := range doc.Cases {
+		haveClock := true
+		if c.HaveClock != nil {
+			haveClock = *c.HaveClock
+		}
+		got := limits.State(time.Duration(c.Elapsed)*time.Second, haveClock)
+		if got != c.Expect {
+			t.Errorf("%s: elapsed %ds is %q, the suite says %q", c.Name, c.Elapsed, got, c.Expect)
+		}
+		if c.Elapsed == doc.Staleness && haveClock {
+			sawBoundary = true
+			if got != Fresh {
+				t.Errorf("elapsed exactly equal to `staleness` is %q; the rule is "+
+					"`elapsed > staleness`, so the boundary is still fresh", got)
+			}
+		}
+	}
+	if !sawBoundary {
+		t.Error("no case sits exactly on `staleness`, which is the only value two " +
+			"implementations will disagree about")
+	}
 }

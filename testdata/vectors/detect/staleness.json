@@ -1,0 +1,33 @@
+{
+  "cases": [
+    {
+      "elapsed": 0,
+      "expect": "fresh",
+      "name": "fresh"
+    },
+    {
+      "elapsed": 900,
+      "expect": "fresh",
+      "name": "at-the-staleness-boundary"
+    },
+    {
+      "elapsed": 901,
+      "expect": "degraded",
+      "name": "one-second-past"
+    },
+    {
+      "elapsed": 3601,
+      "expect": "hard_stale",
+      "name": "past-hard"
+    },
+    {
+      "elapsed": 0,
+      "expect": "unknown",
+      "have_clock": false,
+      "name": "no-clock"
+    }
+  ],
+  "comment": "SPEC 8.1 condition 4 and 5.3's ladder, as a table: `elapsed` is the node's monotonic time since it learned the checkpoint's quorum time, `staleness` is the network's own from params, and `hard` is this node's local S_hard. The rule is `elapsed \u003e staleness`, so the boundary is still fresh. A node with no corroborated instant has no clock and reports `unknown` rather than guessing",
+  "hard": 3600,
+  "staleness": 900
+}
