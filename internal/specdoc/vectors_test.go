@@ -1232,3 +1232,24 @@ func TestTheTwoUnseparableFramingRulesAreAdmitted(t *testing.T) {
 		}
 	}
 }
+
+// --- Cold-model gate run 10, defect D16 ---------------------------------
+
+func TestTheWitnessMatchRuleNamesBothHalves(t *testing.T) {
+	doc := load(t)
+	section, ok := doc.Section("10")
+	if !ok {
+		t.Fatal("§10 is missing")
+	}
+	// §10 settled this for the *log* key — "every signature line whose name
+	// and key id match a trusted log key" — and left the witness half saying
+	// only "naming". §7 makes the key id bind the name and the algorithm, so
+	// the two readings of "naming" are a real fork: ignore a line under a
+	// borrowed name, or refuse the checkpoint over it.
+	if !strings.Contains(section.Body, "**name and key id**") {
+		t.Error("§10 does not say a cosignature line names a listed witness when " +
+			"both its name and its key id match — so a line carrying a listed " +
+			"name under a stranger's key is a reader's to guess, and the guess " +
+			"that refuses lets anyone deny a head to the whole network")
+	}
+}

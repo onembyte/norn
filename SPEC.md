@@ -978,6 +978,16 @@ loop every T_g or on demand:
   require cp.origin == norn.trust.origin                # which log this is about
   verify witness policy: every cosignature LINE naming a witness the policy
       names must verify, and the quorum must be satisfied  # refuse otherwise
+      # A line NAMES a witness the policy lists when its **name and key id**
+      # both match that witness's verifier key -- the same test the log's own
+      # line gets above. §7 makes the id bind the name, the algorithm and
+      # the public key, so a line carrying a listed witness's name under some
+      # other key names nobody: it is a stranger's line and is ignored, not a
+      # listed witness's line that fails to verify. The other reading hands
+      # anyone a veto -- cosign a head under a name you do not hold and every
+      # node that matches on the name alone refuses it, including nodes that
+      # have never heard of you. `served-name-collision/` is that checkpoint
+      # and it MUST be accepted.
       # per line, not per witness: a witness that supplies one verifying line
       # and one that does not is refused, not counted. §5.3's "newest" rule
       # picks among lines that verify; it never excuses one that does not.
@@ -1207,6 +1217,7 @@ this table drifted out of date the moment one was.
 | §10 the signature decides before the origin | — | `proofs-bad/foreign-checkpoint` MUST be refused about "no valid signature from a trusted key" and `proofs-bad/wrong-origin` about "is for origin". A reader that checks the origin first reports the wrong one for the first of them |
 | §10 verifier loop, steps 1–4 | `served/` verified end to end, **signature first** | `checkpoints-bad/01-unsigned`, `02-wrong-log-key`, `03-wrong-origin` and **`04-forged-log-signature`** — the last one being a signature of the right shape under the right key id that does not verify. Without it a verifier that never checks the log signature reproduces the whole suite |
 | §10 step 3, the witness quorum | `served/checkpoint`, cosigned by all three witnesses | `checkpoints-bad/05-one-cosignature-short`, `06-no-cosignatures`, `07-unnamed-witness-only` and **`08-forged-cosignature`**, which carries two lines naming witnesses the policy lists, one of which does not verify: the quorum is met by counting and refused by checking. `quorum none` accepting an uncosigned head needs a second anchor and is **not vectored** |
+| §10 step 3, **which** lines count as a listed witness's | `served-extra-witness/` (an unlisted **name**) and `served-name-collision/` (a listed name under an unlisted **key id**) — both MUST be accepted, and the second is the only file that separates matching on the name alone from matching on name and key id. Run 10's `V236_CosigNoKeyIDMatch` passed 236/236 without it | the negatives are `checkpoints-bad/08-forged-cosignature`, `11-forged-cosignature-with-quorum` and `12-second-line-from-one-witness`, where the line's name *and* id are the policy's and the signature is not |
 | §16 enrollment requests | `requests/`, **5 request cases** including a 64-byte `device_id`, non-ASCII labels and an uppercase text form | `requests-bad/`, **25 request refusals** across all four layers, including **`forged-signature`** (structurally perfect, signed by another key) and `oversize-label-key` (§4.0's map-key cap) |
 | §11.1 fork evidence | `fork/evidence.cbor` and `fork/conflicting.checkpoint`: a second branch of this same network, diverging at entry 40, signed by the same log key and cosigned by the same witnesses. Checking it needs only `trust.cbor` | one per reader step: `fork/bad-other-origin` and `fork/bad-unverifiable-conflicting` (step 1, each half), `fork/bad-size-mismatch` (step 2), `fork/bad-forged-proof` (step 3 — both checkpoints verify and the sizes agree, so nothing but the proof can refuse it), and `fork/bad-consistent` (step 4: a log and its own earlier self) |
 | §16.1's `expires > ts`, at the entry layer | every `enroll` | `bad-enroll-request-expires-at-ts`: an entry whose embedded request breaks §16.1. The only other vector for the rule is a *request*, and an `enroll` decodes its request under §16.1 too |

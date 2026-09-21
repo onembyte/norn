@@ -3,12 +3,17 @@ package main
 import (
 	"bytes"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/onembyte/norn/internal/note"
+	"github.com/onembyte/norn/internal/policy"
+	"github.com/onembyte/norn/internal/trust"
 )
 
 // The CLI is where a person meets the protocol, so these tests care about what
@@ -736,4 +741,104 @@ func TestAConsistentlyTamperedLogIsCaughtOnlyByTheHeadComparison(t *testing.T) {
 		t.Fatalf("accepted a served log whose entries and tiles agree with each "+
 			"other and not with the signed checkpoint:\n%s", out)
 	}
+}
+
+// --- Cold-model gate run 10, defect D16 ---------------------------------
+//
+// §10 said "every cosignature LINE naming a witness the policy names must
+// verify" and left *naming* undefined. §7 says the key id binds the name and
+// the algorithm, so a line carrying a listed witness's **name** under someone
+// else's **key** is either not a line naming that witness — ignore it, as any
+// other stranger's — or it is, and the checkpoint is refused because it does
+// not verify. `V236_CosigNoKeyIDMatch` implements the second and passed all
+// 236 checks: `served-extra-witness/` uses a stranger with a different *name*,
+// so it cannot tell the two apart.
+//
+// The rule is name **and** key id. Anything else lets one party deny a
+// checkpoint to every node on the network by cosigning it under a name it does
+// not hold — a witness it has never met can refuse its head for it.
+
+func TestALineWithAListedNameAndAForeignKeyIDIsIgnored(t *testing.T) {
+	dir := filepath.Join(vectors(), "served-name-collision")
+	raw, err := os.ReadFile(filepath.Join(dir, "cases.json"))
+	if err != nil {
+		t.Fatalf("§10's definition of `naming a witness` is reached by no vector: %v", err)
+	}
+	var doc struct {
+		ServeOver string `json:"serve_over"`
+		Witness   string `json:"witness"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	signed, err := os.ReadFile(filepath.Join(dir, "checkpoint"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Two lines carry the witness's name, and exactly one of them carries its
+	// key id. Without both halves the case is either `served-extra-witness`
+	// again or a plain forgery.
+	var named, matching int
+	for _, line := range strings.Split(strings.TrimRight(string(signed), "\n"), "\n") {
+		rest, ok := strings.CutPrefix(line, "— ")
+		if !ok {
+			continue
+		}
+		name, blob, _ := strings.Cut(rest, " ")
+		if name != doc.Witness {
+			continue
+		}
+		named++
+		payload, err := base64.StdEncoding.DecodeString(blob)
+		if err != nil {
+			t.Fatalf("a line naming %s is not base64", doc.Witness)
+		}
+		if witnessKeyID(t, doc.Witness) == string(payload[:4]) {
+			matching++
+		}
+	}
+	if named != 2 || matching != 1 {
+		t.Fatalf("%d lines name %s and %d carry its key id; the case needs two "+
+			"lines under one name, one of them under another key", named,
+			doc.Witness, matching)
+	}
+
+	log := servedWithCheckpoint(t, filepath.Join(dir, "checkpoint"))
+	out, err := exec.Command(nornBinary(t), "verify",
+		"-trust", filepath.Join(vectors(), "trust.cbor"), "-log", log).CombinedOutput()
+	if err != nil {
+		t.Fatalf("refused a checkpoint over a line that carries a listed witness's "+
+			"name under a key the policy does not publish for it; §10 matches on "+
+			"name AND key id, so that line names nobody and is ignored:\n%s", out)
+	}
+}
+
+// witnessKeyID returns the 4-byte key id the policy's verifier key for this
+// witness implies, as a string for comparison.
+func witnessKeyID(t *testing.T, name string) string {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(vectors(), "trust.cbor"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, err := trust.Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rules, err := policy.Parse(doc.Policy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range rules.Keys() {
+		v, err := note.ParseVerifierKey(key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if v.Name == name {
+			return string(v.ID())
+		}
+	}
+	t.Fatalf("the policy publishes no key for %s", name)
+	return ""
 }

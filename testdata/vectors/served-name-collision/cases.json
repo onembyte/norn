@@ -1,0 +1,5 @@
+{
+  "comment": "the served head with one MORE cosignature line, carrying a LISTED witness's name under a key the policy does not publish for it. SPEC 10: a line names a witness the policy lists when its name AND key id both match that witness's verifier key -- so this line names nobody and is ignored, exactly like a stranger's. Two lines carry the name and one carries the key id. This head MUST be accepted; a reader matching on the name alone refuses it, which would let anyone deny a head to every node on the network by cosigning it under a name they do not hold. Serve it in place of served/checkpoint over the same tiles",
+  "serve_over": "served",
+  "witness": "norn-witness/pi"
+}
