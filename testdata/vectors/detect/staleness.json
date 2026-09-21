@@ -25,9 +25,21 @@
       "expect": "unknown",
       "have_clock": false,
       "name": "no-clock"
+    },
+    {
+      "elapsed": 100000,
+      "expect": "degraded",
+      "hard": 0,
+      "name": "unconfigured-hard-stays-degraded"
+    },
+    {
+      "elapsed": 0,
+      "expect": "fresh",
+      "hard": 0,
+      "name": "unconfigured-hard-still-fresh"
     }
   ],
-  "comment": "SPEC 8.1 condition 4 and 5.3's ladder, as a table: `elapsed` is the node's monotonic time since it learned the checkpoint's quorum time, `staleness` is the network's own from params, and `hard` is this node's local S_hard. The rule is `elapsed \u003e staleness`, so the boundary is still fresh. A node with no corroborated instant has no clock and reports `unknown` rather than guessing",
+  "comment": "SPEC 8.1's ladder as a table: `elapsed` is the node's monotonic time since it learned the checkpoint's quorum time, `staleness` is the network's own from params, and `hard` is this node's local S_hard. The rule is `elapsed \u003e staleness`, so the boundary is still fresh. A node with no corroborated instant has no clock and reports `unknown` rather than guessing. A case may carry its own `hard`, overriding the top-level one: zero means S_hard is NOT CONFIGURED, not a limit of zero, so such a node stays `degraded` however old the view gets rather than dropping every peer",
   "hard": 3600,
   "staleness": 900
 }

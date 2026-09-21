@@ -179,6 +179,7 @@ func TestTheStalenessLadderIsVectored(t *testing.T) {
 		Cases     []struct {
 			Name      string `json:"name"`
 			Elapsed   int64  `json:"elapsed"`
+			Hard      *int64 `json:"hard"`
 			HaveClock *bool  `json:"have_clock"`
 			Expect    string `json:"expect"`
 		} `json:"cases"`
@@ -191,12 +192,17 @@ func TestTheStalenessLadderIsVectored(t *testing.T) {
 			len(doc.Cases))
 	}
 
-	limits := Limits{
-		Staleness: time.Duration(doc.Staleness) * time.Second,
-		Hard:      time.Duration(doc.Hard) * time.Second,
-	}
 	var sawBoundary bool
 	for _, c := range doc.Cases {
+		// A case may carry its own `hard`, overriding the table's (D9).
+		hard := doc.Hard
+		if c.Hard != nil {
+			hard = *c.Hard
+		}
+		limits := Limits{
+			Staleness: time.Duration(doc.Staleness) * time.Second,
+			Hard:      time.Duration(hard) * time.Second,
+		}
 		haveClock := true
 		if c.HaveClock != nil {
 			haveClock = *c.HaveClock
@@ -216,5 +222,60 @@ func TestTheStalenessLadderIsVectored(t *testing.T) {
 	if !sawBoundary {
 		t.Error("no case sits exactly on `staleness`, which is the only value two " +
 			"implementations will disagree about")
+	}
+}
+
+// Cold-model gate run 9, defect D9. §8.1 makes `S_hard` opt-in and says why:
+// crossing it drops **every peer**, so a node never configured for one stays
+// `degraded` for ever rather than taking a network down because a log was
+// unreachable over a weekend. All five cases carried `hard: 3600`, so
+// `hard-stale-when-zero` -- which treats 0 as "no headroom" instead of "not
+// configured" -- passed the whole suite, and that reading does exactly what
+// the asymmetry exists to prevent.
+func TestTheUnconfiguredHardLimitIsVectored(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join(vectorRoot(), "detect", "staleness.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Staleness int64 `json:"staleness"`
+		Hard      int64 `json:"hard"`
+		Cases     []struct {
+			Name      string `json:"name"`
+			Elapsed   int64  `json:"elapsed"`
+			Hard      *int64 `json:"hard"`
+			HaveClock *bool  `json:"have_clock"`
+			Expect    string `json:"expect"`
+		} `json:"cases"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+
+	var unconfigured int
+	for _, c := range doc.Cases {
+		hard := doc.Hard
+		if c.Hard != nil {
+			hard = *c.Hard
+		}
+		if hard == 0 {
+			unconfigured++
+		}
+		clock := true
+		if c.HaveClock != nil {
+			clock = *c.HaveClock
+		}
+		limits := Limits{
+			Staleness: time.Duration(doc.Staleness) * time.Second,
+			Hard:      time.Duration(hard) * time.Second,
+		}
+		got := limits.State(time.Duration(c.Elapsed)*time.Second, clock)
+		if got != c.Expect {
+			t.Errorf("%s: state %q, want %q", c.Name, got, c.Expect)
+		}
+	}
+	if unconfigured == 0 {
+		t.Error("no case carries `hard: 0`, so a reader that treats an unconfigured " +
+			"S_hard as no headroom -- dropping every peer -- passes the whole suite")
 	}
 }

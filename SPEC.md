@@ -253,7 +253,7 @@ verified against the key the `kid` resolves to in the state *before* this entry.
 | `signer_remove` | `kid` | ≥ `root_thr` roots |
 | `signer_thr` | `thr` (uint) | ≥ `root_thr` roots |
 | `root_add` | `pk` | ≥ `root_thr` roots |
-| `root_remove` | `kid` | ≥ `root_thr` roots; MUST leave ≥ `root_thr` roots and ≥ 1 root |
+| `root_remove` | `kid` | ≥ `root_thr` roots; MUST leave ≥ `root_thr` roots. "And ≥ 1 root" follows from that and `root_thr ≥ 1` (§5.1 entry-0 step 6), so it is **implied, not a second test** — an implementation checking only the threshold is conforming |
 | `root_thr` | `thr` (uint) | ≥ `root_thr` roots (the *old* threshold) |
 | `params` | partial §4.5 map | ≥ `root_thr` roots |
 
@@ -910,6 +910,11 @@ loop every T_g or on demand:
       # per line, not per witness: a witness that supplies one verifying line
       # and one that does not is refused, not counted. §5.3's "newest" rule
       # picks among lines that verify; it never excuses one that does not.
+      # A line naming anyone the policy does NOT list is IGNORED, not refused
+      # and not counted -- a witness cosigning a log this node's policy does
+      # not name is normal in a shared log, and a reader that refuses over one
+      # stops accepting checkpoints everybody else accepts. The log's own
+      # signature line may appear anywhere in the block; order carries nothing.
   if stored_cp exists:
       # Compare the two branches where BOTH can speak, and do it BEFORE the
       # size rule. A log that forks onto a SHORTER branch is otherwise filed
@@ -1132,6 +1137,8 @@ this table drifted out of date the moment one was.
 | §10 step 3, the witness quorum | `served/checkpoint`, cosigned by all three witnesses | `checkpoints-bad/05-one-cosignature-short`, `06-no-cosignatures`, `07-unnamed-witness-only` and **`08-forged-cosignature`**, which carries two lines naming witnesses the policy lists, one of which does not verify: the quorum is met by counting and refused by checking. `quorum none` accepting an uncosigned head needs a second anchor and is **not vectored** |
 | §16 enrollment requests | `requests/`, **5 request cases** including a 64-byte `device_id`, non-ASCII labels and an uppercase text form | `requests-bad/`, **25 request refusals** across all four layers, including **`forged-signature`** (structurally perfect, signed by another key) and `oversize-label-key` (§4.0's map-key cap) |
 | §11.1 fork evidence | `fork/evidence.cbor` and `fork/conflicting.checkpoint`: a second branch of this same network, diverging at entry 40, signed by the same log key and cosigned by the same witnesses. Checking it needs only `trust.cbor` | one per reader step: `fork/bad-other-origin` and `fork/bad-unverifiable-conflicting` (step 1, each half), `fork/bad-size-mismatch` (step 2), `fork/bad-forged-proof` (step 3 — both checkpoints verify and the sizes agree, so nothing but the proof can refuse it), and `fork/bad-consistent` (step 4: a log and its own earlier self) |
+| §10 a line the reader does not know | `served-extra-witness/`: the honest head plus one more line, from a witness the policy never names and the trust file does not list. It verifies under its own key, counts for nothing, and the head MUST be **accepted** | `07-unnamed-witness-only` cannot pin this: it is refused for want of a quorum either way, so it separates nothing |
+| §8.1 `S_hard` unconfigured | `detect/staleness.json`'s `unconfigured-hard-stays-degraded` and `-still-fresh`, which carry `hard: 0` | every other case carries 3600, so a reader that read 0 as a limit of zero passed while dropping every peer — the outcome the asymmetry exists to prevent |
 | §9.1 what a quorum **means** | the `evaluate` tables in `policies/cases.json`: a set of cosigner names and whether they satisfy the policy. `nested-group` is the one that separates a nested group from a flattened one — `outer` is `all` of **one** member, and that member is `any` of two, so `pi` alone satisfies it and a flattening reader needs both | `bad-duplicate-member` (met by one witness), `bad-k-zero` (met by **nobody**, so an uncosigned head passes) and `bad-k-leading-zero`. Parsing alone could not reach any of the three |
 | §9.1 the restated `tlog-policy` grammar | `policies/minimal`, `no-trailing-newline`, `blank-and-whitespace-lines`, `comment-and-indent`, `nested-group`, `no-log-line` | `bad-vertical-tab`, `bad-duplicate-name`, `bad-forward-reference`, `bad-two-quorums`, `bad-no-quorum`, `bad-empty-group`, `bad-unknown-keyword` and `bad-quorum-undefined`. Run 8 flipped nine readings of this grammar and all nine passed without these |
 | §16.2 bech32m | the text form of every request, and `requests/req-minimal-upper` — the same request in the all-uppercase form §16.2 says a reader MUST accept, which is the one *positive* obligation the section carries and the form a QR code produces | `wrong-hrp`, `plain-bech32` (the same bytes under bech32's constant), `mixed-case`, `corrupt-character`. BIP-350's own vectors are in both implementations' unit tests |
@@ -1152,6 +1159,13 @@ admits its holes, so:
 - **§5's `state.net` coming from the anchor rather than from the genesis
   entry.** Unobservable: entry 0 aborts whenever the two differ, so no file can
   tell the two readings apart. Recorded here because a reader will look.
+- **`entry_hash` being over the bytes *as received* rather than a
+  re-canonicalised form.** §5.1 step 1's *ordering* is vectored — a copy of an
+  entry that never decoded is `dup-entry` — but the received-versus-recanonical
+  half cannot be: the only entry whose raw bytes differ from its canonical form
+  violates §4.0, and is `decode` at step 2 before any hash of a canonical form
+  could be taken. `60-bad-trailing-byte` is caught by the whole-input rule, not
+  by the hash.
 - **`MAX_BUNDLE_BYTES`, as distinct from the other two byte caps.** A valid
   bundle has no slack: `device` is bound to the entry, `entry` fixes the leaf
   hash, `checkpoint` and `proof` are what they are, and `v` is 1 — so an

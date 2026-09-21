@@ -551,3 +551,57 @@ func TestEveryNoteFramingRuleHasACheckpointCase(t *testing.T) {
 		}
 	}
 }
+
+// --- Cold-model gate run 9, defect D17 ----------------------------------
+//
+// §10 says every cosignature line naming a witness the policy lists must
+// verify. It says nothing about a line naming a key the reader does not know
+// -- and `07-unnamed-witness-only` is refused either way, for want of a
+// quorum, so the suite could not separate "ignore it" from "refuse over it".
+//
+// It is not cosmetic. A witness cosigning a log this node's policy does not
+// list is normal in a shared log: the moment one appears, the refusing
+// implementation stops accepting checkpoints everybody else accepts.
+//
+// The rule is **ignore**. `served-extra-witness/` is the honest head with one
+// more line from a witness the policy never names, and it MUST be accepted.
+
+func TestACheckpointWithAnUnknownCosignerIsAccepted(t *testing.T) {
+	dir := filepath.Join(vectors(), "served-extra-witness")
+	raw, err := os.ReadFile(filepath.Join(dir, "cases.json"))
+	if err != nil {
+		t.Fatalf("§10 says nothing about an unknown signature line and no vector "+
+			"reaches it: %v", err)
+	}
+	var doc struct {
+		ServeOver string `json:"serve_over"`
+		Stranger  string `json:"stranger"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	signed, err := os.ReadFile(filepath.Join(dir, "checkpoint"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The case only pins the rule if the extra line really is from a witness
+	// the policy does not name.
+	if !strings.Contains(string(signed), doc.Stranger) {
+		t.Fatalf("the head carries no line from %s", doc.Stranger)
+	}
+	anchor, err := os.ReadFile(filepath.Join(vectors(), "trust.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(anchor), doc.Stranger) {
+		t.Fatalf("%s is in the trust file, so the policy does know it", doc.Stranger)
+	}
+
+	log := servedWithCheckpoint(t, filepath.Join(dir, "checkpoint"))
+	out, err := exec.Command(nornBinary(t), "verify",
+		"-trust", filepath.Join(vectors(), "trust.cbor"), "-log", log).CombinedOutput()
+	if err != nil {
+		t.Fatalf("refused a checkpoint whose only oddity is a cosignature from a "+
+			"witness this policy does not name; §10 ignores such a line:\n%s", out)
+	}
+}

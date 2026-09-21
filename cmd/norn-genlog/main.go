@@ -273,6 +273,9 @@ func run(root string) error {
 	if err := writeRotatedHead(root, origin, signed, st, signers); err != nil {
 		return err
 	}
+	if err := writeExtraWitnessHead(root, signed, signers); err != nil {
+		return err
+	}
 	if err := writeTwiceCosignedHead(root, signed, signers); err != nil {
 		return err
 	}
@@ -344,6 +347,57 @@ func writeRotatedHead(root, origin, signed string, st *state.State,
 			"the rotation. A reader that has replayed this log MUST accept it. The two " +
 			"answers are both correct, and which applies depends on what the reader has " +
 			"done rather than on anything in the file",
+	}
+	blob, err := json.MarshalIndent(meta, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, "cases.json"), append(blob, '\n'), 0o644)
+}
+
+// writeExtraWitnessHead ships §10's rule for a line the reader does not know.
+//
+// Cold gate run 9, D17: §10 says every line naming a witness the policy lists
+// must verify, and nothing at all about a line naming a key the reader has
+// never heard of. `07-unnamed-witness-only` is refused either way -- for want
+// of a quorum -- so the suite could not separate "ignore it" from "refuse over
+// it", and a reader that refuses stops accepting checkpoints everybody else
+// accepts the moment a witness cosigns a log its policy does not list. That is
+// normal in a shared log.
+func writeExtraWitnessHead(root, signed string, signers []cosignpkg.Signer) error {
+	stranger, err := seedKey(root, "stranger")
+	if err != nil {
+		return err
+	}
+	const name = "norn-witness/stranger"
+	head, err := cosignpkg.Append([]cosignpkg.Signer{{Name: name, Key: stranger}},
+		cosignpkg.At(time.Unix(CosignedAt+int64(4*CosignSpread), 0)))(signed)
+	if err != nil {
+		return err
+	}
+
+	dir := filepath.Join(root, "served-extra-witness")
+	if err := os.RemoveAll(dir); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(dir, "checkpoint"), []byte(head), 0o644); err != nil {
+		return err
+	}
+	meta := map[string]any{
+		"serve_over": "served",
+		"stranger":   name,
+		"comment": "the served head with one MORE cosignature line, from a witness " +
+			"the policy never names and the trust file does not list. It verifies " +
+			"under its own key and counts for nothing. SPEC 10: a line naming a " +
+			"witness the policy lists must verify; a line naming anyone else is " +
+			"IGNORED, not refused -- a witness cosigning a log this node's policy " +
+			"does not list is normal in a shared log, and a reader that refuses " +
+			"over it stops accepting checkpoints everybody else accepts. This head " +
+			"MUST be accepted. Serve it in place of served/checkpoint over the " +
+			"same tiles",
 	}
 	blob, err := json.MarshalIndent(meta, "", "  ")
 	if err != nil {
@@ -537,13 +591,25 @@ func writeDetectCases(root, origin string, key ed25519.PrivateKey, entries [][]b
 			{"name": "one-second-past", "elapsed": 901, "expect": "degraded"},
 			{"name": "past-hard", "elapsed": 3601, "expect": "hard_stale"},
 			{"name": "no-clock", "elapsed": 0, "have_clock": false, "expect": "unknown"},
+			// Cold gate run 9, D9. `S_hard` is opt-in, and zero means NOT
+			// CONFIGURED -- not "no headroom". Every other case here carries
+			// 3600, so a reader that read 0 as a limit of zero passed the whole
+			// suite while dropping every peer the moment a view went stale,
+			// which is the outcome §8.1's asymmetry exists to prevent.
+			{"name": "unconfigured-hard-stays-degraded", "elapsed": 100000,
+				"hard": 0, "expect": "degraded"},
+			{"name": "unconfigured-hard-still-fresh", "elapsed": 0,
+				"hard": 0, "expect": "fresh"},
 		},
-		"comment": "SPEC 8.1 condition 4 and 5.3's ladder, as a table: `elapsed` is the " +
+		"comment": "SPEC 8.1's ladder as a table: `elapsed` is the " +
 			"node's monotonic time since it learned the checkpoint's quorum time, " +
 			"`staleness` is the network's own from params, and `hard` is this node's " +
 			"local S_hard. The rule is `elapsed > staleness`, so the boundary is still " +
 			"fresh. A node with no corroborated instant has no clock and reports " +
-			"`unknown` rather than guessing",
+			"`unknown` rather than guessing. A case may carry its own `hard`, " +
+			"overriding the top-level one: zero means S_hard is NOT CONFIGURED, " +
+			"not a limit of zero, so such a node stays `degraded` however old the " +
+			"view gets rather than dropping every peer",
 	}
 	staleBlob, err := json.MarshalIndent(stale, "", "  ")
 	if err != nil {

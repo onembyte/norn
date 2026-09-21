@@ -669,7 +669,10 @@ func shippedVectorNames(t *testing.T) map[string]bool {
 			stem = strings.TrimSuffix(stem, ext)
 		}
 		add(stem)
-		if d.Name() != "cases.json" {
+		// Case names live in more than one filename: `detect/staleness.json`
+		// carries a `cases` array too, and a citation of one of those names is
+		// as real as a citation of a file (cold gate run 9).
+		if !strings.HasSuffix(d.Name(), ".json") {
 			return nil
 		}
 		raw, err := os.ReadFile(path)

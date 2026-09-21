@@ -1,0 +1,5 @@
+{
+  "comment": "the served head with one MORE cosignature line, from a witness the policy never names and the trust file does not list. It verifies under its own key and counts for nothing. SPEC 10: a line naming a witness the policy lists must verify; a line naming anyone else is IGNORED, not refused -- a witness cosigning a log this node's policy does not list is normal in a shared log, and a reader that refuses over it stops accepting checkpoints everybody else accepts. This head MUST be accepted. Serve it in place of served/checkpoint over the same tiles",
+  "serve_over": "served",
+  "stranger": "norn-witness/stranger"
+}
