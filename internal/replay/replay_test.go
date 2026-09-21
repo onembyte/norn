@@ -796,7 +796,7 @@ func devicesOf(t *testing.T) map[string]deviceRecord {
 //
 // §5.1 step 1 states two properties and the suite exercised neither:
 // `entry_hash` is recorded *before* the entry is decoded, and entry 0's is
-// recorded too. `84-bad-repeat-of-rejected` copies an entry that decodes
+// recorded too. `85-bad-repeat-of-rejected` copies an entry that decodes
 // cleanly, and `13-bad-dup-entry` copies entry 1 rather than entry 0, so
 // `seen-after-decode` and `no-genesis-seen` both passed the whole suite.
 //

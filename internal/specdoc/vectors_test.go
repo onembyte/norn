@@ -993,3 +993,49 @@ func TestEveryNegativeDeclaresTheSectionThatStatesItsRule(t *testing.T) {
 		})
 	}
 }
+
+// --- Cold-model gate run 10, defects D7 and D8 --------------------------
+//
+// Two encoding-profile rules a reader could hold the narrow half of and pass
+// all 236 checks. Both are prose defects with a behavioural consequence, so
+// both get a guard here and a vector in `internal/cbor`.
+
+func TestTheShortestFormRuleIsStatedForEveryArgumentNotJustIntegers(t *testing.T) {
+	doc := load(t)
+	section, ok := doc.Section("4.0")
+	if !ok {
+		t.Fatal("§4.0 is missing")
+	}
+	// The rule lived in the **Integers** row of a table that enumerates
+	// requirements field by field, which is what a reader implements from. RFC
+	// 8949 §4.2.1 requires the preferred form of every head's argument; the
+	// table has to say so, because the reader is reading the table.
+	for _, needle := range []string{
+		"every argument",
+		"length header",
+	} {
+		if !strings.Contains(section.Body, needle) {
+			t.Errorf("§4.0 does not say %q, so the shortest-form rule reads as being "+
+				"about integers alone — and under that reading one logical entry has "+
+				"several legal encodings, which is two leaves that both replay", needle)
+		}
+	}
+}
+
+func TestMapKeyOrderIsStatedAsStrictlyIncreasing(t *testing.T) {
+	doc := load(t)
+	for _, number := range []string{"4.0", "4.1"} {
+		section, ok := doc.Section(number)
+		if !ok {
+			t.Fatalf("§%s is missing", number)
+			continue
+		}
+		if !strings.Contains(section.Body, "strictly increasing") {
+			t.Errorf("§%s does not say keys are **strictly increasing**. Stated as "+
+				"\"sorted\" plus a separate \"no duplicate keys\", each rule hides the "+
+				"gap in the other and a reader who holds the lax half of both — "+
+				"non-decreasing order, last key wins — accepts a duplicated key",
+				number)
+		}
+	}
+}

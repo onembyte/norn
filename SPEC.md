@@ -84,8 +84,24 @@ the map-key cap below:
 | Booleans | allowed (`params.rotate_needs_signer` only) |
 | Byte strings | definite length; fixed sizes where stated (`net` 16, `pk` 32, `sig` 64) |
 | Text strings | definite length; valid UTF-8; every **map key** is a text string of 1–23 bytes |
-| Maps | definite length; keys sorted as §4.1; no duplicate keys; unknown keys → reject |
+| Maps | definite length; keys **strictly increasing** in §4.1's order — the same comparison is what forbids a duplicate key; unknown keys → reject |
 | Arrays | definite length |
+
+**Shortest form means every argument, not only integers.** RFC 8949 §4.2.1
+requires the preferred serialization of each head's argument, which is the
+integer's value *and* the **length header** of a byte string, text string,
+array or map: a 13-byte text string is `0x6D …`, never `0x78 0x0D …`, and a
+map of three pairs is `0xA3`, never `0xB8 0x03`. The rule is stated in the
+Integers row above because that is where a value's own encoding is described,
+and it is restated here because a reader implements from the row and the rows
+are field by field. Reading it as a rule about integers alone gives one
+logical entry several legal encodings, and `entry_hash` is over the bytes as
+received (§4.1) — so two encodings of one governance entry are two distinct
+leaves that both replay, which walks around the `dup-entry` defence by exactly
+the route the consume-the-whole-input rule in §4.1 exists to close.
+`log/*-bad-cbor-nonshortest` patches an integer and
+`log/*-bad-cbor-nonshortest-length` patches a text-string header; a reader
+that refuses the first and accepts the second holds the narrow rule.
 
 **A note on testing these rules.** The *type* bans — floats, negative integers,
 `undefined` — are belt-and-braces: no Norn field has a type that would accept
@@ -230,6 +246,18 @@ then bytewise" — but it is **not** equivalent to sorting the bare key strings,
 which would order an entry `after, body, net, sigs, t, ts, v` instead of the
 correct `t, v, ts, net, body, sigs, after`. Canonical JSON (§14) does sort bare
 strings; the two orders are independent and MUST NOT be conflated.
+
+Keys are **strictly increasing**, and that is the whole of it: two equal keys are not a
+sorted pair, they are a duplicate, and one comparison — each key's encoded
+form greater than the one before it — refuses both. Stated instead as
+"sorted" plus a separate "no duplicate keys", the two rules hide each other's
+gaps: a reader with no duplicate test still refuses the one duplicated-key
+vector, because equal keys are not increasing, and a reader who reads
+"sorted" as non-decreasing still refuses it, because of the duplicate test.
+A reader holding the lax half of **both** — non-decreasing order and last key
+wins, which is what a lenient CBOR decoder does by default — accepts a map
+with a key in it twice, and the value the entry carries is then whichever copy
+the decoder happened to keep.
 
 Unknown keys MUST cause rejection (this is a *closed* schema).
 
@@ -1050,7 +1078,7 @@ suite is checked only against its own author.
 | `keys.json` | every test key: Ed25519 `{seed, public, kid}` by name, X25519 public keys by name, and `net` |
 | `entries/NN-<type>.cbor` | one valid entry per type, canonical bytes |
 | `entries/NN-<type>.json` | mirror: `{entry, entry_hash, leaf_hash, preimage_sha256, size}` where `size` is the byte length of the `.cbor`. The `entry` object mirrors the **CBOR**, so an optional field absent from the entry is absent here too — unlike `state.json`, where §5.3's schema fields are always emitted |
-| `log/NN-<name>.cbor` | the replay fixture, **124 entries** in order. The file names are labels, not the order: **read the sequence from `manifest.json`**, never by globbing and sorting |
+| `log/NN-<name>.cbor` | the replay fixture, **125 entries** in order. The file names are labels, not the order: **read the sequence from `manifest.json`**, never by globbing and sorting |
 | `log/NN-<name>.reason` | beside each entry that must be rejected: its §5.2 reason code |
 | `log/manifest.json` | `{"anchor": {"net", "genesis_hash"}, "entries": [{"index", "name", "reason"}]}` — the replay input and expected outcome; `reason` is `""` for an accepted entry |
 | `state.json` | canonical replay output for `log/` (§5.3) |
@@ -1090,7 +1118,7 @@ this table drifted out of date the moment one was.
 
 | area | positive | negative |
 |---|---|---|
-| §4.0 encoding profile | every entry; controls `profile-base`, `labelcap-base`, `two-sig-base` | `bad-cbor-nonshortest`, `bad-cbor-null`, `bad-cbor-unsorted-keys`, `bad-tag-wrapped-value`, `bad-indefinite-text`, `bad-indefinite-map`, `bad-duplicate-map-key`, `bad-invalid-utf8`, `bad-integer-too-large`. The 23-byte map-key cap has no *entry* case, because §4.3 put the device's claims in the request and a closed-schema check fires first on any other key — it is vectored at the decoder instead, in `entries-hostile/` |
+| §4.0 encoding profile | every entry; controls `profile-base`, `labelcap-base`, `two-sig-base` | `bad-cbor-nonshortest` and `bad-cbor-nonshortest-length` (an integer and a length header: the two halves of the shortest-form rule), `bad-cbor-null`, `bad-cbor-unsorted-keys`, `bad-tag-wrapped-value`, `bad-indefinite-text`, `bad-indefinite-map`, `bad-duplicate-map-key`, `bad-invalid-utf8`, `bad-integer-too-large`. The 23-byte map-key cap has no *entry* case, because §4.3 put the device's claims in the request and a closed-schema check fires first on any other key — it is vectored at the decoder instead, in `entries-hostile/` |
 | §4.3 `enroll` embeds the request | every `enroll` in the log; `enroll-unicode-labels`, `enroll-contractor` | **`bad-no-device-sig`** and **`bad-order-enroll`** (a request signed by a *signer*, not the device it names), **`bad-forged-device-sig`** (a request signature of the right shape and wrong), and `bad-device_id-uppercase`, `bad-device_id-leading-dot`, `bad-pk-length` — faults **inside** the request, inside an entry that is otherwise well formed and properly signed, so an implementation treating `request` as opaque bytes accepts all three |
 | §4.0/§4.3 schemas | `enroll-laptop`, `enroll-unicode-labels` | `bad-kid-format`, `bad-missing-sigs`, `bad-empty-sigs`, `bad-unknown-role`, `bad-unknown-envelope-key`, `bad-unknown-body-key`, `bad-device_id-uppercase`, `bad-device_id-leading-dot`, `bad-pk-length`, `bad-sig-length`, `bad-text-too-long`, `bad-unsorted-sigs` |
 | §4.2 signatures, hashes, preimage | 16 entry mirrors | **`bad-forged-signer-sig`, `bad-forged-device-sig`** — syntactically perfect signatures that do not verify. Without these an implementation that never calls Ed25519 reproduces the whole manifest |
@@ -1123,7 +1151,7 @@ this table drifted out of date the moment one was.
 | §5.3 genesis `params` is **overlaid** | `state.json`'s `checkpoint_interval`, which the genesis body does not set and the §4.5 default supplies | a reader that *replaces* the defaults instead loses the key entirely |
 | §4.3 the request's `ts` is unconstrained | `enroll-request-from-the-future`: an accepted `enroll` whose embedded request is dated ten days after the entry carrying it | the check a reader is most likely to add unasked |
 | §4.4 `after` is a floor | `after-below-index` | `bad-after` |
-| §5 replay, 15 of the 16 reason codes | the log | **82 rejecting entries** |
+| §5 replay, 15 of the 16 reason codes | the log | **83 rejecting entries** |
 | §5 `bad-genesis` | — | `genesis/`; it cannot appear in the log, since it aborts replay |
 | §5.1 genesis | the log's entry 0 | **18 abort paths** in `genesis/`, one single-entry log each |
 | §5.1 seen set, §4.3 roles | — | `bad-repeat-of-rejected`, `bad-one-of-two-signers`, `bad-role-mismatch`. Step 1's two stated properties are `bad-repeat-of-undecodable` (the hash is recorded **before** the entry is decoded, so a copy of one that never decoded is `dup-entry` and not a second `decode`) and `bad-repeat-of-genesis` (entry 0's hash is recorded too, so a byte copy of it is `dup-entry` and not `dup-genesis`) |
@@ -1305,7 +1333,7 @@ Everything else is emitted verbatim as UTF-8. In particular:
 These rules are load-bearing rather than cosmetic: `policy` and `note` text is
 free-form UTF-8 up to 4096 bytes and lands verbatim in the canonical state, so
 two implementations disagreeing about `<` or `é` would violate §5.3's MUST on
-the first realistic policy. Vector `log/104-enroll-astral-labels` exercises every
+the first realistic policy. Vector `log/105-enroll-astral-labels` exercises every
 row of both tables above: its `escapes` label holds the quote, the backslash, the
 control characters, the solidus that MUST NOT be escaped and multi-byte UTF-8
 including an astral character, and that value lands verbatim in `state.json`.

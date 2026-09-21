@@ -1300,6 +1300,21 @@ def _indefinite_map(raw: bytes) -> bytes:
     return b"\xbf" + raw[1:] + b"\xff"
 
 
+def _patch_nonshortest_length(raw: bytes) -> bytes:
+    """Widen a text string's *length header*: `6d` becomes `78 0d`.
+
+    The same string, the same value, an encoding RFC 8949 §4.2.1 does not
+    permit. `_patch_nonshortest` above patches an integer, which is the only
+    reading of "shortest form" a reader gets from §4.0's Integers row -- and a
+    reader who stops there accepts this file, so one logical entry has several
+    legal encodings (cold gate run 10, D7).
+    """
+    value = "profile probe".encode("utf-8")
+    definite = bytes([0x60 | len(value)]) + value
+    assert definite in raw, "the body text is not a one-byte-header string"
+    return raw.replace(definite, b"\x78" + bytes([len(value)]) + value, 1)
+
+
 def _duplicate_key(raw: bytes) -> bytes:
     """Repeat a key-value pair. Last-wins decoders see an identical entry."""
     pair = cbor.encode("v") + cbor.encode(entry.VERSION)
@@ -1430,6 +1445,7 @@ def profile_negatives(base_after: int) -> list[tuple[str, bytes]]:
         ("indefinite-text", _indefinite_text(base, "profile probe")),
         ("indefinite-map", _indefinite_map(base)),
         ("duplicate-map-key", _duplicate_key(base)),
+        ("cbor-nonshortest-length", _patch_nonshortest_length(base)),
         # Patches inside the preimage: re-signed afterwards (see above).
         ("invalid-utf8", _patched_and_signed(base_after, _invalid_utf8)),
         ("integer-too-large", _patched_and_signed(

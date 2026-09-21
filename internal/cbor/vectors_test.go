@@ -1,6 +1,7 @@
 package cbor
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -214,5 +215,108 @@ func TestEveryForbiddenProfileItemHasADecoderCase(t *testing.T) {
 				"rule is reachable only through an entry -- where a later rule "+
 				"refuses it first and the reason code is the same either way", want)
 		}
+	}
+}
+
+// --- Cold-model gate run 10, defects D7 and D8 --------------------------
+//
+// Both are readings a second implementer could hold while passing the whole
+// suite, and both are about a rule the table states *twice over* in one place
+// and *not at all* in another.
+
+// logVector reads one entry of the replay fixture by the tail of its name. The
+// numbers shift whenever a vector is inserted earlier in the log, so nothing
+// here may index by one.
+func logVector(t *testing.T, suffix string) []byte {
+	t.Helper()
+	dir := filepath.Join("..", "..", "testdata", "vectors", "log")
+	raw, err := os.ReadFile(filepath.Join(dir, "manifest.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Entries []struct{ Name string } `json:"entries"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range doc.Entries {
+		if strings.HasSuffix(e.Name, suffix) {
+			body, err := os.ReadFile(filepath.Join(dir, e.Name+".cbor"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			return body
+		}
+	}
+	t.Fatalf("no log entry named *%s", suffix)
+	return nil
+}
+
+// widenTheBodyText returns the control with its body text's length header
+// re-encoded one byte wider: `0x6D` becomes `0x78 0x0D`. Same string, same
+// value, an encoding RFC 8949 §4.2.1 does not permit.
+func widenTheBodyText(control []byte) []byte {
+	value := []byte("profile probe")
+	definite := append([]byte{0x60 | byte(len(value))}, value...)
+	at := bytes.Index(control, definite)
+	if at < 0 {
+		return nil
+	}
+	out := append([]byte{}, control[:at]...)
+	out = append(out, 0x78, byte(len(value)))
+	out = append(out, value...)
+	return append(out, control[at+len(definite):]...)
+}
+
+// D7. §4.0 put "shortest form" in the **Integers** row, and the one vector for
+// it patches an integer, so a reader who applies the rule to integers and to
+// nothing else passes every check in the suite. Under that reading one logical
+// entry has several legal encodings; `entry_hash` is over the bytes as
+// received, so two encodings of one governance entry are two distinct leaves
+// that both replay -- walking around the `dup-entry` defence by exactly the
+// route §4.1's consume-the-whole-input rule exists to close.
+func TestTheShortestFormRuleIsVectoredOnALengthHeaderToo(t *testing.T) {
+	control := logVector(t, "-profile-base")
+	patched := logVector(t, "-bad-cbor-nonshortest-length")
+
+	if _, err := Decode(control); err != nil {
+		t.Fatalf("the control entry does not decode: %v", err)
+	}
+	_, err := Decode(patched)
+	if err == nil {
+		t.Fatal("a widened length header was accepted; shortest form is required of " +
+			"every argument, not only of integers")
+	}
+	if !strings.Contains(err.Error(), "non-shortest") {
+		t.Errorf("refused as %q, which is not the rule this vector is about", err)
+	}
+	// And nothing else is wrong with it: the vector is the control with one
+	// text-string header widened, so a reader that refuses it refuses it for
+	// the header or for nothing.
+	if want := widenTheBodyText(control); !bytes.Equal(want, patched) {
+		t.Error("the shipped vector is not the control with its body text header " +
+			"widened, so something other than the length header may be refusing it")
+	}
+}
+
+// D8. "keys sorted as §4.1" and "no duplicate keys" were stated as two rules,
+// and §4.1 never said *strictly* increasing. Each rule hid the gap in the
+// other: a reader with no duplicate test still refuses the one duplicate
+// vector, because equal keys are not increasing; a reader who reads "sorted"
+// as non-decreasing still refuses it, because of the duplicate test. Drop both
+// -- non-decreasing order and last-key-wins, which is what a lenient CBOR
+// decoder does by default -- and the duplicated key is accepted. One
+// comparison is the whole rule, and the document now says so.
+func TestEqualKeysAreRefusedByTheOrderingComparisonItself(t *testing.T) {
+	_, duplicate := Decode(logVector(t, "-bad-duplicate-map-key"))
+	_, unsorted := Decode(logVector(t, "-bad-cbor-unsorted-keys"))
+	if duplicate == nil || unsorted == nil {
+		t.Fatalf("both must be refused; got %v and %v", duplicate, unsorted)
+	}
+	if duplicate.Error() != unsorted.Error() {
+		t.Errorf("a duplicate key is refused as %q and an out-of-order key as %q; two "+
+			"messages are two rules, and a reader can implement one and miss the other",
+			duplicate, unsorted)
 	}
 }
