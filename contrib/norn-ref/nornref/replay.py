@@ -221,6 +221,14 @@ def _h_rotate(state: State, env: dict[str, Any], index: int) -> None:
 
 def _h_revoke(state: State, env: dict[str, Any], index: int) -> None:
     device_id = _device_id(env["body"])
+    # §4.0 caps `reason` at 256 bytes. Absent is equivalent to "" (§4.3), so
+    # only a present one is checked. Missing here entirely until the vector for
+    # it existed -- the Go implementation capped it and this one did not, and
+    # every test on both sides passed.
+    if "reason" in env["body"]:
+        reason = env["body"]["reason"]
+        if not isinstance(reason, str) or len(reason.encode("utf-8")) > 256:
+            raise Reject("decode")
     if device_id not in state.devices:
         raise Reject("unknown-device")
     device = state.active_device(device_id)
@@ -388,7 +396,12 @@ def _apply_genesis(anchor: Anchor, env: dict[str, Any]) -> State:
         raise Reject("bad-genesis")
     state = State(net=anchor.net, roots=root_map, root_thr=root_thr,
                   signers=signer_map, signer_thr=signer_thr)
-    state.name = body.get("name", "") if isinstance(body.get("name"), str) else ""
+    # §4.0: `name` is UTF-8, 1-64 bytes. Unchecked here until cold gate run 7
+    # showed nothing could tell a bounded reader from an unbounded one.
+    name = body.get("name")
+    if not isinstance(name, str) or not 1 <= len(name.encode("utf-8")) <= 64:
+        raise Reject("bad-genesis")
+    state.name = name
     params = body.get("params") or {}
     if not isinstance(params, dict) or set(params) - PARAM_KEYS:
         raise Reject("bad-genesis")

@@ -235,7 +235,7 @@ verified against the key the `kid` resolves to in the state *before* this entry.
 | `t` | body | required signatures |
 |---|---|---|
 | `genesis` | `name` (string), `roots` ([pk]), `root_thr` (uint), `signers` ([pk]), `signer_thr` (uint), `params` (§4.5, **OPTIONAL** — absent means the §4.5 defaults) | ≥ `root_thr` of `roots` |
-| `enroll` | `request` (bytes — a §16 enrollment request, verbatim) | ≥ `signer_thr` signers. The device's consent is the **embedded request**, not a signature on this envelope (§4.3) |
+| `enroll` | `request` (bytes — a §16 enrollment request, verbatim) | ≥ `signer_thr` signers. The device's consent is the **embedded request**, not a signature on this envelope (§4.3). The request's `ts` is **not** constrained against the entry's, in either direction: a device is headless, its clock is advisory (§4.1), and a request may sit in a queue or arrive from a device whose clock runs ahead. A verifier that compares the two rejects entries this document accepts |
 | `rotate` | `device_id`, `wg_pk` (new), `device_pk` (new, OPTIONAL) | the *current* device key; **and the incoming `device_pk` too when the body carries one** (proof of possession, D-032); plus ≥ `signer_thr` signers if `params.rotate_needs_signer` |
 | `revoke` | `device_id`, `reason` (string, **OPTIONAL** — absent is equivalent to `""`) | ≥ `signer_thr` signers, **or** the device itself, **or** ≥ `root_thr` roots |
 | `signer_add` | `pk` | ≥ `root_thr` roots |
@@ -713,7 +713,7 @@ witnesses: the names must correspond one-to-one, and so must the keys.
 
 ```toml
 # Norn trust file for norn-testnet
-# fingerprint = YV05-H4J9-MA1G-P8V2
+# fingerprint = Y2KM-WGEJ-5GCD-X3HA
 # Compare the fingerprint out of band before trusting this file.
 
 version      = 1
@@ -751,7 +751,7 @@ if it does not, the fingerprint will not match and the file must be rejected.
 The first **10 bytes** of `SHA-256(CBOR(trust))` — 80 bits — encoded in
 **Crockford base32** (alphabet `0123456789ABCDEFGHJKMNPQRSTVWXYZ`, which omits
 I, L, O and U), most-significant bit first, as 16 characters in four groups of
-four joined by `-` (U+002D): `YV05-H4J9-MA1G-P8V2` (D-029). The
+four joined by `-` (U+002D): `Y2KM-WGEJ-5GCD-X3HA` (D-029). The
 `trust.fingerprint` file holds exactly that string followed by one `0x0A`.
 
 80 bits is chosen so that an attacker who controls the delivery channel (threat
@@ -922,7 +922,7 @@ suite is checked only against its own author.
 | `keys.json` | every test key: Ed25519 `{seed, public, kid}` by name, X25519 public keys by name, and `net` |
 | `entries/NN-<type>.cbor` | one valid entry per type, canonical bytes |
 | `entries/NN-<type>.json` | mirror: `{entry, entry_hash, leaf_hash, preimage_sha256, size}` where `size` is the byte length of the `.cbor`. The `entry` object mirrors the **CBOR**, so an optional field absent from the entry is absent here too — unlike `state.json`, where §5.3's schema fields are always emitted |
-| `log/NN-<name>.cbor` | the replay fixture, **112 entries** in order. The file names are labels, not the order: **read the sequence from `manifest.json`**, never by globbing and sorting |
+| `log/NN-<name>.cbor` | the replay fixture, **116 entries** in order. The file names are labels, not the order: **read the sequence from `manifest.json`**, never by globbing and sorting |
 | `log/NN-<name>.reason` | beside each entry that must be rejected: its §5.2 reason code |
 | `log/manifest.json` | `{"anchor": {"net", "genesis_hash"}, "entries": [{"index", "name", "reason"}]}` — the replay input and expected outcome; `reason` is `""` for an accepted entry |
 | `state.json` | canonical replay output for `log/` (§5.3) |
@@ -977,10 +977,16 @@ this table drifted out of date the moment one was.
 | §5.1 `dup-id` before `dup-wg` | — | `bad-dup-id-and-wg`: an active `device_id` *and* a WireGuard key active for another device |
 | §5.1 the order **inside** `enroll` and `rotate` | — | `bad-enroll-request-net-and-sig` (the request's `net` decides before its signature), `bad-enroll-unsigned-request-no-signers` (the request's signature decides before the signer count — the case `bad-enroll-empty-sigs` cannot make, since its request *is* signed) and `bad-rotate-dupwg-and-no-new-key-sig` (`dup-wg` decides before the proof of possession on the incoming `device_pk`). Each is wrong in both of its two ways at once |
 | §5.2 a `device` signature's `kid` resolves | — | `bad-device-sig-wrong-kid`: the signature verifies and its `kid` names another key. The preimage excludes `sigs`, so rewriting a `kid` leaves the signature intact |
+| §5.2 a signature counts only **in its declared role** | — | `bad-role-mismatch` for the root/signer direction, and `bad-device-sig-wrong-role` for the device one: the device's key really did sign, under `role: "signer"`, where it resolves to nothing. An implementation that ignores the declared role accepts it |
+| §4.0 the `kid` **body** rule | `signer_remove-below-threshold` | `bad-kid-format-in-body`: a `signer_remove` whose body `kid` is not `^[0-9a-f]{16}$` → `decode`, not `unknown-key`. `bad-kid-format` puts the malformed kid in `sigs`, which is the other half of the distinction this document draws |
+| §4.0 `revoke`'s `reason` cap | `revoke-by-roots` | `bad-revoke-reason-too-long`: 257 bytes. `bad-text-too-long` covers `note` and `policy`, whose cap is 4096 and a different rule |
+| §4.0 the genesis `name` bound | the log's entry 0 | `genesis/14-name-too-long` and `15-name-empty` — both ends, because a reader enforcing only the cap and one enforcing only the floor are different implementations |
+| §5.3 genesis `params` is **overlaid** | `state.json`'s `checkpoint_interval`, which the genesis body does not set and the §4.5 default supplies | a reader that *replaces* the defaults instead loses the key entirely |
+| §4.3 the request's `ts` is unconstrained | `enroll-request-from-the-future`: an accepted `enroll` whose embedded request is dated ten days after the entry carrying it | the check a reader is most likely to add unasked |
 | §4.4 `after` is a floor | `after-below-index` | `bad-after` |
-| §5 replay, 15 of the 16 reason codes | the log | **74 rejecting entries** |
+| §5 replay, 15 of the 16 reason codes | the log | **77 rejecting entries** |
 | §5 `bad-genesis` | — | `genesis/`; it cannot appear in the log, since it aborts replay |
-| §5.1 genesis | the log's entry 0 | **13 abort paths** in `genesis/`, one single-entry log each |
+| §5.1 genesis | the log's entry 0 | **15 abort paths** in `genesis/`, one single-entry log each |
 | §5.1 seen set, §4.3 roles | — | `bad-repeat-of-rejected`, `bad-one-of-two-signers`, `bad-role-mismatch`. Step 1's two stated properties are `bad-repeat-of-undecodable` (the hash is recorded **before** the entry is decoded, so a copy of one that never decoded is `dup-entry` and not a second `decode`) and `bad-repeat-of-genesis` (entry 0's hash is recorded too, so a byte copy of it is `dup-entry` and not `dup-genesis`) |
 | §5.2 `bad-thr` | — | both halves: `bad-thr-zero` and `bad-thr` (value above the set size) |
 | §5.1 a `policy` entry is a policy | `policy-rotated`, which raises the quorum from 2 of 3 to 3 of 3 | `bad-policy-unparseable`: text that is well-formed, under the size cap, and not a `tlog-policy` |

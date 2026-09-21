@@ -1,12 +1,12 @@
 # Norn trust file for norn-testnet
-# fingerprint = YV05-H4J9-MA1G-P8V2
+# fingerprint = Y2KM-WGEJ-5GCD-X3HA
 # Compare the fingerprint out of band before trusting this file.
 
 version      = 1
 net          = "6e6f726e2d746573746e65742d303031"
 origin       = "norn/nzxxe3rnorsxg5domv2c2mbqge"
 name         = "norn-testnet"
-genesis_hash = "caf08a394539891e37d455fae7f25a41146d6e594b63ab51531781a4fc812faa"
+genesis_hash = "f168d197a35cc00bc320f27ee248efa6394e139312c3343cfe154bc5b24183d3"
 log_key      = "norn/nzxxe3rnorsxg5domv2c2mbqge+bea4a666+AV6v97lmGyW99eHglI8syFAU2uY+/HuHHq0VYz9Rmio1"
 log_urls     = ["https://log.norn.example/testnet", "http://10.0.0.155:8099/norn"]
 policy       = "log norn/nzxxe3rnorsxg5domv2c2mbqge+bea4a666+AV6v97lmGyW99eHglI8syFAU2uY+/HuHHq0VYz9Rmio1 https://log.norn.example/testnet\nwitness pi norn-witness/pi+051d1c51+BHeagefoK0s3F5shdMl1Ahsd1ZCE9MC5F5gvM3cLTnZa http://10.0.0.153:8100\nwitness vps norn-witness/vps+46a6fd38+BIXCilOrHi0kMxynG/s1EyJ2aWFC1jZc4UlZRza6g8ou https://witness.example.net\nwitness friend norn-witness/friend+1404f742+BJjvlkRbihDdM/4Lb/YPiP+eoqk3VgrncrTgSXQNXr6B https://bastion.example.org/w\ngroup home 2 pi vps friend\nquorum home\n"

@@ -20,7 +20,7 @@ DEVICES = ["nas", "laptop", "pi-cam"]
 WITNESSES = ["pi", "vps", "friend"]
 
 EXTRA_KEYS = (["signer3", "root4", "logkey", "logkey2", "spare", "printer", "nas-id2", "printer-id2", "escaped", "contractor", "halfsigned", "labelcap",
-              "rootrevoked", "stranger", "astral"]
+              "rootrevoked", "stranger", "astral", "sundial"]
               + [f"witness-{w}" for w in WITNESSES])
 
 KEYS: dict[str, keys.Ed25519] = {
@@ -29,7 +29,7 @@ KEYS: dict[str, keys.Ed25519] = {
 }
 WG: dict[str, bytes] = {
     name: keys.x25519_public(name)
-    for name in DEVICES + ["laptop2", "nas2", "spare", "printer", "rogue", "escaped", "contractor", "halfsigned", "labelcap", "rootrevoked", "astral"]
+    for name in DEVICES + ["laptop2", "nas2", "spare", "printer", "rogue", "escaped", "contractor", "halfsigned", "labelcap", "rootrevoked", "astral", "sundial"]
 }
 
 #: Every canonical-JSON escape rule (SPEC §14.2) in one value: the characters
@@ -117,8 +117,13 @@ def genesis(after: int | None = None) -> dict[str, Any]:
         # `mmd` is deliberately NOT the §4.5 default: without one non-default
         # value here, a `params` entry that *replaces* rather than merges is
         # indistinguishable from one that merges (gate run 4, variant 9).
-        "params": {"checkpoint_interval": 60, "staleness": 600, "mmd": 45,
-                   "rotate_needs_signer": False},
+        #
+        # And `checkpoint_interval` is deliberately ABSENT. §5.3 says the
+        # genesis `params` is *overlaid* on the §4.5 defaults; while this body
+        # set all four keys, overlay and replace reached the same state and
+        # cold gate run 7's `genesis-params-replace` passed (J12). The value in
+        # `state.json` now comes from the default and from nowhere else.
+        "params": {"staleness": 600, "mmd": 45, "rotate_needs_signer": False},
     })
     return _signed(env, [("root1", "root"), ("root2", "root")])
 
@@ -736,6 +741,40 @@ def log() -> list[LogItem]:
               _first_undecodable(b), "dup-entry")
     b.add_raw(f"{b.index}-bad-repeat-of-genesis", b.items[0].raw, "dup-entry")
 
+    # --- J12's tail: rules some *other* rule happened to refuse first.
+
+    # §4.0 bounds a `kid` in a `signer_remove`/`root_remove` **body** to
+    # `^[0-9a-f]{16}$`, and says why the distinction matters: a malformed kid
+    # is `decode`, one that merely fails to resolve is `unknown-key`. The only
+    # kid-format negative put the bad kid in `sigs`, so the body half was
+    # explained and never exercised.
+    b.add(f"{b.index}-bad-kid-format-in-body", b.build(
+        "signer_remove", {"kid": "NOT-A-KID-AT-ALL"}, roots3), "decode")
+
+    # §5.2: a signature counts only if its `kid` names a key the entry may be
+    # signed by *in that role*. `bad-role-mismatch` pins the root/signer
+    # direction; this is the device one. `printer` really did sign -- under
+    # role `signer`, where its key resolves to nothing -- so the entry is not
+    # merely unsigned, and `device-sig-any-role` is the only reading that
+    # accepts it.
+    b.add(f"{b.index}-bad-device-sig-wrong-role", b.build(
+        "rotate", {"device_id": "printer", "wg_pk": WG["printer"]},
+        [("printer", "signer")] + both), "no-device-sig")
+
+    # §4.0 caps `revoke`'s `reason` at 256 bytes. `bad-text-too-long` covers
+    # `note` and `policy`, whose cap is 4096 and a different rule -- so this
+    # one was stated, and the Python reference did not implement it at all.
+    b.add(f"{b.index}-bad-revoke-reason-too-long", b.build(
+        "revoke", {"device_id": "nas", "reason": "x" * 257}, roots3), "decode")
+
+    # §4.3 deliberately does NOT constrain the embedded request's `ts` against
+    # the entry's: the device is headless and its clock is advisory (§4.1).
+    # Every request in the fixture was older than the entry carrying it, so a
+    # reader who added the obvious `request.ts <= entry.ts` check diverged and
+    # nothing could say so. This entry is a *positive* one.
+    b.add(f"{b.index}-enroll-request-from-the-future", b.build(
+        "enroll", _enroll_body("sundial", ts_offset=10 * 86400), both))
+
     return b.items
 
 
@@ -804,12 +843,14 @@ def genesis_aborts() -> list[tuple[str, bytes, "replay.Anchor"]]:
     raw = entry.encode(env)
     cases.append(("09-role-overlap", raw, replay.Anchor(NET, entry.leaf_hash(raw))))
 
-    def bad_body(name: str, **changes: Any) -> None:
+    # `case` rather than `name`, because `name` is also a genesis body key and
+    # a case that damages it would collide with this parameter.
+    def bad_body(case: str, **changes: Any) -> None:
         body = dict(genesis()["body"], **changes)
         env = _signed(entry.new("genesis", NET, ts=T0, body=body),
                       [("root1", "root"), ("root2", "root")])
         raw = entry.encode(env)
-        cases.append((name, raw, replay.Anchor(NET, entry.leaf_hash(raw))))
+        cases.append((case, raw, replay.Anchor(NET, entry.leaf_hash(raw))))
 
     bad_body("10-duplicate-signer",
              signers=[KEYS["signer1"].public, KEYS["signer1"].public])
@@ -820,6 +861,11 @@ def genesis_aborts() -> list[tuple[str, bytes, "replay.Anchor"]]:
     # the entire log -- one aborts to the zero state, the other replays 100-odd
     # entries -- and `allow-unknown-param` passed regardless.
     bad_body("13-params-unknown-key", params={"staleness": 900, "mtu": 1420})
+    # §4.0 bounds `name` at 1-64 bytes and `genesis/` had no case at either
+    # end, so `no-name-len` passed -- and the Python reference had no such
+    # check, which is what an unpinned rule looks like from the inside.
+    bad_body("14-name-too-long", name="n" * 65)
+    bad_body("15-name-empty", name="")
 
     assert good_anchor  # the good anchor is exercised by the log fixture
     return cases

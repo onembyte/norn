@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/onembyte/norn/internal/enrollreq"
 	"github.com/onembyte/norn/internal/entry"
 	"github.com/onembyte/norn/internal/policy"
+	"github.com/onembyte/norn/internal/state"
 )
 
 // Written from SPEC.md §5. The manifest is the oracle: every (index, reason)
@@ -952,4 +954,177 @@ func genesisCaseNames(t *testing.T) []string {
 		t.Fatal(err)
 	}
 	return doc.Cases
+}
+
+// --- Cold-model gate run 7, defect J12 ----------------------------------
+//
+// The long tail of "refused-but-not-pinned": rules the prose states, that some
+// *other* rule happens to refuse first, so removing them changes nothing any
+// vector can see. None is alarming alone; together they are thirteen places
+// where a second implementer is free to differ.
+//
+// These six live in the replay layer. Two of them the Python reference was
+// getting wrong -- it never capped `revoke`'s `reason` and never bounded the
+// genesis `name` -- which is what an unpinned rule looks like from the inside:
+// the two implementations had already drifted and every test on both sides
+// still passed.
+
+func TestTheFieldRuleTailIsVectored(t *testing.T) {
+	_, _, m := loadCase(t, filepath.Join(vectorRoot(), "log"))
+
+	// §4.0: a `kid` in a `signer_remove`/`root_remove` **body** must match
+	// `^[0-9a-f]{16}$` → `decode`. The document flags this exact distinction
+	// ("that distinction matters because the two produce different reason
+	// codes") and the only `bad-kid-format` vector puts the bad kid in `sigs`,
+	// so the body half was stated and never exercised.
+	t.Run("a malformed kid in the body", func(t *testing.T) {
+		const name = "bad-kid-format-in-body"
+		if _, reason := entryNamed(t, m, name); reason != "decode" {
+			t.Errorf("reason is %q, want decode -- a malformed kid is a schema "+
+				"violation, not an unresolvable one", reason)
+		}
+		body := bodyOf(t, rawEntry(t, fullName(t, m, name)))
+		kid, _ := body["kid"].(string)
+		if regexp.MustCompile(`^[0-9a-f]{16}$`).MatchString(kid) {
+			t.Errorf("kid %q is well formed, so `unknown-key` is what fires", kid)
+		}
+	})
+
+	// §5.2: a signature is valid only if its `kid` names a key the entry may be
+	// signed by **in that role**. `bad-role-mismatch` pins the root/signer
+	// direction; nothing pinned the device one, so `device-sig-any-role` --
+	// which accepts a device signature under any declared role -- passed.
+	t.Run("a device signature declared under another role", func(t *testing.T) {
+		const name = "bad-device-sig-wrong-role"
+		if _, reason := entryNamed(t, m, name); reason != "no-device-sig" {
+			t.Errorf("reason is %q, want no-device-sig", reason)
+		}
+		env := envNamed(t, m, name)
+		id, _ := env.Body["device_id"].(string)
+		current, err := hex.DecodeString(devicesOf(t)[id].DevicePK)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if deviceSignedBy(t, env, current) {
+			t.Fatal("a signature under role `device` is present, so the rule never fires")
+		}
+		// The device's key did sign -- under the wrong role. Without that the
+		// entry is just unsigned and pins nothing about roles.
+		if !signedUnderAnyRole(t, env, current) {
+			t.Error("the device's key did not sign at all, so this is an ordinary " +
+				"missing signature rather than a misdeclared role")
+		}
+	})
+
+	// §4.0: `revoke`'s `reason` is 0-256 bytes. `bad-text-too-long` covers
+	// `note` and `policy`, whose cap is 4096 and a different rule.
+	t.Run("an over-long revoke reason", func(t *testing.T) {
+		const name = "bad-revoke-reason-too-long"
+		if _, reason := entryNamed(t, m, name); reason != "decode" {
+			t.Errorf("reason is %q, want decode", reason)
+		}
+		body := bodyOf(t, rawEntry(t, fullName(t, m, name)))
+		text, _ := body["reason"].(string)
+		if len(text) <= 256 {
+			t.Errorf("the reason is %d bytes, which the cap permits", len(text))
+		}
+	})
+
+	// §4.3: nothing constrains the embedded request's `ts` against the entry's.
+	// A reader who adds the obvious check diverges, and until this entry every
+	// request in the fixture was older than the entry carrying it, so nothing
+	// could say so. The vector is a *positive* one: it must be accepted.
+	t.Run("a request newer than the entry that carries it", func(t *testing.T) {
+		const name = "enroll-request-from-the-future"
+		if _, reason := entryNamed(t, m, name); reason != "" {
+			t.Fatalf("the entry is refused %q; the rule under test is that it is "+
+				"accepted", reason)
+		}
+		env := envNamed(t, m, name)
+		if got := embeddedRequest(t, env).TS; got <= env.TS {
+			t.Errorf("the request's ts is %d and the entry's is %d; only a request "+
+				"newer than its entry separates the two readings", got, env.TS)
+		}
+	})
+}
+
+// signedUnderAnyRole reports whether this key signed the entry at all,
+// whatever role the signature declares itself to be.
+func signedUnderAnyRole(t *testing.T, env *entry.Envelope, public []byte) bool {
+	t.Helper()
+	for _, sig := range env.Sigs {
+		if sig.Kid != entry.Kid(public) {
+			continue
+		}
+		ok, err := entry.Verify(env, sig, public)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if ok {
+			return true
+		}
+	}
+	return false
+}
+
+// §4.0 bounds the genesis `name` at 1-64 bytes, and `genesis/` had no case at
+// either end: `no-name-len` passed. Both halves ship, because a decoder
+// enforcing only the cap and one enforcing only the floor are different bugs.
+func TestTheGenesisNameBoundsAreVectored(t *testing.T) {
+	names := genesisCaseNames(t)
+	for _, want := range []string{"name-too-long", "name-empty"} {
+		var found bool
+		for _, name := range names {
+			if strings.HasSuffix(name, want) {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("no genesis case for %s: §4.0's `name` bound is unpinned at that end", want)
+		}
+	}
+}
+
+// §5.3: genesis `params` is **overlaid** on the §4.5 defaults, not substituted
+// for them. The fixture's genesis set all four keys, so overlay and replace
+// produced the same state and `genesis-params-replace` passed. The fixture now
+// sets a strict subset, which makes the difference a field of `state.json`.
+func TestTheGenesisParamsAreOverlaidOnTheDefaults(t *testing.T) {
+	_, entries, _ := loadCase(t, filepath.Join(vectorRoot(), "log"))
+	env, err := entry.Decode(entries[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	set, _ := env.Body["params"].(map[string]any)
+	if len(set) == 0 {
+		t.Fatal("the genesis sets no params at all, so a replace would be the zero map " +
+			"and the fixture would be testing something else")
+	}
+
+	raw, err := os.ReadFile(filepath.Join(vectorRoot(), "state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var st struct {
+		Params map[string]any `json:"params"`
+	}
+	if err := json.Unmarshal(raw, &st); err != nil {
+		t.Fatal(err)
+	}
+	defaults := state.DefaultParams()
+	var inherited []string
+	for key := range defaults {
+		if _, fromGenesis := set[key]; !fromGenesis {
+			if _, present := st.Params[key]; !present {
+				t.Errorf("%q is in neither the genesis body nor the state, so the "+
+					"defaults were not applied at all", key)
+				continue
+			}
+			inherited = append(inherited, key)
+		}
+	}
+	if len(inherited) == 0 {
+		t.Error("the genesis body sets every §4.5 key, so a replace and an overlay " +
+			"reach the same state and the rule is unpinned")
+	}
 }
