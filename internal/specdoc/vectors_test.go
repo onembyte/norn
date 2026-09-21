@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/onembyte/norn/internal/forkevidence"
 	"github.com/onembyte/norn/internal/proof"
 	"github.com/onembyte/norn/internal/tlog"
 	"github.com/onembyte/norn/internal/trust"
@@ -571,5 +572,86 @@ func TestTheSignatureBlindClaimNamesTheRightFiles(t *testing.T) {
 			t.Errorf("the vectors README lists `%s` among the files a signature-blind "+
 				"verifier accepts; it does not", prefix)
 		}
+	}
+}
+
+// --- Cold-model gate run 8, defects D3 and D4 ---------------------------
+//
+// Two things the vectors demand that the document never defined.
+//
+// D3: §4.0 says a bundle, a trust file and fork evidence "each state their own
+// bound", and §8.1 says "the bound is this artifact's, not the entry's". No
+// section gives a number. `bundle-entry-size-limit`, `trust-entry-size-limit`
+// and an unbounded baseline all passed the whole suite, so all three are
+// conforming — which is the same as having no rule.
+//
+// D4: `detect/staleness.json` demands `fresh`/`degraded`/`hard_stale`/
+// `unknown` and supplies an `S_hard`. §8.1's condition 4 is binary, §5.3 never
+// names `unknown`, and §15 deferred the ladder to `GOSSIP.md`, which does not
+// ship with the vectors. Run 8 got it right only because the vector file
+// carries the labels.
+
+func TestEveryArtifactBoundIsStatedAndCurrent(t *testing.T) {
+	text := specText(t)
+	for _, c := range []struct {
+		name  string
+		bytes int
+		why   string
+	}{
+		{"MAX_BUNDLE_BYTES", proof.MaxBundleBytes,
+			"a bundle wraps an entry that may itself be MAX_ENTRY_BYTES"},
+		{"MAX_TRUST_BYTES", trust.MaxTrustBytes, "a trust file"},
+		{"MAX_EVIDENCE_BYTES", forkevidence.MaxEvidenceBytes, "fork evidence"},
+	} {
+		want := fmt.Sprintf("**`%s` is %d**", c.name, c.bytes)
+		if !strings.Contains(text, want) {
+			t.Errorf("SPEC.md does not say %q. §4.0 promises that %s states its own "+
+				"bound, and an unstated bound is one every reader picks differently",
+				want, c.why)
+		}
+	}
+}
+
+// The ladder has to be in this document, because `detect/staleness.json` ships
+// beside it and expects these four words. A reader given the suite and the
+// specification must be able to reproduce the table without `GOSSIP.md`.
+func TestTheFreshnessLadderIsDefinedHere(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join(vectorRoot(t), "detect", "staleness.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Hard  int64                     `json:"hard"`
+		Cases []struct{ Expect string } `json:"cases"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	text := specText(t)
+	seen := map[string]bool{}
+	for _, c := range doc.Cases {
+		if seen[c.Expect] {
+			continue
+		}
+		seen[c.Expect] = true
+		// A row of the ladder, not merely the word somewhere in the
+		// document: the first version of this check passed with the row
+		// deleted, because `hard_stale` also appears in the prose around it.
+		if !strings.Contains(text, "| `"+c.Expect+"` |") {
+			t.Errorf("`detect/staleness.json` expects the state %q and SPEC.md's "+
+				"ladder has no row for it, so a reader holding only the suite cannot "+
+				"reproduce the table", c.Expect)
+		}
+	}
+	if len(seen) < 4 {
+		t.Errorf("the vector exercises %d states; the ladder has four", len(seen))
+	}
+	// And the parameter that separates the last two rungs has to be stated as
+	// node-local and opt-in: a reader that takes it from the log's `params`
+	// would drop every peer on a network that never configured one.
+	if !strings.Contains(text, "`S_hard` is the node's own and is opt-in") {
+		t.Error("SPEC.md does not say that S_hard is node-local and opt-in, which is " +
+			"what decides `degraded` from `hard_stale` and what keeps an unreachable " +
+			"log from taking a network down by itself")
 	}
 }

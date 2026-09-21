@@ -637,8 +637,12 @@ entry framing and belongs to entries: a bundle *wraps* an entry that may
 itself be 65535 bytes, so the largest legal bundle is necessarily larger than
 the largest legal entry. A reader still MUST bound what it decodes — an
 unbounded parse is what §4.0's limits exist to prevent — but the bound is this
-artifact's, not the entry's. The same holds for §9's trust file and §11.1's
-evidence.
+artifact's, not the entry's.
+
+**`MAX_BUNDLE_BYTES` is 81919**: `MAX_ENTRY_BYTES` plus 16384 for the
+checkpoint, the inclusion proof and the map framing around them. A bundle
+larger than this MUST be refused on length, before anything it declares is
+allocated.
 
 > **This is Norn's own format, and v1 says so rather than deferring it again.**
 > The shape is the same as `c2sp.org/tlog-proof` — checkpoint, index, inclusion
@@ -663,6 +667,30 @@ from supplying a *duration*: a node's estimate of now is the quorum time it was
 given plus the monotonic time elapsed since, and monotonic time cannot be set
 wrong — only paused. A node that has never seen a quorum time has no estimate,
 and under §5.3 judges no expiry at all.
+
+**The four freshness states (normative).** Condition 4 is a yes/no on one
+checkpoint; a node also has to say *how* stale it is, and `detect/staleness.json`
+ships that table beside these vectors. The ladder is here rather than in
+`GOSSIP.md` for the same reason §11.1's evidence format is: a reader holding the
+specification and the suite must be able to reproduce it.
+
+Let `elapsed` be condition 4's monotonic duration, `S` be `params.staleness`
+(§4.5), and `S_hard` be this node's own hard limit. Then:
+
+| state | when |
+|---|---|
+| `unknown` | no witness has vouched for any instant, so there is no `elapsed` to measure. A node in this state reports `unknown` and MUST NOT report `fresh` |
+| `fresh` | `elapsed ≤ S` — the boundary is fresh, because condition 4 makes `elapsed > S` the violation |
+| `hard_stale` | `S_hard` is configured **and** `elapsed > S_hard` |
+| `degraded` | otherwise |
+
+`S` is the log's, so the whole network agrees when a view is too old to trust.
+**`S_hard` is the node's own and is opt-in**: zero means not configured, and a
+node that was never configured for it stays `degraded` for ever rather than
+going `hard_stale`. That asymmetry is deliberate — crossing `S_hard` drops every
+peer, so a log unreachable over a weekend must not take a network down by
+itself. It is a local decision for the same reason the witness policy is not a
+`params` key (D-034).
 
 Because the node replays the whole log, condition 3 is what actually decides;
 the bundle is the portable, offline-checkable evidence that goes in alerts and
@@ -691,6 +719,11 @@ below exists for humans.
 
 Unknown keys MUST cause rejection. The fingerprint (§9.3) is taken over these
 bytes, so a wrong field name or type changes it.
+
+**`MAX_TRUST_BYTES` is 65536**. A trust file is keys, URLs, a witness list and
+a policy — it does not wrap an entry, and nothing in it scales with the log. A
+file larger than this MUST be refused on length, before anything it declares is
+allocated.
 
 **The policy grammar.** `policy` is `c2sp.org/tlog-policy` verbatim and is not
 redefined here, but a verifier cannot be written without it, so its four
@@ -924,6 +957,13 @@ an operator installs a new trust file: a reader that skips a step accepts an
 accusation any stranger can write, and takes the network down until a human
 intervenes. Each step has a vector in `fork/` for that reason.
 
+**`MAX_EVIDENCE_BYTES` is 65536**. Two signed checkpoints, a root and a
+consistency proof whose length is logarithmic in the tree — an evidence file
+does not wrap an entry either. A file larger than this MUST be refused on
+length. This matters more here than anywhere else in the document: evidence is
+the one artifact a reader accepts **from a stranger**, so an unbounded parse of
+it is a denial of service anybody can post.
+
 Nothing in this procedure fetches anything, and no step takes the writer's
 word. A node names its own files `<unix>.evidence`; `testdata/vectors/fork/`
 ships the same bytes under stable names so they can be referred to.
@@ -1154,9 +1194,11 @@ including an astral character, and that value lands verbatim in `state.json`.
 
 ## 15. Distribution, freshness and gossip
 
-Checkpoint acquisition order, the witness-time clock, the `fresh → degraded →
-hard-stale` state machine and the peer gossip endpoints are normative in
-`GOSSIP.md`. The **fork evidence format is §11.1 of this document**: it is the
+Checkpoint acquisition order, the witness-time clock and the peer gossip
+endpoints are normative in `GOSSIP.md`. The **freshness states themselves are
+§8.1 of this document**, with `detect/staleness.json` as their table: they
+decide what a node reports about a checkpoint it has, so a reader holding the
+specification and the vectors must not need a second file to reproduce them. The **fork evidence format is §11.1 of this document**: it is the
 one artifact a stranger is asked to check, so it may not live in a file that
 does not ship beside the vectors. The policy text in `norn.trust` is verbatim
 `c2sp.org/tlog-policy`.

@@ -57,6 +57,28 @@ def build(net: bytes, name: str, genesis_hash: bytes, log_key: str,
     return doc
 
 
+#: SPEC §9.1. A trust file is keys, URLs, a witness list and a policy: it does
+#: not wrap an entry and nothing in it scales with the log, so it does not
+#: share `MAX_ENTRY_BYTES`. Stated as a number in §9.1 since cold gate run 8
+#: (D3), which found all three artifact bounds promised and none given.
+MAX_TRUST_BYTES = 65536
+
+
+def parse(raw: bytes) -> dict[str, Any]:
+    """Decode and validate a trust file from its bytes.
+
+    The length is checked *before* decoding, so an oversized file is refused
+    without anything it declares being allocated -- the same discipline §4.0
+    applies to entries.
+    """
+    from . import cbor
+    if len(raw) > MAX_TRUST_BYTES:
+        raise TrustError(f"trust file exceeds {MAX_TRUST_BYTES} bytes")
+    doc = cbor.decode(raw)
+    validate(doc)
+    return doc
+
+
 def validate(doc: dict[str, Any]) -> None:
     """Raise TrustError unless the document is a usable trust anchor."""
     if not isinstance(doc, dict):
