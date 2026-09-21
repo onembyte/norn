@@ -36,6 +36,72 @@
     "15-size-leading-zero": "the size line carries a leading zero, which is not canonical decimal",
     "16-two-log-signatures": "two signature lines name the log's key and one does not verify: a reader that stops at the first valid one accepts a checkpoint carrying a forgery"
   },
+  "rules": {
+    "01-unsigned": {
+      "says": "verify log signature",
+      "section": "10"
+    },
+    "02-wrong-log-key": {
+      "says": "norn.trust.log_key",
+      "section": "10"
+    },
+    "03-wrong-origin": {
+      "says": "cp.origin == norn.trust.origin",
+      "section": "10"
+    },
+    "04-forged-log-signature": {
+      "says": "MUST\n  # verify",
+      "section": "10"
+    },
+    "05-one-cosignature-short": {
+      "says": "the quorum must be satisfied",
+      "section": "10"
+    },
+    "06-no-cosignatures": {
+      "says": "the quorum must be satisfied",
+      "section": "10"
+    },
+    "07-unnamed-witness-only": {
+      "says": "is IGNORED, not refused",
+      "section": "10"
+    },
+    "08-forged-cosignature": {
+      "says": "must verify",
+      "section": "10"
+    },
+    "09-extension-line": {
+      "says": "exactly three lines",
+      "section": "6"
+    },
+    "10-wrong-body-origin": {
+      "says": "which log this is about",
+      "section": "10"
+    },
+    "11-forged-cosignature-with-quorum": {
+      "says": "per line, not per witness",
+      "section": "10"
+    },
+    "12-second-line-from-one-witness": {
+      "says": "per line, not per witness",
+      "section": "10"
+    },
+    "13-ascii-dash-signature": {
+      "says": "signature line per signer",
+      "section": "7"
+    },
+    "14-unterminated-signature-block": {
+      "says": "including the last, ends in one",
+      "section": "7"
+    },
+    "15-size-leading-zero": {
+      "says": "no leading zeroes",
+      "section": "6"
+    },
+    "16-two-log-signatures": {
+      "says": "Every signature line whose name and key id match",
+      "section": "10"
+    }
+  },
   "signature_blind_accepts": [
     "04-forged-log-signature",
     "08-forged-cosignature",

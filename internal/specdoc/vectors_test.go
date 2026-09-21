@@ -760,6 +760,19 @@ func TestEveryVectoredRuleIsStatedWhereItLives(t *testing.T) {
 			"trust-bad/36-policy-log-key-mismatch"},
 		{"11.1", "not above `held`'s own size",
 			"fork/bad-size-above-held"},
+		// Cold gate run 10, D1-D5: five more rules added to both
+		// implementations in this session, given vectors, and written up in
+		// §12.1's coverage table rather than the section that owns them.
+		{"5.1", "`params`, if present, is **non-empty**",
+			"genesis/17-params-empty"},
+		{"7", "including the last, ends in one",
+			"checkpoints-bad/14-unterminated-signature-block"},
+		{"6", "no leading zeroes",
+			"checkpoints-bad/15-size-leading-zero"},
+		{"10", "Every signature line whose name and key id match",
+			"checkpoints-bad/16-two-log-signatures"},
+		{"8.1", "`device` is the `device_id` the `entry` names",
+			"proofs-bad/device-not-in-entry"},
 	} {
 		t.Run(c.vector, func(t *testing.T) {
 			section, ok := doc.Section(c.section)
@@ -900,4 +913,80 @@ func shippedTrust(t *testing.T, root string) *trust.Trust {
 		t.Fatal(err)
 	}
 	return doc
+}
+
+// --- Cold-model gate run 10: why D1–D5 recurred -------------------------
+//
+// The table above is a *list*. It maps five, now ten, named rules to phrases
+// their sections must contain — and it cannot notice an eleventh, because
+// nothing obliges a new vector to declare which section states its rule. Run
+// 9 found five such rules, I added the list, and run 10 found five more. A
+// list is not an invariant.
+//
+// This is the invariant: every case in a manifest that carries `rules` must
+// name the section that states its rule and a phrase that appears there. The
+// generator writes `rules` beside `cases`, so a vector cannot be added
+// without answering the question — and a directory listed here that stops
+// carrying `rules` fails too, which stops the mechanism being quietly dropped.
+
+func TestEveryNegativeDeclaresTheSectionThatStatesItsRule(t *testing.T) {
+	doc := load(t)
+	root := vectorRoot(t)
+	// The directories whose rules run 10 found missing. The rest are named in
+	// BUILD-LOG 6.5k-i-b; a directory joins this list when its manifest grows
+	// a `rules` map, and can never leave it.
+	for _, dir := range []string{"checkpoints-bad", "proofs-bad"} {
+		t.Run(dir, func(t *testing.T) {
+			var manifest struct {
+				Cases json.RawMessage `json:"cases"`
+				Rules map[string]struct {
+					Section string `json:"section"`
+					Says    string `json:"says"`
+				} `json:"rules"`
+			}
+			readJSON(t, filepath.Join(root, dir, "cases.json"), &manifest)
+			if len(manifest.Rules) == 0 {
+				t.Fatalf("%s/cases.json carries no `rules` map. Every negative must "+
+					"name the section that states the rule it is about, or the rule "+
+					"can live in §12.1 and nowhere a reader will look.", dir)
+			}
+			for name, rule := range manifest.Rules {
+				section, ok := doc.Section(rule.Section)
+				if !ok {
+					t.Errorf("%s names §%s, which does not exist", name, rule.Section)
+					continue
+				}
+				if rule.Says == "" {
+					t.Errorf("%s names §%s and no phrase; a section reference without "+
+						"one cannot show the rule is written there", name, rule.Section)
+					continue
+				}
+				if !strings.Contains(section.Body, rule.Says) {
+					t.Errorf("%s is refused by a rule §%s does not state: %q",
+						name, rule.Section, rule.Says)
+				}
+			}
+			// ...and every case must appear in it, so adding one forces the answer.
+			// A `cases` array is bare strings in some manifests and objects in
+			// others. A failed unmarshal into []string leaves the slice
+			// populated with empties, so the fallback starts from nil.
+			var names []string
+			if err := json.Unmarshal(manifest.Cases, &names); err != nil {
+				names = nil
+				var objs []struct{ Name string }
+				if err := json.Unmarshal(manifest.Cases, &objs); err != nil {
+					t.Fatal(err)
+				}
+				for _, o := range objs {
+					names = append(names, o.Name)
+				}
+			}
+			for _, name := range names {
+				if _, ok := manifest.Rules[name]; !ok {
+					t.Errorf("%s has no entry in `rules`, so nothing says which section "+
+						"states the rule that refuses it", name)
+				}
+			}
+		})
+	}
 }

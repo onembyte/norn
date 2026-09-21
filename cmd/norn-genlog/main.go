@@ -831,9 +831,23 @@ func writeBadProofs(root, origin string, key ed25519.PrivateKey, entries [][]byt
 		return err
 	}
 
+	// Every negative names the section that states its rule (run 10).
+	bundleRules := map[string]map[string]string{
+		"open-schema":         {"section": "8.1", "says": "a closed map of exactly these six keys"},
+		"wrong-version":       {"section": "8.1", "says": "`v` | uint | `1`"},
+		"device-not-in-entry": {"section": "8.1", "says": "`device` is the `device_id` the `entry` names"},
+		"no-quorum":           {"section": "8.1", "says": "a satisfied witness quorum"},
+		"wrong-origin":        {"section": "8.1", "says": "this network's origin"},
+		"wrong-entry":         {"section": "8.1", "says": "reach that checkpoint's root at `index`"},
+		"foreign-checkpoint":  {"section": "8.1", "says": "this network's log key"},
+		"tampered-proof":      {"section": "8.1", "says": "reach that checkpoint's root at `index`"},
+		"wrong-log-key":       {"section": "8.1", "says": "this network's log key"},
+	}
+
 	meta := map[string]any{
 		"log_key": note.VerifierKey(origin, key.Public().(ed25519.PublicKey)),
 		"origin":  origin,
+		"rules":   bundleRules,
 		"cases": []map[string]string{
 			{"name": "open-schema", "says": "unknown field"},
 			{"name": "wrong-version", "says": "unsupported version"},
@@ -1980,9 +1994,40 @@ func writeBadCheckpoints(root, origin string, key ed25519.PrivateKey,
 			return fmt.Errorf("signature-blind list names %q, which is not a case", want)
 		}
 	}
+	// Cold gate run 10. Every negative names the section that states the rule
+	// it is about, and a phrase that must appear there. Without this a rule
+	// can live in §12.1's coverage table and nowhere a reader will look --
+	// which is how §7's terminating newline, §6's canonical size line and
+	// §10's every-line rule all reached a gate unstated.
+	rules := map[string]map[string]string{
+		"01-unsigned":                       {"section": "10", "says": "verify log signature"},
+		"02-wrong-log-key":                  {"section": "10", "says": "norn.trust.log_key"},
+		"03-wrong-origin":                   {"section": "10", "says": "cp.origin == norn.trust.origin"},
+		"04-forged-log-signature":           {"section": "10", "says": "MUST\n  # verify"},
+		"05-one-cosignature-short":          {"section": "10", "says": "the quorum must be satisfied"},
+		"06-no-cosignatures":                {"section": "10", "says": "the quorum must be satisfied"},
+		"07-unnamed-witness-only":           {"section": "10", "says": "is IGNORED, not refused"},
+		"08-forged-cosignature":             {"section": "10", "says": "must verify"},
+		"09-extension-line":                 {"section": "6", "says": "exactly three lines"},
+		"10-wrong-body-origin":              {"section": "10", "says": "which log this is about"},
+		"11-forged-cosignature-with-quorum": {"section": "10", "says": "per line, not per witness"},
+		"12-second-line-from-one-witness":   {"section": "10", "says": "per line, not per witness"},
+		"13-ascii-dash-signature":           {"section": "7", "says": "signature line per signer"},
+		"14-unterminated-signature-block":   {"section": "7", "says": "including the last, ends in one"},
+		"15-size-leading-zero":              {"section": "6", "says": "no leading zeroes"},
+		"16-two-log-signatures":             {"section": "10", "says": "Every signature line whose name and key id match"},
+	}
+	for name := range reasons {
+		if _, ok := rules[name]; !ok {
+			return fmt.Errorf("checkpoint case %q names no section: every negative must "+
+				"say which section states the rule that refuses it", name)
+		}
+	}
+
 	manifest := map[string]any{
 		"cases":                   names,
 		"reasons":                 reasons,
+		"rules":                   rules,
 		"signature_blind_accepts": blind,
 		"comment": "each file is served in place of served/checkpoint, over the honest tiles, " +
 			"under trust.cbor; every one MUST be refused. `signature_blind_accepts` lists " +

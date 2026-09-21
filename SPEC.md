@@ -356,7 +356,10 @@ Replay of an **empty** list of entries yields the zero state of §5.3 with
 5. `after`, if present, MUST be 0 → else **abort** (`bad-genesis`).
 6. Body checks: `roots` and `signers` are non-empty arrays of distinct 32-byte
    keys, disjoint from each other; `1 ≤ root_thr ≤ len(roots)`;
-   `1 ≤ signer_thr ≤ len(signers)`; `params`, if present, has only §4.5 keys.
+   `1 ≤ signer_thr ≤ len(signers)`; `params`, if present, is **non-empty**, has only §4.5
+   keys, and each value has the §4.5 type. The same three rules a `params` **entry**
+   gets in §5.1 — an empty map trivially "has only §4.5 keys", so saying only that
+   admits one.
    Any failure → **abort** (`bad-genesis`).
 7. **Bootstrap:** genesis signatures are counted against the `roots` and
    `root_thr` *in its own body* — there is no earlier state to resolve them
@@ -543,6 +546,9 @@ devices on a number nobody signed.
 ## 6. The log
 
 - Layout, tiles, entry bundles, and `checkpoint` exactly per `tlog-tiles`. Tile height 8 (width 256), as torchwood requires.
+- A checkpoint body is exactly three lines (`c2sp.org/tlog-checkpoint`): the origin, the
+  tree size in decimal with **no leading zeroes**, and the base64 root — 32 bytes once
+  decoded. `0124` and `124` are the same number and two spellings of one head.
 - Leaf hash = `H(0x00 ‖ entry_bytes)` (RFC 6962 §2.1). An entry bundle is each entry's length as a **big-endian** uint16 followed by that many bytes, repeated — the framing `c2sp.org/tlog-tiles` defines, and the reason §4.0's `MAX_ENTRY_BYTES` is 65535 rather than 65536. Tile and bundle **paths** are that document's too: this one neither restates them nor varies them.
 - A verifier rebuilds the tree from the **entry bundles** and compares its head with the signed checkpoint; that comparison is what binds the entries to the head. The served `tile/<L>/…` hashes MUST also agree with the tree it rebuilt. They are not needed to reach the head, and checking them is not optional: a node serves the tiles it fetched onward to its peers (`GOSSIP.md`), so a node that accepted tiles it never checked would pass on a lie it had the means to catch.
 - The checkpoint is a `tlog-checkpoint` note: `origin` line = §2 `origin`, size, root; **no extension lines**. Signed by the log key; cosigned by witnesses per `tlog-cosignature` v1.
@@ -574,7 +580,7 @@ spec's rules produce.
 
 - The **signed text** is everything up to **and including** the newline that ends
   the last text line. It does **not** include the blank separator line.
-- The text is followed by one blank line, then one signature line per signer.
+- The text is followed by one blank line, then one signature line per signer. **Every signature line, including the last, ends in one `0x0A`**: a block that simply stops is unterminated, not merely short of a newline, and a reader that trims trailing newlines before parsing cannot tell the two apart.
 - A signature line is `\u2014 ` (em dash U+2014, then one space), the key name, one
   space, then base64 of a payload that begins with a 4-byte `key_id`. **What
   follows the key id depends on the algorithm the key was published under**,
@@ -638,7 +644,15 @@ why there is no domain prefix here — there is nothing for one to separate.
 Checking a bundle: **verify its checkpoint per §10** — this network's origin,
 this network's log key, and a satisfied witness quorum — then confirm
 `SHA-256(0x00 ‖ entry)` and `proof` reach that checkpoint's root at `index` for
-that size, and apply the rules below.
+that size, then confirm that **`device` is the `device_id` the `entry` names**
+— for an `enroll`, the id inside the embedded request; for the other device
+types, the `device_id` in the body — and apply the rules below.
+
+That last step is not bookkeeping. The inclusion proof binds the *entry* to the
+log and says nothing about the label beside it, so without it a bundle reading
+`device: "nas"` around another device's entry proves exactly as much as an
+honest one, and a consumer keying on `device` believes something no proof
+established.
 
 The quorum is not optional here, and saying "verify the checkpoint note" was
 not enough. §8 sells a bundle as self-contained, checkable by somebody holding
@@ -900,6 +914,11 @@ loop every T_g or on demand:
   # has been checked there is no reason to believe any field in the note.
   # Signed by norn.trust.log_key, or by a key a state this node already
   # accepted names (§9.4). Never by a key learned from this checkpoint.
+  # Every signature line whose name and key id match a trusted log key MUST
+  # verify, and at least one such line MUST be present. Not "at least one
+  # verifies": a checkpoint carrying a valid signature AND a forgery under the
+  # same key is refused, exactly as a witness's two lines are below. The
+  # canonical signed-note implementation does not impose this; Norn does.
   verify log signature (torchwood VerifyCheckpoint)     # norn.trust.log_key
                                                         # and norn.trust.policy:
                                                         # a checkpoint must be
@@ -1047,7 +1066,7 @@ suite is checked only against its own author.
 | `requests/<name>.cbor` · `.txt` · `.json` | enrollment requests (§16): the request bytes, its bech32m text form, and a mirror `{request, preimage_sha256, text, size}`. `cases.json` lists them, each with a `form` — `canonical` for §16.2's lowercase form, or `uppercase` for the same request in the form §16.2 says a reader MUST also accept, which names the canonical case it duplicates |
 | `requests-bad/<name>.txt` | requests that MUST be refused — by the text layer, the CBOR profile, a field rule or signature verification. `cases.json` gives each case's reason |
 | `receipt.json` | `{comment, origin, leaf_hash, deadline, text_sha256}`, where `text_sha256` is `SHA-256` of the **signed text** — through the newline ending the last text line, excluding the blank separator and the signature lines |
-| `checkpoints-bad/<NN-case>.checkpoint` | checkpoints that MUST be refused, each served in place of `served/checkpoint` over the honest tiles. `cases.json` lists them and says which two a signature-blind verifier accepts |
+| `checkpoints-bad/<NN-case>.checkpoint` | checkpoints that MUST be refused, each served in place of `served/checkpoint` over the honest tiles. `cases.json` lists them, and its `signature_blind_accepts` names the ones a verifier that never calls Ed25519 accepts — five of the sixteen. That set is **computed** from the shipped files, not asserted |
 | `entries-hostile/<name>.cbor` | input that is not an entry and never could be, for §4.0's three resource limits — the entry size, the nesting depth and the map-key cap. `cases.json` says what each refusal must be about, and marks the cases that sit exactly **at** a limit and MUST be accepted |
 | `proven/cases.json` | the devices admitted at four evaluation times (§5.3), including the boundary where `expires` equals `T` |
 | `fork/` | `evidence.cbor` and the `conflicting.checkpoint` it is about (§11.1), plus `bad-consistent` and `bad-other-origin`, which MUST be refused. `cases.json` lists them |
