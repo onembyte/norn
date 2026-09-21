@@ -35,10 +35,6 @@ func TestEveryForkNegativeIsRefused(t *testing.T) {
 	}
 
 	anchor := shippedAnchor(t, root)
-	rules, err := policy.Parse(anchor.Policy)
-	if err != nil {
-		t.Fatal(err)
-	}
 
 	for _, c := range doc.Cases {
 		t.Run(c.Name, func(t *testing.T) {
@@ -56,7 +52,7 @@ func TestEveryForkNegativeIsRefused(t *testing.T) {
 				}
 				return
 			}
-			_, err = Check(evidence, anchor.Origin, anchor.LogKey, rules.Keys())
+			_, err = Check(evidence, anchor.Origin, anchor.LogKey, anchor.Policy)
 			if err == nil {
 				t.Fatal("accepted evidence that proves no fork; a reader would act on a " +
 					"false accusation")
@@ -98,9 +94,8 @@ func reaches(t *testing.T, name string) (heldOK, conflictingOK, sizesAgree bool)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, heldErr := verified(ev.Held, anchor.Origin, anchor.LogKey, rules.Keys(), ev.Policy)
-	conflicting, conflictingErr := verified(ev.Conflicting, anchor.Origin, anchor.LogKey,
-		rules.Keys(), ev.Policy)
+	_, heldErr := verified(ev.Held, anchor.Origin, anchor.LogKey, rules)
+	conflicting, conflictingErr := verified(ev.Conflicting, anchor.Origin, anchor.LogKey, rules)
 	return heldErr == nil, conflictingErr == nil,
 		conflictingErr == nil && conflicting.Size == ev.Size
 }

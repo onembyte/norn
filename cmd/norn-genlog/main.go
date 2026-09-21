@@ -14,6 +14,7 @@ import (
 	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -1102,8 +1103,75 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 		return err
 	}
 
+	// Cold gate run 7, J12. §11.1 gave `policy` no validation rule, and the
+	// reader verified BOTH checkpoints under it -- the witness keys from its
+	// own trust file, the quorum from the accuser's. An accuser writing
+	// `quorum none` therefore got two uncosigned checkpoints accepted as proof
+	// of equivocation, and §11 rule 4 makes that conclusion permanent until an
+	// operator installs a new trust file. A permanent, network-wide denial of
+	// service from a file, with no keys and no access to anything.
+	heldUncosigned, err := note.Sign(mustBody(heldSigned), origin, key)
+	if err != nil {
+		return err
+	}
+	permissive := &forkevidence.Evidence{
+		Held: heldUncosigned, Conflicting: uncosigned,
+		Size: forkedCP.Size, HeldRoot: append([]byte(nil), evidence.HeldRoot...),
+		Proof: evidence.Proof, Policy: quorumNonePolicy(root),
+	}
+	rawPermissive, err := permissive.Encode()
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(dir, "bad-policy-says-quorum-none.cbor"),
+		rawPermissive, 0o644); err != nil {
+		return err
+	}
+
+	// The field is a closed-schema text with a stated grammar, so it must
+	// parse even though it decides nothing.
+	unparseable := &forkevidence.Evidence{
+		Held: heldSigned, Conflicting: forkedSigned,
+		Size: forkedCP.Size, HeldRoot: append([]byte(nil), evidence.HeldRoot...),
+		Proof: evidence.Proof, Policy: "this is not a tlog-policy\n",
+	}
+	rawUnparseable, err := unparseable.Encode()
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(dir, "bad-policy-unparseable.cbor"),
+		rawUnparseable, 0o644); err != nil {
+		return err
+	}
+
+	// ...and the other direction, which is a POSITIVE case: a carried policy
+	// the reader does not share must not break evidence that is otherwise
+	// sound. A reader that verified under the field would refuse a real fork
+	// and skip the alarm §11 rule 1 requires.
+	ghost, err := seedKey(root, "stranger")
+	if err != nil {
+		return err
+	}
+	foreign := &forkevidence.Evidence{
+		Held: heldSigned, Conflicting: forkedSigned,
+		Size: forkedCP.Size, HeldRoot: append([]byte(nil), evidence.HeldRoot...),
+		Proof: evidence.Proof, Policy: unmeetablePolicy(root, ghost),
+	}
+	rawForeign, err := foreign.Encode()
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(dir, "policy-not-the-readers.cbor"),
+		rawForeign, 0o644); err != nil {
+		return err
+	}
+
 	manifest := map[string]any{
 		"cases": []map[string]string{
+			{"name": "bad-policy-says-quorum-none",
+				"says": "no quorum cosigned it"},
+			{"name": "bad-policy-unparseable",
+				"says": "not a `tlog-policy`"},
 			{"name": "bad-proof-at-same-size",
 				"says": "requires none"},
 			{"name": "bad-consistent",
@@ -1121,7 +1189,9 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 			"bad-consistent is a log and its own earlier self -- every signature valid, " +
 			"both heads cosigned, the roots agreeing. bad-other-origin is a real fork of " +
 			"another network, which this anchor has no business accepting. `says` is what " +
-			"the refusal must be about",
+			"the refusal must be about. `policy-not-the-readers.cbor` is not listed here: " +
+			"it carries a policy the reader does not share and MUST still prove the fork, " +
+			"because the field is informational and the reader's own policy decides",
 	}
 	encoded, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {
@@ -1234,6 +1304,58 @@ func policyOf(root string) string {
 		return ""
 	}
 	return doc.Policy
+}
+
+// appendForgedSecondLine gives one witness a second cosignature line: newer
+// than its first, and not verifying. Everything else about the checkpoint is
+// correct, so only a per-line reading of §10 can refuse it.
+func appendForgedSecondLine(signed, whose string) (string, error) {
+	lines := strings.Split(strings.TrimRight(signed, "\n"), "\n")
+	for _, line := range lines {
+		if !strings.HasPrefix(line, "— "+whose+" ") {
+			continue
+		}
+		payload, err := base64.StdEncoding.DecodeString(
+			strings.TrimPrefix(line, "— "+whose+" "))
+		if err != nil {
+			return "", err
+		}
+		second := append([]byte(nil), payload...)
+		// 4 bytes of key id, then a big-endian uint64 timestamp: one second
+		// later, so a reader selecting the newest line selects this one.
+		at := binary.BigEndian.Uint64(second[4:12])
+		binary.BigEndian.PutUint64(second[4:12], at+1)
+		second[len(second)-1] ^= 0x01
+		return strings.Join(lines, "\n") + "\n" +
+			note.SignatureLine(whose, second) + "\n", nil
+	}
+	return "", fmt.Errorf("no signature line for %q", whose)
+}
+
+// quorumNonePolicy is a policy an accuser might write to make its own evidence
+// check out: valid, parseable, and satisfied by no cosignatures at all.
+func quorumNonePolicy(root string) string {
+	for _, line := range strings.Split(policyOf(root), "\n") {
+		if strings.HasPrefix(line, "log ") {
+			return line + "\nquorum none\n"
+		}
+	}
+	return ""
+}
+
+// unmeetablePolicy is a valid `tlog-policy` that these checkpoints do NOT
+// satisfy: it requires a witness that cosigned nothing. A reader verifying
+// under the carried field would refuse sound evidence and skip the alarm §11
+// rule 1 requires, so this is the positive half of the rule.
+func unmeetablePolicy(root string, ghost ed25519.PrivateKey) string {
+	var logLine string
+	for _, line := range strings.Split(policyOf(root), "\n") {
+		if strings.HasPrefix(line, "log ") {
+			logLine = line
+		}
+	}
+	vkey := note.CosignerVerifierKey("norn-witness/ghost", ghost.Public().(ed25519.PublicKey))
+	return logLine + "\nwitness ghost " + vkey + "\nquorum ghost\n"
 }
 
 // --- checkpoints-bad: the note layer's negatives (cold gate run 5, G2) ----
@@ -1414,18 +1536,34 @@ func buildBadCheckpoints(root, origin string, key ed25519.PrivateKey,
 	// A reader that merely declines to count the bad line still has its quorum
 	// of two and carries on; §10 says the checkpoint is refused. `08` cannot
 	// tell those apart, because one valid line falls short either way.
-	withQuorum, err := cosignWith(base, byName["norn-witness/pi"],
+	allThree, err := cosignWith(base, byName["norn-witness/pi"],
 		byName["norn-witness/vps"], byName["norn-witness/friend"])
 	if err != nil {
 		return nil, err
 	}
-	withQuorum, err = forgeLastSignature(withQuorum, "norn-witness/friend")
+	withQuorum, err := forgeLastSignature(allThree, "norn-witness/friend")
 	if err != nil {
 		return nil, err
 	}
 	out = append(out, badCheckpoint{"11-forged-cosignature-with-quorum",
 		"three named witnesses, two of whose cosignatures verify: the quorum is met " +
 			"without the third, and §10 refuses the checkpoint anyway", withQuorum})
+
+	// `cosig-all-lines`: §10 says "every cosignature by a witness the policy
+	// names must verify"; §5.3 says two verifying lines from one witness are
+	// its newest. Neither settled the case where one witness supplies both, so
+	// a reader picking each witness's newest *verifying* line saw three good
+	// witnesses and carried on. `11` is the neighbouring case and cannot stand
+	// in for it: there the bad line's witness has no good line, so declining
+	// to count it still leaves a quorum of two.
+	secondLine, err := appendForgedSecondLine(allThree, "norn-witness/friend")
+	if err != nil {
+		return nil, err
+	}
+	out = append(out, badCheckpoint{"12-second-line-from-one-witness",
+		"all three witnesses cosign and verify, and `friend` carries a second, newer " +
+			"line that does not: a reader taking each witness's newest verifying line " +
+			"sees a full quorum, and §10 refuses the checkpoint anyway", secondLine})
 
 	out = append(out, badCheckpoint{"08-forged-cosignature",
 		"two cosignature lines, both naming witnesses the policy lists, one of which does not verify: " +

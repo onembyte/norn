@@ -450,3 +450,63 @@ func TestATamperedHashTileIsRefusedByTheTileRule(t *testing.T) {
 			"and a verifier that never opens tile/0/… is indistinguishable from one that does")
 	}
 }
+
+// --- Cold-model gate run 7, defect J12 ----------------------------------
+//
+// §10 says "every cosignature by a witness the policy names must verify" and
+// §5.3 says "two verifying lines from the same witness with different
+// timestamps are its newest". Between them they never settled the case where
+// one witness supplies **both**: a reader that picks each witness's newest
+// *verifying* line sees three good witnesses and carries on, and one that
+// checks every line refuses. Run 7's `cosig-all-lines` passed either way,
+// because no checkpoint in the suite carried two lines from one witness.
+//
+// `11-forged-cosignature-with-quorum` is the neighbouring case and cannot
+// stand in: there the bad line's witness has no good line, so declining to
+// count it still leaves a quorum of two rather than a quorum of three.
+
+func TestACheckpointWithTwoLinesFromOneWitnessIsRefused(t *testing.T) {
+	const name = "12-second-line-from-one-witness"
+	path := filepath.Join(vectors(), "checkpoints-bad", name+".checkpoint")
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("§10's per-line rule has no vector: %v", err)
+	}
+
+	// The case only pins the rule if one witness really does sign twice, and
+	// if dropping the bad line would leave a satisfied quorum.
+	counts := map[string]int{}
+	for _, line := range strings.Split(strings.TrimRight(string(body), "\n"), "\n") {
+		if rest, ok := strings.CutPrefix(line, "— "); ok {
+			counts[strings.Fields(rest)[0]]++
+		}
+	}
+	var twice string
+	for who, n := range counts {
+		if n > 1 && strings.Contains(who, "witness") {
+			twice = who
+		}
+	}
+	if twice == "" {
+		t.Fatal("no witness signs twice, so a per-witness reader and a per-line one " +
+			"reach the same answer and the vector pins nothing")
+	}
+	distinct := 0
+	for who := range counts {
+		if strings.Contains(who, "witness") {
+			distinct++
+		}
+	}
+	if distinct < 3 {
+		t.Errorf("%d distinct witnesses; the other two must already satisfy the "+
+			"quorum, or ignoring the bad line refuses anyway", distinct)
+	}
+
+	dir := servedWithCheckpoint(t, path)
+	out, err := exec.Command(nornBinary(t), "verify",
+		"-trust", filepath.Join(vectors(), "trust.cbor"), "-log", dir).CombinedOutput()
+	if err == nil {
+		t.Fatalf("accepted a checkpoint carrying a cosignature line that does not "+
+			"verify, masked by a good line from the same witness:\n%s", out)
+	}
+}

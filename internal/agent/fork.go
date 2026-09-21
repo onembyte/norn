@@ -11,7 +11,6 @@ import (
 	"github.com/onembyte/norn/internal/forkevidence"
 	"github.com/onembyte/norn/internal/gossip"
 	"github.com/onembyte/norn/internal/logclient"
-	"github.com/onembyte/norn/internal/policy"
 )
 
 // ForkDir holds the evidence a node wrote when it caught its log equivocating.
@@ -91,10 +90,6 @@ func (a *Agent) pollEvidence() {
 	}
 	a.evidenceAsked = mono
 
-	rules, err := policy.Parse(a.cfg.Anchor.Policy)
-	if err != nil {
-		return
-	}
 	for _, addr := range gossip.Choose(a.cfg.Peers(), a.fanout(), a.peerOrder) {
 		raw, err := gossip.Peer(addr).Fetch("evidence")
 		if err != nil {
@@ -107,7 +102,7 @@ func (a *Agent) pollEvidence() {
 			continue
 		}
 		if _, err := forkevidence.Check(evidence, a.cfg.Anchor.Origin,
-			a.cfg.Anchor.LogKey, rules.Keys()); err != nil {
+			a.cfg.Anchor.LogKey, a.cfg.Anchor.Policy); err != nil {
 			a.emit(Event{Kind: PeerRefused, Message: fmt.Sprintf(
 				"peer %s served evidence that proves nothing: %v", addr, err)})
 			continue
@@ -196,12 +191,8 @@ func (a *Agent) writeEvidence(fork *logclient.ForkError) (string, error) {
 	// Check the node's own work before filing it. Evidence that does not
 	// prove anything is worse than none: it is an accusation somebody will
 	// check and dismiss.
-	rules, err := policy.Parse(a.cfg.Anchor.Policy)
-	if err != nil {
-		return "", err
-	}
 	if _, err := forkevidence.Check(evidence, a.cfg.Anchor.Origin,
-		a.cfg.Anchor.LogKey, rules.Keys()); err != nil {
+		a.cfg.Anchor.LogKey, a.cfg.Anchor.Policy); err != nil {
 		return "", fmt.Errorf("this node built evidence that does not prove a fork: %w", err)
 	}
 

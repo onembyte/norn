@@ -49,11 +49,14 @@ func verifyEvidenceCmd(args []string) error {
 		return err
 	}
 
+	// The reader's own policy decides the quorum, never the one inside the
+	// file: §11.1's premise is that there is no reason to trust whoever handed
+	// it over, and §11 rule 4 makes a fork conclusion permanent.
 	rules, err := policy.Parse(anchor.Policy)
 	if err != nil {
-		return err
+		return fmt.Errorf("the trust file's own policy does not parse: %w", err)
 	}
-	finding, err := forkevidence.Check(evidence, anchor.Origin, anchor.LogKey, rules.Keys())
+	finding, err := forkevidence.Check(evidence, anchor.Origin, anchor.LogKey, anchor.Policy)
 	if err != nil {
 		// A file that does not prove a fork is the *good* outcome for a reader
 		// checking an accusation, so say which it is rather than only failing.

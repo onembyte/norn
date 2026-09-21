@@ -58,8 +58,16 @@ type Evidence struct {
 	// confirm the node is quoting its own log rather than inventing a root.
 	// Empty when Size is Held's size, where the two signatures say it alone.
 	Proof [][]byte
-	// Policy is the network's `tlog-policy`, carried so a reader can see which
-	// witnesses were supposed to prevent this.
+	// Policy is the `tlog-policy` the accuser was verifying under, carried so
+	// a reader can see which witnesses were supposed to prevent this.
+	//
+	// It is **informational** (§11.1). A reader verifies both checkpoints
+	// under its own anchor's policy and never under this one: the field comes
+	// from whoever wrote the file, and §11.1's whole premise is that there is
+	// no reason to trust them. `Check` used to pass it to `verified`, so an
+	// accuser writing `quorum none` got two uncosigned checkpoints accepted as
+	// proof of equivocation -- and §11 rule 4 makes that conclusion permanent
+	// until an operator installs a new trust file.
 	Policy string
 }
 
@@ -111,12 +119,26 @@ func Build(held *tlog.Tree, heldSigned string, conflicting string,
 // Check verifies evidence against a network's anchor and reports what it
 // proves. Everything it needs is in the file and the trust document; nothing
 // is fetched, and no part of it takes the writer's word.
-func Check(ev *Evidence, origin, logVKey string, witnessVKeys []string) (*Finding, error) {
-	held, err := verified(ev.Held, origin, logVKey, witnessVKeys, ev.Policy)
+//
+// `readerPolicy` is the caller's own `tlog-policy` -- the trust file's, or the
+// one it has replayed (§9.4). The file's own `policy` field is never used to
+// decide anything; see Evidence.Policy.
+func Check(ev *Evidence, origin, logVKey, readerPolicy string) (*Finding, error) {
+	rules, err := policy.Parse(readerPolicy)
+	if err != nil {
+		return nil, evidenceErrorf("this reader's own policy does not parse: %v", err)
+	}
+	// The carried policy decides nothing, but a closed schema with a stated
+	// grammar is part of the format: a file whose `policy` is not a policy is
+	// malformed, and evidence is the artifact strangers exchange.
+	if _, err := policy.Parse(ev.Policy); err != nil {
+		return nil, evidenceErrorf("the carried policy is not a `tlog-policy`: %v", err)
+	}
+	held, err := verified(ev.Held, origin, logVKey, rules)
 	if err != nil {
 		return nil, evidenceErrorf("the held checkpoint: %v", err)
 	}
-	conflicting, err := verified(ev.Conflicting, origin, logVKey, witnessVKeys, ev.Policy)
+	conflicting, err := verified(ev.Conflicting, origin, logVKey, rules)
 	if err != nil {
 		return nil, evidenceErrorf("the conflicting checkpoint: %v", err)
 	}
@@ -175,8 +197,7 @@ func Check(ev *Evidence, origin, logVKey string, witnessVKeys []string) (*Findin
 // The quorum is not optional here. A log signing two things by itself is a log
 // misbehaving in private; what makes a fork *provable to a third party* is
 // that independent witnesses vouched for both.
-func verified(signed, origin, logVKey string, witnessVKeys []string,
-	policyText string) (tlog.Checkpoint, error) {
+func verified(signed, origin, logVKey string, rules *policy.Policy) (tlog.Checkpoint, error) {
 	cp, err := tlog.Verify(signed, []string{logVKey})
 	if err != nil {
 		return tlog.Checkpoint{}, fmt.Errorf("not signed by this network's log key: %w", err)
@@ -185,11 +206,7 @@ func verified(signed, origin, logVKey string, witnessVKeys []string,
 		return tlog.Checkpoint{}, fmt.Errorf("origin %q is not this network's %q",
 			cp.Origin, origin)
 	}
-	rules, err := policy.Parse(policyText)
-	if err != nil {
-		return tlog.Checkpoint{}, fmt.Errorf("the carried policy does not parse: %w", err)
-	}
-	cosignatures, err := cosign.Verify(signed, witnessVKeys)
+	cosignatures, err := cosign.Verify(signed, rules.Keys())
 	if err != nil {
 		return tlog.Checkpoint{}, err
 	}

@@ -16,7 +16,6 @@ import (
 	"github.com/onembyte/norn/internal/logclient"
 	"github.com/onembyte/norn/internal/note"
 	"github.com/onembyte/norn/internal/peertable"
-	"github.com/onembyte/norn/internal/policy"
 	"github.com/onembyte/norn/internal/reconcile"
 	"github.com/onembyte/norn/internal/replay"
 	"github.com/onembyte/norn/internal/tlogstore"
@@ -125,11 +124,7 @@ func TestAForkFreezesTheNodeAndLeavesEvidence(t *testing.T) {
 		t.Fatalf("the evidence a node wrote does not parse: %v", err)
 	}
 	doc := anchor(t)
-	rules, err := policy.Parse(doc.Policy)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := forkevidence.Check(ev, doc.Origin, doc.LogKey, rules.Keys()); err != nil {
+	if _, err := forkevidence.Check(ev, doc.Origin, doc.LogKey, doc.Policy); err != nil {
 		t.Fatalf("the evidence a node wrote does not prove a fork: %v", err)
 	}
 }

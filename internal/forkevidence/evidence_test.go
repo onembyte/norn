@@ -11,7 +11,6 @@ import (
 
 	"github.com/onembyte/norn/internal/cosign"
 	"github.com/onembyte/norn/internal/note"
-	"github.com/onembyte/norn/internal/policy"
 	"github.com/onembyte/norn/internal/tlog"
 	"github.com/onembyte/norn/internal/trust"
 )
@@ -113,10 +112,10 @@ func TestEvidenceProvesEquivocationAtDifferentSizes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	logVKey, witnessVKeys, policy := trustKeys(t)
+	logVKey, _, policy := trustKeys(t)
 	ev.Policy = policy
 
-	finding, err := Check(ev, origin, logVKey, witnessVKeys)
+	finding, err := Check(ev, origin, logVKey, policy)
 	if err != nil {
 		t.Fatalf("evidence a node produced does not check out: %v", err)
 	}
@@ -141,9 +140,9 @@ func TestEvidenceAtTheSameSizeNeedsNoProof(t *testing.T) {
 	if len(ev.Proof) != 0 {
 		t.Errorf("a same-size fork needs no consistency proof, got %d hashes", len(ev.Proof))
 	}
-	logVKey, witnessVKeys, policy := trustKeys(t)
+	logVKey, _, policy := trustKeys(t)
 	ev.Policy = policy
-	if _, err := Check(ev, origin, logVKey, witnessVKeys); err != nil {
+	if _, err := Check(ev, origin, logVKey, policy); err != nil {
 		t.Fatalf("same-size evidence does not check out: %v", err)
 	}
 }
@@ -165,7 +164,7 @@ func TestConsistentHeadsAreNotEvidence(t *testing.T) {
 func TestFabricatedEvidenceIsRefused(t *testing.T) {
 	mine, mineSigned := branch(t, entriesNamed("mine-", 20))
 	_, theirsSigned := branch(t, entriesNamed("theirs-", 10))
-	logVKey, witnessVKeys, policy := trustKeys(t)
+	logVKey, _, policy := trustKeys(t)
 
 	good, err := Build(mine, mineSigned, theirsSigned, headOf(t, theirsSigned))
 	if err != nil {
@@ -182,7 +181,7 @@ func TestFabricatedEvidenceIsRefused(t *testing.T) {
 		}
 		ev := *good
 		ev.Conflicting = forged
-		if _, err := Check(&ev, origin, logVKey, witnessVKeys); err == nil {
+		if _, err := Check(&ev, origin, logVKey, policy); err == nil {
 			t.Error("a head this network's log never signed was accepted as evidence")
 		}
 	})
@@ -195,7 +194,7 @@ func TestFabricatedEvidenceIsRefused(t *testing.T) {
 		}
 		ev := *good
 		ev.Conflicting = bare
-		if _, err := Check(&ev, origin, logVKey, witnessVKeys); err == nil {
+		if _, err := Check(&ev, origin, logVKey, policy); err == nil {
 			t.Error("a head no witness vouched for was accepted; the log alone " +
 				"signing two things is not equivocation anybody else can see")
 		}
@@ -208,13 +207,13 @@ func TestFabricatedEvidenceIsRefused(t *testing.T) {
 			t.Skip("no proof at this size")
 		}
 		ev.Proof[0] = make([]byte, 32)
-		if _, err := Check(&ev, origin, logVKey, witnessVKeys); err == nil {
+		if _, err := Check(&ev, origin, logVKey, policy); err == nil {
 			t.Error("a proof that does not chain to the signed head was accepted")
 		}
 	})
 
 	t.Run("another network's origin", func(t *testing.T) {
-		if _, err := Check(good, "norn/somebody-else", logVKey, witnessVKeys); err == nil {
+		if _, err := Check(good, "norn/somebody-else", logVKey, policy); err == nil {
 			t.Error("evidence was accepted against the wrong network's anchor")
 		}
 	})
@@ -228,7 +227,7 @@ func TestEvidenceRoundTripsThroughAFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	logVKey, witnessVKeys, policy := trustKeys(t)
+	logVKey, _, policy := trustKeys(t)
 	ev.Policy = policy
 
 	path := filepath.Join(t.TempDir(), "1760000000.evidence")
@@ -244,7 +243,7 @@ func TestEvidenceRoundTripsThroughAFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Check(back, origin, logVKey, witnessVKeys); err != nil {
+	if _, err := Check(back, origin, logVKey, policy); err != nil {
 		t.Fatalf("evidence stopped checking out after a round trip: %v", err)
 	}
 }
@@ -269,11 +268,7 @@ func TestTheShippedVectorProvesAFork(t *testing.T) {
 	}
 
 	anchor := shippedAnchor(t, root)
-	rules, err := policy.Parse(anchor.Policy)
-	if err != nil {
-		t.Fatal(err)
-	}
-	finding, err := Check(evidence, anchor.Origin, anchor.LogKey, rules.Keys())
+	finding, err := Check(evidence, anchor.Origin, anchor.LogKey, anchor.Policy)
 	if err != nil {
 		t.Fatalf("the shipped evidence does not prove a fork: %v", err)
 	}
@@ -303,9 +298,7 @@ func TestTheShippedVectorIsRefusedElsewhere(t *testing.T) {
 		t.Fatal(err)
 	}
 	anchor := shippedAnchor(t, root)
-	rules, _ := policy.Parse(anchor.Policy)
-
-	if _, err := Check(evidence, "norn/somebody-else", anchor.LogKey, rules.Keys()); err == nil {
+	if _, err := Check(evidence, "norn/somebody-else", anchor.LogKey, anchor.Policy); err == nil {
 		t.Error("the vector was accepted against another network's origin")
 	}
 }
@@ -321,4 +314,68 @@ func shippedAnchor(t *testing.T, root string) *trust.Trust {
 		t.Fatal(err)
 	}
 	return doc
+}
+
+// --- Cold-model gate run 7, defect J12 ----------------------------------
+//
+// §11.1 gave the `policy` field no validation rule at all, and `Check` then
+// verified **both checkpoints** under it. The witness *keys* came from the
+// reader's trust file and the *quorum* came from the accuser's file, which is
+// the split that made this easy to miss.
+//
+// The consequence is not subtle. §11.1 opens by saying a reader has "no reason
+// to trust whoever handed them the file", and §11 rule 4 makes a fork
+// conclusion permanent until an operator installs a new trust file. An accuser
+// who writes `quorum none` therefore gets two uncosigned checkpoints accepted
+// as proof of equivocation, and takes the network down until a human
+// intervenes -- from a file, with no keys and no access to anything.
+//
+// The rule now: a reader verifies under **its own** policy, and the carried
+// one is informational. It MUST parse, because a closed schema with a stated
+// grammar is part of the format, and it MUST NOT decide anything.
+
+func TestTheReadersOwnPolicyDecidesTheQuorum(t *testing.T) {
+	root := filepath.Join("..", "..", "testdata", "vectors")
+	raw, err := os.ReadFile(filepath.Join(root, "fork", "bad-policy-says-quorum-none.cbor"))
+	if err != nil {
+		t.Fatalf("no vector for an accuser-chosen quorum: %v", err)
+	}
+	ev, err := Parse(raw)
+	if err != nil {
+		t.Fatalf("the case must decode, or it tests the codec: %v", err)
+	}
+	// The file's own policy has to be the permissive one, or the case is
+	// about something else.
+	if !strings.Contains(ev.Policy, "quorum none") {
+		t.Errorf("the carried policy is not the permissive one this case is about")
+	}
+	anchor := shippedAnchor(t, root)
+	if _, err := Check(ev, anchor.Origin, anchor.LogKey, anchor.Policy); err == nil {
+		t.Fatal("concluded a fork from two checkpoints no quorum cosigned, because " +
+			"the accuser's own file said no quorum was needed")
+	}
+}
+
+// The other direction: a policy the reader does not share must not break
+// evidence that is otherwise sound. The field is informational, so a reader
+// that verified under it would refuse a real fork -- and §11 rule 1 requires
+// the alarm.
+func TestAForeignPolicyFieldDoesNotBreakSoundEvidence(t *testing.T) {
+	root := filepath.Join("..", "..", "testdata", "vectors")
+	raw, err := os.ReadFile(filepath.Join(root, "fork", "policy-not-the-readers.cbor"))
+	if err != nil {
+		t.Fatalf("no vector for a carried policy the reader does not share: %v", err)
+	}
+	ev, err := Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	anchor := shippedAnchor(t, root)
+	if ev.Policy == anchor.Policy {
+		t.Error("the carried policy is the reader's own, so the case pins nothing")
+	}
+	if _, err := Check(ev, anchor.Origin, anchor.LogKey, anchor.Policy); err != nil {
+		t.Fatalf("refused sound evidence because of a field it must not verify "+
+			"under: %v", err)
+	}
 }

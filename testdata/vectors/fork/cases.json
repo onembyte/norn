@@ -1,6 +1,14 @@
 {
   "cases": [
     {
+      "name": "bad-policy-says-quorum-none",
+      "says": "no quorum cosigned it"
+    },
+    {
+      "name": "bad-policy-unparseable",
+      "says": "not a `tlog-policy`"
+    },
+    {
       "name": "bad-proof-at-same-size",
       "says": "requires none"
     },
@@ -25,5 +33,5 @@
       "says": "claims a disagreement"
     }
   ],
-  "comment": "evidence that MUST NOT be acted on, checked against trust.cbor. bad-consistent is a log and its own earlier self -- every signature valid, both heads cosigned, the roots agreeing. bad-other-origin is a real fork of another network, which this anchor has no business accepting. `says` is what the refusal must be about"
+  "comment": "evidence that MUST NOT be acted on, checked against trust.cbor. bad-consistent is a log and its own earlier self -- every signature valid, both heads cosigned, the roots agreeing. bad-other-origin is a real fork of another network, which this anchor has no business accepting. `says` is what the refusal must be about. `policy-not-the-readers.cbor` is not listed here: it carries a policy the reader does not share and MUST still prove the fork, because the field is informational and the reader's own policy decides"
 }

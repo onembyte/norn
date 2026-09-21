@@ -10,6 +10,7 @@
     "09-extension-line",
     "10-wrong-body-origin",
     "11-forged-cosignature-with-quorum",
+    "12-second-line-from-one-witness",
     "08-forged-cosignature"
   ],
   "comment": "each file is served in place of served/checkpoint, over the honest tiles, under trust.cbor; every one MUST be refused. 04 and 08 are the two that a verifier which never checks a signature will accept",
@@ -24,6 +25,7 @@
     "08-forged-cosignature": "two cosignature lines, both naming witnesses the policy lists, one of which does not verify: the quorum is met only by a verifier that does not check them",
     "09-extension-line": "a fourth body line, signed and cosigned exactly as correctly as the real one: §6 allows origin, size and root and nothing else",
     "10-wrong-body-origin": "signed by this network's log key, under this network's name, and its origin line names another log",
-    "11-forged-cosignature-with-quorum": "three named witnesses, two of whose cosignatures verify: the quorum is met without the third, and §10 refuses the checkpoint anyway"
+    "11-forged-cosignature-with-quorum": "three named witnesses, two of whose cosignatures verify: the quorum is met without the third, and §10 refuses the checkpoint anyway",
+    "12-second-line-from-one-witness": "all three witnesses cosign and verify, and `friend` carries a second, newer line that does not: a reader taking each witness's newest verifying line sees a full quorum, and §10 refuses the checkpoint anyway"
   }
 }

@@ -503,7 +503,11 @@ Three things that decision needs and the rest of this document does not supply:
   `T` must not count it even in the moment before that refusal.
 - **A witness counts once.** Two verifying lines from the same witness with
   different timestamps are its newest; a witness cannot meet a threshold by
-  answering twice.
+  answering twice. This selects among lines that **verify**, and says nothing
+  about one that does not: a witness with one good line and one bad one is
+  refused by §10 like any other, and a reader that takes its newest verifying
+  line and looks no further accepts a checkpoint the previous section refuses.
+  `checkpoints-bad/12-second-line-from-one-witness` is that reader's vector.
 - **Under `quorum none` there is no clock.** Not because the policy is
   satisfied at no instant — it is satisfied at *every* instant, and a reader
   taking the definition literally gets an unbounded `T` and drops every device
@@ -828,8 +832,11 @@ loop every T_g or on demand:
                                                         # can be replayed, so
                                                         # acceptance cannot depend
                                                         # on anything the log says
-  verify witness policy: every cosignature by a witness the policy names
-      must verify, and the quorum must be satisfied  # refuse otherwise
+  verify witness policy: every cosignature LINE naming a witness the policy
+      names must verify, and the quorum must be satisfied  # refuse otherwise
+      # per line, not per witness: a witness that supplies one verifying line
+      # and one that does not is refused, not counted. §5.3's "newest" rule
+      # picks among lines that verify; it never excuses one that does not.
   if stored_cp exists:
       require cp.size >= stored_cp.size    # an earlier view undoes every
                                            # revocation made since, and is
@@ -875,14 +882,15 @@ Deterministic CBOR per §4.0, a closed map of exactly these seven keys:
 | `size` | uint | where the two disagree: the **conflicting** head's size |
 | `held_root` | bytes (32) | what the held branch had at `size` |
 | `proof` | array of bytes (32 each) | consistency proof chaining (`size`, `held_root`) to `held`'s own head. **Empty when `size` equals `held`'s size**, where the two signatures say it alone |
-| `policy` | text | the network's `tlog-policy` at the time, so a reader can see which witnesses were meant to prevent this |
+| `policy` | text | the `tlog-policy` the **accuser** was verifying under, so a reader can see which witnesses were meant to prevent this. **Informational.** It MUST parse as `c2sp.org/tlog-policy` — a closed schema with a stated grammar is part of the format — and a reader MUST NOT verify anything under it. The reader uses **its own** policy: the trust file's, or one it has replayed (§9.4). Verifying under the carried field hands the accuser the quorum rule, and an accuser writing `quorum none` then gets two uncosigned checkpoints accepted as proof of equivocation — which, by §11 rule 4, takes the network down until an operator installs a new trust file. This implementation did exactly that until cold-model gate run 7 |
 
 A reader MUST, in this order:
 
 1. verify **both** checkpoints per §10 — this network's origin, this network's
-   log key, and a satisfied witness quorum. A log signing two heads by itself
-   is a log misbehaving in private; what makes a fork provable to a third party
-   is that independent witnesses vouched for **both**.
+   log key, and a satisfied witness quorum **under the reader's own policy,
+   never the one in the file**. A log signing two heads by itself is a log
+   misbehaving in private; what makes a fork provable to a third party is that
+   independent witnesses vouched for **both**.
 2. check `conflicting`'s size equals `size`,
 3. check `proof` chains `held_root` at `size` to `held`'s signed head — or, when
    `size` is `held`'s own size, that `held_root` is the root `held` is signed
@@ -1002,7 +1010,9 @@ this table drifted out of date the moment one was.
 | §9.1 four rules that another rule used to decide | `trust.cbor` | `26-name-too-long` and `27-name-empty` (both ends of the 1–64 byte bound; `14` covers absent), `28-empty-log-urls` (present and empty, which is a different path from absent), `29-no-witnesses-only` — whose policy is `quorum none` and names no witnesses either, so the correspondence rule agrees and only the "a file with no witnesses MUST be rejected" minimum can refuse it — and `30-duplicate-witness-name-only`, which lists all three witnesses *and* a byte-identical second `pi`, so the names and keys correspond exactly and only uniqueness is broken |
 | §14 canonical JSON | every `.json`; `policy-escaping`, `enroll-unicode-labels` | — |
 | §10 a bad cosignature is refused, not merely uncounted | `served/checkpoint` | `checkpoints-bad/11-forged-cosignature-with-quorum`: three named witnesses, two verifying, so the quorum is met without the third and §10 refuses it anyway. `08` cannot tell the two readings apart, because one valid line falls short either way |
+| §10 the rule is per **line**, not per witness | `served/checkpoint`, one line per witness | `checkpoints-bad/12-second-line-from-one-witness`: all three verify and `friend` carries a second, newer line that does not. A reader taking each witness's newest *verifying* line sees a full quorum. `11` cannot stand in — there the bad line's witness has no good line, so declining to count it still leaves a quorum of two |
 | §11.1 the proof is empty at the held size | `fork/evidence.cbor` uses the non-degenerate branch | `fork/bad-proof-at-same-size`: a consistency proof where the two signatures say it alone |
+| §11.1 the carried `policy` decides nothing | `fork/policy-not-the-readers.cbor`: sound evidence whose `policy` requires a witness that cosigned nothing — it MUST still prove the fork, because the reader verifies under its own | `fork/bad-policy-says-quorum-none`: two checkpoints no quorum cosigned, and a carried policy saying none is needed. A reader that trusts the field concludes a fork any stranger can write, and §11 rule 4 makes it permanent. `fork/bad-policy-unparseable` is the format half |
 | §6 tiles and bundles | `served/`, read back to reproduce `state.json`; a forged head is `checkpoints-bad/04-forged-log-signature` and a fourth body line is `checkpoints-bad/09-extension-line` | `served-bad/`: an entry bundle with one byte changed, one the log will not serve at all, and `tampered-hash-tile` — one byte inside one leaf hash, which leaves the entries and the signed head honest, so only the hash-tile rule can refuse it |
 | §8.1 a bundle's checkpoint is checked per §10 | `proofs/`, whose checkpoints carry the quorum | `proofs-bad/no-quorum` (the log's signature and nobody else's) and `proofs-bad/wrong-origin` (this network's key over another network's origin line) |
 | §8 proof bundles | `proofs/`, one per active device | `proofs-bad/`: a wrong entry, a foreign checkpoint, a tampered proof and a checkpoint signed by a key the anchor does not name — each differing from a valid bundle in exactly one thing |
