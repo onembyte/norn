@@ -733,3 +733,44 @@ func TestTheBorrowedAlgorithmsSayWhereTheyComeFrom(t *testing.T) {
 		}
 	}
 }
+
+// --- Cold-model gate run 9, defects D1–D5 -------------------------------
+//
+// Five rules were added to both implementations and given vectors that demand
+// them, and written down in §12.1's **coverage** table rather than in the
+// normative section that owns them. A reader of §9.1 or §11.1 cannot derive
+// any of the five; run 9 got three right only because the vector is named
+// after the rule, which is reverse-engineering from filenames.
+//
+// §12.1 describes what the suite covers. It is not where a rule lives. This
+// test makes "stated where a reader will look" a checked property for every
+// rule a vector demands, so the next one cannot be filed in the wrong place.
+
+func TestEveryVectoredRuleIsStatedWhereItLives(t *testing.T) {
+	doc := load(t)
+	for _, c := range []struct{ section, needle, vector string }{
+		{"9.1", "a witness `name` is 1–64 bytes",
+			"trust-bad/32-witness-name-too-long"},
+		{"9.1", "URL is non-empty",
+			"trust-bad/33-log-url-empty-string"},
+		{"9.1", "an unknown `type` is ignored",
+			"trust-good/anchor-unknown-type and trust-bad/35-anchor-unknown-mode"},
+		{"9.1", "it MUST be `norn.trust.log_key`",
+			"trust-bad/36-policy-log-key-mismatch"},
+		{"11.1", "not above `held`'s own size",
+			"fork/bad-size-above-held"},
+	} {
+		t.Run(c.vector, func(t *testing.T) {
+			section, ok := doc.Section(c.section)
+			if !ok {
+				t.Fatalf("§%s is missing", c.section)
+			}
+			if !strings.Contains(section.Body, c.needle) {
+				t.Errorf("§%s does not state %q, and %s is refused for it. A rule a "+
+					"vector demands and the normative section omits is a rule a second "+
+					"implementer cannot derive -- §12.1 records coverage, not rules.",
+					c.section, c.needle, c.vector)
+			}
+		})
+	}
+}

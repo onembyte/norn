@@ -724,10 +724,10 @@ below exists for humans.
 | `name` | text, 1–64 bytes | human label for the network |
 | `genesis_hash` | 32 bytes | the **leaf hash** `SHA-256(0x00 ‖ entry0)` (§4.0), not the entry hash |
 | `log_key` | text | signed-note verifier key for the log (algorithm `0x01`); MUST parse as one, MUST NOT be a cosignature key, and its note name MUST equal `origin` |
-| `log_urls` | array of text, ≥ 1 | where to fetch checkpoint and tiles |
-| `witnesses` | array of `{name, key, url?}`, **≥ 1** | `key` is a **cosignature** verifier key — `c2sp.org/tlog-cosignature` algorithm `0x04`, not a note key's `0x01` — and MUST parse as one; `name` unique within the file. The algorithm is part of the key id, so the same public key published under the two algorithms is **two different verifiers**: a file naming a witness with a note key names a key no witness will ever sign with. A file with no witnesses MUST be rejected: with nothing to cosign, the policy's quorum can never be met, so the anchor could never accept a checkpoint. |
-| `policy` | text | verbatim `c2sp.org/tlog-policy`; MUST parse, and MUST name **exactly** the witnesses `witnesses` lists, with the same keys. The two are not redundant: `witnesses` is where a node learns a witness's name and address, `policy` is where it learns whether that witness counts — so a file where they differ configures a quorum over parties the node cannot reach, or lists parties nothing requires, and either way the operator believes they set something they did not. The correspondence is on the **set** of names: a witness listed twice is refused by the uniqueness rule above, not by this one, and an implementation that strikes each name off as it matches conflates the two — it then refuses a duplicate here and passes the suite without the uniqueness rule at all |
-| `anchor` | `{type, max_lag, mode}`, OPTIONAL | `type` text (`"opentimestamps"`), `max_lag` **uint seconds**, `mode` text (`"advisory"`) |
+| `log_urls` | array of text, ≥ 1 | where to fetch checkpoint and tiles. **Each URL is non-empty**: an array holding `""` satisfies "≥ 1" and names nowhere |
+| `witnesses` | array of `{name, key, url?}`, **≥ 1** | `key` is a **cosignature** verifier key — `c2sp.org/tlog-cosignature` algorithm `0x04`, not a note key's `0x01` — and MUST parse as one; **a witness `name` is 1–64 bytes** and unique within the file — bounded like the network `name` above, and for the same reason: it is a label an operator reads. The algorithm is part of the key id, so the same public key published under the two algorithms is **two different verifiers**: a file naming a witness with a note key names a key no witness will ever sign with. A file with no witnesses MUST be rejected: with nothing to cosign, the policy's quorum can never be met, so the anchor could never accept a checkpoint. |
+| `policy` | text | verbatim `c2sp.org/tlog-policy`; MUST parse, and MUST name **exactly** the witnesses `witnesses` lists, with the same keys. The two are not redundant: `witnesses` is where a node learns a witness's name and address, `policy` is where it learns whether that witness counts — so a file where they differ configures a quorum over parties the node cannot reach, or lists parties nothing requires, and either way the operator believes they set something they did not. A `log` line, if the policy carries one, is subject to the same argument: **it MUST be `norn.trust.log_key`**. A file whose two halves name different logs is the same operator error, and the only one of the two a verifier ever uses is `log_key`. The correspondence is on the **set** of names: a witness listed twice is refused by the uniqueness rule above, not by this one, and an implementation that strikes each name off as it matches conflates the two — it then refuses a duplicate here and passes the suite without the uniqueness rule at all |
+| `anchor` | `{type, max_lag, mode}`, OPTIONAL | All three members are required **when `anchor` is present**. `max_lag` is **uint seconds**. The two text members are not symmetric: **an unknown `type` is ignored**, not refused — anchoring is advisory (D-009), so a reader that cannot check `"roughtime"` simply does not check it and the rest of the file stands — while **`mode` MUST be `"advisory"`**, because guessing what an unrecognised enforcement mode means is how a node enforces something nobody asked for. A reader that refuses an unknown `type`, or accepts an unknown `mode`, is wrong in opposite directions |
 
 Unknown keys MUST cause rejection. The fingerprint (§9.3) is taken over these
 bytes, so a wrong field name or type changes it.
@@ -777,7 +777,7 @@ places the two implementations in this repository already disagreed.
 | names | each `witness` and `group` name is defined **once**; a repeat is an error |
 | `group` members | at least one, each **previously defined**, and no member twice |
 | nested groups | a `group` may name a `group`. It counts as **one** member of the outer group, met or not met as its own threshold decides |
-| `log` lines | **not required** by the grammar, and there may be more than one. Norn takes the log key from `norn.trust`, never from here |
+| `log` lines | **not required** by the grammar, and there may be more than one. Norn takes the log key it verifies with from `norn.trust.log_key`, never from here — but a `log` line that is present must still *name that key* (§9.1's `policy` row). The grammar permits the line; the trust file constrains what it may say |
 | `quorum` | exactly one line, naming a witness, a group, or `none` |
 
 ### 9.2 TOML rendering
@@ -973,7 +973,9 @@ A reader MUST, in this order:
    never the one in the file**. A log signing two heads by itself is a log
    misbehaving in private; what makes a fork provable to a third party is that
    independent witnesses vouched for **both**.
-2. check `conflicting`'s size equals `size`,
+2. check `size` is **not above `held`'s own size** — an accuser can only speak for a size
+   its own branch reaches, and above that there is nothing to compare — then that
+   `conflicting`'s size equals `size`,
 3. check `proof` chains `held_root` at `size` to `held`'s signed head — or, when
    `size` is `held`'s own size, that `held_root` is the root `held` is signed
    over. Without this the reader is taking the accuser's word for the number
