@@ -249,7 +249,7 @@ verified against the key the `kid` resolves to in the state *before* this entry.
 `thr` is a plain uint **here**, deliberately. Its range — `1 … len(set)` — is a
 **replay** decision, not a schema one (§5.2's `bad-thr`): the value is a
 well-formed uint either way, so an implementation that enforced `≥ 1` as a
-field constraint would return `decode` where `bad-thr` is required. `log/61-bad-thr-zero`
+field constraint would return `decode` where `bad-thr` is required. `log/69-bad-thr-zero`
 and the value-above-the-set case vector both halves.
 | `note` | `text` (string ≤ 4096) | any 1 signer or root; **no state effect** |
 | `log_key` | `pk` (bytes32), `overlap` (uint s) | ≥ `root_thr` roots — log-key rotation; both keys valid for `overlap` (`ENROLLMENT.md` §6) |
@@ -1017,7 +1017,7 @@ this table drifted out of date the moment one was.
 | §5.1 seen set, §4.3 roles | — | `bad-repeat-of-rejected`, `bad-one-of-two-signers`, `bad-role-mismatch`. Step 1's two stated properties are `bad-repeat-of-undecodable` (the hash is recorded **before** the entry is decoded, so a copy of one that never decoded is `dup-entry` and not a second `decode`) and `bad-repeat-of-genesis` (entry 0's hash is recorded too, so a byte copy of it is `dup-entry` and not `dup-genesis`) |
 | §5.2 `bad-thr` | — | both halves: `bad-thr-zero` and `bad-thr` (value above the set size) |
 | §5.1 a `policy` entry is a policy | `policy-rotated`, which raises the quorum from 2 of 3 to 3 of 3 | `bad-policy-unparseable`: text that is well-formed, under the size cap, and not a `tlog-policy` |
-| §4.3 `revoke`'s three authorisations | `revoke-by-roots`, `revoke-by-device` | `bad-revoke-neither-quorum`: one signer of two and two roots of three — short on every rule independently, and a quorum only if the counts are pooled |
+| §4.3 `revoke`'s three authorisations | `revoke-by-roots`, `revoke-self-laptop` (the device authorising its own revocation, and the only signature on it) | `bad-revoke-neither-quorum`: one signer of two and two roots of three — short on every rule independently, and a quorum only if the counts are pooled |
 | §5.1 `params`: non-empty, §4.5 keys, right types | `params` entries in the log | `bad-params-empty`, `bad-params-unknown-key`, and `bad-params-wrong-type` — a CBOR `true` where a uint belongs, which a loose decoder reads as 1. The same key rule at entry 0 is `genesis/13-params-unknown-key`, where the two readings differ by the whole log: one aborts to the zero state, the other replays every entry |
 | §14.1 key order above the BMP | `enroll-astral-labels`, whose labels carry one astral key and one private-use key: the only pair in the suite where UTF-8 bytewise order and UTF-16 code-unit order disagree | — |
 | §5.3 state, incl. D-028 and `expires` | `state.json`, `enroll-contractor` | `signer_remove-below-threshold` accepted, then `signer_add-recover` |
@@ -1027,7 +1027,7 @@ this table drifted out of date the moment one was.
 | §7 receipt | `receipt.note` | — |
 | §9 trust file, fingerprint | `trust.cbor` | **30 rejected anchors** in `trust-bad/`. **`15`** and **`16`** parse cleanly as verifier keys and are refused only by the algorithm rule; **`17`** and **`18`** are a witness the policy never names and a policy naming a witness the file does not list, each otherwise perfectly valid |
 | §9.1 four rules that another rule used to decide | `trust.cbor` | `26-name-too-long` and `27-name-empty` (both ends of the 1–64 byte bound; `14` covers absent), `28-empty-log-urls` (present and empty, which is a different path from absent), `29-no-witnesses-only` — whose policy is `quorum none` and names no witnesses either, so the correspondence rule agrees and only the "a file with no witnesses MUST be rejected" minimum can refuse it — and `30-duplicate-witness-name-only`, which lists all three witnesses *and* a byte-identical second `pi`, so the names and keys correspond exactly and only uniqueness is broken |
-| §14 canonical JSON | every `.json`; `policy-escaping`, `enroll-unicode-labels` | — |
+| §14 canonical JSON | every `.json`; `enroll-astral-labels`, whose `escapes` label carries every row of §14.2's tables into `state.json`, and `enroll-unicode-labels` | — |
 | §10 a bad cosignature is refused, not merely uncounted | `served/checkpoint` | `checkpoints-bad/11-forged-cosignature-with-quorum`: three named witnesses, two verifying, so the quorum is met without the third and §10 refuses it anyway. `08` cannot tell the two readings apart, because one valid line falls short either way |
 | §10 the rule is per **line**, not per witness | `served/checkpoint`, one line per witness | `checkpoints-bad/12-second-line-from-one-witness`: all three verify and `friend` carries a second, newer line that does not. A reader taking each witness's newest *verifying* line sees a full quorum. `11` cannot stand in — there the bad line's witness has no good line, so declining to count it still leaves a quorum of two |
 | §11.1 the proof is empty at the held size | `fork/evidence.cbor` uses the non-degenerate branch | `fork/bad-proof-at-same-size`: a consistency proof where the two signatures say it alone |
@@ -1147,8 +1147,10 @@ Everything else is emitted verbatim as UTF-8. In particular:
 These rules are load-bearing rather than cosmetic: `policy` and `note` text is
 free-form UTF-8 up to 4096 bytes and lands verbatim in the canonical state, so
 two implementations disagreeing about `<` or `é` would violate §5.3's MUST on
-the first realistic policy. Vector `log/49-policy-escaping` exercises every row
-of both tables above.
+the first realistic policy. Vector `log/104-enroll-astral-labels` exercises every
+row of both tables above: its `escapes` label holds the quote, the backslash, the
+control characters, the solidus that MUST NOT be escaped and multi-byte UTF-8
+including an astral character, and that value lands verbatim in `state.json`.
 
 ## 15. Distribution, freshness and gossip
 

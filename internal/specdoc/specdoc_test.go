@@ -2,10 +2,12 @@ package specdoc
 
 import (
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -583,5 +585,179 @@ func TestTheCosignatureLineIsStatedNotLinked(t *testing.T) {
 	// And §7's own restatement must say what it is a restatement *of*.
 	if !strings.Contains(flat, "algorithm 0x01") || !strings.Contains(flat, "algorithm 0x04") {
 		t.Error("the two signature-line formats are not told apart by algorithm byte")
+	}
+}
+
+// --- Cold-model gate run 8, defect D7 -----------------------------------
+//
+// Four citations named vectors that do not exist, in a document whose preamble
+// says "Every cross-reference resolves". The checker above should have caught
+// them and could not, for two reasons worth stating because they are the real
+// defect:
+//
+//   - it read only §12, so §14's `log/49-policy-escaping` and §4.3's
+//     `log/61-bad-thr-zero` were out of scope entirely, and
+//   - it skipped any citation without a `/`, so §12.1's own `policy-escaping`
+//     and `revoke-by-device` were never looked at.
+//
+// Two of the four were *index drift* — `49` is `policy-rotated` and `61` is
+// `bad-kid-format` — which is the failure §12.1 warns about two sections
+// later, in the paragraph explaining why vectors are cited by name.
+
+// shippedVectorNames is every name a citation could reasonably use: each
+// file's stem, that stem without its numeric prefix, each directory, and every
+// case a `cases.json` lists (with and without its prefix).
+// specText is SPEC.md's prose: the whole document with fenced code blocks
+// removed.
+//
+// The fences have to go before any inline-code scan. A naive “ `([^`]+)` “
+// regex pairs backticks left to right across the entire file, so one fenced
+// block containing an odd number of them shifts every pair after it -- which
+// is why the first version of the check below silently captured *nothing* in
+// §14 and reported success. A checker that finds no citations and says so
+// cheerfully is worse than no checker.
+func specText(t *testing.T) string {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join("..", "..", "SPEC.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out strings.Builder
+	fenced := false
+	for _, line := range strings.Split(string(raw), "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "```") {
+			fenced = !fenced
+			continue
+		}
+		if !fenced {
+			out.WriteString(line)
+			out.WriteByte('\n')
+		}
+	}
+	if fenced {
+		t.Fatal("SPEC.md has an unclosed code fence")
+	}
+	return out.String()
+}
+
+func shippedVectorNames(t *testing.T) map[string]bool {
+	t.Helper()
+	suffixes := []string{".cbor", ".checkpoint", ".bundle", ".txt", ".json",
+		".note", ".ots", ".toml", ".reason"}
+	names := map[string]bool{}
+	add := func(s string) {
+		if s == "" {
+			return
+		}
+		names[s] = true
+		if _, rest, ok := strings.Cut(s, "-"); ok {
+			if _, err := strconv.Atoi(strings.SplitN(s, "-", 2)[0]); err == nil {
+				names[rest] = true
+			}
+		}
+	}
+	err := filepath.WalkDir(vectorsDir(), func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			add(d.Name())
+			return nil
+		}
+		stem := d.Name()
+		for _, ext := range suffixes {
+			stem = strings.TrimSuffix(stem, ext)
+		}
+		add(stem)
+		if d.Name() != "cases.json" {
+			return nil
+		}
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		var doc struct {
+			Cases []json.RawMessage `json:"cases"`
+		}
+		if json.Unmarshal(raw, &doc) != nil {
+			return nil
+		}
+		for _, c := range doc.Cases {
+			var name string
+			if json.Unmarshal(c, &name) == nil {
+				add(name)
+				continue
+			}
+			var obj struct{ Name string }
+			if json.Unmarshal(c, &obj) == nil {
+				add(obj.Name)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return names
+}
+
+// A citation shaped like a numbered vector -- `NN-name`, with or without a
+// directory -- must resolve, anywhere in the document. This shape is
+// unambiguous, so the check runs over the whole specification rather than over
+// one section, and it is exactly the shape that rots when a case is inserted.
+func TestEveryNumberedVectorCitationResolves(t *testing.T) {
+	names := shippedVectorNames(t)
+	numbered := regexp.MustCompile(`^(?:[a-z0-9-]+/)?\d+-[a-z][a-z0-9-]*$`)
+	for _, m := range reTicked.FindAllStringSubmatch(specText(t), -1) {
+		cited := strings.TrimSpace(m[1])
+		if !numbered.MatchString(cited) {
+			continue
+		}
+		base := cited
+		if _, after, ok := strings.Cut(cited, "/"); ok {
+			base = after
+		}
+		if !names[base] {
+			t.Errorf("SPEC.md cites %q, which no vector is named. Indices shift "+
+				"whenever a case is inserted, which is why §12.1 says to cite by name.",
+				cited)
+		}
+	}
+}
+
+// notVectors are hyphenated names in §12 that are external specifications and
+// third-party packages rather than files in this suite. The same "is it rooted
+// in the suite" judgement the path check above makes for directories -- a
+// checker that cannot tell the difference invents work.
+var notVectors = map[string]bool{
+	"tlog-tiles": true, "tlog-checkpoint": true, "tlog-cosignature": true,
+	"tlog-witness": true, "tlog-policy": true, "signed-note": true,
+	"python-opentimestamps": true, "transparency-dev": true,
+}
+
+// And the bare names: §12.1 cites vectors by name rather than by index, so a
+// hyphenated lowercase name in that table is a citation and must resolve.
+// Reason codes are excluded by reading §5.2's own table rather than by a list
+// here, so a new reason code never has to be remembered twice.
+func TestEveryBareVectorNameInTheCoverageTableResolves(t *testing.T) {
+	names := shippedVectorNames(t)
+	reasons := map[string]bool{}
+	for _, m := range regexp.MustCompile("(?m)^\\| `([a-z-]+)` \\|").
+		FindAllStringSubmatch(specText(t), -1) {
+		reasons[m[1]] = true
+	}
+	if len(reasons) < 10 {
+		t.Fatalf("found %d reason codes; §5.2's table is not being read", len(reasons))
+	}
+
+	bare := regexp.MustCompile(`^[a-z][a-z0-9]*(?:-[a-z0-9]+)+$`)
+	for _, m := range reTicked.FindAllStringSubmatch(coverage(t), -1) {
+		cited := strings.TrimSpace(m[1])
+		switch {
+		case !bare.MatchString(cited), reasons[cited], notVectors[cited], names[cited]:
+			continue
+		}
+		t.Errorf("§12 cites %q by name and no vector is called that. §12.1 says "+
+			"vectors are cited by name precisely so this resolves.", cited)
 	}
 }
