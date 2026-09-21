@@ -1019,7 +1019,7 @@ suite is checked only against its own author.
 | `keys.json` | every test key: Ed25519 `{seed, public, kid}` by name, X25519 public keys by name, and `net` |
 | `entries/NN-<type>.cbor` | one valid entry per type, canonical bytes |
 | `entries/NN-<type>.json` | mirror: `{entry, entry_hash, leaf_hash, preimage_sha256, size}` where `size` is the byte length of the `.cbor`. The `entry` object mirrors the **CBOR**, so an optional field absent from the entry is absent here too — unlike `state.json`, where §5.3's schema fields are always emitted |
-| `log/NN-<name>.cbor` | the replay fixture, **119 entries** in order. The file names are labels, not the order: **read the sequence from `manifest.json`**, never by globbing and sorting |
+| `log/NN-<name>.cbor` | the replay fixture, **123 entries** in order. The file names are labels, not the order: **read the sequence from `manifest.json`**, never by globbing and sorting |
 | `log/NN-<name>.reason` | beside each entry that must be rejected: its §5.2 reason code |
 | `log/manifest.json` | `{"anchor": {"net", "genesis_hash"}, "entries": [{"index", "name", "reason"}]}` — the replay input and expected outcome; `reason` is `""` for an accepted entry |
 | `state.json` | canonical replay output for `log/` (§5.3) |
@@ -1069,6 +1069,11 @@ this table drifted out of date the moment one was.
 | §10 the checkpoint's origin | `served/checkpoint` | `checkpoints-bad/10-wrong-body-origin`: signed by this network's key under this network's name, naming another log |
 | §4.0 both limits, at the boundary | `entries-hostile/at-the-depth-limit` and `at-the-size-limit`, which MUST be accepted | `past-the-depth-limit` and `past-the-size-limit`, one step beyond each. Without the accepted half a decoder enforcing 4, 16 or 64 passes |
 | §16.2 padding | every request's text form | `requests-bad/excess-padding` and `non-zero-padding`: the payload is the valid request with its encoding corrupted, so only §16.2 refuses them |
+| §9.4 the anchor key is kept **alongside** | `served/checkpoint`, signed by `norn.trust.log_key`, which the log publishes **nowhere**: the two `log_key` entries name other keys entirely | a reader that *replaces* `log_keys` with the published ones cannot read the head the log is serving. Replacing is the weakening — it trusts only what the log said about itself |
+| §4.1 `sigs` elements are a closed map | every entry | `bad-sigs-fourth-key`: a fourth key beside `kid`, `role` and `sig` |
+| §4.1 `v` MUST be 1 | every entry | `bad-version-two`. No entry carried any other value, so a reader that never looked at `v` reproduced the manifest |
+| §5.1 `rotate` on a revoked device | `rotate-nas` | `bad-rotate-revoked`: `laptop` is known and revoked, so it is `not-active` and not `unknown-device`. The only other `not-active` vector is a `revoke` |
+| §5.1 `dup-key` is across **both** roles | `signer_add-recover` | `bad-root_add-existing-signer`: adding a current signer as a root. Every other dup-key vector re-added a key into the role it was already in |
 | §4.0 the profile's banned items, at the decoder | the three `at-the-…-limit` cases | `bare-null`, `bare-undefined`, `bare-float`, `bare-negative-integer`, `bare-tag`, `bare-indefinite-text`, `bare-nontext-map-key` and `bare-invalid-utf8` — each a whole input with no schema above it, so the profile is the only thing that can refuse, and each refused for **its own** rule. The in-entry negatives cannot pin these: a lenient decoder hands the envelope check a malformed field and the reason is `decode` either way |
 | §4.0 free text has no lower bound | `note-empty-text`, `revoke-empty-reason` and `revoke-no-reason` — all **accepted**. `text` is bounded above only, `reason` is 0–256, and §4.3 marks it OPTIONAL | a reader that requires one byte rejects entries this document accepts, which only a positive can show |
 | §4.0 resource limits | — | `entries-hostile/oversize-entry` (a header promising 65536 bytes, refused on length before anything is allocated) and `entries-hostile/deep-nesting` (200 nested arrays, deterministic throughout, so only the depth rule can refuse it) |
@@ -1085,7 +1090,7 @@ this table drifted out of date the moment one was.
 | §5.3 genesis `params` is **overlaid** | `state.json`'s `checkpoint_interval`, which the genesis body does not set and the §4.5 default supplies | a reader that *replaces* the defaults instead loses the key entirely |
 | §4.3 the request's `ts` is unconstrained | `enroll-request-from-the-future`: an accepted `enroll` whose embedded request is dated ten days after the entry carrying it | the check a reader is most likely to add unasked |
 | §4.4 `after` is a floor | `after-below-index` | `bad-after` |
-| §5 replay, 15 of the 16 reason codes | the log | **77 rejecting entries** |
+| §5 replay, 15 of the 16 reason codes | the log | **81 rejecting entries** |
 | §5 `bad-genesis` | — | `genesis/`; it cannot appear in the log, since it aborts replay |
 | §5.1 genesis | the log's entry 0 | **15 abort paths** in `genesis/`, one single-entry log each |
 | §5.1 seen set, §4.3 roles | — | `bad-repeat-of-rejected`, `bad-one-of-two-signers`, `bad-role-mismatch`. Step 1's two stated properties are `bad-repeat-of-undecodable` (the hash is recorded **before** the entry is decoded, so a copy of one that never decoded is `dup-entry` and not a second `decode`) and `bad-repeat-of-genesis` (entry 0's hash is recorded too, so a byte copy of it is `dup-entry` and not `dup-genesis`) |
@@ -1133,6 +1138,12 @@ admits its holes, so:
 - **§5's `state.net` coming from the anchor rather than from the genesis
   entry.** Unobservable: entry 0 aborts whenever the two differ, so no file can
   tell the two readings apart. Recorded here because a reader will look.
+- **§5.2's `dup-wg` for `enroll` meaning "active for **any** device" rather
+  than "for another device".** The two readings differ only when the key is
+  active for the enrolling `device_id` itself — which requires that id to be
+  `active`, which makes `dup-id` fire one step earlier. No entry can reach the
+  difference, so the rule is refused-but-not-pinned by construction. Confirmed
+  by mutation: the narrower reading reproduces the whole manifest.
 - **§9.1's witness-name uniqueness, for a reader whose correspondence check
   strikes each name off as it matches.** Such a reader refuses
   `30-duplicate-witness-name-only` at the correspondence step and so passes the

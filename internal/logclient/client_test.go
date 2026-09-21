@@ -1133,3 +1133,52 @@ func servedWith(t *testing.T, from, checkpoint string) string {
 	}
 	return dir
 }
+
+// --- Cold-model gate run 8, defect D11 ----------------------------------
+//
+// §9.4: a checkpoint MUST be signed by `norn.trust.log_key` **or** by a key a
+// state this node accepted names. An informed reader therefore keeps the trust
+// file's key *alongside* the published ones rather than replacing them.
+//
+// Nothing pinned that. The fixture's second `log_key` entry republished the
+// **anchor's own key**, so a reader that discarded the anchor key still held
+// it, and `log-keys-replace-trust-key` passed the whole suite. The log now
+// publishes two keys that are neither the anchor's, which makes the difference
+// the acceptance of `served/checkpoint` itself.
+//
+// The direction matters: replacing is the *weakening*. A reader that drops the
+// anchor key trusts only what the log told it about itself.
+
+func TestTheAnchorKeyIsKeptAlongsideThePublishedOnes(t *testing.T) {
+	served := filepath.Join(vectorRoot(), "served")
+	anchor := shippedLogAnchor(t)
+
+	result, err := Verify(Dir(served), anchor)
+	if err != nil {
+		t.Fatalf("the honest log does not verify: %v", err)
+	}
+	published := KeysFrom(anchor.Origin, result.State)
+	if len(published) == 0 {
+		t.Fatal("the log publishes no log_key at all, so there is nothing to keep " +
+			"the anchor's key alongside")
+	}
+	// The case only pins the rule while the anchor's key is NOT among them.
+	for _, key := range published {
+		for _, held := range anchor.LogKeys {
+			if key == held {
+				t.Fatalf("the log republishes the anchor's own key, so a reader that "+
+					"replaced would still hold it and the rule is unpinned: %s", key)
+			}
+		}
+	}
+
+	// A reader that replaces rather than keeps alongside has only what the log
+	// said about itself -- and cannot read the head the log is actually serving.
+	replacing := anchor
+	replacing.LogKeys = published
+	if _, err := Verify(Dir(served), replacing); err == nil {
+		t.Error("a reader holding only the published keys accepted a checkpoint " +
+			"signed by the anchor's key; §9.4 says both, and this case cannot tell " +
+			"them apart")
+	}
+}

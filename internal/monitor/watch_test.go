@@ -226,3 +226,33 @@ func TestEverythingDownStillProducesAlerts(t *testing.T) {
 
 // fixtureCosigned is the instant the fixture's witnesses cosigned at.
 const fixtureCosigned = 1_760_003_600
+
+// Cold-model gate run 8, defect D11. §9.4: a checkpoint is acceptable under
+// `norn.trust.log_key` **or** a key a replayed state names — both, not either.
+// The monitor is where that combination lives (`norn verify` deliberately
+// holds only the trust key, which §9.4 permits for a node that has accepted
+// nothing), and nothing exercised it: dropping the anchor key once anything
+// was learned passed every test here.
+//
+// Replacing is the weakening. A monitor that keeps only what the log published
+// about itself can be walked off the network by a log that publishes a key and
+// then stops signing with the one the operator provisioned.
+func TestTheWatcherKeepsTheAnchorKeyAfterLearningOthers(t *testing.T) {
+	w := New(&trust.Trust{LogKey: "anchor-key", Origin: "norn/x"}, Rules{})
+	w.learned = []string{"published-one", "published-two"}
+
+	keys := w.logKeys()
+	if len(keys) != 3 {
+		t.Fatalf("logKeys() = %v; want the anchor's and both published", keys)
+	}
+	var held bool
+	for _, k := range keys {
+		if k == "anchor-key" {
+			held = true
+		}
+	}
+	if !held {
+		t.Error("the monitor dropped the anchor's key once it had learned others; " +
+			"§9.4 says a checkpoint is acceptable under either, so both are kept")
+	}
+}

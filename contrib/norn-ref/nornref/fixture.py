@@ -20,7 +20,7 @@ DEVICES = ["nas", "laptop", "pi-cam"]
 WITNESSES = ["pi", "vps", "friend"]
 
 EXTRA_KEYS = (["signer3", "root4", "logkey", "logkey2", "spare", "printer", "nas-id2", "printer-id2", "escaped", "contractor", "halfsigned", "labelcap",
-              "rootrevoked", "stranger", "astral", "sundial"]
+              "rootrevoked", "stranger", "astral", "sundial", "logkey3"]
               + [f"witness-{w}" for w in WITNESSES])
 
 KEYS: dict[str, keys.Ed25519] = {
@@ -593,8 +593,15 @@ def log() -> list[LogItem]:
 
     # §5.3: `log_key` APPENDS. With only one rotation in the log, an
     # implementation that keeps just the latest is indistinguishable.
+    #
+    # And a THIRD key rather than the anchor's own. This republished
+    # `KEYS["logkey"]` -- the trust file's key -- so a reader that *replaced*
+    # `log_keys` instead of keeping the anchor's key alongside it (§9.4) still
+    # ended up holding it, and `log-keys-replace-trust-key` passed the whole
+    # suite (cold gate run 8, D11). Now neither published key is the anchor's,
+    # so only a reader that keeps both can read `served/checkpoint`.
     b.add(f"{b.index}-log_key-second", b.build(
-        "log_key", {"pk": KEYS["logkey"].public, "overlap": 604_800}, roots3))
+        "log_key", {"pk": KEYS["logkey3"].public, "overlap": 604_800}, roots3))
 
     # §4.3: a `note` needs a signer or a root; a device signature will not do.
     b.add(f"{b.index}-bad-device-signed-note", b.build(
@@ -788,6 +795,34 @@ def log() -> list[LogItem]:
         "revoke", {"device_id": "escaped", "reason": ""}, roots3))
     b.add(f"{b.index}-revoke-no-reason", b.build(
         "revoke", {"device_id": "sundial"}, roots3))
+
+    # §4.1's `sigs` elements are a closed map of `kid`, `role`, `sig`. Stated,
+    # and no entry ever carried a fourth key: `sigs-allow-fourth-key` passed.
+    fourth = b.build("note", {"text": "a fourth key in a signature"},
+                     [("signer1", "signer")])
+    fourth["sigs"][0]["extra"] = "an unpermitted signature key"
+    b.add_raw(f"{b.index}-bad-sigs-fourth-key", cbor.encode(fourth), "decode")
+
+    # §4.1: `v` MUST be 1. No entry in the suite had any other value, so a
+    # reader that never looked at `v` reproduced the whole manifest.
+    wrong_v = b.build("note", {"text": "version two"}, [("signer1", "signer")])
+    wrong_v["v"] = 2
+    b.add_raw(f"{b.index}-bad-version-two", cbor.encode(wrong_v), "decode")
+
+    # §5.1's `rotate` rule: `not-active` for a device that is known and
+    # revoked. The only `not-active` vector is a *revoke*, so
+    # `rotate-revoked-is-unknown` -- reporting `unknown-device` instead --
+    # passed. `laptop` was revoked at entry 36 and is still known.
+    b.add(f"{b.index}-bad-rotate-revoked", b.build(
+        "rotate", {"device_id": "laptop", "wg_pk": WG["laptop2"]},
+        [("laptop", "device")] + both), "not-active")
+
+    # §5.1: `dup-key` is "already a root **or** a signer". Every dup-key vector
+    # added a key back into the role it was already in, so a reader checking
+    # only that role reproduced the whole manifest. `signer1` is a signer here,
+    # and adding it as a root is the cross-role case.
+    b.add(f"{b.index}-bad-root_add-existing-signer", b.build(
+        "root_add", {"pk": KEYS["signer1"].public}, roots3), "dup-key")
 
     return b.items
 
