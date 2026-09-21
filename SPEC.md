@@ -822,8 +822,11 @@ Two consequences worth stating rather than discovering:
 ```
 loop every T_g or on demand:
   cp := fetch checkpoint (log_urls, then peers)         # part 6
-  require cp.origin == norn.trust.origin               # which log this is about
-  # signed by norn.trust.log_key, or by a key a state this node already
+  # The SIGNATURE decides first. A checkpoint signed by a key this anchor does
+  # not trust is refused for that, whatever origin it names: `wrong-origin` is
+  # about a checkpoint this network's own key signed, and until the signature
+  # has been checked there is no reason to believe any field in the note.
+  # Signed by norn.trust.log_key, or by a key a state this node already
   # accepted names (§9.4). Never by a key learned from this checkpoint.
   verify log signature (torchwood VerifyCheckpoint)     # norn.trust.log_key
                                                         # and norn.trust.policy:
@@ -832,20 +835,32 @@ loop every T_g or on demand:
                                                         # can be replayed, so
                                                         # acceptance cannot depend
                                                         # on anything the log says
+  require cp.origin == norn.trust.origin                # which log this is about
   verify witness policy: every cosignature LINE naming a witness the policy
       names must verify, and the quorum must be satisfied  # refuse otherwise
       # per line, not per witness: a witness that supplies one verifying line
       # and one that does not is refused, not counted. §5.3's "newest" rule
       # picks among lines that verify; it never excuses one that does not.
   if stored_cp exists:
-      require cp.size >= stored_cp.size    # an earlier view undoes every
+      # Compare the two branches where BOTH can speak, and do it BEFORE the
+      # size rule. A log that forks onto a SHORTER branch is otherwise filed
+      # as an ordinary rollback: no evidence, no alarm, and the accusation
+      # §11 rule 1 requires is never made. `detect/fork-on-a-shorter-branch`
+      # is exactly that log, and it must come out `fork`, not `refuse`.
+      at := min(cp.size, stored_cp.size)
+      served := the root the SERVED branch has at `at`   # recomputed from the
+                                                         # entries, never from
+                                                         # a supplied proof
+      mine   := stored_cp.root                    if at == stored_cp.size
+                the root THIS NODE's branch had at `at`, otherwise
+                # a node that does not hold `at` cannot tell a fork from a
+                # rollback; it refuses below and MUST NOT accuse
+      if served ≠ mine → FORK (§11)
+      # Only now the size rule, and refusing is not accusing (§11.1).
+      if cp.size < stored_cp.size → refuse without raising a fork
+                                           # an earlier view undoes every
                                            # revocation made since, and is
                                            # signed and cosigned correctly
-      require the head this log had at stored_cp.size == stored_cp.root
-                                           # a node holds every entry, so it
-                                           # recomputes this rather than
-                                           # trusting a supplied proof
-      on mismatch → FORK (§11)
   fetch new tiles / entry bundles (TileFetcher / TileFS + PermanentCache)
   state := replay(trust, entries[0:cp.size])
   T := the evaluation time of cp (§5.3)                  # witness time, never ours
@@ -973,7 +988,7 @@ this table drifted out of date the moment one was.
 | §4.2 signatures, hashes, preimage | 16 entry mirrors | **`bad-forged-signer-sig`, `bad-forged-device-sig`** — syntactically perfect signatures that do not verify. Without these an implementation that never calls Ed25519 reproduces the whole manifest |
 | §4.0 the whole input is consumed | — | `bad-trailing-byte`: an accepted `log_key` entry with one byte after it. Its signatures still verify and its `entry_hash` differs, so a decoder that stops at the end of the item applies the same governance entry twice |
 | §9.4 the policy supersedes | `served-superseded/`: two of three cosignatures — enough for the trust file, short of what the roots published | the informed reader is the stricter one here |
-| §10 the stored checkpoint, §11's duties | `detect/`: accepting a head that grows, refusing one that shrinks **without** accusing, and proving a fork at the same size and on a shorter branch | the shorter-branch case is what a forking log looks like when it hides behind "a log does not shrink" |
+| §10 the stored checkpoint, §11's duties | `detect/`: accepting a head that grows, refusing one that shrinks **without** accusing, and proving a fork at the same size and on a shorter branch | the shorter-branch case is what a forking log looks like when it hides behind "a log does not shrink". It also pins §10's **order**: under a size-rule-first reading it comes out `refuse` rather than `fork`, so no evidence is written and no alarm is raised |
 | §8.1 condition 4 | `detect/staleness.json`, including `elapsed` exactly on `staleness` | a node with no corroborated instant reports `unknown` rather than guessing |
 | §9.4 rotation | `served-rotated/`: the same head under a key the roots published — refused by a reader holding only `trust.cbor`, accepted by one that has replayed the rotation | a key that vouched for itself is what the ordering forbids |
 | §10 the checkpoint's origin | `served/checkpoint` | `checkpoints-bad/10-wrong-body-origin`: signed by this network's key under this network's name, naming another log |
@@ -1016,6 +1031,7 @@ this table drifted out of date the moment one was.
 | §6 tiles and bundles | `served/`, read back to reproduce `state.json`; a forged head is `checkpoints-bad/04-forged-log-signature` and a fourth body line is `checkpoints-bad/09-extension-line` | `served-bad/`: an entry bundle with one byte changed, one the log will not serve at all, and `tampered-hash-tile` — one byte inside one leaf hash, which leaves the entries and the signed head honest, so only the hash-tile rule can refuse it |
 | §8.1 a bundle's checkpoint is checked per §10 | `proofs/`, whose checkpoints carry the quorum | `proofs-bad/no-quorum` (the log's signature and nobody else's) and `proofs-bad/wrong-origin` (this network's key over another network's origin line) |
 | §8 proof bundles | `proofs/`, one per active device | `proofs-bad/`: a wrong entry, a foreign checkpoint, a tampered proof and a checkpoint signed by a key the anchor does not name — each differing from a valid bundle in exactly one thing |
+| §10 the signature decides before the origin | — | `proofs-bad/foreign-checkpoint` MUST be refused about "no valid signature from a trusted key" and `proofs-bad/wrong-origin` about "is for origin". A reader that checks the origin first reports the wrong one for the first of them |
 | §10 verifier loop, steps 1–4 | `served/` verified end to end, **signature first** | `checkpoints-bad/01-unsigned`, `02-wrong-log-key`, `03-wrong-origin` and **`04-forged-log-signature`** — the last one being a signature of the right shape under the right key id that does not verify. Without it a verifier that never checks the log signature reproduces the whole suite |
 | §10 step 3, the witness quorum | `served/checkpoint`, cosigned by all three witnesses | `checkpoints-bad/05-one-cosignature-short`, `06-no-cosignatures`, `07-unnamed-witness-only` and **`08-forged-cosignature`**, which carries two lines naming witnesses the policy lists, one of which does not verify: the quorum is met by counting and refused by checking. `quorum none` accepting an uncosigned head needs a second anchor and is **not vectored** |
 | §16 enrollment requests | `requests/`, **5 request cases** including a 64-byte `device_id`, non-ASCII labels and an uppercase text form | `requests-bad/`, **25 request refusals** across all four layers, including **`forged-signature`** (structurally perfect, signed by another key) and `oversize-label-key` (§4.0's map-key cap) |

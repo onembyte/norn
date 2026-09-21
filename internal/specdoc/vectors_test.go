@@ -434,3 +434,85 @@ func caseNames(t *testing.T, root, dir string) []json.RawMessage {
 	}
 	return doc.Cases
 }
+
+// --- Cold-model gate run 8, defects D1 and D2 ---------------------------
+//
+// §10 is the only normative *procedure* in this document, and both of its
+// ordering bugs were invisible to every test here: the code had the right
+// order, the vectors demanded the right order, and the prose that tells a
+// second implementer what to do had the wrong one, twice.
+//
+// D1 is the serious half. §10 opened with `require cp.size >= stored_cp.size`,
+// so a reader following the prose answers *refuse* for
+// `detect/fork-on-a-shorter-branch`, where `cases.json` demands *fork*. The
+// literal reading files a forking log's shorter divergent branch as an
+// ordinary rollback: no evidence written, no alarm raised. That is the exact
+// case `detect/` exists to catch, and the paragraph describing it said the
+// opposite.
+//
+// Both checks look at the *order of the steps*, keyed on code-like tokens
+// rather than on wording, so the prose can be rewritten freely and cannot be
+// reordered quietly.
+
+// verifierProcedure is §10's fenced pseudocode block.
+func verifierProcedure(t *testing.T) string {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join("..", "..", "SPEC.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec := string(raw)
+	head := strings.Index(spec, "\n## 10.")
+	if head < 0 {
+		t.Fatal("SPEC.md has no §10")
+	}
+	open := strings.Index(spec[head:], "```")
+	if open < 0 {
+		t.Fatal("§10 has no pseudocode block")
+	}
+	body := spec[head+open+3:]
+	end := strings.Index(body, "```")
+	if end < 0 {
+		t.Fatal("§10's pseudocode block is unterminated")
+	}
+	return body[:end]
+}
+
+// mustOrder requires `first` to appear before `second`, and both to appear.
+func mustOrder(t *testing.T, block, first, second, why string) {
+	t.Helper()
+	i, j := strings.Index(block, first), strings.Index(block, second)
+	switch {
+	case i < 0:
+		t.Errorf("§10 no longer contains %q, so its order is not what the vectors "+
+			"require: %s", first, why)
+	case j < 0:
+		t.Errorf("§10 no longer contains %q: %s", second, why)
+	case i > j:
+		t.Errorf("§10 puts %q before %q. %s", second, first, why)
+	}
+}
+
+func TestTheVerifierProcedureComparesRootsBeforeApplyingTheSizeRule(t *testing.T) {
+	block := verifierProcedure(t)
+	mustOrder(t, block, "min(cp.size, stored_cp.size)", "cp.size < stored_cp.size",
+		"A log that forks onto a SHORTER branch is refused as a rollback under the "+
+			"size-first reading, so no evidence is written and no alarm is raised -- "+
+			"`detect/fork-on-a-shorter-branch` demands `fork`, not `refuse`.")
+	if !strings.Contains(block, "FORK") {
+		t.Error("§10's stored-checkpoint block never reaches FORK, which is the whole " +
+			"of what it is for")
+	}
+}
+
+// §12.1 says `served/` is verified "signature first", and
+// `proofs-bad/cases.json` requires `foreign-checkpoint` to be refused about a
+// missing trusted signature rather than about its origin. §10 checked the
+// origin first, which contradicts both.
+func TestTheVerifierProcedureChecksTheSignatureBeforeTheOrigin(t *testing.T) {
+	block := verifierProcedure(t)
+	mustOrder(t, block, "verify log signature", "cp.origin == norn.trust.origin",
+		"A checkpoint signed by a key this anchor does not trust must be refused for "+
+			"that, whatever origin it names -- `proofs-bad/foreign-checkpoint` says so, "+
+			"and §12.1 calls the loop `signature first`.")
+}
