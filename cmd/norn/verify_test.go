@@ -293,8 +293,9 @@ func TestEveryServedNegativeIsRefused(t *testing.T) {
 	if err := json.Unmarshal(raw, &doc); err != nil {
 		t.Fatal(err)
 	}
-	if len(doc.Cases) < 2 {
-		t.Fatalf("%d served negatives; §12.1 names a tampered and a missing bundle", len(doc.Cases))
+	if len(doc.Cases) < 3 {
+		t.Fatalf("%d served negatives; §6 has three: a tampered bundle, a missing "+
+			"one, and a hash tile that disagrees with the entries", len(doc.Cases))
 	}
 	bin := nornBinary(t)
 
@@ -385,5 +386,67 @@ func TestTheSupersededHeadSatisfiesTheTrustFilesPolicy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("a reader holding only the trust file refused a head that meets its "+
 			"own policy: %v\n%s", err, out)
+	}
+}
+
+// --- Cold-model gate run 7, defect J4 -----------------------------------
+//
+// §6 says the served `tile/<L>/…` hashes "MUST also agree with the tree it
+// rebuilt" and that "checking them is not optional". `served-bad/` held two
+// cases and both were *entry bundle* cases, so nothing in the suite ever
+// opened a hash tile: run 7's `blind-tiles` variant never fetched `tile/0/…`
+// at all and passed 241/241.
+//
+// The rule is not about reaching the head -- the entries alone do that. It is
+// about a node serving onward what it fetched: a log with a corrupt hash tile
+// is broken for every peer that asks it for a proof, and the node that relays
+// it is the one that made it so.
+
+func TestATamperedHashTileIsRefusedByTheTileRule(t *testing.T) {
+	dir := filepath.Join(vectors(), "served-bad")
+	raw, err := os.ReadFile(filepath.Join(dir, "cases.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Cases []struct {
+			Name, Path, File string
+		} `json:"cases"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for _, c := range doc.Cases {
+		if !strings.HasPrefix(c.Path, "tile/") || strings.HasPrefix(c.Path, "tile/entries/") {
+			continue
+		}
+		found = true
+		t.Run(c.Name, func(t *testing.T) {
+			log := anchoredLog(t)
+			body, err := os.ReadFile(filepath.Join(dir, c.File))
+			if err != nil {
+				t.Fatal(err)
+			}
+			// The entry bundles stay honest, so the tree the verifier rebuilds
+			// still matches the signed head. Only the tile rule can refuse it.
+			if err := os.WriteFile(filepath.Join(log, filepath.FromSlash(c.Path)),
+				body, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			out, err := exec.Command(nornBinary(t), "verify",
+				"-trust", filepath.Join(vectors(), "trust.cbor"), "-log", log).CombinedOutput()
+			if err == nil {
+				t.Fatalf("accepted a log whose hash tile is not what its entries imply:\n%s", out)
+			}
+			if !strings.Contains(string(out), c.Path) {
+				t.Errorf("refused, but not by the tile rule -- the message never names "+
+					"%s:\n%s", c.Path, out)
+			}
+		})
+	}
+	if !found {
+		t.Fatal("no hash-tile negative in served-bad/: §6's tile MUST is unpinned, " +
+			"and a verifier that never opens tile/0/… is indistinguishable from one that does")
 	}
 }

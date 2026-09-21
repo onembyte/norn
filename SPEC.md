@@ -922,7 +922,7 @@ suite is checked only against its own author.
 | `keys.json` | every test key: Ed25519 `{seed, public, kid}` by name, X25519 public keys by name, and `net` |
 | `entries/NN-<type>.cbor` | one valid entry per type, canonical bytes |
 | `entries/NN-<type>.json` | mirror: `{entry, entry_hash, leaf_hash, preimage_sha256, size}` where `size` is the byte length of the `.cbor`. The `entry` object mirrors the **CBOR**, so an optional field absent from the entry is absent here too — unlike `state.json`, where §5.3's schema fields are always emitted |
-| `log/NN-<name>.cbor` | the replay fixture, **105 entries** in order. The file names are labels, not the order: **read the sequence from `manifest.json`**, never by globbing and sorting |
+| `log/NN-<name>.cbor` | the replay fixture, **112 entries** in order. The file names are labels, not the order: **read the sequence from `manifest.json`**, never by globbing and sorting |
 | `log/NN-<name>.reason` | beside each entry that must be rejected: its §5.2 reason code |
 | `log/manifest.json` | `{"anchor": {"net", "genesis_hash"}, "entries": [{"index", "name", "reason"}]}` — the replay input and expected outcome; `reason` is `""` for an accepted entry |
 | `state.json` | canonical replay output for `log/` (§5.3) |
@@ -932,7 +932,7 @@ suite is checked only against its own author.
 | `proofs/<device>.bundle` | one §8.1 proof bundle per active device, each proving the entry that made that device active; `cases.json` gives the origin, the log-key seed and the device list |
 | `trust.cbor` · `trust.toml` · `trust.fingerprint` | the trust anchor (§9), authoritative bytes, human rendering, and its fingerprint |
 | `receipt.note` | a submission receipt: the signed note itself (§7) |
-| `requests/<name>.cbor` · `.txt` · `.json` | enrollment requests (§16): the request bytes, its bech32m text form, and a mirror `{request, preimage_sha256, text, size}`. `cases.json` lists them |
+| `requests/<name>.cbor` · `.txt` · `.json` | enrollment requests (§16): the request bytes, its bech32m text form, and a mirror `{request, preimage_sha256, text, size}`. `cases.json` lists them, each with a `form` — `canonical` for §16.2's lowercase form, or `uppercase` for the same request in the form §16.2 says a reader MUST also accept, which names the canonical case it duplicates |
 | `requests-bad/<name>.txt` | requests that MUST be refused — by the text layer, the CBOR profile, a field rule or signature verification. `cases.json` gives each case's reason |
 | `receipt.json` | `{comment, origin, leaf_hash, deadline, text_sha256}`, where `text_sha256` is `SHA-256` of the **signed text** — through the newline ending the last text line, excluding the blank separator and the signature lines |
 | `checkpoints-bad/<NN-case>.checkpoint` | checkpoints that MUST be refused, each served in place of `served/checkpoint` over the honest tiles. `cases.json` lists them and says which two a signature-blind verifier accepts |
@@ -975,16 +975,17 @@ this table drifted out of date the moment one was.
 | §4.4 `after` at the boundary | `after-at-its-own-index`: a floor met exactly | `bad-after-by-one`: one past the index, the smallest violation there is |
 | §5.1 the request's `net` | every `enroll` | `bad-request-net`: a properly signed request for another network, so only that check refuses it |
 | §5.1 `dup-id` before `dup-wg` | — | `bad-dup-id-and-wg`: an active `device_id` *and* a WireGuard key active for another device |
+| §5.1 the order **inside** `enroll` and `rotate` | — | `bad-enroll-request-net-and-sig` (the request's `net` decides before its signature), `bad-enroll-unsigned-request-no-signers` (the request's signature decides before the signer count — the case `bad-enroll-empty-sigs` cannot make, since its request *is* signed) and `bad-rotate-dupwg-and-no-new-key-sig` (`dup-wg` decides before the proof of possession on the incoming `device_pk`). Each is wrong in both of its two ways at once |
 | §5.2 a `device` signature's `kid` resolves | — | `bad-device-sig-wrong-kid`: the signature verifies and its `kid` names another key. The preimage excludes `sigs`, so rewriting a `kid` leaves the signature intact |
 | §4.4 `after` is a floor | `after-below-index` | `bad-after` |
-| §5 replay, 15 of the 16 reason codes | the log | 51 rejecting entries |
+| §5 replay, 15 of the 16 reason codes | the log | **74 rejecting entries** |
 | §5 `bad-genesis` | — | `genesis/`; it cannot appear in the log, since it aborts replay |
-| §5.1 genesis | the log's entry 0 | twelve abort paths in `genesis/`, one single-entry log each |
-| §5.1 seen set, §4.3 roles | — | `bad-repeat-of-rejected`, `bad-one-of-two-signers`, `bad-role-mismatch` |
+| §5.1 genesis | the log's entry 0 | **13 abort paths** in `genesis/`, one single-entry log each |
+| §5.1 seen set, §4.3 roles | — | `bad-repeat-of-rejected`, `bad-one-of-two-signers`, `bad-role-mismatch`. Step 1's two stated properties are `bad-repeat-of-undecodable` (the hash is recorded **before** the entry is decoded, so a copy of one that never decoded is `dup-entry` and not a second `decode`) and `bad-repeat-of-genesis` (entry 0's hash is recorded too, so a byte copy of it is `dup-entry` and not `dup-genesis`) |
 | §5.2 `bad-thr` | — | both halves: `bad-thr-zero` and `bad-thr` (value above the set size) |
 | §5.1 a `policy` entry is a policy | `policy-rotated`, which raises the quorum from 2 of 3 to 3 of 3 | `bad-policy-unparseable`: text that is well-formed, under the size cap, and not a `tlog-policy` |
 | §4.3 `revoke`'s three authorisations | `revoke-by-roots`, `revoke-by-device` | `bad-revoke-neither-quorum`: one signer of two and two roots of three — short on every rule independently, and a quorum only if the counts are pooled |
-| §5.1 `params` is non-empty | `params` entries in the log | `bad-params-empty` |
+| §5.1 `params`: non-empty, §4.5 keys, right types | `params` entries in the log | `bad-params-empty`, `bad-params-unknown-key`, and `bad-params-wrong-type` — a CBOR `true` where a uint belongs, which a loose decoder reads as 1. The same key rule at entry 0 is `genesis/13-params-unknown-key`, where the two readings differ by the whole log: one aborts to the zero state, the other replays every entry |
 | §14.1 key order above the BMP | `enroll-astral-labels`, whose labels carry one astral key and one private-use key: the only pair in the suite where UTF-8 bytewise order and UTF-16 code-unit order disagree | — |
 | §5.3 state, incl. D-028 and `expires` | `state.json`, `enroll-contractor` | `signer_remove-below-threshold` accepted, then `signer_add-recover` |
 | §5.3 the derivation of `T` | `served/checkpoint`, whose three witnesses cosign seven seconds apart, so the **newest** and the **oldest** are both separated from the answer; `proofs/cases.json` records the value `T` must come out as | — |
@@ -994,14 +995,14 @@ this table drifted out of date the moment one was.
 | §14 canonical JSON | every `.json`; `policy-escaping`, `enroll-unicode-labels` | — |
 | §10 a bad cosignature is refused, not merely uncounted | `served/checkpoint` | `checkpoints-bad/11-forged-cosignature-with-quorum`: three named witnesses, two verifying, so the quorum is met without the third and §10 refuses it anyway. `08` cannot tell the two readings apart, because one valid line falls short either way |
 | §11.1 the proof is empty at the held size | `fork/evidence.cbor` uses the non-degenerate branch | `fork/bad-proof-at-same-size`: a consistency proof where the two signatures say it alone |
-| §6 tiles and bundles | `served/`, read back to reproduce `state.json`; a forged head is `checkpoints-bad/04-forged-log-signature` and a fourth body line is `checkpoints-bad/09-extension-line` | `served-bad/`: an entry bundle with one byte changed, and one the log will not serve at all |
+| §6 tiles and bundles | `served/`, read back to reproduce `state.json`; a forged head is `checkpoints-bad/04-forged-log-signature` and a fourth body line is `checkpoints-bad/09-extension-line` | `served-bad/`: an entry bundle with one byte changed, one the log will not serve at all, and `tampered-hash-tile` — one byte inside one leaf hash, which leaves the entries and the signed head honest, so only the hash-tile rule can refuse it |
 | §8.1 a bundle's checkpoint is checked per §10 | `proofs/`, whose checkpoints carry the quorum | `proofs-bad/no-quorum` (the log's signature and nobody else's) and `proofs-bad/wrong-origin` (this network's key over another network's origin line) |
 | §8 proof bundles | `proofs/`, one per active device | `proofs-bad/`: a wrong entry, a foreign checkpoint, a tampered proof and a checkpoint signed by a key the anchor does not name — each differing from a valid bundle in exactly one thing |
 | §10 verifier loop, steps 1–4 | `served/` verified end to end, **signature first** | `checkpoints-bad/01-unsigned`, `02-wrong-log-key`, `03-wrong-origin` and **`04-forged-log-signature`** — the last one being a signature of the right shape under the right key id that does not verify. Without it a verifier that never checks the log signature reproduces the whole suite |
 | §10 step 3, the witness quorum | `served/checkpoint`, cosigned by all three witnesses | `checkpoints-bad/05-one-cosignature-short`, `06-no-cosignatures`, `07-unnamed-witness-only` and **`08-forged-cosignature`**, which carries two lines naming witnesses the policy lists, one of which does not verify: the quorum is met by counting and refused by checking. `quorum none` accepting an uncosigned head needs a second anchor and is **not vectored** |
-| §16 enrollment requests | `requests/`, four cases including a 64-byte `device_id` and non-ASCII labels | `requests-bad/`, 23 cases across all four layers, including **`forged-signature`** (structurally perfect, signed by another key) and `oversize-label-key` (§4.0's map-key cap) |
+| §16 enrollment requests | `requests/`, **5 request cases** including a 64-byte `device_id`, non-ASCII labels and an uppercase text form | `requests-bad/`, **25 request refusals** across all four layers, including **`forged-signature`** (structurally perfect, signed by another key) and `oversize-label-key` (§4.0's map-key cap) |
 | §11.1 fork evidence | `fork/evidence.cbor` and `fork/conflicting.checkpoint`: a second branch of this same network, diverging at entry 40, signed by the same log key and cosigned by the same witnesses. Checking it needs only `trust.cbor` | one per reader step: `fork/bad-other-origin` and `fork/bad-unverifiable-conflicting` (step 1, each half), `fork/bad-size-mismatch` (step 2), `fork/bad-forged-proof` (step 3 — both checkpoints verify and the sizes agree, so nothing but the proof can refuse it), and `fork/bad-consistent` (step 4: a log and its own earlier self) |
-| §16.2 bech32m | the text form of every request | `wrong-hrp`, `plain-bech32` (the same bytes under bech32's constant), `mixed-case`, `corrupt-character`. BIP-350's own vectors are in both implementations' unit tests |
+| §16.2 bech32m | the text form of every request, and `requests/req-minimal-upper` — the same request in the all-uppercase form §16.2 says a reader MUST accept, which is the one *positive* obligation the section carries and the form a QR code produces | `wrong-hrp`, `plain-bech32` (the same bytes under bech32's constant), `mixed-case`, `corrupt-character`. BIP-350's own vectors are in both implementations' unit tests |
 
 **What is not vectored.** A suite that looks complete is worse than one that
 admits its holes, so:

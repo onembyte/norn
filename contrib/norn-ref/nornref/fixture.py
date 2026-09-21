@@ -215,6 +215,23 @@ def _first_rejected(builder: "_Builder") -> bytes:
     return next(item.raw for item in builder.items if item.reason)
 
 
+def _first_undecodable(builder: "_Builder") -> bytes:
+    """Bytes of the first entry that fails §5.1 *step 2* -- it does not decode.
+
+    Distinct from `_first_rejected`, and the distinction is the whole point:
+    step 1 records `entry_hash` before step 2 runs, so a copy of an entry that
+    never decoded is still `dup-entry`. A copy of one that decoded and was
+    rejected later cannot tell that reading from the other.
+    """
+    for item in builder.items:
+        try:
+            cbor.decode(item.raw)
+        except cbor.ProfileError:
+            return item.raw
+    raise AssertionError(
+        "no undecodable entry to copy: the seen-set timing would pin nothing")
+
+
 class _Builder:
     """Accumulates a log, assigning each entry `after` = its own index.
 
@@ -667,6 +684,58 @@ def log() -> list[LogItem]:
                                                  "escapes": ESCAPE_TORTURE}),
         both))
 
+    # --- Cold gate run 7: five rules the prose states and no vector reached.
+
+    # §5.1's `params` rule is "non-empty, only §4.5 keys, each of the right
+    # type" and only the first third was ever refused: the suite's one
+    # unknown-body-key negative is a *note*, so `allow-unknown-param` and
+    # `params-loose-type` both reproduced the whole manifest. This is the
+    # widest divergence in the machine -- the two readings end with a
+    # different `staleness`, and so with a different freshness verdict.
+    b.add(f"{b.index}-bad-params-unknown-key", b.build(
+        "params", {"staleness": 900, "mtu": 1420}, roots3), "decode")
+    # A bool where a uint belongs. CBOR `true` is one byte and every loose
+    # decoder turns it into 1 -- Python's own `isinstance(True, int)` says yes,
+    # which is how the reference implementation accepted this until now.
+    b.add(f"{b.index}-bad-params-wrong-type", b.build(
+        "params", {"staleness": True}, roots3), "decode")
+
+    # §5.1's `enroll` table: the request's signature is checked *before* the
+    # signer count. §4.0 explains the consequence twice -- "an unsigned
+    # `enroll` is `threshold` and not `no-device-sig`, because the embedded
+    # request is still signed by the device" -- and the vector it names has a
+    # valid request signature, so it cannot tell the two orders apart. This is
+    # the other half: the request is *not* signed by the device, and the entry
+    # carries no signers either.
+    unconsented = entry.new("enroll", NET, ts=T0 + b.index * 60, after=b.index,
+                            body=_enroll_body("halfsigned", signer="signer1"))
+    unconsented["sigs"] = []
+    b.add_raw(f"{b.index}-bad-enroll-unsigned-request-no-signers",
+              cbor.encode(unconsented), "no-device-sig")
+
+    # ...and the check before that one: the request's `net` decides before its
+    # signature does.
+    b.add(f"{b.index}-bad-enroll-request-net-and-sig", b.build(
+        "enroll", {"request": enrollreq_new_with_net(bytes(16), "halfsigned",
+                                                     signer="signer1")},
+        both), "decode")
+
+    # §5.1's `rotate` table: `dup-wg` decides before the proof of possession on
+    # the incoming `device_pk`. `printer` is active and signs with its current
+    # key, so every earlier check passes; `WG["nas2"]` belongs to `nas`; and
+    # nothing signs for `printer-id2`.
+    b.add(f"{b.index}-bad-rotate-dupwg-and-no-new-key-sig", b.build(
+        "rotate", {"device_id": "printer", "wg_pk": WG["nas2"],
+                   "device_pk": KEYS["printer-id2"].public},
+        [("printer", "device")] + both), "dup-wg")
+
+    # §5.1 step 1 records `entry_hash` *before* step 2 decodes, and records
+    # entry 0's too. Neither property was exercised: the suite's repeat was of
+    # an entry that decodes cleanly, and its `dup-entry` copy was of entry 1.
+    b.add_raw(f"{b.index}-bad-repeat-of-undecodable",
+              _first_undecodable(b), "dup-entry")
+    b.add_raw(f"{b.index}-bad-repeat-of-genesis", b.items[0].raw, "dup-entry")
+
     return b.items
 
 
@@ -746,6 +815,11 @@ def genesis_aborts() -> list[tuple[str, bytes, "replay.Anchor"]]:
              signers=[KEYS["signer1"].public, KEYS["signer1"].public])
     bad_body("11-signer-thr-above-set", signer_thr=9)
     bad_body("12-empty-roots", roots=[])
+    # Entry-0 step 6: "`params`, if present, has only §4.5 keys". No genesis in
+    # the suite carried a `params` map at all, so the two readings differ by
+    # the entire log -- one aborts to the zero state, the other replays 100-odd
+    # entries -- and `allow-unknown-param` passed regardless.
+    bad_body("13-params-unknown-key", params={"staleness": 900, "mtu": 1420})
 
     assert good_anchor  # the good anchor is exercised by the log fixture
     return cases
@@ -871,17 +945,19 @@ def _duplicate_key(raw: bytes) -> bytes:
     return bytes([0xA0 | (count + 1)]) + raw[1:at] + pair + raw[at:]
 
 
-def enrollreq_new_with_net(net: bytes, device: str) -> bytes:
-    """A properly signed enrollment request for another network.
+def enrollreq_new_with_net(net: bytes, device: str, signer: str | None = None) -> bytes:
+    """An enrollment request for another network.
 
-    Signed, so the only thing wrong with the entry carrying it is that the
-    request's `net` is not the entry's -- SPEC 5.1's check, which nothing
-    exercised because the one net negative patched the envelope instead.
+    Signed by the device, so the only thing wrong with the entry carrying it is
+    that the request's `net` is not the entry's -- SPEC 5.1's check, which
+    nothing exercised because the one net negative patched the envelope
+    instead. `signer` names another key to sign with, which makes the request
+    wrong in the *second* way as well and so pins which check runs first.
     """
     from . import enrollreq
     request = enrollreq.new(net=net, device_id=device, device_pk=KEYS[device].public,
                             wg_pk=WG[device], ts=T0)
-    enrollreq.sign(request, KEYS[device])
+    enrollreq.sign(request, KEYS[signer or device], strict=signer is None)
     return enrollreq.encode(request)
 
 

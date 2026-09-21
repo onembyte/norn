@@ -229,10 +229,8 @@ def write_requests(out: pathlib.Path) -> None:
     handed -- a QR or a pasted string -- and because four of them are faults in
     the text layer itself, which a CBOR-only vector could not express.
     """
-    names = []
-    for name, req in fixture.enroll_requests():
+    def emit(name: str, req: dict, text: str) -> None:
         raw = enrollreq.encode(req)
-        text = enrollreq.to_text(req)
         write(out / "requests" / f"{name}.cbor", raw)
         write(out / "requests" / f"{name}.txt", text + "\n")
         write(out / "requests" / f"{name}.json", canonjson.dumps({
@@ -241,12 +239,33 @@ def write_requests(out: pathlib.Path) -> None:
             "text": text,
             "size": len(raw),
         }) + "\n")
-        names.append(name)
+
+    cases = []
+    for name, req in fixture.enroll_requests():
+        emit(name, req, enrollreq.to_text(req))
+        cases.append({"name": name, "form": "canonical"})
+
+    # Cold-model gate run 7, defect J6. SPEC 16.2: "The canonical form is
+    # lowercase. An all-uppercase form MUST also be accepted, because QR
+    # alphanumeric mode has no lowercase letters and a request is meant to
+    # cross a room on a phone screen." Every request here was lowercase and
+    # `requests-bad/` holds only negatives, so the one *positive* obligation in
+    # 16.2 -- the one the whole enrolment flow rests on -- was pinned by
+    # nothing, and `bech32-reject-upper` passed the entire suite.
+    twin, req = fixture.enroll_requests()[0]
+    emit(f"{twin}-upper", req, enrollreq.to_text(req).upper())
+    cases.append({"name": f"{twin}-upper", "form": "uppercase",
+                  "same_request_as": twin})
+
     write(out / "requests" / "cases.json", canonjson.dumps({
         "comment": "each case is one enrollment request: .cbor is the request, "
                    ".txt its bech32m form with a trailing newline, .json its "
-                   "fields and the SHA-256 of its signature preimage",
-        "cases": names,
+                   "fields and the SHA-256 of its signature preimage. `form` "
+                   "is `canonical` for the lowercase form SPEC 16.2 defines, "
+                   "and `uppercase` for the same request in the form 16.2 says "
+                   "a reader MUST also accept; an uppercase case names the "
+                   "canonical one it duplicates, and only its .txt differs",
+        "cases": cases,
     }) + "\n")
 
     bad = []

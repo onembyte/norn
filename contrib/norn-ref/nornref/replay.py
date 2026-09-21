@@ -321,8 +321,16 @@ def _h_params(state: State, env: dict[str, Any], index: int) -> None:
     if not body:
         raise Reject("decode")
     for key, value in body.items():
-        expected = type(DEFAULT_PARAMS.get(key, ""))
-        if not isinstance(value, expected if key in DEFAULT_PARAMS else str):
+        if key not in DEFAULT_PARAMS:
+            raise Reject("decode")
+        expected = type(DEFAULT_PARAMS[key])
+        # `isinstance(True, int)` is true in Python, so a naive check lets a
+        # CBOR `true` stand in for a uint -- exactly the divergence run 7's
+        # `params-loose-type` variant exploited, and exactly what this
+        # implementation did until the vector for it existed.
+        if isinstance(value, bool) is not (expected is bool):
+            raise Reject("decode")
+        if not isinstance(value, expected):
             raise Reject("decode")
         state.params[key] = value
 

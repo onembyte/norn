@@ -349,3 +349,87 @@ func TestTheServedLogIsSignedByTheKeyTheTrustFileNames(t *testing.T) {
 		}
 	}
 }
+
+// Cold-model gate run 7, defect J7: "§12.1 claims X, and arithmetic disproves
+// it". Two more of the table's numbers were stale when this was written -- it
+// said 51 rejecting entries where the fixture had 74, and 23 request refusals
+// where it had 25 -- because nothing counted them. A coverage table nobody
+// checks drifts the moment a vector is added, and §12.1 opens by calling an
+// inaccurate coverage claim "the same failure wearing a different hat".
+//
+// Every countable claim in §12.1 is written as `**N <noun>**` and appears
+// below. A number with no entry here is a number that will go stale.
+func TestTheCoverageTablesCountsAreCurrent(t *testing.T) {
+	root := vectorRoot(t)
+	counts := map[string]int{
+		"rejecting entries": rejectingEntries(t, root),
+		"abort paths":       len(caseNames(t, root, "genesis")),
+		"request cases":     len(caseNames(t, root, "requests")),
+		"request refusals":  len(caseNames(t, root, "requests-bad")),
+	}
+
+	spec, err := os.ReadFile(filepath.Join("..", "..", "SPEC.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]bool{}
+	for _, m := range regexp.MustCompile(`\*\*(\d+) ([a-z ]+)\*\*`).
+		FindAllStringSubmatch(string(spec), -1) {
+		want, known := counts[m[2]]
+		if !known {
+			continue
+		}
+		seen[m[2]] = true
+		if got, _ := strconv.Atoi(m[1]); got != want {
+			t.Errorf("§12.1 says %q; the suite has %d", m[0], want)
+		}
+	}
+	for noun := range counts {
+		if !seen[noun] {
+			t.Errorf("§12.1 no longer states a count of %s, so this check guards nothing", noun)
+		}
+	}
+}
+
+func rejectingEntries(t *testing.T, root string) int {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(root, "log", "manifest.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m struct {
+		Entries []struct {
+			Reason string `json:"reason"`
+		} `json:"entries"`
+	}
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	for _, e := range m.Entries {
+		if e.Reason != "" {
+			n++
+		}
+	}
+	return n
+}
+
+// caseNames is the `cases` array of a directory's manifest, whose elements are
+// bare strings in some directories and objects in others.
+func caseNames(t *testing.T, root, dir string) []json.RawMessage {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(root, dir, "cases.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Cases []json.RawMessage `json:"cases"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	if len(doc.Cases) == 0 {
+		t.Fatalf("%s/cases.json lists nothing", dir)
+	}
+	return doc.Cases
+}

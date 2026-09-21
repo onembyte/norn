@@ -710,6 +710,24 @@ func writeBadServed(root, served string, size int64) error {
 		return err
 	}
 
+	// Cold-model gate run 7, defect J4. Both cases above are *entry bundle*
+	// cases, so until this one nothing in the suite ever opened a hash tile
+	// and `blind-tiles` -- a verifier that never fetches `tile/0/...` at all
+	// -- reproduced the whole manifest. One byte inside one leaf hash leaves
+	// the entries and the signed head untouched, so the tile rule of SPEC 6
+	// is the only thing that can refuse it.
+	tilePath := tlog.TilePath(0, 0, int(size%tlog.TileWidth))
+	honestTile, err := os.ReadFile(filepath.Join(served, filepath.FromSlash(tilePath)))
+	if err != nil {
+		return err
+	}
+	badTile := append([]byte(nil), honestTile...)
+	badTile[len(badTile)-1] ^= 0x01
+	if err := os.WriteFile(filepath.Join(dir, "tampered-hash-tile.bin"),
+		badTile, 0o644); err != nil {
+		return err
+	}
+
 	meta := map[string]any{
 		"cases": []map[string]any{
 			{"name": "tampered-entry-bundle", "path": bundlePath,
@@ -719,6 +737,12 @@ func writeBadServed(root, served string, size int64) error {
 			{"name": "missing-entry-bundle", "path": bundlePath, "remove": true,
 				"says": "a log that will not serve its entries cannot be replayed, and a " +
 					"verifier must refuse rather than report what it has"},
+			{"name": "tampered-hash-tile", "path": tilePath,
+				"file": "tampered-hash-tile.bin",
+				"says": "one byte of one leaf hash changed: the entries and the signed " +
+					"head are untouched, so a verifier that reaches the head without " +
+					"opening `tile/0/...` sees nothing wrong, and serves the corrupt " +
+					"tile onward to peers asking it for proofs"},
 		},
 		"comment": "a served log is a directory, so each case names the path to replace " +
 			"with `file` or to delete with `remove`, over an otherwise honest copy of " +

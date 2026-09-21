@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/onembyte/norn/internal/cbor"
+	"github.com/onembyte/norn/internal/enrollreq"
 	"github.com/onembyte/norn/internal/entry"
 	"github.com/onembyte/norn/internal/policy"
 )
@@ -652,4 +653,303 @@ func TestTheReplayRulesRunSixLeftUnpinned(t *testing.T) {
 			}
 		})
 	}
+}
+
+// --- Cold-model gate run 7, defect J9 -----------------------------------
+//
+// The four vectors above cover §5.1's *numbered* steps. Three more orderings
+// live inside the `enroll` and `rotate` rules, whose tables §5.1 also calls
+// normative ("Each rule's checks run in the order written"), and run 7 swapped
+// each of them and still passed 241/241.
+//
+// The first is the ordering §4.0 goes out of its way to explain a second time
+// -- "An unsigned `enroll` is `threshold` and not `no-device-sig`: the
+// embedded request is still signed by the device, so the device-signature
+// check passes and the signer count is what fails" -- and the vector that
+// paragraph names, `bad-enroll-empty-sigs`, carries a *valid* request
+// signature, so it cannot tell the two orders apart. The rule was explained
+// twice and pinned zero times.
+
+// embeddedRequest is the enrolment request an `enroll` carries, read as plain
+// CBOR: the net comparison and the signature check are the rules under test,
+// so neither may be applied on the way in.
+func embeddedRequest(t *testing.T, env *entry.Envelope) *enrollreq.Request {
+	t.Helper()
+	raw, ok := env.Body["request"].([]byte)
+	if !ok {
+		t.Fatal("the enroll body carries no request byte string")
+	}
+	request, err := enrollreq.Decode(raw)
+	if err != nil {
+		t.Fatalf("the embedded request does not decode, so the entry dies before "+
+			"either rule under test: %v", err)
+	}
+	return request
+}
+
+func envNamed(t *testing.T, m manifest, suffix string) *entry.Envelope {
+	t.Helper()
+	env, err := entry.Decode(rawNamed(t, fullName(t, m, suffix)))
+	if err != nil {
+		t.Fatalf("%s does not decode: %v", suffix, err)
+	}
+	return env
+}
+
+func TestTheInnerRulePrecedenceVectorsAreWrongInTwoWays(t *testing.T) {
+	_, _, m := loadCase(t, filepath.Join(vectorRoot(), "log"))
+
+	t.Run("enroll: the request signature precedes the signer count", func(t *testing.T) {
+		const name = "bad-enroll-unsigned-request-no-signers"
+		if _, reason := entryNamed(t, m, name); reason != "no-device-sig" {
+			t.Errorf("reason is %q, want no-device-sig", reason)
+		}
+		env := envNamed(t, m, name)
+		request := embeddedRequest(t, env)
+		if !bytes.Equal(request.Net, env.Net) {
+			t.Error("the request's net differs from the entry's, so `decode` fires first")
+		}
+		if enrollreq.Verify(request) {
+			t.Error("the request's signature verifies, so `no-device-sig` never fires")
+		}
+		if len(env.Sigs) != 0 {
+			t.Errorf("%d signatures: `threshold` would not fire, so the order is "+
+				"not pinned", len(env.Sigs))
+		}
+	})
+
+	t.Run("enroll: the request's net precedes its signature", func(t *testing.T) {
+		const name = "bad-enroll-request-net-and-sig"
+		if _, reason := entryNamed(t, m, name); reason != "decode" {
+			t.Errorf("reason is %q, want decode", reason)
+		}
+		env := envNamed(t, m, name)
+		request := embeddedRequest(t, env)
+		if bytes.Equal(request.Net, env.Net) {
+			t.Error("the request's net matches the entry's, so `decode` never fires")
+		}
+		if enrollreq.Verify(request) {
+			t.Error("the request's signature verifies, so a swapped order would " +
+				"report the same reason and the vector pins nothing")
+		}
+	})
+
+	t.Run("rotate: dup-wg precedes the incoming key's signature", func(t *testing.T) {
+		const name = "bad-rotate-dupwg-and-no-new-key-sig"
+		if _, reason := entryNamed(t, m, name); reason != "dup-wg" {
+			t.Errorf("reason is %q, want dup-wg", reason)
+		}
+		env := envNamed(t, m, name)
+		deviceID, _ := env.Body["device_id"].(string)
+		incoming, ok := env.Body["device_pk"].([]byte)
+		if !ok {
+			t.Fatal("the body carries no device_pk, so the proof-of-possession " +
+				"check is never reached and the order is not pinned")
+		}
+		if deviceSignedBy(t, env, incoming) {
+			t.Error("the incoming key signed: the later check would not fire")
+		}
+		// Everything before `dup-wg` has to pass, or an earlier rule decides.
+		current := devicesOf(t)[deviceID]
+		currentPK, err := hex.DecodeString(current.DevicePK)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !deviceSignedBy(t, env, currentPK) {
+			t.Error("the device's current key did not sign, so the entry is " +
+				"`no-device-sig` for the earlier reason")
+		}
+		wg, _ := env.Body["wg_pk"].([]byte)
+		switch owner, taken := activeWg(t)[hex.EncodeToString(wg)]; {
+		case !taken:
+			t.Error("the new WireGuard key is active for nobody, so `dup-wg` never fires")
+		case owner == deviceID:
+			t.Error("the key already belongs to this device, which `dup-wg` permits")
+		}
+	})
+}
+
+type deviceRecord struct {
+	DevicePK string `json:"device_pk"`
+	WgPK     string `json:"wg_pk"`
+	Status   string `json:"status"`
+}
+
+func devicesOf(t *testing.T) map[string]deviceRecord {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(vectorRoot(), "state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var st struct {
+		Devices map[string]deviceRecord `json:"devices"`
+	}
+	if err := json.Unmarshal(raw, &st); err != nil {
+		t.Fatal(err)
+	}
+	return st.Devices
+}
+
+// --- Cold-model gate run 7, defect J10 ----------------------------------
+//
+// §5.1 step 1 states two properties and the suite exercised neither:
+// `entry_hash` is recorded *before* the entry is decoded, and entry 0's is
+// recorded too. `84-bad-repeat-of-rejected` copies an entry that decodes
+// cleanly, and `13-bad-dup-entry` copies entry 1 rather than entry 0, so
+// `seen-after-decode` and `no-genesis-seen` both passed the whole suite.
+//
+// The divergence is not cosmetic: a log carrying two identical undecodable
+// entries yields `decode, decode` under one reading and `decode, dup-entry`
+// under the other -- different `rejected` arrays, which §5.3 makes a
+// byte-identical MUST.
+
+func TestTheSeenSetIsRecordedBeforeDecodingAndAtGenesis(t *testing.T) {
+	_, entries, m := loadCase(t, filepath.Join(vectorRoot(), "log"))
+
+	t.Run("a copy of an entry that never decoded", func(t *testing.T) {
+		index, reason := entryNamed(t, m, "bad-repeat-of-undecodable")
+		if reason != "dup-entry" {
+			t.Errorf("reason is %q, want dup-entry", reason)
+		}
+		original := indexOfCopy(t, entries, index)
+		if original < 0 {
+			t.Fatal("no earlier entry has these bytes, so nothing is a duplicate of anything")
+		}
+		if _, err := entry.Decode(entries[original]); err == nil {
+			t.Error("the copied entry decodes, so recording the hash after decoding " +
+				"would reach the same answer and the vector pins nothing")
+		}
+		if got := m.Entries[original].Reason; got != "decode" {
+			t.Errorf("the copied entry is refused %q, want decode -- step 2", got)
+		}
+	})
+
+	t.Run("a copy of the genesis entry", func(t *testing.T) {
+		index, reason := entryNamed(t, m, "bad-repeat-of-genesis")
+		if reason != "dup-entry" {
+			t.Errorf("reason is %q, want dup-entry -- step 1 precedes step 5", reason)
+		}
+		if !bytes.Equal(entries[index], entries[0]) {
+			t.Fatal("not a byte copy of entry 0, so `dup-genesis` is all it could ever be")
+		}
+		env, err := entry.Decode(entries[0])
+		if err != nil || env.T != "genesis" {
+			t.Fatal("entry 0 is not a decodable genesis")
+		}
+	})
+}
+
+// indexOfCopy is the first earlier entry with exactly these bytes, or -1.
+func indexOfCopy(t *testing.T, entries [][]byte, index int) int {
+	t.Helper()
+	for i := 0; i < index; i++ {
+		if bytes.Equal(entries[i], entries[index]) {
+			return i
+		}
+	}
+	return -1
+}
+
+// --- Cold-model gate run 7, defect J5 -----------------------------------
+//
+// §5.1's `params` rule is "non-empty, only §4.5 keys, each of the right type",
+// and only the non-empty half was vectored: `68-bad-unknown-body-key` is a
+// *note*, and no `genesis` in the suite carries a `params` map with a bad key
+// at all. `allow-unknown-param` and `params-loose-type` both passed.
+//
+// This is the widest divergence in the replay machine. Two implementations
+// that disagree end up with different `params`, so a different `staleness`, so
+// a different freshness verdict -- and at genesis one aborts to the zero state
+// while the other replays the whole log.
+
+func TestTheParamsKeyAndTypeRulesAreVectored(t *testing.T) {
+	_, _, m := loadCase(t, filepath.Join(vectorRoot(), "log"))
+	known := map[string]bool{"checkpoint_interval": true, "staleness": true,
+		"mmd": true, "rotate_needs_signer": true}
+
+	t.Run("an unknown key", func(t *testing.T) {
+		const name = "bad-params-unknown-key"
+		if _, reason := entryNamed(t, m, name); reason != "decode" {
+			t.Errorf("reason is %q, want decode", reason)
+		}
+		body := bodyOf(t, rawEntry(t, fullName(t, m, name)))
+		if len(body) == 0 {
+			t.Fatal("an empty body is refused by the non-empty rule instead")
+		}
+		var stranger bool
+		for key := range body {
+			if !known[key] {
+				stranger = true
+			}
+		}
+		if !stranger {
+			t.Error("every key is a §4.5 key, so the unknown-key rule never fires")
+		}
+	})
+
+	t.Run("a §4.5 key of the wrong type", func(t *testing.T) {
+		const name = "bad-params-wrong-type"
+		if _, reason := entryNamed(t, m, name); reason != "decode" {
+			t.Errorf("reason is %q, want decode", reason)
+		}
+		body := bodyOf(t, rawEntry(t, fullName(t, m, name)))
+		if len(body) == 0 {
+			t.Fatal("an empty body is refused by the non-empty rule instead")
+		}
+		for key, value := range body {
+			if !known[key] {
+				t.Fatalf("%q is not a §4.5 key: the unknown-key rule fires first", key)
+			}
+			// A bool where a uint belongs is the trap: CBOR `true` is one byte
+			// and every loose decoder in the world turns it into 1.
+			if key == "rotate_needs_signer" {
+				if _, isBool := value.(bool); isBool {
+					t.Error("a bool in the one bool-typed field is the right type")
+				}
+				continue
+			}
+			if _, isBool := value.(bool); !isBool {
+				t.Errorf("%q holds %T; a bool is what a loose uint check lets through", key, value)
+			}
+		}
+	})
+
+	t.Run("an unknown key in the genesis body", func(t *testing.T) {
+		names := genesisCaseNames(t)
+		var found string
+		for _, name := range names {
+			if strings.HasSuffix(name, "params-unknown-key") {
+				found = name
+			}
+		}
+		if found == "" {
+			t.Fatal("no genesis case carries a params map with an unknown key: " +
+				"§5.1 entry-0 step 6's params clause is unvectored, and the two " +
+				"readings differ by the whole log")
+		}
+	})
+}
+
+func bodyOf(t *testing.T, env map[string]any) map[string]any {
+	t.Helper()
+	body, ok := env["body"].(map[string]any)
+	if !ok {
+		t.Fatal("the entry has no CBOR map body")
+	}
+	return body
+}
+
+func genesisCaseNames(t *testing.T) []string {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(vectorRoot(), "genesis", "cases.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Cases []string `json:"cases"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	return doc.Cases
 }

@@ -30,14 +30,14 @@ of having it.
 |---|---|
 | `keys.json` | every test key: Ed25519 `{seed, public, kid}` by name, X25519 public keys, and `net` |
 | `entries/` | one valid entry per type, canonical bytes, each with a `.json` mirror carrying its hashes and preimage |
-| `log/` | the 105-entry replay fixture. **Read the order from `manifest.json`**, never by sorting filenames; entries that must be refused carry a `.reason` file |
-| `state.json` | the state those 105 entries replay to, in canonical JSON (§14) |
+| `log/` | the 112-entry replay fixture. **Read the order from `manifest.json`**, never by sorting filenames; entries that must be refused carry a `.reason` file |
+| `state.json` | the state those 112 entries replay to, in canonical JSON (§14) |
 | `proven/` | the devices a node admits at four evaluation times, including the boundary where `expires == T`. `state.json` is clock-independent on purpose, so this is the only vector that exercises expiry — the rule that decides when a device stops being admitted |
 | `entries-hostile/` | input at and past §4.0's two resource limits. A case with `says` must be refused for that reason; one marked `accepted` sits exactly at a limit and must be accepted, which is what bounds the limit from below |
-| `genesis/` | twelve ways a genesis entry is refused |
+| `genesis/` | thirteen ways a genesis entry is refused |
 | `trust.cbor`, `trust.toml`, `trust.fingerprint` | the anchor in both encodings, and the fingerprint an operator compares out of band (§9.3) |
 | `trust-bad/` | 25 anchors that must be rejected, each otherwise perfectly valid — including every mandatory §9.1 key, missing one at a time |
-| `requests/`, `requests-bad/` | enrollment requests (§16) and 23 refusals across all four layers |
+| `requests/`, `requests-bad/` | enrollment requests (§16) and 25 refusals across all four layers. Each positive case carries a `form`: `canonical` for §16.2's lowercase text, or `uppercase` for the same request in the form §16.2 says a reader MUST also accept |
 | `receipt.note`, `receipt.json` | a submission receipt (§7) and its parsed form |
 | `served/` | the log as a static site: `checkpoint`, entry bundles and hash tiles |
 | `checkpoints-bad/` | eleven checkpoints that MUST be refused, each served in place of `served/checkpoint` over the honest tiles. `cases.json` says what each one is. **Start here if you are checking your verifier**: `04` and `08` are the only files in the suite that a verifier which never checks a note or cosignature signature will accept |
@@ -46,7 +46,7 @@ of having it.
 | `detect/` | **pairs**, not single artifacts: a checkpoint the reader already holds and one it is then offered, each branch served with its own tiles. Accepting a grown head, refusing a shrunk one *without* calling it a fork, and proving a fork from either side. `staleness.json` is §8.1 condition 4's ladder as a table |
 | `served-rotated/` | the served head signed by a key the roots published in the log (§9.4). The only vector with two correct answers: refuse it holding only `trust.cbor`, accept it having replayed this log |
 | `served-superseded/` | the served head cosigned by two of three witnesses: accepted by a reader holding only `trust.cbor`, refused by one that has replayed the roots raising the quorum (§9.4) |
-| `served-bad/` | §6's two refusals. A served log is a directory, so each case names the path to replace with `file` or delete with `remove`, over an otherwise honest copy of `served/` |
+| `served-bad/` | §6's three refusals: a tampered entry bundle, a missing one, and a tampered hash tile. A served log is a directory, so each case names the path to replace with `file` or delete with `remove`, over an otherwise honest copy of `served/` |
 | `fork/` | `evidence.cbor` and `conflicting.checkpoint`: a second branch of this same network, proving the evidence format (§11.1) is checkable by anybody holding `trust.cbor` — plus six that must be **refused**: one per reader step, and one carrying a consistency proof where §11.1 requires none: `bad-other-origin` and `bad-unverifiable-conflicting` (step 1), `bad-size-mismatch` (step 2), `bad-forged-proof` (step 3), `bad-consistent` (step 4). `cases.json` says what each refusal must be about |
 | `anchors/` | OpenTimestamps proofs, and a calendar's reply, written by `python-opentimestamps` |
 

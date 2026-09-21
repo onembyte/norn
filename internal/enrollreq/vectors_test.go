@@ -1,7 +1,10 @@
 package enrollreq
 
 import (
+	"bytes"
 	"crypto/ed25519"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -235,4 +238,137 @@ func shippedNet(t *testing.T) []byte {
 		out[i] = byte(b)
 	}
 	return out
+}
+
+// --- Cold-model gate run 7, defect J6 -----------------------------------
+//
+// `requests/` shipped four positive cases and **nothing read them** -- not a
+// Go test, not a Python one. So §16.2's one positive obligation ("the
+// canonical form is lowercase; an all-uppercase form MUST also be accepted,
+// because QR alphanumeric mode has no lowercase letters") was vectored by
+// nothing, and run 7's `bech32-reject-upper` variant passed the whole suite.
+//
+// The enrolment flow the design exists for is a device printing a QR code and
+// a signer scanning it. An implementation that refuses the uppercase form
+// cannot take part in it, and until this test the suite said nothing.
+
+type requestCase struct {
+	Name          string `json:"name"`
+	Form          string `json:"form"`
+	SameRequestAs string `json:"same_request_as"`
+}
+
+func positiveRequestCases(t *testing.T) []requestCase {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(vectorRoot(), "requests", "cases.json"))
+	if err != nil {
+		t.Fatalf("the positive request vectors are missing: %v", err)
+	}
+	var doc struct {
+		Cases []requestCase `json:"cases"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	if len(doc.Cases) == 0 {
+		t.Fatal("no positive request cases")
+	}
+	return doc.Cases
+}
+
+func TestEveryPositiveRequestVectorIsAccepted(t *testing.T) {
+	net := shippedNet(t)
+	for _, c := range positiveRequestCases(t) {
+		t.Run(c.Name, func(t *testing.T) {
+			dir := filepath.Join(vectorRoot(), "requests")
+			text, err := os.ReadFile(filepath.Join(dir, c.Name+".txt"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			trimmed := strings.TrimSuffix(string(text), "\n")
+
+			request, err := DecodeText(trimmed)
+			if err != nil {
+				t.Fatalf("a request a signer MUST accept did not decode: %v", err)
+			}
+			if err := Check(request, net); err != nil {
+				t.Fatalf("a request a signer MUST accept was refused: %v", err)
+			}
+			if !Verify(request) {
+				t.Fatal("the shipped signature does not verify")
+			}
+
+			// The three files are one case in three forms; a reader that
+			// takes any one of them must land on the same request.
+			wire, err := os.ReadFile(filepath.Join(dir, c.Name+".cbor"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			encoded, err := Encode(request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(encoded, wire) {
+				t.Errorf("the text form and the .cbor are different requests")
+			}
+			// Canonical JSON (§14.1) carries byte strings as hex.
+			var meta struct {
+				PreimageSHA256 string `json:"preimage_sha256"`
+				Text           string `json:"text"`
+				Size           int    `json:"size"`
+			}
+			blob, err := os.ReadFile(filepath.Join(dir, c.Name+".json"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := json.Unmarshal(blob, &meta); err != nil {
+				t.Fatal(err)
+			}
+			if meta.Text != trimmed {
+				t.Errorf("the .json records a different text form than the .txt ships")
+			}
+			if meta.Size != len(wire) {
+				t.Errorf("the .json says %d bytes, the .cbor is %d", meta.Size, len(wire))
+			}
+			preimage, err := Preimage(request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if sum := sha256.Sum256(preimage); hex.EncodeToString(sum[:]) != meta.PreimageSHA256 {
+				t.Errorf("the signature preimage is not the one the .json publishes")
+			}
+
+			switch c.Form {
+			case "canonical":
+				if trimmed != strings.ToLower(trimmed) {
+					t.Error("§16.2 makes lowercase the canonical form")
+				}
+			case "uppercase":
+				if trimmed != strings.ToUpper(trimmed) {
+					t.Error("an uppercase case whose text is not all-uppercase pins nothing")
+				}
+				twin, err := os.ReadFile(filepath.Join(dir, c.SameRequestAs+".txt"))
+				if err != nil {
+					t.Fatalf("the case names %q as its twin: %v", c.SameRequestAs, err)
+				}
+				if want := strings.ToUpper(strings.TrimSuffix(string(twin), "\n")); trimmed != want {
+					t.Error("the uppercase case is not the same string as its lowercase twin")
+				}
+			default:
+				t.Fatalf("unknown form %q", c.Form)
+			}
+		})
+	}
+}
+
+// The uppercase obligation is a MUST with no negative to hide behind: if the
+// suite carries no uppercase case, an implementation that refuses one is
+// indistinguishable from a correct one.
+func TestTheSuiteCarriesAnUppercaseRequest(t *testing.T) {
+	for _, c := range positiveRequestCases(t) {
+		if c.Form == "uppercase" {
+			return
+		}
+	}
+	t.Fatal("no uppercase request vector: §16.2's one positive MUST is unpinned")
 }
