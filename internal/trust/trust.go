@@ -277,10 +277,18 @@ func (t *Trust) Validate() error {
 	// counts. A file where they differ configures a quorum over parties the
 	// node cannot reach, or lists parties nothing requires -- either way the
 	// operator believes they set something they did not.
+	//
+	// Correspondence is about *which* names appear, not how many times: the
+	// uniqueness rule above owns multiplicity. This loop used to strike each
+	// name off as it matched, which meant a file listing one witness twice was
+	// refused here -- so an implementation missing the uniqueness rule
+	// entirely was saved by this one, and the mutation proving that is what
+	// made the two separable (cold gate run 7, J12).
 	named := map[string]string{}
 	for _, w := range parsed.Witnesses {
 		named[w.Name] = w.Key
 	}
+	covered := map[string]bool{}
 	for _, w := range t.Witnesses {
 		key, ok := named[w.Name]
 		if !ok {
@@ -290,10 +298,12 @@ func (t *Trust) Validate() error {
 			return trustErrorf("witness %s has one key in `witnesses` and another in the policy",
 				w.Name)
 		}
-		delete(named, w.Name)
+		covered[w.Name] = true
 	}
 	for name := range named {
-		return trustErrorf("the policy names witness %s, which `witnesses` does not list", name)
+		if !covered[name] {
+			return trustErrorf("the policy names witness %s, which `witnesses` does not list", name)
+		}
 	}
 	if t.Anchor != nil {
 		if _, ok := t.Anchor["type"].(string); !ok {

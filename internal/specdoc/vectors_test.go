@@ -366,6 +366,7 @@ func TestTheCoverageTablesCountsAreCurrent(t *testing.T) {
 		"abort paths":       len(caseNames(t, root, "genesis")),
 		"request cases":     len(caseNames(t, root, "requests")),
 		"request refusals":  len(caseNames(t, root, "requests-bad")),
+		"rejected anchors":  len(caseNames(t, root, "trust-bad")),
 	}
 
 	spec, err := os.ReadFile(filepath.Join("..", "..", "SPEC.md"))

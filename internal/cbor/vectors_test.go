@@ -39,9 +39,9 @@ func TestHostileInputIsRefusedByTheProfile(t *testing.T) {
 			refused++
 		}
 	}
-	if accepted < 2 || refused < 2 {
-		t.Fatalf("%d accepted and %d refused; §4.0's two limits each need a case at the "+
-			"limit and a case past it, or a decoder enforcing the wrong value passes",
+	if accepted < 3 || refused < 3 {
+		t.Fatalf("%d accepted and %d refused; §4.0's three limits each need a case at "+
+			"the limit and a case past it, or a decoder enforcing the wrong value passes",
 			accepted, refused)
 	}
 	for _, c := range doc.Cases {
@@ -124,5 +124,44 @@ func TestTheDepthLimitMatchesTheVectorWrittenForIt(t *testing.T) {
 		t.Error("§4.0 does not say whether a scalar adds depth. It counted values once, " +
 			"the implementations count containers, and the vector followed the " +
 			"implementations")
+	}
+}
+
+// Cold-model gate run 7, defect J12. §4.0 caps every map key at 1-23 bytes, and
+// the only vector for it was `requests-bad/oversize-label-key` -- which the
+// `labels` *field* rule refuses first, so the decoder-level cap was
+// unobservable and `no-key-cap` passed. §12.1 half-admitted this and listed
+// the rule as covered anyway.
+//
+// The cap belongs with the other two resource limits, whose vectors are raw
+// bytes for the same reason: an encoder that enforces the profile cannot
+// produce the hostile case.
+func TestTheKeyLimitVectorsSitExactlyOnTheCap(t *testing.T) {
+	dir := filepath.Join("..", "..", "testdata", "vectors", "entries-hostile")
+	keyLen := func(name string) int {
+		raw, err := os.ReadFile(filepath.Join(dir, name+".cbor"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Each vector is a one-pair map whose key is a definite-length text
+		// string: 0xa1, then 0x60|n for n < 24, else 0x78 and one length byte.
+		if len(raw) < 3 || raw[0] != 0xa1 {
+			t.Fatalf("%s is not a one-pair map", name)
+		}
+		switch {
+		case raw[1] >= 0x60 && raw[1] < 0x78:
+			return int(raw[1] - 0x60)
+		case raw[1] == 0x78:
+			return int(raw[2])
+		}
+		t.Fatalf("%s does not begin with a definite-length text key", name)
+		return 0
+	}
+	if got := keyLen("at-the-key-limit"); got != MaxKeyLen {
+		t.Errorf("the at-the-limit key is %d bytes and the cap is %d; a vector that "+
+			"does not sit on the limit bounds nothing", got, MaxKeyLen)
+	}
+	if got := keyLen("past-the-key-limit"); got != MaxKeyLen+1 {
+		t.Errorf("the past-the-limit key is %d bytes, want %d", got, MaxKeyLen+1)
 	}
 }

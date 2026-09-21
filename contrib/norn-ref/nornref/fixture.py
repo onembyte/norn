@@ -940,6 +940,30 @@ def trust_rejections() -> list[tuple[str, dict[str, Any]]]:
         ("23-missing-log-key", damaged(log_key=_REMOVE)),
         ("24-missing-log-urls", damaged(log_urls=_REMOVE)),
         ("25-missing-witnesses", damaged(witnesses=_REMOVE)),
+        # Cold gate run 7, J12: four §9.1 rules whose only vector tripped a
+        # *different* rule first, so removing each of them passed the suite.
+        #
+        # `14-missing-name` covers an absent `name`; the 1-64 byte bound has
+        # two ends and neither was reached.
+        ("26-name-too-long", damaged(name="n" * 65)),
+        ("27-name-empty", damaged(name="")),
+        # `24-missing-log-urls` covers absent. Present-and-empty is a different
+        # code path in both implementations.
+        ("28-empty-log-urls", damaged(log_urls=[])),
+        # "A file with no witnesses MUST be rejected". `07-no-witnesses` also
+        # breaks the policy/witness correspondence, and that rule decides, so
+        # the MUST itself was unreachable. Here the policy names no witnesses
+        # either -- `quorum none` is the one quorum that needs none -- so the
+        # two agree and only the minimum can refuse the file.
+        ("29-no-witnesses-only", damaged(
+            witnesses=[],
+            policy=f"log {log_vkey()} {LOG_URLS[0]}\nquorum none\n")),
+        # A witness `name` is unique within the file. `08` lists `pi` twice and
+        # nothing else, so the policy names two witnesses the file does not.
+        # This file lists all three *and* a byte-identical second `pi`: the
+        # names and keys correspond exactly, and only uniqueness is broken.
+        ("30-duplicate-witness-name-only", damaged(
+            witnesses=base["witnesses"] + [dict(base["witnesses"][0])])),
     ]
 
 
@@ -1416,6 +1440,15 @@ def hostile_inputs() -> list[tuple[str, bytes, str]]:
     past_size = b"\x59" + (cbor.MAX_ENTRY_BYTES - 2).to_bytes(2, "big") + \
         b"\x00" * (cbor.MAX_ENTRY_BYTES - 2)
 
+    # §4.0's third limit: every map key is 1-23 bytes. Its only vector was
+    # `requests-bad/oversize-label-key`, which the `labels` *field* rule
+    # refuses first -- so the decoder-level cap was unobservable and cold gate
+    # run 7's `no-key-cap` passed (J12). A one-pair map with a uint value, so
+    # the key length is the only thing about it that can be wrong.
+    at_key = b"\xa1" + bytes([0x60 + cbor.MAX_KEY_LEN]) + b"k" * cbor.MAX_KEY_LEN + b"\x00"
+    past_key = b"\xa1\x78" + bytes([cbor.MAX_KEY_LEN + 1]) + \
+        b"k" * (cbor.MAX_KEY_LEN + 1) + b"\x00"
+
     return [
         ("oversize-entry", oversize, "exceeds"),
         ("deep-nesting", deep, "deeper than"),
@@ -1423,6 +1456,8 @@ def hostile_inputs() -> list[tuple[str, bytes, str]]:
         ("past-the-depth-limit", past_depth, "deeper than"),
         ("at-the-size-limit", at_size, None),
         ("past-the-size-limit", past_size, "exceeds"),
+        ("at-the-key-limit", at_key, None),
+        ("past-the-key-limit", past_key, f"map key must be 1-{cbor.MAX_KEY_LEN} bytes"),
     ]
 
 

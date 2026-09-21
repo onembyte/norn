@@ -182,13 +182,21 @@ def _check_policy_matches_witnesses(doc: dict[str, Any]) -> None:
         fields = line.split()
         if len(fields) >= 3 and fields[0] == "witness":
             named[fields[1]] = fields[2]
+    # Correspondence is about *which* names appear, not how many times: the
+    # uniqueness rule owns multiplicity. This used to `pop` each name as it
+    # matched, so a file listing one witness twice was refused here -- meaning
+    # an implementation missing the uniqueness rule was saved by this one.
+    covered: set[str] = set()
     for witness in doc["witnesses"]:
         if witness["name"] not in named:
             raise TrustError(
                 f"witness {witness['name']} is listed but the policy never names it")
-        if named.pop(witness["name"]) != witness["key"]:
+        if named[witness["name"]] != witness["key"]:
             raise TrustError(
                 f"witness {witness['name']} has one key in `witnesses` and another "
                 "in the policy")
+        covered.add(witness["name"])
     for name in named:
-        raise TrustError(f"the policy names witness {name}, which `witnesses` does not list")
+        if name not in covered:
+            raise TrustError(
+                f"the policy names witness {name}, which `witnesses` does not list")

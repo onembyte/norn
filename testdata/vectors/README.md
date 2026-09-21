@@ -33,10 +33,10 @@ of having it.
 | `log/` | the 116-entry replay fixture. **Read the order from `manifest.json`**, never by sorting filenames; entries that must be refused carry a `.reason` file |
 | `state.json` | the state those 116 entries replay to, in canonical JSON (§14) |
 | `proven/` | the devices a node admits at four evaluation times, including the boundary where `expires == T`. `state.json` is clock-independent on purpose, so this is the only vector that exercises expiry — the rule that decides when a device stops being admitted |
-| `entries-hostile/` | input at and past §4.0's two resource limits. A case with `says` must be refused for that reason; one marked `accepted` sits exactly at a limit and must be accepted, which is what bounds the limit from below |
+| `entries-hostile/` | input at and past §4.0's three resource limits — the entry size, the nesting depth and the map-key cap. A case with `says` must be refused for that reason; one marked `accepted` sits exactly at a limit and must be accepted, which is what bounds the limit from below |
 | `genesis/` | fifteen ways a genesis entry is refused |
 | `trust.cbor`, `trust.toml`, `trust.fingerprint` | the anchor in both encodings, and the fingerprint an operator compares out of band (§9.3) |
-| `trust-bad/` | 25 anchors that must be rejected, each otherwise perfectly valid — including every mandatory §9.1 key, missing one at a time |
+| `trust-bad/` | 30 anchors that must be rejected, each otherwise perfectly valid — including every mandatory §9.1 key, missing one at a time, and five whose single defect is the *only* rule that can refuse them |
 | `requests/`, `requests-bad/` | enrollment requests (§16) and 25 refusals across all four layers. Each positive case carries a `form`: `canonical` for §16.2's lowercase text, or `uppercase` for the same request in the form §16.2 says a reader MUST also accept |
 | `receipt.note`, `receipt.json` | a submission receipt (§7) and its parsed form |
 | `served/` | the log as a static site: `checkpoint`, entry bundles and hash tiles |
