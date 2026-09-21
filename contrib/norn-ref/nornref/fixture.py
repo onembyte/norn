@@ -1114,6 +1114,13 @@ def trust_rejections() -> list[tuple[str, dict[str, Any]]]:
         # verifiers. Every shipped key had a correct id, so a reader that never
         # checked one passed the suite.
         ("37-log-key-id-mismatch", damaged(log_key=_vkey_with_wrong_id())),
+        # Cold gate run 9, D8. §9.1 states MAX_TRUST_BYTES and nothing in the
+        # suite was ever close, so a reader with no cap -- or a cap of a
+        # million -- passed everything. Padded with *valid* `log_urls`, whose
+        # count nothing bounds, so the file is correct in every other respect
+        # and only its size can refuse it.
+        ("38-oversize", damaged(log_urls=base["log_urls"] + [
+            f"https://mirror{i}.norn.example/testnet" for i in range(2000)])),
         ("30-duplicate-witness-name-only", damaged(
             witnesses=base["witnesses"] + [dict(base["witnesses"][0])])),
     ]
@@ -1169,6 +1176,10 @@ def trust_acceptances() -> list[tuple[str, dict[str, Any]]]:
         # refused, because an unrecognised enforcement mode is not ignorable.
         ("anchor-unknown-type", dict(base, anchor={
             "type": "roughtime", "max_lag": 86400, "mode": "advisory"})),
+        # D16: `anchor` is the one member §9.1 marks OPTIONAL, and all forty
+        # trust files carried one -- so a reader that required it rejected
+        # nothing in the suite.
+        ("no-anchor", {k: v for k, v in base.items() if k != "anchor"}),
     ]
 
 

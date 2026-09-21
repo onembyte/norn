@@ -1326,8 +1326,33 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 		return err
 	}
 
+	// Cold gate run 9, D8. §11.1 states MAX_EVIDENCE_BYTES and calls its bound
+	// the thing that "matters more here than anywhere else in the document",
+	// and nothing in the suite was ever close -- a reader with a cap of a
+	// million passed everything. Padded through the one field with room: a
+	// `witness` URL, which the policy grammar does not bound. The file is
+	// correct in every other respect, so only its size can refuse it.
+	padded := &forkevidence.Evidence{
+		Held: heldSigned, Conflicting: forkedSigned,
+		Size: forkedCP.Size, HeldRoot: append([]byte(nil), evidence.HeldRoot...),
+		Proof: evidence.Proof, Policy: hugePolicy(root),
+	}
+	rawPadded, err := padded.Encode()
+	if err != nil {
+		return err
+	}
+	if len(rawPadded) <= forkevidence.MaxEvidenceBytes {
+		return fmt.Errorf("the oversize evidence case is %d bytes and the cap is %d",
+			len(rawPadded), forkevidence.MaxEvidenceBytes)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "bad-oversize.cbor"),
+		rawPadded, 0o644); err != nil {
+		return err
+	}
+
 	manifest := map[string]any{
 		"cases": []map[string]string{
+			{"name": "bad-oversize", "says": "exceeds"},
 			{"name": "bad-open-schema", "says": "unknown field"},
 			{"name": "bad-wrong-version", "says": "version"},
 			{"name": "bad-size-above-held", "says": "can only speak for what it holds"},
@@ -1537,6 +1562,26 @@ func appendForgedSecondLine(signed, whose string) (string, error) {
 			note.SignatureLine(whose, second) + "\n", nil
 	}
 	return "", fmt.Errorf("no signature line for %q", whose)
+}
+
+// hugePolicy is a valid `tlog-policy` far past the evidence size cap. The
+// grammar bounds a `witness` URL not at all, which is the only field in the
+// whole artifact with room to grow while staying correct.
+func hugePolicy(root string) string {
+	var logLine, witnessLine string
+	for _, line := range strings.Split(policyOf(root), "\n") {
+		switch {
+		case strings.HasPrefix(line, "log "):
+			logLine = line
+		case strings.HasPrefix(line, "witness ") && witnessLine == "":
+			witnessLine = line
+		}
+	}
+	fields := strings.Fields(witnessLine)
+	name, vkey := fields[1], fields[2]
+	url := "https://witness.example/" + strings.Repeat("padding/", 9000)
+	return logLine + "\nwitness " + name + " " + vkey + " " + url +
+		"\nquorum " + name + "\n"
 }
 
 // quorumNonePolicy is a policy an accuser might write to make its own evidence
@@ -1845,6 +1890,14 @@ func writeBadCheckpoints(root, origin string, key ed25519.PrivateKey,
 		"08-forged-cosignature",
 		"11-forged-cosignature-with-quorum",
 		"12-second-line-from-one-witness",
+		// Cold gate run 9, D6: this list is generated and its contents were
+		// hand-written, so adding `16` silently falsified the claim that these
+		// are the set "and nothing else here". `16`'s only defect is a second
+		// log signature that does not verify, which a reader that never calls
+		// Ed25519 cannot see. The set is now *computed* from the shipped files
+		// by `TestTheSignatureBlindSetIsComputedNotAsserted`; this list is
+		// checked against that computation rather than trusted.
+		"16-two-log-signatures",
 	}
 	for _, want := range blind {
 		if _, ok := reasons[want]; !ok {

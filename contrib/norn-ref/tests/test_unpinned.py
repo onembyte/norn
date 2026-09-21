@@ -1,7 +1,7 @@
 """RED first: readings run 4 showed a variant could hold and still pass."""
 import unittest
 
-from nornref import entry, fixture, replay, trust
+from nornref import cbor, entry, fixture, replay, trust
 
 
 def outcomes():
@@ -70,8 +70,10 @@ class TrustNegativesAreIsolated(unittest.TestCase):
     def test_each_case_trips_only_its_own_rule(self):
         for name, doc in fixture.trust_rejections():
             with self.subTest(case=name):
+                # `parse`, not `validate`: a trust file is bytes and the size
+                # bound belongs to the decoder (SPEC 9.1).
                 with self.assertRaises(trust.TrustError):
-                    trust.validate(doc)
+                    trust.parse(cbor.encode(doc))
 
     def test_origin_derivation_has_an_isolated_negative(self):
         """`net` stays valid and `log_key` is renamed to match, so only the

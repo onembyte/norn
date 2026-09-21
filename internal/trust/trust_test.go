@@ -409,3 +409,53 @@ func TestAVerifierKeyWhoseIdIsWrongIsRefused(t *testing.T) {
 	doc := parseBad(t, isolated(t, "log-key-id-mismatch"))
 	_ = doc
 }
+
+// Cold-model gate run 9, defects D8 and D16. §9.1 states `MAX_TRUST_BYTES`
+// and nothing was ever that large, so a reader with no cap -- or a cap of a
+// million -- passed the whole suite. The case is padded with **valid**
+// `log_urls`: nothing bounds their count, so the file is correct in every
+// other respect and only its size can refuse it.
+//
+// And D16: `anchor` is the one member §9.1 marks OPTIONAL, and all forty trust
+// files carried one. A reader that required it rejected nothing in the suite.
+func TestTheTrustSizeCapAndTheOptionalAnchorAreVectored(t *testing.T) {
+	t.Run("oversize", func(t *testing.T) {
+		// Refused by the decoder, which is where a size bound belongs: §9.1
+		// says the file is refused **on length**, before anything it declares
+		// is allocated. So this asserts a refusal at either layer, not that it
+		// reaches validation.
+		name := isolated(t, "oversize")
+		raw, err := os.ReadFile(filepath.Join(vectorRoot(), "trust-bad", name+".cbor"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(raw) <= maxTrustBytesForTest {
+			t.Fatalf("the case is %d bytes and the cap is %d; it pins nothing",
+				len(raw), maxTrustBytesForTest)
+		}
+		doc, err := Parse(raw)
+		if err != nil {
+			return
+		}
+		if err := doc.Validate(); err == nil {
+			t.Error("an oversize trust file was accepted")
+		}
+	})
+	t.Run("no-anchor", func(t *testing.T) {
+		raw, err := os.ReadFile(filepath.Join(vectorRoot(), "trust-good", "no-anchor.cbor"))
+		if err != nil {
+			t.Fatalf("`anchor` is OPTIONAL and no vector omits it: %v", err)
+		}
+		doc, err := Parse(raw)
+		if err != nil {
+			t.Fatalf("refused at parse a file with no anchor: %v", err)
+		}
+		if err := doc.Validate(); err != nil {
+			t.Fatalf("`anchor` is OPTIONAL and this was refused: %v", err)
+		}
+	})
+}
+
+// maxTrustBytesForTest mirrors §9.1's stated cap, so the test fails if the
+// vector stops being oversize rather than silently passing.
+const maxTrustBytesForTest = MaxTrustBytes

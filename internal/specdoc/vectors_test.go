@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/onembyte/norn/internal/forkevidence"
+	"github.com/onembyte/norn/internal/policy"
 	"github.com/onembyte/norn/internal/proof"
 	"github.com/onembyte/norn/internal/tlog"
 	"github.com/onembyte/norn/internal/trust"
@@ -773,4 +774,130 @@ func TestEveryVectoredRuleIsStatedWhereItLives(t *testing.T) {
 			}
 		})
 	}
+}
+
+// --- Cold-model gate run 9, defect D6 -----------------------------------
+//
+// `signature_blind_accepts` is *generated* and its contents were
+// *hand-written*: the guard added in 6.5i-ii asserts every listed name is a
+// real case and never computes the set. So adding `16-two-log-signatures` --
+// whose only defect is a signature that does not verify -- silently falsified
+// the claim that those four are the set "and nothing else here".
+//
+// This computes it. A reader that never calls Ed25519 sees exactly the note's
+// body and the *names* on its signature lines, so a case is blind-accepted iff
+// its body is byte-identical to the honest checkpoint's and the witnesses it
+// names still satisfy the policy. No list to keep in step.
+func TestTheSignatureBlindSetIsComputedNotAsserted(t *testing.T) {
+	root := vectorRoot(t)
+	honest, err := os.ReadFile(filepath.Join(root, "served", "checkpoint"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	anchor := shippedTrust(t, root)
+	rules, err := policy.Parse(anchor.Policy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	named := map[string]bool{}
+	for _, w := range rules.Witnesses {
+		named[w.Name] = true
+	}
+
+	// blindly reads a note the way a reader that checks no signature does --
+	// and no other way. "Blind" means it never calls Ed25519; it still enforces
+	// §7's framing, so `14-unterminated-signature-block` is refused by such a
+	// reader and is not part of this set. Modelling blind as "ignores the note
+	// format too" put it in, which would have been a wrong answer arrived at
+	// by a computation rather than by a stale list -- no better.
+	blindly := func(text string) (body string, who []string) {
+		body, block, found := strings.Cut(text, "\n\n")
+		if !found || !strings.HasSuffix(block, "\n") {
+			return "", nil
+		}
+		for _, line := range strings.Split(strings.TrimRight(block, "\n"), "\n") {
+			rest, ok := strings.CutPrefix(line, "— ")
+			if !ok {
+				return "", nil // unparseable framing: refused without any signature
+			}
+			name, _, _ := strings.Cut(rest, " ")
+			who = append(who, rules.Label(name))
+		}
+		return body + "\n", who
+	}
+	wantBody, _ := blindly(string(honest))
+
+	computed := map[string]bool{}
+	for _, name := range checkpointCaseNames(t, root) {
+		raw, err := os.ReadFile(filepath.Join(root, "checkpoints-bad", name+".checkpoint"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, who := blindly(string(raw))
+		if body == wantBody && rules.Satisfied(who) {
+			computed[name] = true
+		}
+	}
+
+	listed := map[string]bool{}
+	for _, name := range signatureBlindAccepts(t, root) {
+		listed[name] = true
+	}
+	for name := range computed {
+		if !listed[name] {
+			t.Errorf("a signature-blind reader accepts %s and `signature_blind_accepts` "+
+				"does not list it; the claim says those are the set and nothing else", name)
+		}
+	}
+	for name := range listed {
+		if !computed[name] {
+			t.Errorf("`signature_blind_accepts` lists %s and a signature-blind reader "+
+				"refuses it", name)
+		}
+	}
+	if len(computed) == 0 {
+		t.Error("no case is blind-accepted, so this computes nothing")
+	}
+}
+
+func checkpointCaseNames(t *testing.T, root string) []string {
+	t.Helper()
+	var doc struct {
+		Cases []string `json:"cases"`
+	}
+	readJSON(t, filepath.Join(root, "checkpoints-bad", "cases.json"), &doc)
+	return doc.Cases
+}
+
+func signatureBlindAccepts(t *testing.T, root string) []string {
+	t.Helper()
+	var doc struct {
+		Blind []string `json:"signature_blind_accepts"`
+	}
+	readJSON(t, filepath.Join(root, "checkpoints-bad", "cases.json"), &doc)
+	return doc.Blind
+}
+
+func readJSON(t *testing.T, path string, into any) {
+	t.Helper()
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(raw, into); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func shippedTrust(t *testing.T, root string) *trust.Trust {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(root, "trust.cbor"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, err := trust.Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return doc
 }

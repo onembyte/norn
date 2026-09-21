@@ -7,7 +7,7 @@ differ while both passing.
 """
 import unittest
 
-from nornref import entry, fixture, replay, trust
+from nornref import cbor, entry, fixture, replay, trust
 
 
 class GenesisAborts(unittest.TestCase):
@@ -79,8 +79,12 @@ class TrustRejections(unittest.TestCase):
     def test_every_damaged_trust_file_is_rejected(self):
         for name, doc in fixture.trust_rejections():
             with self.subTest(case=name):
+                # Through `parse`, not `validate`: a trust file is bytes, and
+                # the size bound belongs to the decoder (SPEC 9.1). `38-oversize`
+                # is a document that validates fine and a file that must not be
+                # read at all.
                 with self.assertRaises(trust.TrustError):
-                    trust.validate(doc)
+                    trust.parse(cbor.encode(doc))
 
     def test_the_cases_are_distinct_and_cover_the_schema(self):
         names = [n for n, _ in fixture.trust_rejections()]

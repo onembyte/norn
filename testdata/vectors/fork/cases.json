@@ -1,6 +1,10 @@
 {
   "cases": [
     {
+      "name": "bad-oversize",
+      "says": "exceeds"
+    },
+    {
       "name": "bad-open-schema",
       "says": "unknown field"
     },

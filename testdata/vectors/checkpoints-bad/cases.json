@@ -40,6 +40,7 @@
     "04-forged-log-signature",
     "08-forged-cosignature",
     "11-forged-cosignature-with-quorum",
-    "12-second-line-from-one-witness"
+    "12-second-line-from-one-witness",
+    "16-two-log-signatures"
   ]
 }
