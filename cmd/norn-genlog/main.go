@@ -11,6 +11,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/base64"
@@ -870,6 +871,23 @@ func writeBadProofs(root, origin string, key ed25519.PrivateKey, entries [][]byt
 	return os.WriteFile(filepath.Join(dir, "cases.json"), append(blob, '\n'), 0o644)
 }
 
+// leafHashTile turns an entry bundle into the level-0 tile it implies: each
+// entry's `H(0x00 ‖ entry)`, concatenated. A served log whose tile is this is
+// internally consistent whatever the entries say.
+func leafHashTile(bundle []byte) []byte {
+	var out []byte
+	for len(bundle) >= 2 {
+		n := int(bundle[0])<<8 | int(bundle[1])
+		if len(bundle) < 2+n {
+			return nil
+		}
+		sum := sha256.Sum256(append([]byte{0x00}, bundle[2:2+n]...))
+		out = append(out, sum[:]...)
+		bundle = bundle[2+n:]
+	}
+	return out
+}
+
 // writeBadServed ships §6's two refusals. A served log is a directory rather
 // than a file, so the case says which path to replace or remove.
 func writeBadServed(root, served string, size int64) error {
@@ -913,11 +931,38 @@ func writeBadServed(root, served string, size int64) error {
 		return err
 	}
 
+	// Cold-model gate run 10, defect D11. Both tamper cases above are refused
+	// by the *tile* rule: changing a byte of an entry changes its leaf hash,
+	// so the served tile disagrees and a reader never has to compare the
+	// rebuilt head with the checkpoint at all. `V154_NoRebuild` passed all 236
+	// checks on exactly that. Here the tile is recomputed over the tampered
+	// entries, so the served directory agrees with itself -- and the tree it
+	// describes is not the one the checkpoint is signed over. Only "compares
+	// its head with the signed checkpoint" can see it.
+	consistentTile := leafHashTile(tampered)
+	if len(consistentTile) != len(honestTile) {
+		return fmt.Errorf("recomputed tile is %d bytes, the served one is %d",
+			len(consistentTile), len(honestTile))
+	}
+	if bytes.Equal(consistentTile, honestTile) {
+		return fmt.Errorf("the recomputed tile equals the honest one, so the " +
+			"tampered entry did not change its leaf hash")
+	}
+	if err := os.WriteFile(filepath.Join(dir, "consistent-entry-bundle.bin"),
+		tampered, 0o644); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(dir, "consistent-hash-tile.bin"),
+		consistentTile, 0o644); err != nil {
+		return err
+	}
+
 	meta := map[string]any{
 		"rules": map[string]map[string]string{
-			"tampered-entry-bundle": {"section": "6", "says": "The served `tile/<L>/"},
-			"missing-entry-bundle":  {"section": "6", "says": "The served `tile/<L>/"},
-			"tampered-hash-tile":    {"section": "6", "says": "checking them is not optional"},
+			"tampered-entry-bundle":   {"section": "6", "says": "The served `tile/<L>/"},
+			"missing-entry-bundle":    {"section": "6", "says": "The served `tile/<L>/"},
+			"tampered-hash-tile":      {"section": "6", "says": "checking them is not optional"},
+			"consistent-tampered-log": {"section": "6", "says": "that comparison is what binds the entries to the head"},
 		},
 		"cases": []map[string]any{
 			{"name": "tampered-entry-bundle", "path": bundlePath,
@@ -927,6 +972,14 @@ func writeBadServed(root, served string, size int64) error {
 			{"name": "missing-entry-bundle", "path": bundlePath, "remove": true,
 				"says": "a log that will not serve its entries cannot be replayed, and a " +
 					"verifier must refuse rather than report what it has"},
+			{"name": "consistent-tampered-log", "files": []map[string]string{
+				{"path": bundlePath, "file": "consistent-entry-bundle.bin"},
+				{"path": tilePath, "file": "consistent-hash-tile.bin"},
+			},
+				"says": "the entries and the hash tile are tampered *together*, so the " +
+					"served log agrees with itself and disagrees with the head the " +
+					"checkpoint is signed over: only rebuilding the tree and comparing " +
+					"that head can refuse it"},
 			{"name": "tampered-hash-tile", "path": tilePath,
 				"file": "tampered-hash-tile.bin",
 				"says": "one byte of one leaf hash changed: the entries and the signed " +
@@ -935,8 +988,9 @@ func writeBadServed(root, served string, size int64) error {
 					"tile onward to peers asking it for proofs"},
 		},
 		"comment": "a served log is a directory, so each case names the path to replace " +
-			"with `file` or to delete with `remove`, over an otherwise honest copy of " +
-			"`served/`. Every one MUST be refused",
+			"with `file`, the paths to replace with `files`, or the path to delete " +
+			"with `remove`, over an otherwise honest copy of `served/`. Every one " +
+			"MUST be refused",
 	}
 	blob, err := json.MarshalIndent(meta, "", "  ")
 	if err != nil {
@@ -1625,6 +1679,46 @@ func paddedSizeLine(base, origin string, key ed25519.PrivateKey,
 	return staggeredCosigner(signers)(signed)
 }
 
+// shortRootLine re-encodes the root with one byte appended -- 33 bytes, whose
+// first 32 are the honest root -- then re-signs and re-cosigns the body. The
+// note is impeccable and the tree still matches for anyone who reads 32 bytes
+// and stops; §6's "32 bytes once decoded" is the only rule that refuses it.
+func shortRootLine(base, origin string, key ed25519.PrivateKey,
+	signers []cosignpkg.Signer) (string, error) {
+
+	body, err := noteBody(base)
+	if err != nil {
+		return "", err
+	}
+	lines := strings.SplitN(body, "\n", 3)
+	if len(lines) < 3 {
+		return "", fmt.Errorf("a checkpoint body has three lines, this has %d", len(lines))
+	}
+	// The third element carries the body's own terminating newline; §7 makes
+	// that newline part of the note, so it has to survive the substitution.
+	tail := strings.TrimRight(lines[2], "\n")
+	root, err := base64.StdEncoding.DecodeString(tail)
+	if err != nil {
+		return "", fmt.Errorf("the root line is not base64: %w", err)
+	}
+	if len(root) != sha256.Size {
+		return "", fmt.Errorf("the honest root is %d bytes, not %d", len(root), sha256.Size)
+	}
+	// A *longer* line, whose first 32 bytes are the honest root. Dropping a
+	// byte instead would be caught by the rebuild below -- the truncated value
+	// is not the tree's head -- so the length rule would be refused-but-not-
+	// pinned. With a trailing byte, a reader that takes the first 32 and reads
+	// on gets the right root, matches the tree, and accepts a checkpoint whose
+	// root line is not a SHA-256 hash. Only the length says so.
+	lines[2] = base64.StdEncoding.EncodeToString(append(root, 0x00)) +
+		lines[2][len(tail):]
+	signed, err := note.Sign(strings.Join(lines, "\n"), origin, key)
+	if err != nil {
+		return "", err
+	}
+	return staggeredCosigner(signers)(signed)
+}
+
 // appendForgedLogSignature adds a second line under the log's own key that does
 // not verify. Both name the log; a reader that takes the first valid one and
 // stops never looks at the other.
@@ -1957,6 +2051,20 @@ func buildBadCheckpoints(root, origin string, key ed25519.PrivateKey,
 			"that stops at the first valid one accepts a checkpoint carrying a forgery",
 		twice})
 
+	// Cold gate run 10, D11. §6 bounds the root line at 32 bytes once decoded
+	// and no file carried another length, so the only rule that ever looked at
+	// that line was the rebuild-and-compare below it. Signed and cosigned
+	// exactly as correctly as the real one, so the length is the whole fault.
+	shortRoot, err := shortRootLine(base, origin, key, signers)
+	if err != nil {
+		return nil, err
+	}
+	out = append(out, badCheckpoint{"17-root-wrong-length",
+		"the root line decodes to 33 bytes whose first 32 are the honest root: a " +
+			"reader that takes the first 32 and reads on matches the rebuilt tree " +
+			"and accepts it, so §6's length is the only rule that can refuse it",
+		shortRoot})
+
 	out = append(out, badCheckpoint{"08-forged-cosignature",
 		"two cosignature lines, both naming witnesses the policy lists, one of which does not verify: " +
 			"the quorum is met only by a verifier that does not check them", forgedCosig})
@@ -2034,6 +2142,7 @@ func writeBadCheckpoints(root, origin string, key ed25519.PrivateKey,
 		"13-ascii-dash-signature":           {"section": "7", "says": "signature line per signer"},
 		"14-unterminated-signature-block":   {"section": "7", "says": "including the last, ends in one"},
 		"15-size-leading-zero":              {"section": "6", "says": "no leading zeroes"},
+		"17-root-wrong-length":              {"section": "6", "says": "32 bytes once decoded"},
 		"16-two-log-signatures":             {"section": "10", "says": "Every signature line whose name and key id match"},
 	}
 	for name := range reasons {

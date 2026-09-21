@@ -13,14 +13,32 @@
       "says": "a log that will not serve its entries cannot be replayed, and a verifier must refuse rather than report what it has"
     },
     {
+      "files": [
+        {
+          "file": "consistent-entry-bundle.bin",
+          "path": "tile/entries/000.p/125"
+        },
+        {
+          "file": "consistent-hash-tile.bin",
+          "path": "tile/0/000.p/125"
+        }
+      ],
+      "name": "consistent-tampered-log",
+      "says": "the entries and the hash tile are tampered *together*, so the served log agrees with itself and disagrees with the head the checkpoint is signed over: only rebuilding the tree and comparing that head can refuse it"
+    },
+    {
       "file": "tampered-hash-tile.bin",
       "name": "tampered-hash-tile",
       "path": "tile/0/000.p/125",
       "says": "one byte of one leaf hash changed: the entries and the signed head are untouched, so a verifier that reaches the head without opening `tile/0/...` sees nothing wrong, and serves the corrupt tile onward to peers asking it for proofs"
     }
   ],
-  "comment": "a served log is a directory, so each case names the path to replace with `file` or to delete with `remove`, over an otherwise honest copy of `served/`. Every one MUST be refused",
+  "comment": "a served log is a directory, so each case names the path to replace with `file`, the paths to replace with `files`, or the path to delete with `remove`, over an otherwise honest copy of `served/`. Every one MUST be refused",
   "rules": {
+    "consistent-tampered-log": {
+      "says": "that comparison is what binds the entries to the head",
+      "section": "6"
+    },
     "missing-entry-bundle": {
       "says": "The served `tile/\u003cL\u003e/",
       "section": "6"

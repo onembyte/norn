@@ -1078,3 +1078,58 @@ func TestThePolicyCommentRuleSaysWhereAHashIsNotAComment(t *testing.T) {
 		}
 	}
 }
+
+// --- Cold-model gate run 10, defect D11 ---------------------------------
+//
+// Three checks on a served log, two of them individually unpinned. The
+// rebuild-vs-head comparison gets a vector of its own in `cmd/norn`; the root
+// line's length gets one here; and §10's "never from a supplied proof" gets
+// the only honest treatment left, which is to be written down as unvectored.
+
+func TestTheRootLinesLengthIsStatedAndVectored(t *testing.T) {
+	doc := load(t)
+	section, ok := doc.Section("6")
+	if !ok {
+		t.Fatal("§6 is missing")
+	}
+	if !strings.Contains(section.Body, "32 bytes once decoded") {
+		t.Error("§6 does not bound the checkpoint's root line, so a reader that " +
+			"accepts any base64 there is reading a conforming document")
+	}
+	var manifest struct {
+		Cases []string `json:"cases"`
+		Rules map[string]struct{ Section, Says string }
+	}
+	readJSON(t, filepath.Join(vectorRoot(t), "checkpoints-bad", "cases.json"), &manifest)
+	var found string
+	for _, name := range manifest.Cases {
+		if strings.Contains(name, "root-wrong-length") {
+			found = name
+		}
+	}
+	if found == "" {
+		t.Fatal("no `checkpoints-bad` case carries a root line of the wrong length, so " +
+			"the rule is stated and reachable by nothing")
+	}
+	if rule := manifest.Rules[found]; rule.Section != "6" {
+		t.Errorf("%s names §%s; the root line's length is §6's rule", found, rule.Section)
+	}
+}
+
+func TestTheSuppliedProofClauseIsAdmittedAsUnvectored(t *testing.T) {
+	doc := load(t)
+	section, ok := doc.Section("12.1")
+	if !ok {
+		t.Fatal("§12.1 is missing")
+	}
+	// §10 says the served branch's root at `at` is "recomputed from the
+	// entries, never from a supplied proof". No vector supplies a proof there
+	// — a fork comparison takes its roots from the tiles — so a reader that
+	// honoured a supplied one passed everything. It is a real rule and this
+	// suite cannot reach it; §12.1's own standard is that such a rule is named
+	// rather than left to look covered.
+	if !strings.Contains(section.Body, "never from a supplied proof") {
+		t.Error("§12.1's `What is not vectored` list does not mention §10's " +
+			"`never from a supplied proof` clause, which no shipped file exercises")
+	}
+}

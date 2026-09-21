@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"crypto/sha256"
 	"encoding/json"
 	"os"
 	"os/exec"
@@ -288,14 +290,20 @@ func TestEveryServedNegativeIsRefused(t *testing.T) {
 		Cases []struct {
 			Name, Path, File string
 			Remove           bool
+			// A case may have to replace more than one path at once: a log
+			// tampered *consistently* is only wrong when its entries and its
+			// tiles are changed together (cold gate run 10, D11).
+			Files []struct{ Path, File string } `json:"files"`
 		} `json:"cases"`
 	}
 	if err := json.Unmarshal(raw, &doc); err != nil {
 		t.Fatal(err)
 	}
-	if len(doc.Cases) < 3 {
-		t.Fatalf("%d served negatives; §6 has three: a tampered bundle, a missing "+
-			"one, and a hash tile that disagrees with the entries", len(doc.Cases))
+	if len(doc.Cases) < 4 {
+		t.Fatalf("%d served negatives; §6 has four: a tampered bundle, a missing "+
+			"one, a hash tile that disagrees with the entries, and a log whose "+
+			"entries and tiles agree with each other and not with the head",
+			len(doc.Cases))
 	}
 	bin := nornBinary(t)
 
@@ -303,12 +311,28 @@ func TestEveryServedNegativeIsRefused(t *testing.T) {
 		t.Run(c.Name, func(t *testing.T) {
 			log := anchoredLog(t)
 			target := filepath.Join(log, filepath.FromSlash(c.Path))
-			if c.Remove {
+			switch {
+			case c.Remove:
 				if err := os.Remove(target); err != nil {
 					t.Fatalf("the case removes %s, which the honest log does not serve: %v",
 						c.Path, err)
 				}
-			} else {
+			case len(c.Files) > 0:
+				for _, f := range c.Files {
+					body, err := os.ReadFile(filepath.Join(dir, f.File))
+					if err != nil {
+						t.Fatal(err)
+					}
+					at := filepath.Join(log, filepath.FromSlash(f.Path))
+					if _, err := os.Stat(at); err != nil {
+						t.Fatalf("the case replaces %s, which the honest log does not "+
+							"serve: %v", f.Path, err)
+					}
+					if err := os.WriteFile(at, body, 0o644); err != nil {
+						t.Fatal(err)
+					}
+				}
+			default:
 				body, err := os.ReadFile(filepath.Join(dir, c.File))
 				if err != nil {
 					t.Fatal(err)
@@ -603,5 +627,113 @@ func TestACheckpointWithAnUnknownCosignerIsAccepted(t *testing.T) {
 	if err != nil {
 		t.Fatalf("refused a checkpoint whose only oddity is a cosignature from a "+
 			"witness this policy does not name; §10 ignores such a line:\n%s", out)
+	}
+}
+
+// --- Cold-model gate run 10, defect D11 ---------------------------------
+//
+// §6 states two rules about a served log: rebuild the tree from the entry
+// bundles and compare that head with the signed checkpoint, and check the
+// served `tile/<L>/…` hashes against the same tree. Every shipped case was
+// refused by the **second**. `V154_NoRebuild` — a reader that never compares
+// the rebuilt head with the checkpoint at all — passed all 236 checks,
+// because changing a byte of an entry also changes its leaf hash, so the tile
+// disagrees and the tile rule fires first.
+//
+// A log that tampers with both, consistently, is the case that separates
+// them: the served tiles agree with the served entries, and the tree they
+// describe is not the one the checkpoint is signed over. Nothing but the head
+// comparison can see it — which is what "that comparison is what binds the
+// entries to the head" means.
+
+// leafHashesOf parses a `tlog-tiles` entry bundle — each entry's length as a
+// big-endian uint16, then that many bytes — and returns `H(0x00 ‖ entry)` for
+// each, concatenated the way a level-0 tile is.
+func leafHashesOf(t *testing.T, bundle []byte) []byte {
+	t.Helper()
+	var out []byte
+	for len(bundle) > 0 {
+		if len(bundle) < 2 {
+			t.Fatal("truncated bundle: a length prefix is two bytes")
+		}
+		n := int(bundle[0])<<8 | int(bundle[1])
+		if len(bundle) < 2+n {
+			t.Fatalf("truncated bundle: %d bytes declared, %d left", n, len(bundle)-2)
+		}
+		sum := sha256.Sum256(append([]byte{0x00}, bundle[2:2+n]...))
+		out = append(out, sum[:]...)
+		bundle = bundle[2+n:]
+	}
+	return out
+}
+
+func TestAConsistentlyTamperedLogIsCaughtOnlyByTheHeadComparison(t *testing.T) {
+	dir := filepath.Join(vectors(), "served-bad")
+	raw, err := os.ReadFile(filepath.Join(dir, "cases.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Cases []struct {
+			Name  string
+			Files []struct{ Path, File string } `json:"files"`
+		} `json:"cases"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	var files []struct{ Path, File string }
+	for _, c := range doc.Cases {
+		if c.Name == "consistent-tampered-log" {
+			files = c.Files
+		}
+	}
+	if len(files) != 2 {
+		t.Fatalf("`consistent-tampered-log` replaces %d paths; it needs the entry "+
+			"bundle and the level-0 tile, or the tile rule refuses it first and the "+
+			"head comparison is pinned by nothing", len(files))
+	}
+
+	// The claim that makes this case what it is: the replacement tile is
+	// exactly the leaf hashes of the replacement bundle. If it is not, the
+	// tile rule can still refuse the log and `V154_NoRebuild` survives.
+	byPath := map[string][]byte{}
+	for _, f := range files {
+		body, err := os.ReadFile(filepath.Join(dir, f.File))
+		if err != nil {
+			t.Fatal(err)
+		}
+		byPath[f.Path] = body
+	}
+	var bundle, tile []byte
+	for path, body := range byPath {
+		if strings.Contains(path, "tile/entries/") {
+			bundle = body
+		} else {
+			tile = body
+		}
+	}
+	if bundle == nil || tile == nil {
+		t.Fatal("the case must replace one entry bundle and one hash tile")
+	}
+	if got := leafHashesOf(t, bundle); !bytes.Equal(got, tile) {
+		t.Errorf("the replacement tile is not the leaf hashes of the replacement "+
+			"bundle (%d vs %d bytes), so the served log disagrees with itself and "+
+			"the tile rule refuses it before the head is ever compared",
+			len(tile), len(got))
+	}
+
+	// And it is still refused — by the one rule left.
+	log := anchoredLog(t)
+	for path, body := range byPath {
+		if err := os.WriteFile(filepath.Join(log, filepath.FromSlash(path)), body, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	out, err := exec.Command(nornBinary(t), "verify",
+		"-trust", filepath.Join(vectors(), "trust.cbor"), "-log", log).CombinedOutput()
+	if err == nil {
+		t.Fatalf("accepted a served log whose entries and tiles agree with each "+
+			"other and not with the signed checkpoint:\n%s", out)
 	}
 }

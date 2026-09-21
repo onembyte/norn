@@ -15,6 +15,7 @@
     "14-unterminated-signature-block",
     "15-size-leading-zero",
     "16-two-log-signatures",
+    "17-root-wrong-length",
     "08-forged-cosignature"
   ],
   "comment": "each file is served in place of served/checkpoint, over the honest tiles, under trust.cbor; every one MUST be refused. `signature_blind_accepts` lists the ones whose only defect is a signature that does not verify: a reader that never calls Ed25519 accepts exactly those, and nothing else here",
@@ -34,7 +35,8 @@
     "13-ascii-dash-signature": "the log's signature line opens with an ASCII hyphen instead of §7's em dash",
     "14-unterminated-signature-block": "the last signature line does not end in a newline, so the block is unterminated",
     "15-size-leading-zero": "the size line carries a leading zero, which is not canonical decimal",
-    "16-two-log-signatures": "two signature lines name the log's key and one does not verify: a reader that stops at the first valid one accepts a checkpoint carrying a forgery"
+    "16-two-log-signatures": "two signature lines name the log's key and one does not verify: a reader that stops at the first valid one accepts a checkpoint carrying a forgery",
+    "17-root-wrong-length": "the root line decodes to 33 bytes whose first 32 are the honest root: a reader that takes the first 32 and reads on matches the rebuilt tree and accepts it, so §6's length is the only rule that can refuse it"
   },
   "rules": {
     "01-unsigned": {
@@ -100,6 +102,10 @@
     "16-two-log-signatures": {
       "says": "Every signature line whose name and key id match",
       "section": "10"
+    },
+    "17-root-wrong-length": {
+      "says": "32 bytes once decoded",
+      "section": "6"
     }
   },
   "signature_blind_accepts": [

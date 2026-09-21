@@ -574,9 +574,7 @@ devices on a number nobody signed.
 ## 6. The log
 
 - Layout, tiles, entry bundles, and `checkpoint` exactly per `tlog-tiles`. Tile height 8 (width 256), as torchwood requires.
-- A checkpoint body is exactly three lines (`c2sp.org/tlog-checkpoint`): the origin, the
-  tree size in decimal with **no leading zeroes**, and the base64 root — 32 bytes once
-  decoded. `0124` and `124` are the same number and two spellings of one head.
+- A checkpoint body is exactly three lines (`c2sp.org/tlog-checkpoint`): the origin, the tree size in decimal with **no leading zeroes**, and the root as **standard base64 with padding, 32 bytes once decoded** — any other decoded length is an error, and so is base64 the line's own length does not account for. `0124` and `124` are the same number and two spellings of one head. The length bound is not decoration: a reader that skips it and also skips the rebuild below accepts a head that is not a SHA-256 root at all, and the two rules are the only ones that look at that line (cold gate run 10, D11).
 - Leaf hash = `H(0x00 ‖ entry_bytes)` (RFC 6962 §2.1). An entry bundle is each entry's length as a **big-endian** uint16 followed by that many bytes, repeated — the framing `c2sp.org/tlog-tiles` defines, and the reason §4.0's `MAX_ENTRY_BYTES` is 65535 rather than 65536. Tile and bundle **paths** are that document's too: this one neither restates them nor varies them.
 - A verifier rebuilds the tree from the **entry bundles** and compares its head with the signed checkpoint; that comparison is what binds the entries to the head. The served `tile/<L>/…` hashes MUST also agree with the tree it rebuilt. They are not needed to reach the head, and checking them is not optional: a node serves the tiles it fetched onward to its peers (`GOSSIP.md`), so a node that accepted tiles it never checked would pass on a lie it had the means to catch.
 - The checkpoint is a `tlog-checkpoint` note: `origin` line = §2 `origin`, size, root; **no extension lines**. Signed by the log key; cosigned by witnesses per `tlog-cosignature` v1.
@@ -1180,7 +1178,7 @@ this table drifted out of date the moment one was.
 | §11.1 the proof is empty at the held size | `fork/evidence.cbor` uses the non-degenerate branch | `fork/bad-proof-at-same-size`: a consistency proof where the two signatures say it alone |
 | §8.1 and §11.1 are closed maps, versioned, and bounded | `proofs/`, `fork/evidence.cbor` | `proofs-bad/open-schema` and `wrong-version`; `proofs-bad/device-not-in-entry`, where the proof, the entry and the checkpoint are all honest and only the **label** beside them is another device's — an inclusion proof binds the entry to the log and says nothing about a label. For evidence: `fork/bad-open-schema`, `bad-wrong-version` and `bad-size-above-held`, because an accuser can only speak for sizes its own branch reaches. **This implementation left the evidence map open and the device unbound** until run 8 asked |
 | §11.1 the carried `policy` decides nothing | `fork/policy-not-the-readers.cbor`: sound evidence whose `policy` requires a witness that cosigned nothing — it MUST still prove the fork, because the reader verifies under its own | `fork/bad-policy-says-quorum-none`: two checkpoints no quorum cosigned, and a carried policy saying none is needed. A reader that trusts the field concludes a fork any stranger can write, and §11 rule 4 makes it permanent. `fork/bad-policy-unparseable` is the format half |
-| §6 tiles and bundles | `served/`, read back to reproduce `state.json`; a forged head is `checkpoints-bad/04-forged-log-signature` and a fourth body line is `checkpoints-bad/09-extension-line` | `served-bad/`: an entry bundle with one byte changed, one the log will not serve at all, and `tampered-hash-tile` — one byte inside one leaf hash, which leaves the entries and the signed head honest, so only the hash-tile rule can refuse it |
+| §6 tiles and bundles | `served/`, read back to reproduce `state.json`; a forged head is `checkpoints-bad/04-forged-log-signature` and a fourth body line is `checkpoints-bad/09-extension-line` | `served-bad/`: an entry bundle with one byte changed, one the log will not serve at all, `tampered-hash-tile` — one byte inside one leaf hash, which leaves the entries and the signed head honest, so only the hash-tile rule can refuse it — and `consistent-tampered-log`, where the bundle and the level-0 tile are changed **together**. That last one is the only file that reaches the rebuild-and-compare rule: the other two tamper cases change a leaf hash as a side effect, so the tile rule refuses them first and a reader that never compares the rebuilt head with the checkpoint passed everything (cold gate run 10, D11). `checkpoints-bad/17-root-wrong-length` is the root line's own negative |
 | §8.1 a bundle's checkpoint is checked per §10 | `proofs/`, whose checkpoints carry the quorum | `proofs-bad/no-quorum` (the log's signature and nobody else's) and `proofs-bad/wrong-origin` (this network's key over another network's origin line) |
 | §8 proof bundles | `proofs/`, one per active device | `proofs-bad/`, **9 proof refusals**: a wrong entry, a foreign checkpoint, a tampered proof, a checkpoint signed by a key the anchor does not name, one with no witness quorum and one whose checkpoint names another origin — each differing from a valid bundle in exactly one thing |
 | §10 the signature decides before the origin | — | `proofs-bad/foreign-checkpoint` MUST be refused about "no valid signature from a trusted key" and `proofs-bad/wrong-origin` about "is for origin". A reader that checks the origin first reports the wrong one for the first of them |
@@ -1202,6 +1200,14 @@ admits its holes, so:
 
 - **`quorum none` accepting an uncosigned head.** It needs a second trust
   anchor, and one is not shipped.
+- **§10's "the root the SERVED branch has at `at` … recomputed from the
+  entries, **never from a supplied proof**".** No shipped file supplies one: a
+  `detect/` pair serves both branches with their own tiles, so a reader takes
+  the root from the entries because there is nothing else to take it from. The
+  clause is a real rule about a real attack — a peer that offers a proof of a
+  root its entries do not produce — and nothing here distinguishes a reader
+  that honours such a proof from one that ignores it. Reaching it needs a
+  served log that carries a proof, which `tlog-tiles` does not serve.
 - **The median, as distinct from the k-th newest.** With three witnesses and a
   threshold of two they are the same timestamp, so no reading of the fixture
   tells them apart. Separating them needs a fourth witness, which this network
