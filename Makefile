@@ -5,8 +5,12 @@ PKGS    := ./...
 
 all: ci
 
+# -timeout, because `cmd/norn` builds its binary and replays the fixture in
+# every case: it takes about five minutes on a quiet machine and hit Go's
+# default per-package 600s once, on a busy one. A suite that flakes under load
+# teaches people to re-run rather than to read.
 test:
-	$(GO) test -race -count=1 $(PKGS)
+	$(GO) test -race -count=1 -timeout 30m $(PKGS)
 
 vet:
 	$(GO) vet $(PKGS)

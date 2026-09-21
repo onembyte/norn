@@ -1323,3 +1323,101 @@ func TestEntryZerosStepsDoNotClaimAnObservableOrder(t *testing.T) {
 			"code, so no artifact distinguishes one arrangement from another")
 	}
 }
+
+// --- Cold-model gate run 11: the structural note, D11 and D13 -----------
+//
+// Run 11's largest finding is not a defect in a rule but a hole in what the
+// document hands over. §6 defers the `tlog-tiles` layout and does not restate
+// it, and that C2SP document is not in the sealed copy — so a reader holding
+// only `SPEC.md` and `vectors/` **cannot use `served/`, `served-bad/`,
+// `served-*/` or `detect/` at all**. §7 and §9.1 both took the opposite
+// decision in as many words: "a verifier cannot be written without it".
+
+func TestTheTilePathsAreRestatedAndTheirExamplesResolve(t *testing.T) {
+	doc := load(t)
+	section, ok := doc.Section("6")
+	if !ok {
+		t.Fatal("§6 is missing")
+	}
+	for _, needle := range []string{
+		"tile/<L>/",
+		"tile/entries/",
+		".p/<W>",
+	} {
+		if !strings.Contains(section.Body, needle) {
+			t.Errorf("§6 does not give %q, so a reader with this document and the "+
+				"vectors cannot fetch a single tile and every served directory in "+
+				"the suite is unusable to them", needle)
+		}
+	}
+
+	// Worked examples earn their place by resolving: every concrete tile path
+	// §6 writes down must be a file the fixture actually serves. A path that
+	// went stale when the log grew would teach a reader the wrong shape.
+	served := filepath.Join(vectorRoot(t), "served")
+	paths := regexp.MustCompile(`tile/(?:entries|[0-9]+)/[0-9./p]+[0-9]`).
+		FindAllString(section.Body, -1)
+	var concrete int
+	for _, path := range paths {
+		if strings.ContainsAny(path, "<") {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(served, filepath.FromSlash(path))); err != nil {
+			t.Errorf("§6 gives %q as an example and `served/` has no such file: %v",
+				path, err)
+			continue
+		}
+		concrete++
+	}
+	if concrete < 2 {
+		t.Errorf("§6 gives %d resolvable tile paths; it needs one hash tile and one "+
+			"entry bundle, or the form is stated and never shown", concrete)
+	}
+}
+
+// D11. §6 says "a checkpoint body is exactly three lines" and then, four
+// bullets later, that an anchor stamps "the checkpoint **body** — the note
+// text up to and including the blank line". Those are two byte ranges one
+// `0x0A` apart, and §7 uses the *other* one for the signed text. Anchoring is
+// advisory, so a reader who computes the three-line digest never matches a
+// stamp and never says so: silent divergence, in the one mechanism whose job
+// is to constrain the log operator about time.
+func TestTheAnchorDigestSaysWhichBytesNotWhichWord(t *testing.T) {
+	doc := load(t)
+	section, ok := doc.Section("6")
+	if !ok {
+		t.Fatal("§6 is missing")
+	}
+	for _, needle := range []string{
+		"plus the blank line",
+		"four `0x0A`",
+	} {
+		if !strings.Contains(section.Body, needle) {
+			t.Errorf("§6's anchor bullet does not say %q — it leans on the word "+
+				"\"body\", which §6 itself defined three bullets earlier as the "+
+				"three lines *without* the blank separator", needle)
+		}
+	}
+}
+
+// D13. §4.0 opens by naming three artifacts and governs five; the full list is
+// two paragraphs further down, which is two paragraphs after a reader has
+// scoped their decoder.
+func TestTheEncodingProfileNamesEveryArtifactItGoverns(t *testing.T) {
+	doc := load(t)
+	section, ok := doc.Section("4.0")
+	if !ok {
+		t.Fatal("§4.0 is missing")
+	}
+	opening := section.Body
+	if at := strings.Index(opening, "\n\n"); at > 0 {
+		opening = opening[:at]
+	}
+	for _, needle := range []string{"proof bundle", "fork evidence"} {
+		if !strings.Contains(opening, needle) {
+			t.Errorf("§4.0's opening sentence does not name %q, so a reader scopes "+
+				"their decoder to three artifacts and has to come back for two more",
+				needle)
+		}
+	}
+}

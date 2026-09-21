@@ -12,6 +12,7 @@ See README.md for how to run it.
 """
 
 import hashlib
+import json
 import pathlib
 import sys
 
@@ -112,7 +113,48 @@ def main() -> int:
     (ANCHORS / "calendar-response.bin").write_bytes(
         calendar_response(hashlib.sha256(body.encode()).digest())
     )
-    print(f"wrote sample.ots, {name} and calendar-response.bin into", ANCHORS)
+
+    # Cold gate run 11, D11. `anchors/` shipped with no manifest at all: §12
+    # described it in one line repeating the ambiguous word "checkpoint body",
+    # §12.1 never mentioned it, and the `.ots` container format appears nowhere
+    # in SPEC.md -- so a reader had to recognise the OpenTimestamps magic from
+    # outside knowledge to check anything here. The manifest states the digest
+    # and names the bytes that produce it, which makes the rule checkable
+    # without parsing OpenTimestamps at all.
+    manifest = {
+        "cases": [
+            {
+                "name": name,
+                "over": "served/checkpoint",
+                "range": "through the newline that terminates the blank separator line",
+                "digest": hashlib.sha256(body.encode()).hexdigest(),
+                "says": "SPEC 6: the stamped value is SHA-256 of the note's leading "
+                        "bytes through the blank separator line -- the three body "
+                        "lines PLUS the blank line, four 0x0A in all. Not the "
+                        "three-line body, and not SPEC 7's signed text, which stops "
+                        "one 0x0A earlier. Those are three different byte ranges",
+            },
+            {
+                "name": "sample.ots",
+                "digest": hashlib.sha256(b"norn checkpoint at size 90").hexdigest(),
+                "says": "a proof over an arbitrary digest, deliberately unrelated to "
+                        "this fixture: it exercises the parser against bytes neither "
+                        "Norn implementation wrote. Nothing in the suite produces "
+                        "this digest -- the file states it",
+            },
+        ],
+        "comment": "OpenTimestamps proofs, written by `python-opentimestamps`. "
+                   "Anchoring is advisory (D-009), so a reader that computes the "
+                   "wrong byte range never matches a stamp and never says so -- "
+                   "which is why the digest is stated here rather than left to be "
+                   "derived. `calendar-response.bin` is what POST <calendar>/digest "
+                   "returns for the checkpoint digest above: a bare timestamp tree "
+                   "with no file header",
+    }
+    (ANCHORS / "cases.json").write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+    print(f"wrote sample.ots, {name}, calendar-response.bin and cases.json into",
+          ANCHORS)
     return 0
 
 
