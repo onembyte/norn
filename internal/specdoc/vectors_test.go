@@ -2,6 +2,7 @@ package specdoc
 
 import (
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -819,10 +820,11 @@ func TestTheSignatureBlindSetIsComputedNotAsserted(t *testing.T) {
 
 	// blindly reads a note the way a reader that checks no signature does --
 	// and no other way. "Blind" means it never calls Ed25519; it still enforces
-	// §7's framing, so `14-unterminated-signature-block` is refused by such a
-	// reader and is not part of this set. Modelling blind as "ignores the note
-	// format too" put it in, which would have been a wrong answer arrived at
-	// by a computation rather than by a stale list -- no better.
+	// everything §7's framing decides without a key, so
+	// `14-unterminated-signature-block` is refused by such a reader and is not
+	// part of this set. Modelling blind as "ignores the note format too" put it
+	// in, which would have been a wrong answer arrived at by a computation
+	// rather than by a stale list -- no better.
 	blindly := func(text string) (body string, who []string) {
 		body, block, found := strings.Cut(text, "\n\n")
 		if !found || !strings.HasSuffix(block, "\n") {
@@ -833,7 +835,20 @@ func TestTheSignatureBlindSetIsComputedNotAsserted(t *testing.T) {
 			if !ok {
 				return "", nil // unparseable framing: refused without any signature
 			}
-			name, _, _ := strings.Cut(rest, " ")
+			// The payload's encoding and length need no key either, so a
+			// blind reader still enforces them: §7 makes the base64 standard
+			// and padded and the decoded payload exactly 68 or 76 bytes, and
+			// `18`, `19` and `20` break one of those each. Leaving them out
+			// of the model would have put three cases in this set that no
+			// reader of any kind accepts (cold gate run 10, D13).
+			name, blob, ok := strings.Cut(rest, " ")
+			if !ok {
+				return "", nil
+			}
+			raw, err := base64.StdEncoding.DecodeString(blob)
+			if err != nil || (len(raw) != 68 && len(raw) != 76) {
+				return "", nil
+			}
 			who = append(who, rules.Label(name))
 		}
 		return body + "\n", who
@@ -1131,5 +1146,89 @@ func TestTheSuppliedProofClauseIsAdmittedAsUnvectored(t *testing.T) {
 	if !strings.Contains(section.Body, "never from a supplied proof") {
 		t.Error("§12.1's `What is not vectored` list does not mention §10's " +
 			"`never from a supplied proof` clause, which no shipped file exercises")
+	}
+}
+
+// --- Cold-model gate run 10, defect D13 ---------------------------------
+//
+// §7 restates the signed-note framing "so an implementer needs nothing else"
+// and left five splits to the reader. Three get a vector; two cannot have one
+// and §12.1 now says why.
+
+func TestTheNoteFramingDecidesItsFiveSplits(t *testing.T) {
+	doc := load(t)
+	section, ok := doc.Section("7")
+	if !ok {
+		t.Fatal("§7 is missing")
+	}
+	for _, c := range []struct{ needle, why string }{
+		{"the **first** blank line ends the text",
+			"a reader ending it at the last blank line signs a different string"},
+		{"contains no space",
+			"a key name with a space is the only thing that separates splitting the " +
+				"line at its first space from splitting it at its last"},
+		{"standard base64 **with padding**",
+			"unpadded base64 decodes to the same bytes, so two readers disagree " +
+				"about which lines are well-formed and about nothing else"},
+		{"**exactly**",
+			"a payload longer than its algorithm's length still verifies under a " +
+				"prefix-reading verifier, so one head has unboundedly many " +
+				"byte-distinct forms that are all valid"},
+		{"at least one signature line",
+			"a note with none is not a signed note"},
+	} {
+		if !strings.Contains(section.Body, c.needle) {
+			t.Errorf("§7 does not say %q — %s", c.needle, c.why)
+		}
+	}
+}
+
+func TestTheThreeSeparableFramingRulesAreVectored(t *testing.T) {
+	var manifest struct {
+		Cases []string `json:"cases"`
+		Rules map[string]struct{ Section, Says string }
+	}
+	readJSON(t, filepath.Join(vectorRoot(t), "checkpoints-bad", "cases.json"), &manifest)
+	for _, suffix := range []string{
+		"-signature-name-with-space",
+		"-signature-unpadded-base64",
+		"-signature-payload-too-long",
+	} {
+		var found string
+		for _, name := range manifest.Cases {
+			if strings.HasSuffix(name, suffix) {
+				found = name
+			}
+		}
+		if found == "" {
+			t.Errorf("no `checkpoints-bad` case *%s, so §7's rule is stated and "+
+				"reachable by nothing", suffix)
+			continue
+		}
+		if rule := manifest.Rules[found]; rule.Section != "7" {
+			t.Errorf("%s names §%s; the note framing is §7's", found, rule.Section)
+		}
+	}
+}
+
+func TestTheTwoUnseparableFramingRulesAreAdmitted(t *testing.T) {
+	doc := load(t)
+	section, ok := doc.Section("12.1")
+	if !ok {
+		t.Fatal("§12.1 is missing")
+	}
+	for _, c := range []struct{ needle, why string }{
+		{"blank line inside a note's text",
+			"every note text in Norn has a fixed line count, so an embedded blank " +
+				"line is refused by the count as well and no file separates the " +
+				"first-blank reading from the last"},
+		{"note with no signature lines",
+			"something has to verify, so a note with none is refused by §10's " +
+				"requirement before §7's framing is reached"},
+	} {
+		if !strings.Contains(section.Body, c.needle) {
+			t.Errorf("§12.1's `What is not vectored` list does not mention %q — %s",
+				c.needle, c.why)
+		}
 	}
 }

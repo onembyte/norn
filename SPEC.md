@@ -605,10 +605,20 @@ verifier keys and the receipt this suite ships, unchanged, and opens notes this
 spec's rules produce.
 
 - The **signed text** is everything up to **and including** the newline that ends
-  the last text line. It does **not** include the blank separator line.
+  the last text line. It does **not** include the blank separator line. A note's
+  text lines are non-empty, so **the **first** blank line ends the text** — there
+  is no second one to choose between. A reader that ends the text at the *last*
+  blank line signs a different string, and the two readings are told apart by no
+  Norn artifact only because every note text here has a fixed line count (§12.1).
 - The text is followed by one blank line, then one signature line per signer. **Every signature line, including the last, ends in one `0x0A`**: a block that simply stops is unterminated, not merely short of a newline, and a reader that trims trailing newlines before parsing cannot tell the two apart.
 - A signature line is `\u2014 ` (em dash U+2014, then one space), the key name, one
-  space, then base64 of a payload that begins with a 4-byte `key_id`. **What
+  space, then base64 of a payload that begins with a 4-byte `key_id`. A key name
+  **contains no space**, so the line splits at its **first** space and everything
+  after it is the payload — split at the *last* one instead and a line carrying
+  two spaces parses as a signature from a name nobody lists, which §10 ignores
+  rather than refuses. The payload is **standard base64 **with padding****
+  (RFC 4648 §4, the `+/` alphabet, `=` to a multiple of four); unpadded base64
+  decodes to the same bytes and is not this encoding. **What
   follows the key id depends on the algorithm the key was published under**,
   and this document uses two:
   - **algorithm `0x01`**, a plain Ed25519 note signature (the log's, and a
@@ -623,6 +633,18 @@ spec's rules produce.
     `"cosignature/v1\n" ‖ "time " ‖ <timestamp as decimal, no leading zeroes> ‖ "\n" ‖ <note text>`
     — two newline-terminated header lines, then the whole note text through
     its final newline, with no signature lines.
+- The decoded payload is **exactly** that length — **exactly** 68 bytes for
+  algorithm `0x01` and **exactly** 76 for `0x04`. Not "at least": a verifier
+  that reads the first 68 bytes and ignores what follows accepts unboundedly
+  many byte-distinct forms of one checkpoint, every one of which verifies. Two
+  nodes gossiping that head then disagree about its bytes, and everything keyed
+  on them — a cache, a de-duplication set, §6's OpenTimestamps digest over the
+  body — is keyed on something an attacker chooses. A line whose payload is the
+  wrong length is a malformed note, not a line to skip.
+- A note carries **at least one signature line**. A block with none is a
+  malformed note rather than an unsigned one; in practice §10's "at least one
+  such line MUST be present" refuses such a checkpoint first, which is why
+  §12.1 lists this rule as one no file can isolate.
 - `key_id` = `SHA-256(name ‖ 0x0A ‖ alg ‖ pk)[0:4]`, with `alg` the algorithm
   byte above. The algorithm is part of the id, so the same public key published
   under `0x01` and `0x04` is two different verifiers — §9.1 turns that into a
@@ -1179,6 +1201,7 @@ this table drifted out of date the moment one was.
 | §8.1 and §11.1 are closed maps, versioned, and bounded | `proofs/`, `fork/evidence.cbor` | `proofs-bad/open-schema` and `wrong-version`; `proofs-bad/device-not-in-entry`, where the proof, the entry and the checkpoint are all honest and only the **label** beside them is another device's — an inclusion proof binds the entry to the log and says nothing about a label. For evidence: `fork/bad-open-schema`, `bad-wrong-version` and `bad-size-above-held`, because an accuser can only speak for sizes its own branch reaches. **This implementation left the evidence map open and the device unbound** until run 8 asked |
 | §11.1 the carried `policy` decides nothing | `fork/policy-not-the-readers.cbor`: sound evidence whose `policy` requires a witness that cosigned nothing — it MUST still prove the fork, because the reader verifies under its own | `fork/bad-policy-says-quorum-none`: two checkpoints no quorum cosigned, and a carried policy saying none is needed. A reader that trusts the field concludes a fork any stranger can write, and §11 rule 4 makes it permanent. `fork/bad-policy-unparseable` is the format half |
 | §6 tiles and bundles | `served/`, read back to reproduce `state.json`; a forged head is `checkpoints-bad/04-forged-log-signature` and a fourth body line is `checkpoints-bad/09-extension-line` | `served-bad/`: an entry bundle with one byte changed, one the log will not serve at all, `tampered-hash-tile` — one byte inside one leaf hash, which leaves the entries and the signed head honest, so only the hash-tile rule can refuse it — and `consistent-tampered-log`, where the bundle and the level-0 tile are changed **together**. That last one is the only file that reaches the rebuild-and-compare rule: the other two tamper cases change a leaf hash as a side effect, so the tile rule refuses them first and a reader that never compares the rebuilt head with the checkpoint passed everything (cold gate run 10, D11). `checkpoints-bad/17-root-wrong-length` is the root line's own negative |
+| §7 note framing, the three splits a file can separate | `served/checkpoint` and `receipt.note`, both read with these rules | `checkpoints-bad/18-signature-name-with-space` (split at the first space or the last), `19-signature-unpadded-base64` (standard base64, padded) and `20-signature-payload-too-long` (the payload is **exactly** 68 or 76 bytes, never a prefix of something longer). Each is the honest checkpoint with one signature line rewritten, so the line is well-formed under the lax reading and malformed under this document's. The other two splits — a blank line inside the text, and a note with no signature lines — are in **What is not vectored** below |
 | §8.1 a bundle's checkpoint is checked per §10 | `proofs/`, whose checkpoints carry the quorum | `proofs-bad/no-quorum` (the log's signature and nobody else's) and `proofs-bad/wrong-origin` (this network's key over another network's origin line) |
 | §8 proof bundles | `proofs/`, one per active device | `proofs-bad/`, **9 proof refusals**: a wrong entry, a foreign checkpoint, a tampered proof, a checkpoint signed by a key the anchor does not name, one with no witness quorum and one whose checkpoint names another origin — each differing from a valid bundle in exactly one thing |
 | §10 the signature decides before the origin | — | `proofs-bad/foreign-checkpoint` MUST be refused about "no valid signature from a trusted key" and `proofs-bad/wrong-origin` about "is for origin". A reader that checks the origin first reports the wrong one for the first of them |
@@ -1200,6 +1223,18 @@ admits its holes, so:
 
 - **`quorum none` accepting an uncosigned head.** It needs a second trust
   anchor, and one is not shipped.
+- **A **blank line inside a note's text**, as distinct from the one that ends
+  it.** §7 says the first blank line ends the text because text lines are
+  non-empty; a reader that took the *last* one would sign a different string.
+  Every note text in Norn is a checkpoint body (three lines, §6) or a receipt
+  (four, §7), so a text carrying a blank line has the wrong line count under
+  **both** readings and is refused either way. Separating them needs a note
+  whose text is valid with a blank line in it, which this protocol has none of.
+- **A note with no signature lines.** §7 requires at least one, and so does
+  §10 — "at least one such line MUST be present" — and §10's check is reached
+  first, so a checkpoint with an empty signature block is refused before the
+  framing rule applies. No artifact tells a reader that enforces both from one
+  that enforces only the second.
 - **§10's "the root the SERVED branch has at `at` … recomputed from the
   entries, **never from a supplied proof**".** No shipped file supplies one: a
   `detect/` pair serves both branches with their own tiles, so a reader takes

@@ -1719,6 +1719,65 @@ func shortRootLine(base, origin string, key ed25519.PrivateKey,
 	return staggeredCosigner(signers)(signed)
 }
 
+// rewriteLastSignature applies f to the final `— …` line of a signed note.
+// The text and every earlier line are untouched, so the rewritten line is the
+// only thing a reader can object to.
+func rewriteLastSignature(signed string, f func(string) string) string {
+	lines := strings.Split(strings.TrimRight(signed, "\n"), "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		if strings.HasPrefix(lines[i], note.SigPrefix) {
+			lines[i] = f(lines[i])
+			break
+		}
+	}
+	return strings.Join(lines, "\n") + "\n"
+}
+
+// logSignatureLast moves the log's own signature line to the end of the block,
+// so `rewriteLastSignature` can reach it. §10 says the log's line may appear
+// anywhere and order carries nothing, so this changes no rule.
+func logSignatureLast(signed, origin string) string {
+	text, block, _ := strings.Cut(signed, "\n\n")
+	var others, logLines []string
+	for _, line := range strings.Split(strings.TrimRight(block, "\n"), "\n") {
+		if strings.HasPrefix(line, note.SigPrefix+origin+" ") {
+			logLines = append(logLines, line)
+		} else {
+			others = append(others, line)
+		}
+	}
+	all := append(others, logLines...)
+	return text + "\n\n" + strings.Join(all, "\n") + "\n"
+}
+
+// nameWithSpace puts a space inside the key name. Splitting the line at its
+// first space then leaves a payload that is not base64.
+func nameWithSpace(line string) string {
+	rest := strings.TrimPrefix(line, note.SigPrefix)
+	name, blob, _ := strings.Cut(rest, " ")
+	return note.SigPrefix + name + " extra " + blob
+}
+
+// dropPadding re-encodes the payload without its `=`.
+func dropPadding(line string) string {
+	rest := strings.TrimPrefix(line, note.SigPrefix)
+	name, blob, _ := strings.Cut(rest, " ")
+	return note.SigPrefix + name + " " + strings.TrimRight(blob, "=")
+}
+
+// appendByte adds one byte to the decoded payload, so it is 69 bytes where §7
+// says 68 and a prefix-reading verifier sees no difference.
+func appendByte(line string) string {
+	rest := strings.TrimPrefix(line, note.SigPrefix)
+	name, blob, _ := strings.Cut(rest, " ")
+	raw, err := base64.StdEncoding.DecodeString(blob)
+	if err != nil {
+		return line
+	}
+	return note.SigPrefix + name + " " +
+		base64.StdEncoding.EncodeToString(append(raw, 0x00))
+}
+
 // appendForgedLogSignature adds a second line under the log's own key that does
 // not verify. Both name the log; a reader that takes the first valid one and
 // stops never looks at the other.
@@ -2065,6 +2124,28 @@ func buildBadCheckpoints(root, origin string, key ed25519.PrivateKey,
 			"and accepts it, so §6's length is the only rule that can refuse it",
 		shortRoot})
 
+	// Cold gate run 10, D13. §7's framing left five splits to the reader and
+	// three of them can be separated by a file. Each of these is `allThree`
+	// with its **last** signature line rewritten one way, so the line is a
+	// perfectly good signature under the lax reading and malformed under this
+	// document's.
+	out = append(out, badCheckpoint{"18-signature-name-with-space",
+		"a signature line whose name carries a space: split at the first space the " +
+			"payload is not base64, split at the last it is a signature from a name " +
+			"nobody lists, which §10 ignores rather than refuses",
+		rewriteLastSignature(allThree, nameWithSpace)})
+
+	out = append(out, badCheckpoint{"19-signature-unpadded-base64",
+		"the last signature line's payload is unpadded base64: the same bytes to a " +
+			"raw-base64 reader, and not §7's encoding",
+		rewriteLastSignature(allThree, dropPadding)})
+
+	out = append(out, badCheckpoint{"20-signature-payload-too-long",
+		"one byte appended to the log's 68-byte payload: a verifier that reads the " +
+			"first 68 and stops verifies it, so this head has unboundedly many " +
+			"byte-distinct forms that are all valid",
+		rewriteLastSignature(logSignatureLast(allThree, origin), appendByte)})
+
 	out = append(out, badCheckpoint{"08-forged-cosignature",
 		"two cosignature lines, both naming witnesses the policy lists, one of which does not verify: " +
 			"the quorum is met only by a verifier that does not check them", forgedCosig})
@@ -2143,6 +2224,9 @@ func writeBadCheckpoints(root, origin string, key ed25519.PrivateKey,
 		"14-unterminated-signature-block":   {"section": "7", "says": "including the last, ends in one"},
 		"15-size-leading-zero":              {"section": "6", "says": "no leading zeroes"},
 		"17-root-wrong-length":              {"section": "6", "says": "32 bytes once decoded"},
+		"18-signature-name-with-space":      {"section": "7", "says": "contains no space"},
+		"19-signature-unpadded-base64":      {"section": "7", "says": "standard base64 **with padding**"},
+		"20-signature-payload-too-long":     {"section": "7", "says": "The decoded payload is **exactly** that length"},
 		"16-two-log-signatures":             {"section": "10", "says": "Every signature line whose name and key id match"},
 	}
 	for name := range reasons {
