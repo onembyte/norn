@@ -165,3 +165,54 @@ func TestTheKeyLimitVectorsSitExactlyOnTheCap(t *testing.T) {
 		t.Errorf("the past-the-limit key is %d bytes, want %d", got, MaxKeyLen+1)
 	}
 }
+
+// --- Cold-model gate run 8, defect D15 ----------------------------------
+//
+// §4.0 bans floats, tags, null, undefined, negative integers, indefinite
+// lengths and non-text map keys. The suite had a negative for each **as part
+// of an entry** -- and every one of them is refused by a *later* rule too, so
+// `cbor-allow-null`, `cbor-allow-negative` and `cbor-allow-nontext-mapkey`
+// each reproduced the whole manifest.
+//
+// `65-bad-cbor-null` shows why: the null replaces `after`'s value, so a
+// lenient decoder hands the envelope check a non-uint `after` and the entry is
+// `decode` either way. The reason code is the same, so `manifest.json` cannot
+// tell the two readings apart. Confirmed by mutation: allowing null leaves
+// every replay vector green.
+//
+// The profile is a property of the *decoder*, so it belongs where the other
+// decoder-level rules already live -- fed to a bare reader with no schema
+// above it to intervene first.
+
+func TestEveryForbiddenProfileItemHasADecoderCase(t *testing.T) {
+	dir := filepath.Join("..", "..", "testdata", "vectors", "entries-hostile")
+	raw, err := os.ReadFile(filepath.Join(dir, "cases.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Cases []struct {
+			Name, Says string
+			Accepted   bool `json:"accepted"`
+		} `json:"cases"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	have := map[string]bool{}
+	for _, c := range doc.Cases {
+		have[c.Name] = true
+	}
+	// One per banned item, by the name §4.0 uses for it.
+	for _, want := range []string{
+		"bare-null", "bare-undefined", "bare-float", "bare-negative-integer",
+		"bare-tag", "bare-indefinite-text", "bare-nontext-map-key",
+		"bare-invalid-utf8",
+	} {
+		if !have[want] {
+			t.Errorf("§4.0 bans this and `entries-hostile/%s` does not ship, so the "+
+				"rule is reachable only through an entry -- where a later rule "+
+				"refuses it first and the reason code is the same either way", want)
+		}
+	}
+}

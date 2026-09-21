@@ -4,14 +4,12 @@
   "devices": [
     "astral",
     "contractor",
-    "escaped",
     "labelcap",
     "nas",
     "pi-cam",
-    "printer",
-    "sundial"
+    "printer"
   ],
   "log_key": "keys.json ed25519.logkey — the key trust.cbor names",
   "origin": "norn/nzxxe3rnorsxg5domv2c2mbqge",
-  "size": 116
+  "size": 119
 }

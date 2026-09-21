@@ -93,6 +93,11 @@ class _Decoder:
             return major, extra
         if extra > 27:
             raise ProfileError(f"reserved or indefinite length: {extra}")
+        # Major 7 with a 2-, 4- or 8-byte argument is a float. SPEC 4.0 bans
+        # floats by name, so the refusal names them rather than reporting
+        # the same 'simple value' a null does.
+        if major == 7:
+            raise ProfileError("floats are outside the profile")
         size = 1 << (extra - 24)
         n = int.from_bytes(self.take(size), "big")
         minimum = (24, 0x100, 0x10000, 0x100000000)[extra - 24]

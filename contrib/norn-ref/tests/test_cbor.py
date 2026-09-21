@@ -86,3 +86,26 @@ class ResourceLimits(unittest.TestCase):
         """A 2**32-byte string header with no payload must fail fast."""
         with self.assertRaises(cbor.ProfileError):
             cbor.decode(b"\x5a\xff\xff\xff\xff")
+
+
+class HostileInputVectors(unittest.TestCase):
+    """`entries-hostile/` is a shared file; both implementations answer from it.
+
+    Cold gate run 8 (D15): the profile's banned items were reachable only
+    through an entry, where a later rule refuses them too and the reason code
+    is the same either way. The bare cases have no schema above them, so the
+    profile is the only thing that can refuse -- and this asserts the reference
+    refuses each for *its own* reason, exactly as the Go side does.
+    """
+
+    def test_every_case_behaves_as_its_table_says(self):
+        from nornref import fixture
+        for name, raw, says in fixture.hostile_inputs():
+            with self.subTest(name):
+                if says is None:
+                    cbor.decode(raw)  # at a limit: MUST be accepted
+                    continue
+                with self.assertRaises(cbor.ProfileError) as caught:
+                    cbor.decode(raw)
+                self.assertIn(says, str(caught.exception),
+                              f"{name} was refused for the wrong rule")

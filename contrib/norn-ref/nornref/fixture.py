@@ -775,6 +775,20 @@ def log() -> list[LogItem]:
     b.add(f"{b.index}-enroll-request-from-the-future", b.build(
         "enroll", _enroll_body("sundial", ts_offset=10 * 86400), both))
 
+    # Cold gate run 8, D26. §4.0 bounds `text` at "≤ 4096" and `reason` at
+    # "0-256", and §4.3 marks `reason` OPTIONAL -- so an empty one of each, and
+    # an absent `reason`, are all legal. Every `note` and `revoke` in the
+    # fixture carried a non-empty string, so `text-min-one-byte`,
+    # `reason-min-one-byte` and `revoke-reason-required` all passed: three
+    # readings that reject entries this document accepts. Positives, because a
+    # lower bound nobody wrote is only visible in what is *accepted*.
+    b.add(f"{b.index}-note-empty-text", b.build(
+        "note", {"text": ""}, [("signer1", "signer")]))
+    b.add(f"{b.index}-revoke-empty-reason", b.build(
+        "revoke", {"device_id": "escaped", "reason": ""}, roots3))
+    b.add(f"{b.index}-revoke-no-reason", b.build(
+        "revoke", {"device_id": "sundial"}, roots3))
+
     return b.items
 
 
@@ -1531,7 +1545,24 @@ def hostile_inputs() -> list[tuple[str, bytes, str]]:
     past_key = b"\xa1\x78" + bytes([cbor.MAX_KEY_LEN + 1]) + \
         b"k" * (cbor.MAX_KEY_LEN + 1) + b"\x00"
 
-    return [
+    # Cold gate run 8, D15. Every banned item had a negative *inside an entry*
+    # and every one of those is refused by a later rule too -- `65-bad-cbor-null`
+    # puts the null in `after`, so a lenient decoder hands the envelope a
+    # non-uint `after` and the reason is `decode` either way. The manifest
+    # cannot tell the two readings apart, so the profile gets cases with no
+    # schema above them to intervene first.
+    bare = [
+        ("bare-null", b"\xf6", "simple value"),
+        ("bare-undefined", b"\xf7", "simple value"),
+        ("bare-float", b"\xf9\x3c\x00", "float"),
+        ("bare-negative-integer", b"\x20", "major type"),
+        ("bare-tag", b"\xc0\x00", "major type"),
+        ("bare-indefinite-text", b"\x7f\x61\x61\xff", "indefinite"),
+        ("bare-nontext-map-key", b"\xa1\x00\x00", "map key must be a text string"),
+        ("bare-invalid-utf8", b"\x62\xff\xfe", "UTF-8"),
+    ]
+
+    return bare + [
         ("oversize-entry", oversize, "exceeds"),
         ("deep-nesting", deep, "deeper than"),
         ("at-the-depth-limit", at_depth, None),

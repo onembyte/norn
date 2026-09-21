@@ -189,6 +189,13 @@ func (d *decoder) head() (byte, uint64, error) {
 	if extra > 27 {
 		return 0, 0, profileErrorf("reserved or indefinite length")
 	}
+	// Major 7 with a 2-, 4- or 8-byte argument is a float. §4.0 bans floats by
+	// name, so the refusal says so: "simple value 15360" is the same sentence
+	// a null produces, and `entries-hostile` asks each case to be refused for
+	// its own rule (cold gate run 8, D15).
+	if major == mtSimple {
+		return 0, 0, profileErrorf("floats are outside the profile")
+	}
 	size := uint64(1) << (extra - 24)
 	raw, err := d.take(size)
 	if err != nil {
