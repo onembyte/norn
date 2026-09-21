@@ -142,6 +142,14 @@ func Check(ev *Evidence, origin, logVKey, readerPolicy string) (*Finding, error)
 	if err != nil {
 		return nil, evidenceErrorf("the conflicting checkpoint: %v", err)
 	}
+	// An accuser can only speak for sizes its own branch reaches. Above that
+	// there is nothing to compare, and the consistency proof refused it with a
+	// message about the proof rather than about the claim (D25).
+	if ev.Size > held.Size {
+		return nil, evidenceErrorf("the evidence claims a disagreement at size %d and "+
+			"the held branch is %d entries; an accuser can only speak for what it holds",
+			ev.Size, held.Size)
+	}
 	if conflicting.Size != ev.Size {
 		return nil, evidenceErrorf("the conflicting checkpoint is size %d, the evidence "+
 			"claims a disagreement at %d", conflicting.Size, ev.Size)
@@ -245,6 +253,20 @@ func Parse(raw []byte) (*Evidence, error) {
 	doc, ok := value.(map[string]any)
 	if !ok {
 		return nil, evidenceErrorf("evidence is a map")
+	}
+	// §11.1: "a closed map of exactly these seven keys". This read the seven it
+	// wanted and ignored anything else, so the closed-map rule was prose only
+	// (cold gate run 8, D25). Evidence is the artifact strangers exchange; a
+	// field a reader silently drops is a field an accuser can hide something in.
+	allowed := map[string]bool{"version": true, "held": true, "conflicting": true,
+		"size": true, "held_root": true, "proof": true, "policy": true}
+	for key := range doc {
+		if !allowed[key] {
+			return nil, evidenceErrorf("unknown field %q", key)
+		}
+	}
+	if len(doc) != len(allowed) {
+		return nil, evidenceErrorf("evidence is missing fields")
 	}
 	version, _ := doc["version"].(uint64)
 	if version != Version {

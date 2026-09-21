@@ -16,6 +16,7 @@ import (
 
 	"github.com/onembyte/norn/internal/cbor"
 	"github.com/onembyte/norn/internal/cosign"
+	"github.com/onembyte/norn/internal/enrollreq"
 	"github.com/onembyte/norn/internal/entry"
 	"github.com/onembyte/norn/internal/note"
 	"github.com/onembyte/norn/internal/policy"
@@ -122,6 +123,38 @@ func Decode(raw []byte) (*Bundle, error) {
 //
 // It deliberately does NOT consult any log. A bundle that only checks out
 // while its log is reachable is not evidence.
+// subjectOf is the `device_id` an entry is about: an `enroll` names it inside
+// the request it carries verbatim, the other device types in their body.
+//
+// §8.1 calls `device` "the `device_id` this bundle proves", and nothing bound
+// the two. A bundle's authority is its inclusion proof, which shows the
+// *entry* is in the log and says nothing about the label beside it -- so
+// `device: "nas"` around another device's entry proved exactly as much as an
+// honest bundle, and a consumer keying on `device` believed something no proof
+// established (cold gate run 8, D25).
+func subjectOf(raw []byte) (string, error) {
+	env, err := entry.Decode(raw)
+	if err != nil {
+		return "", proofErrorf("the bundled entry does not decode: %v", err)
+	}
+	if env.T == "enroll" {
+		body, ok := env.Body["request"].([]byte)
+		if !ok {
+			return "", proofErrorf("the bundled enroll carries no request")
+		}
+		request, err := enrollreq.Decode(body)
+		if err != nil {
+			return "", proofErrorf("the bundled enroll's request does not decode: %v", err)
+		}
+		return request.DeviceID, nil
+	}
+	id, ok := env.Body["device_id"].(string)
+	if !ok {
+		return "", proofErrorf("a bundled %q entry names no device", env.T)
+	}
+	return id, nil
+}
+
 // MaxBundleBytes bounds a proof bundle. It cannot be `MAX_ENTRY_BYTES`: a
 // bundle *wraps* an entry that may itself be that large, plus a checkpoint and
 // an inclusion proof, so the largest legal bundle necessarily exceeds the
@@ -179,6 +212,16 @@ func (b *Bundle) Check(anchor Anchor) error {
 	leaf := tlog.LeafHash(b.Entry)
 	if err := upstream.CheckRecord(b.Proof, cp.Size, cp.Root, b.Index, leaf); err != nil {
 		return proofErrorf("inclusion proof: %v", err)
+	}
+	// ...and the entry the proof is about really is this device's. The proof
+	// binds the entry to the log; only this binds the label to the entry.
+	subject, err := subjectOf(b.Entry)
+	if err != nil {
+		return err
+	}
+	if subject != b.Device {
+		return proofErrorf("this bundle says it proves %q and carries an entry about %q",
+			b.Device, subject)
 	}
 	return nil
 }

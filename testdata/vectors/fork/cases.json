@@ -1,6 +1,18 @@
 {
   "cases": [
     {
+      "name": "bad-open-schema",
+      "says": "unknown field"
+    },
+    {
+      "name": "bad-wrong-version",
+      "says": "version"
+    },
+    {
+      "name": "bad-size-above-held",
+      "says": "can only speak for what it holds"
+    },
+    {
       "name": "bad-policy-says-quorum-none",
       "says": "no quorum cosigned it"
     },

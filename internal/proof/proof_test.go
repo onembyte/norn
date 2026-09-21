@@ -2,7 +2,10 @@ package proof
 
 import (
 	"crypto/ed25519"
+	"strconv"
 	"testing"
+
+	"github.com/onembyte/norn/internal/entry"
 
 	"github.com/onembyte/norn/internal/tlog"
 )
@@ -11,11 +14,26 @@ import (
 // nothing but norn.trust can check it, so every test here does exactly that:
 // verify from the bundle alone, with no access to the log it came from.
 
+// deviceName is the device every synthetic entry below is about. §8.1 binds a
+// bundle's `device` to the entry it carries, so the entries here have to be
+// real ones naming a real device rather than arbitrary bytes.
+const deviceName = "dev"
+
+// build makes a log of `size` `revoke` entries, all about `deviceName`. They
+// are never replayed -- these tests are about the bundle format -- but they
+// must decode and name the device the bundle claims.
 func build(t *testing.T, size int) ([][]byte, *tlog.Tree, ed25519.PrivateKey, string) {
 	t.Helper()
 	entries := make([][]byte, 0, size)
 	for i := 0; i < size; i++ {
-		entries = append(entries, []byte{byte(i), byte(i >> 8), 0x2a})
+		raw, err := entry.Encode(&entry.Envelope{
+			V: entry.Version, T: "revoke", Net: make([]byte, 16), TS: uint64(i),
+			Body: map[string]any{"device_id": deviceName, "reason": strconv.Itoa(i)},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		entries = append(entries, raw)
 	}
 	tree, err := tlog.Build(entries)
 	if err != nil {
@@ -36,7 +54,7 @@ func TestABundleChecksOutOnItsOwn(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		bundle, err := Build("dev", index, entries[index], p, signed)
+		bundle, err := Build(deviceName, index, entries[index], p, signed)
 		if err != nil {
 			t.Fatal(err)
 		}

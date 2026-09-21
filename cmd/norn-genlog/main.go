@@ -23,6 +23,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/onembyte/norn/internal/cbor"
 	cosignpkg "github.com/onembyte/norn/internal/cosign"
 	"github.com/onembyte/norn/internal/entry"
 	"github.com/onembyte/norn/internal/forkevidence"
@@ -723,10 +724,44 @@ func writeBadProofs(root, origin string, key ed25519.PrivateKey, entries [][]byt
 		return err
 	}
 
+	// Cold gate run 8, D25. §8.1 calls the bundle a closed map of exactly six
+	// keys and `device` "the `device_id` this bundle proves"; the schema and
+	// the version were enforced and unvectored, and the binding between
+	// `device` and the entry was not checked at all.
+	honest, err := proof.Build(device, index, entries[index], inclusion, signed)
+	if err != nil {
+		return err
+	}
+	raw, err := honest.Encode()
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(dir, "open-schema.bundle"),
+		withExtraKey(raw, "surprise", "an unpermitted bundle key"), 0o644); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(dir, "wrong-version.bundle"),
+		withVersion(raw, 2), 0o644); err != nil {
+		return err
+	}
+	// The proof, the entry and the checkpoint are all honest; only the label
+	// beside them is another device's, and the inclusion proof says nothing
+	// about a label.
+	mislabelled, err := proof.Build("somebody-else", index, entries[index], inclusion, signed)
+	if err != nil {
+		return err
+	}
+	if err := write("device-not-in-entry", mislabelled); err != nil {
+		return err
+	}
+
 	meta := map[string]any{
 		"log_key": note.VerifierKey(origin, key.Public().(ed25519.PublicKey)),
 		"origin":  origin,
 		"cases": []map[string]string{
+			{"name": "open-schema", "says": "unknown field"},
+			{"name": "wrong-version", "says": "unsupported version"},
+			{"name": "device-not-in-entry", "says": "carries an entry about"},
 			{"name": "no-quorum", "says": "no quorum cosigned"},
 			{"name": "wrong-origin", "says": "is for origin"},
 			{"name": "wrong-entry", "says": "inclusion proof"},
@@ -946,6 +981,45 @@ func writeForkEvidence(root, origin string, key ed25519.PrivateKey,
 	}
 	return writeForkNegatives(root, origin, key, entries, heldSigned, heldTree, signers,
 		evidence, forkedSigned, forkedCP)
+}
+
+// withExtraKey re-encodes a CBOR map with one more key, so a closed-schema
+// negative differs from a valid artifact in exactly that.
+func withExtraKey(raw []byte, key, value string) []byte {
+	m := mustMap(raw)
+	m[key] = value
+	out, err := cbor.Encode(m)
+	if err != nil {
+		panic(err)
+	}
+	return out
+}
+
+// withVersion re-encodes a CBOR map under another version number.
+func withVersion(raw []byte, v uint64) []byte {
+	m := mustMap(raw)
+	for _, key := range []string{"v", "version"} {
+		if _, ok := m[key]; ok {
+			m[key] = v
+		}
+	}
+	out, err := cbor.Encode(m)
+	if err != nil {
+		panic(err)
+	}
+	return out
+}
+
+func mustMap(raw []byte) map[string]any {
+	value, err := cbor.Decode(raw)
+	if err != nil {
+		panic(err)
+	}
+	m, ok := value.(map[string]any)
+	if !ok {
+		panic("not a CBOR map")
+	}
+	return m
 }
 
 // mustBody is the note text a signature covers, without the signature lines.
@@ -1225,8 +1299,38 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 		return err
 	}
 
+	// Cold gate run 8, D25. §11.1 calls this "a closed map of exactly these
+	// seven keys" and `Parse` read the seven it wanted, ignoring the rest --
+	// so the rule was prose only. Evidence is the artifact strangers exchange;
+	// a field a reader silently drops is one an accuser can hide something in.
+	if err := os.WriteFile(filepath.Join(dir, "bad-open-schema.cbor"),
+		withExtraKey(raw, "surprise", "an unpermitted evidence key"), 0o644); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(dir, "bad-wrong-version.cbor"),
+		withVersion(raw, 2), 0o644); err != nil {
+		return err
+	}
+	// An accuser can only speak for sizes its own branch reaches.
+	aboveHeld := &forkevidence.Evidence{
+		Held: heldSigned, Conflicting: forkedSigned,
+		Size: int64(len(entries)) + 1, HeldRoot: append([]byte(nil), evidence.HeldRoot...),
+		Proof: evidence.Proof, Policy: policyOf(root),
+	}
+	rawAbove, err := aboveHeld.Encode()
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(dir, "bad-size-above-held.cbor"),
+		rawAbove, 0o644); err != nil {
+		return err
+	}
+
 	manifest := map[string]any{
 		"cases": []map[string]string{
+			{"name": "bad-open-schema", "says": "unknown field"},
+			{"name": "bad-wrong-version", "says": "version"},
+			{"name": "bad-size-above-held", "says": "can only speak for what it holds"},
 			{"name": "bad-policy-says-quorum-none",
 				"says": "no quorum cosigned it"},
 			{"name": "bad-policy-unparseable",

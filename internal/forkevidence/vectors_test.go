@@ -134,3 +134,34 @@ func TestEachForkNegativeReachesADifferentStep(t *testing.T) {
 		t.Error("the sizes agree, so step 2 has nothing to refuse")
 	}
 }
+
+// --- Cold-model gate run 8, defect D25 ----------------------------------
+//
+// §11.1 says evidence is "a closed map of exactly these seven keys". `Parse`
+// read the seven it wanted and ignored anything else, so the closed-map rule
+// was prose only — `evidence-open-schema` passed the whole suite because no
+// file ever carried an eighth key.
+//
+// `size` had no stated bound either. An accuser can only speak for sizes its
+// own branch reaches, so a `size` above `held`'s was refused by the consistency
+// proof rather than by a rule, with a message about the proof.
+
+func TestEveryEvidenceSchemaRuleHasItsCase(t *testing.T) {
+	root := filepath.Join("..", "..", "testdata", "vectors")
+	anchor := shippedAnchor(t, root)
+	for _, want := range []string{"bad-open-schema", "bad-wrong-version", "bad-size-above-held"} {
+		t.Run(want, func(t *testing.T) {
+			raw, err := os.ReadFile(filepath.Join(root, "fork", want+".cbor"))
+			if err != nil {
+				t.Fatalf("§11.1 states this rule and no vector reaches it: %v", err)
+			}
+			ev, err := Parse(raw)
+			if err != nil {
+				return // refused by the schema, which is a refusal
+			}
+			if _, err := Check(ev, anchor.Origin, anchor.LogKey, anchor.Policy); err == nil {
+				t.Errorf("%s was accepted; §11.1 says it must not be", want)
+			}
+		})
+	}
+}

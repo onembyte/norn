@@ -1,6 +1,18 @@
 {
   "cases": [
     {
+      "name": "open-schema",
+      "says": "unknown field"
+    },
+    {
+      "name": "wrong-version",
+      "says": "unsupported version"
+    },
+    {
+      "name": "device-not-in-entry",
+      "says": "carries an entry about"
+    },
+    {
       "name": "no-quorum",
       "says": "no quorum cosigned"
     },

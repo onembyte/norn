@@ -206,3 +206,32 @@ func TestABundleMayWrapAMaximalEntry(t *testing.T) {
 			"that wraps an entry.", err)
 	}
 }
+
+// --- Cold-model gate run 8, defect D25 ----------------------------------
+//
+// §8.1 calls the bundle "a closed map of exactly these six keys" and says
+// `device` is "the `device_id` this bundle proves". The schema was closed and
+// the version checked, and neither had a vector; the binding between `device`
+// and the entry was not checked at all.
+//
+// That last one matters. A bundle's authority is the inclusion proof, which
+// shows the *entry* is in the log — it says nothing about the label beside it.
+// A bundle reading `device: "nas"` around `printer`'s entry proves exactly as
+// much as an honest one, and a consumer keying on `device` believes something
+// no proof established.
+
+func TestEveryBundleSchemaRuleHasItsCase(t *testing.T) {
+	for _, want := range []string{"open-schema", "wrong-version", "device-not-in-entry"} {
+		t.Run(want, func(t *testing.T) {
+			raw, err := os.ReadFile(filepath.Join("..", "..", "testdata", "vectors", "proofs-bad", want+".bundle"))
+			if err != nil {
+				t.Fatalf("§8.1 states this rule and no vector reaches it: %v", err)
+			}
+			if _, err := Decode(raw); err == nil {
+				// A schema rule may be enforced at Decode or at Check; both
+				// are refusals, and which one owns it is this format's choice.
+				t.Logf("%s decodes; Check must refuse it", want)
+			}
+		})
+	}
+}
