@@ -158,6 +158,13 @@ func TestSpecVectorCitationsResolve(t *testing.T) {
 			suffixes[rest] = true
 		}
 	}
+	// A `bad-` name in §12.1 need not be a *log* entry -- `policies/` and
+	// `fork/` carry them too. This matched only the log manifest, which is the
+	// same blind spot D7 found in the path checker: a name it could not see
+	// was a name it reported nothing about.
+	for name := range shippedVectorNames(t) {
+		suffixes[name] = true
+	}
 
 	spec, err := os.ReadFile(filepath.Join("..", "..", "SPEC.md"))
 	if err != nil {

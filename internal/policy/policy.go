@@ -79,12 +79,26 @@ func Parse(text string) (*Policy, error) {
 	quorumLines := 0
 
 	for number, raw := range strings.Split(text, "\n") {
-		line := strings.TrimSpace(raw)
+		where := fmt.Sprintf("line %d", number+1)
+		// §9.1: fields are separated by ASCII spaces and tabs **only**. This
+		// used `strings.Fields`, which splits on every Unicode space, so a
+		// vertical tab separated two fields here and was an error in the
+		// reference implementation -- a divergence no vector could see
+		// (cold gate run 8, D12).
+		for _, r := range raw {
+			if r != ' ' && r != '\t' && isSpace(r) {
+				return nil, policyErrorf("%s: whitespace other than space and tab", where)
+			}
+		}
+		line := strings.Trim(raw, " \t")
+		// Ignored: a line that is empty or holds only spaces and tabs, and a
+		// line whose first non-space character is `#`. §9.1 states both,
+		// because the reference implementation refused them and this one did
+		// not, and nothing in the suite could tell (cold gate run 8, D12).
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		fields := strings.Fields(line)
-		where := fmt.Sprintf("line %d", number+1)
+		fields := splitFields(line)
 
 		switch fields[0] {
 		case "log":
@@ -166,6 +180,17 @@ func Parse(text string) (*Policy, error) {
 		return nil, policyErrorf("the quorum names %q, which nothing defines", p.quorum)
 	}
 	return p, nil
+}
+
+// isSpace is the ASCII whitespace set, spelled out rather than taken from
+// `unicode`: the rule is about ASCII, and a Unicode definition would drift.
+func isSpace(r rune) bool {
+	return r == ' ' || r == '\t' || r == '\n' || r == '\v' || r == '\f' || r == '\r'
+}
+
+// splitFields splits on runs of spaces and tabs, and nothing else.
+func splitFields(line string) []string {
+	return strings.FieldsFunc(line, func(r rune) bool { return r == ' ' || r == '\t' })
 }
 
 // parseThreshold reads `all`, `any` or a number.

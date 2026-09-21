@@ -1,0 +1,104 @@
+package policy
+
+import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+// --- Cold-model gate run 8, defect D12 ----------------------------------
+//
+// §9.1 restates the `tlog-policy` grammar "because a verifier cannot be
+// written without it", and the restatement was not enough to write one that
+// *agrees*: run 8 flipped nine readings and every one of them passed the whole
+// suite, because the only policy text in the vectors was the fixture's own and
+// one negative that is not a policy at all.
+//
+// Six of the nine were not open questions but live disagreements between the
+// two implementations in this repository — a whitespace-only line, a `#`
+// comment, a vertical tab as a separator, a duplicate witness name, a forward
+// reference, and a `group` with no members. Each parsed in one and was refused
+// by the other, and nothing could see it.
+
+func vectorRoot() string { return filepath.Join("..", "..", "testdata", "vectors") }
+
+type policyCase struct {
+	Name   string `json:"name"`
+	Accept bool   `json:"accept"`
+	Why    string `json:"why"`
+}
+
+func policyCases(t *testing.T) []policyCase {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(vectorRoot(), "policies", "cases.json"))
+	if err != nil {
+		t.Fatalf("the policy-grammar vectors are missing: %v", err)
+	}
+	var doc struct {
+		Cases []policyCase `json:"cases"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	return doc.Cases
+}
+
+func TestEveryPolicyGrammarCaseIsDecidedTheSameWay(t *testing.T) {
+	cases := policyCases(t)
+	var accepted, refused int
+	for _, c := range cases {
+		if c.Accept {
+			accepted++
+		} else {
+			refused++
+		}
+	}
+	if accepted < 3 || refused < 6 {
+		t.Fatalf("%d accepted and %d refused; the grammar needs both sides of each "+
+			"rule, or a parser enforcing the opposite passes", accepted, refused)
+	}
+
+	for _, c := range cases {
+		t.Run(c.Name, func(t *testing.T) {
+			body, err := os.ReadFile(filepath.Join(vectorRoot(), "policies", c.Name+".txt"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = Parse(string(body))
+			switch {
+			case c.Accept && err != nil:
+				t.Errorf("refused a policy that MUST parse (%s): %v", c.Why, err)
+			case !c.Accept && err == nil:
+				t.Errorf("accepted a policy that MUST be refused (%s)", c.Why)
+			}
+		})
+	}
+}
+
+// The one rule the prose stated and the parser did not apply: §9.1 says fields
+// are separated by "ASCII spaces and tabs **only**", and `strings.Fields`
+// splits on every Unicode space -- so a vertical tab was a separator here and
+// an error in the reference.
+func TestOnlySpaceAndTabSeparateFields(t *testing.T) {
+	good := "log k1 https://example/l\nwitness pi k2 https://example/w\nquorum pi\n"
+	if _, err := Parse(good); err != nil {
+		t.Fatalf("the control policy does not parse: %v", err)
+	}
+	// In the URL, which nothing else constrains. Putting it in the keyword
+	// would be refused for not being a keyword, and the whitespace rule would
+	// never be reached -- which is how the first version of this test passed
+	// with the rule deleted.
+	for _, ws := range []struct{ name, ch string }{
+		{"vertical tab", "\v"}, {"form feed", "\f"}, {"carriage return", "\r"},
+	} {
+		t.Run(ws.name, func(t *testing.T) {
+			bad := strings.Replace(good, "https://example/w", "https://example/"+ws.ch+"w", 1)
+			if _, err := Parse(bad); err == nil {
+				t.Errorf("a %s passed as ordinary content; §9.1 says any whitespace "+
+					"other than space and tab is an error", ws.name)
+			}
+		})
+	}
+}

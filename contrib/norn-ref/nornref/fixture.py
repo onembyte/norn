@@ -871,6 +871,61 @@ def genesis_aborts() -> list[tuple[str, bytes, "replay.Anchor"]]:
     return cases
 
 
+def policy_grammar() -> list[tuple[str, str, bool, str]]:
+    """(name, text, accept, why) — §9.1's restated grammar, both sides of each rule.
+
+    Cold gate run 8 (D12): the only policy text in the suite was the fixture's
+    own and one negative that is not a policy at all, so nine readings of the
+    grammar all passed -- and six of them were places the two implementations
+    in this repository already disagreed. Each case below is a whole policy
+    that differs from a valid one in exactly one way.
+    """
+    log = f"log {log_vkey()} {LOG_URLS[0]}"
+    pi = f"witness pi {witness_vkey('pi')} {WITNESS_URLS['pi']}"
+    vps = f"witness vps {witness_vkey('vps')} {WITNESS_URLS['vps']}"
+
+    return [
+        ("minimal", f"{log}\n{pi}\nquorum pi\n", True,
+         "one log, one witness, one quorum"),
+        ("no-trailing-newline", f"{log}\n{pi}\nquorum pi", True,
+         "the final line's newline is optional"),
+        ("blank-and-whitespace-lines",
+         f"{log}\n\n{pi}\n \t \nquorum pi\n", True,
+         "a line that is empty, or only spaces and tabs, is ignored"),
+        ("nested-group",
+         f"{log}\n{pi}\n{vps}\ngroup inner any pi vps\n"
+         "group outer all inner\nquorum outer\n", True,
+         "a group may name a group; it counts as one member, satisfied or not"),
+        ("no-log-line", f"{pi}\nquorum pi\n", True,
+         "`log` is not required by the grammar: the trust file carries the log key"),
+        ("comment-and-indent",
+         f"{log}\n  # a comment, indented\n\t{pi}\nquorum pi\n", True,
+         "a line whose first non-space character is `#` is ignored, and leading "
+         "spaces and tabs are not part of a field"),
+        # The vertical tab goes in the URL, which nothing else constrains: put
+        # it in the keyword and the entry is refused for not being a keyword,
+        # so the whitespace rule is never reached and the case pins nothing.
+        ("bad-vertical-tab",
+         f"{log}\nwitness pi {witness_vkey('pi')} https://example/\vw\nquorum pi\n",
+         False, "only ASCII space and tab separate fields, anywhere in a line"),
+        ("bad-duplicate-name", f"{log}\n{pi}\nwitness pi {witness_vkey('vps')}\nquorum pi\n",
+         False, "a name is defined once"),
+        ("bad-forward-reference",
+         f"{log}\ngroup g all pi\n{pi}\nquorum g\n", False,
+         "a group names previously-defined members only"),
+        ("bad-two-quorums", f"{log}\n{pi}\nquorum pi\nquorum pi\n", False,
+         "there is exactly one quorum line"),
+        ("bad-no-quorum", f"{log}\n{pi}\n", False,
+         "there is exactly one quorum line"),
+        ("bad-empty-group", f"{log}\n{pi}\ngroup g all\nquorum g\n", False,
+         "a group has at least one member"),
+        ("bad-unknown-keyword", f"{log}\n{pi}\nwitnesses vps x\nquorum pi\n", False,
+         "every line is one of the four directives"),
+        ("bad-quorum-undefined", f"{log}\n{pi}\nquorum nobody\n", False,
+         "the quorum names something the policy defines"),
+    ]
+
+
 def trust_rejections() -> list[tuple[str, dict[str, Any]]]:
     """Trust files that MUST be rejected (SPEC §9.1)."""
     def damaged(**changes: Any) -> dict[str, Any]:

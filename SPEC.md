@@ -257,14 +257,15 @@ verified against the key the `kid` resolves to in the state *before* this entry.
 | `root_thr` | `thr` (uint) | ≥ `root_thr` roots (the *old* threshold) |
 | `params` | partial §4.5 map | ≥ `root_thr` roots |
 
+| `note` | `text` (string ≤ 4096) | any 1 signer or root; **no state effect** |
+| `log_key` | `pk` (bytes32), `overlap` (uint s) | ≥ `root_thr` roots — log-key rotation; both keys valid for `overlap` (`ENROLLMENT.md` §6) |
+| `policy` | `text` (verbatim tlog-policy) | ≥ `root_thr` roots — replaces witness policy in state |
+
 `thr` is a plain uint **here**, deliberately. Its range — `1 … len(set)` — is a
 **replay** decision, not a schema one (§5.2's `bad-thr`): the value is a
 well-formed uint either way, so an implementation that enforced `≥ 1` as a
 field constraint would return `decode` where `bad-thr` is required. `log/69-bad-thr-zero`
 and the value-above-the-set case vector both halves.
-| `note` | `text` (string ≤ 4096) | any 1 signer or root; **no state effect** |
-| `log_key` | `pk` (bytes32), `overlap` (uint s) | ≥ `root_thr` roots — log-key rotation; both keys valid for `overlap` (`ENROLLMENT.md` §6) |
-| `policy` | `text` (verbatim tlog-policy) | ≥ `root_thr` roots — replaces witness policy in state |
 
 Signature counting: a key contributes at most once; a key counts only for the role
 it currently holds; a device key counts only for its own `device_id` — for
@@ -760,6 +761,25 @@ the `witnesses` array carries (`pi`), never the note name inside the verifier
 key (`norn-witness/pi`). This is what §9.1 means by naming exactly the same
 witnesses: the names must correspond one-to-one, and so must the keys.
 
+**The rest of the grammar, stated because a restatement that leaves it out is
+not enough to write an agreeing verifier.** Cold-model gate run 8 flipped nine
+readings of this section and every one passed the suite; six of them were
+places the two implementations in this repository already disagreed.
+`policies/` vectors each rule from both sides:
+
+| rule | |
+|---|---|
+| blank lines | a line that is empty, or holds only spaces and tabs, is **ignored** |
+| comments | a line whose first non-space character is `#` is **ignored**. If `c2sp.org/tlog-policy` has no comments then a Norn policy carrying one is text other tooling will refuse — worth knowing, and the reason it is written down here rather than left to each reader |
+| the final newline | **optional**: the last directive need not end in one |
+| field separators | ASCII space and tab **only**, in runs. Any other whitespace character anywhere in a line — `\r`, `\v`, `\f` — is an **error**, not a separator and not content |
+| leading whitespace | spaces and tabs before the keyword are not part of it |
+| names | each `witness` and `group` name is defined **once**; a repeat is an error |
+| `group` members | at least one, each **previously defined**, and no member twice |
+| nested groups | a `group` may name a `group`. It counts as **one** member of the outer group, met or not met as its own threshold decides |
+| `log` lines | **not required** by the grammar, and there may be more than one. Norn takes the log key from `norn.trust`, never from here |
+| `quorum` | exactly one line, naming a witness, a group, or `none` |
+
 ### 9.2 TOML rendering
 
 ```toml
@@ -1009,6 +1029,7 @@ suite is checked only against its own author.
 | `proofs/<device>.bundle` | one §8.1 proof bundle per active device, each proving the entry that made that device active; `cases.json` gives the origin, the log-key seed and the device list |
 | `trust.cbor` · `trust.toml` · `trust.fingerprint` | the trust anchor (§9), authoritative bytes, human rendering, and its fingerprint |
 | `receipt.note` | a submission receipt: the signed note itself (§7) |
+| `policies/<name>.txt` | §9.1's restated grammar, one whole policy per rule. `cases.json` marks each `accept` true or false and says which rule it is about |
 | `requests/<name>.cbor` · `.txt` · `.json` | enrollment requests (§16): the request bytes, its bech32m text form, and a mirror `{request, preimage_sha256, text, size}`. `cases.json` lists them, each with a `form` — `canonical` for §16.2's lowercase form, or `uppercase` for the same request in the form §16.2 says a reader MUST also accept, which names the canonical case it duplicates |
 | `requests-bad/<name>.txt` | requests that MUST be refused — by the text layer, the CBOR profile, a field rule or signature verification. `cases.json` gives each case's reason |
 | `receipt.json` | `{comment, origin, leaf_hash, deadline, text_sha256}`, where `text_sha256` is `SHA-256` of the **signed text** — through the newline ending the last text line, excluding the blank separator and the signature lines |
@@ -1091,6 +1112,7 @@ this table drifted out of date the moment one was.
 | §10 step 3, the witness quorum | `served/checkpoint`, cosigned by all three witnesses | `checkpoints-bad/05-one-cosignature-short`, `06-no-cosignatures`, `07-unnamed-witness-only` and **`08-forged-cosignature`**, which carries two lines naming witnesses the policy lists, one of which does not verify: the quorum is met by counting and refused by checking. `quorum none` accepting an uncosigned head needs a second anchor and is **not vectored** |
 | §16 enrollment requests | `requests/`, **5 request cases** including a 64-byte `device_id`, non-ASCII labels and an uppercase text form | `requests-bad/`, **25 request refusals** across all four layers, including **`forged-signature`** (structurally perfect, signed by another key) and `oversize-label-key` (§4.0's map-key cap) |
 | §11.1 fork evidence | `fork/evidence.cbor` and `fork/conflicting.checkpoint`: a second branch of this same network, diverging at entry 40, signed by the same log key and cosigned by the same witnesses. Checking it needs only `trust.cbor` | one per reader step: `fork/bad-other-origin` and `fork/bad-unverifiable-conflicting` (step 1, each half), `fork/bad-size-mismatch` (step 2), `fork/bad-forged-proof` (step 3 — both checkpoints verify and the sizes agree, so nothing but the proof can refuse it), and `fork/bad-consistent` (step 4: a log and its own earlier self) |
+| §9.1 the restated `tlog-policy` grammar | `policies/minimal`, `no-trailing-newline`, `blank-and-whitespace-lines`, `comment-and-indent`, `nested-group`, `no-log-line` | `bad-vertical-tab`, `bad-duplicate-name`, `bad-forward-reference`, `bad-two-quorums`, `bad-no-quorum`, `bad-empty-group`, `bad-unknown-keyword` and `bad-quorum-undefined`. Run 8 flipped nine readings of this grammar and all nine passed without these |
 | §16.2 bech32m | the text form of every request, and `requests/req-minimal-upper` — the same request in the all-uppercase form §16.2 says a reader MUST accept, which is the one *positive* obligation the section carries and the form a QR code produces | `wrong-hrp`, `plain-bech32` (the same bytes under bech32's constant), `mixed-case`, `corrupt-character`. BIP-350's own vectors are in both implementations' unit tests |
 
 **What is not vectored.** A suite that looks complete is worse than one that

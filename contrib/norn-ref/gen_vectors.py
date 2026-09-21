@@ -33,7 +33,7 @@ def write(path: pathlib.Path, data: bytes | str) -> None:
 OWNED = frozenset({
     "keys.json", "entries", "log", "genesis", "state.json",
     "trust.cbor", "trust.toml", "trust.fingerprint", "trust-bad",
-    "receipt.note", "receipt.json", "requests", "requests-bad",
+    "receipt.note", "receipt.json", "requests", "requests-bad", "policies",
     "entries-hostile", "proven",
 })
 
@@ -223,6 +223,33 @@ def write_trust(out: pathlib.Path) -> None:
     }) + "\n")
 
 
+def write_policies(out: pathlib.Path) -> None:
+    """§9.1's restated grammar, both sides of each rule (cold gate run 8, D12)."""
+    from nornref import policy as policymod
+    cases = []
+    for name, text, accept, why in fixture.policy_grammar():
+        # The oracle is the reference parser: a case that does not behave as
+        # its own table says is a generator bug, not a vector.
+        try:
+            policymod.parse(text)
+            parsed = True
+        except policymod.PolicyError:
+            parsed = False
+        if parsed != accept:
+            raise SystemExit(
+                f"policy case {name}: table says accept={accept}, parser says {parsed}")
+        write(out / "policies" / f"{name}.txt", text.encode())
+        cases.append({"name": name, "accept": accept, "why": why})
+    write(out / "policies" / "cases.json", canonjson.dumps({
+        "comment": "SPEC 9.1's restated `tlog-policy` grammar, one whole policy "
+                   "per rule, each differing from a valid one in exactly one way. "
+                   "A case with `accept` true MUST parse; the rest MUST be "
+                   "refused. The text is the file verbatim -- some cases turn on "
+                   "whether it ends in a newline",
+        "cases": cases,
+    }) + "\n")
+
+
 def write_requests(out: pathlib.Path) -> None:
     """Enrollment requests and the requests a signer MUST refuse (SPEC §16).
 
@@ -356,6 +383,7 @@ def main(argv: list[str]) -> int:
     write_genesis_aborts(out)
     write_trust_rejections(out)
     write_trust(out)
+    write_policies(out)
     write_requests(out)
     removed = prune(out)
     for path in removed:
