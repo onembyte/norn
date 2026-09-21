@@ -402,10 +402,22 @@ def _apply_genesis(anchor: Anchor, env: dict[str, Any]) -> State:
     if not isinstance(name, str) or not 1 <= len(name.encode("utf-8")) <= 64:
         raise Reject("bad-genesis")
     state.name = name
-    params = body.get("params") or {}
-    if not isinstance(params, dict) or set(params) - PARAM_KEYS:
-        raise Reject("bad-genesis")
-    state.params.update(params)
+    # §5.1 entry-0 step 6. The keys were checked and the values were not, so a
+    # bool `staleness` reached `state.params` and every freshness decision fell
+    # back to the default without anyone noticing -- and a `params` *entry*
+    # type-checks, so the two paths disagreed (cold gate run 8, D20). Non-empty
+    # too, for the same reason §5.1 requires it of the entry.
+    if "params" in body:
+        params = body["params"]
+        if not isinstance(params, dict) or not params or set(params) - PARAM_KEYS:
+            raise Reject("bad-genesis")
+        for key, value in params.items():
+            expected = type(DEFAULT_PARAMS[key])
+            if isinstance(value, bool) is not (expected is bool):
+                raise Reject("bad-genesis")
+            if not isinstance(value, expected):
+                raise Reject("bad-genesis")
+        state.params.update(params)
     return state
 
 

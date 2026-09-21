@@ -90,11 +90,22 @@ func (r *replayer) applyGenesis(st *state.State, raw []byte) error {
 	st.SignerThr = signerThr
 	if raw, present := env.Body["params"]; present {
 		params, ok := raw.(map[string]any)
-		if !ok {
+		if !ok || len(params) == 0 {
 			return rejectWith(ReasonBadGenesis)
 		}
 		for key, value := range params {
+			// Typed, like a `params` entry. Only the *keys* were checked here,
+			// so a bool `staleness` reached the state and every freshness
+			// decision silently fell back to the §4.5 default -- and the two
+			// paths into `params` disagreed (cold gate run 8, D20).
 			if _, known := state.DefaultParams()[key]; !known {
+				return rejectWith(ReasonBadGenesis)
+			}
+			if key == "rotate_needs_signer" {
+				if _, isBool := value.(bool); !isBool {
+					return rejectWith(ReasonBadGenesis)
+				}
+			} else if _, isUint := value.(uint64); !isUint {
 				return rejectWith(ReasonBadGenesis)
 			}
 			st.Params[key] = value

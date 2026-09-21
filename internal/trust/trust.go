@@ -252,7 +252,13 @@ func (t *Trust) Validate() error {
 	}
 	seen := map[string]bool{}
 	for _, w := range t.Witnesses {
-		if w.Name == "" || w.Key == "" {
+		if n := len(w.Name); n < 1 || n > maxNameLen {
+			// Bounded like the network name. The reference implementation
+			// capped this and Go did not, and no file in the suite was long
+			// enough to tell (cold gate run 8, D22).
+			return trustErrorf("a witness name must be 1-%d bytes", maxNameLen)
+		}
+		if w.Key == "" {
 			return trustErrorf("each witness needs a name and a key")
 		}
 		if seen[w.Name] {
@@ -305,7 +311,23 @@ func (t *Trust) Validate() error {
 			return trustErrorf("the policy names witness %s, which `witnesses` does not list", name)
 		}
 	}
+	// The policy's `log` line is informational -- Norn takes the log key from
+	// `log_key` (§9.1) -- but a file whose two halves name different logs is
+	// the same operator error the witness correspondence rule exists to catch.
+	for _, l := range parsed.Logs {
+		if l.Key != t.LogKey {
+			return trustErrorf("the policy's log line names %q and log_key is %q; "+
+				"a trust file names one log", l.Key, t.LogKey)
+		}
+	}
 	if t.Anchor != nil {
+		// An unknown `type` is ignorable -- anchoring is advisory (D-009), so a
+		// reader that cannot check it simply does not -- but an unknown `mode`
+		// is not: guessing what an unrecognised enforcement mode means is how a
+		// node enforces something nobody asked for.
+		if mode, _ := t.Anchor["mode"].(string); mode != "advisory" {
+			return trustErrorf("anchor.mode %q is not one this version defines", mode)
+		}
 		if _, ok := t.Anchor["type"].(string); !ok {
 			return trustErrorf("anchor.type must be text")
 		}

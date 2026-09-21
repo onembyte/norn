@@ -128,12 +128,37 @@ def validate(doc: dict[str, Any]) -> None:
                     "not a note key")
         except note.NoteError as exc:
             raise TrustError(f"witness {witness['name']}: {exc}") from exc
+        if not 1 <= len(witness["name"].encode()) <= 64:
+            # Bounded like the network name. Neither implementation capped this
+            # and no file in the suite was long enough to tell (run 8, D22).
+            raise TrustError("a witness name must be 1-64 bytes")
         if witness["name"] in seen:
             raise TrustError(f"duplicate witness name: {witness['name']}")
         seen.add(witness["name"])
     if not isinstance(doc["policy"], str) or "quorum" not in doc["policy"]:
         raise TrustError("policy must be tlog-policy text containing a quorum line")
     _check_policy_matches_witnesses(doc)
+    # The policy's `log` line is informational -- Norn takes the log key from
+    # `log_key` -- but a file whose two halves name different logs is the same
+    # operator error the witness correspondence rule exists to catch.
+    for line in doc["policy"].split("\n"):
+        fields = line.split()
+        if len(fields) >= 2 and fields[0] == "log" and fields[1] != doc["log_key"]:
+            raise TrustError("the policy's log line names a different log than log_key")
+    if "anchor" in doc:
+        anchor = doc["anchor"]
+        # All three members when present: Go required them and this did not.
+        if not isinstance(anchor, dict) or set(anchor) != {"type", "max_lag", "mode"}:
+            raise TrustError("anchor needs exactly type, max_lag and mode")
+        if not isinstance(anchor["type"], str):
+            raise TrustError("anchor.type must be text")
+        if isinstance(anchor["max_lag"], bool) or not isinstance(anchor["max_lag"], int):
+            raise TrustError("anchor.max_lag must be a uint of seconds")
+        # An unknown `type` is ignorable -- anchoring is advisory (D-009) -- but
+        # an unknown `mode` is not: guessing what an unrecognised enforcement
+        # mode means is how a node enforces something nobody asked for.
+        if anchor["mode"] != "advisory":
+            raise TrustError(f"anchor.mode {anchor['mode']!r} is not one this version defines")
 
 
 def encode(doc: dict[str, Any]) -> bytes:

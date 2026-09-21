@@ -32,7 +32,7 @@ def write(path: pathlib.Path, data: bytes | str) -> None:
 #: from. Everything else under `testdata/vectors` belongs to somebody else.
 OWNED = frozenset({
     "keys.json", "entries", "log", "genesis", "state.json",
-    "trust.cbor", "trust.toml", "trust.fingerprint", "trust-bad",
+    "trust.cbor", "trust.toml", "trust.fingerprint", "trust-bad", "trust-good",
     "receipt.note", "receipt.json", "requests", "requests-bad", "policies",
     "entries-hostile", "proven",
 })
@@ -195,8 +195,30 @@ def write_trust_rejections(out: pathlib.Path) -> None:
         write(out / "trust-bad" / f"{name}.cbor", trust.encode(doc))
         cases.append(name)
     write(out / "trust-bad" / "cases.json", canonjson.dumps({
-        "comment": "every file here is deterministic CBOR that decodes cleanly but "
-                   "MUST be rejected as a trust anchor; the file name says why",
+        "comment": "every file here MUST be refused as a trust anchor -- by the "
+                   "CBOR schema of SPEC 9.1 or by validation, whichever owns the "
+                   "rule; the file name says which rule it is about",
+        "cases": cases,
+    }) + "\n")
+
+
+def write_trust_acceptances(out: pathlib.Path) -> None:
+    """Trust files §9.1 permits (cold gate run 8, D22).
+
+    A reader that requires an optional member refuses files this document
+    allows, and only a positive shows it.
+    """
+    cases = []
+    for name, doc in fixture.trust_acceptances():
+        trust.validate(doc)  # the oracle: a case that does not validate is a bug
+        write(out / "trust-good" / f"{name}.cbor", trust.encode(doc))
+        cases.append(name)
+    write(out / "trust-good" / "cases.json", canonjson.dumps({
+        "comment": "every file here MUST be accepted as a trust anchor. Each "
+                   "exercises a member SPEC 9.1 marks optional, or a value it "
+                   "leaves open: a reader that requires a witness `url`, or "
+                   "refuses an `anchor` type it does not recognise, rejects "
+                   "files this document permits",
         "cases": cases,
     }) + "\n")
 
@@ -382,6 +404,7 @@ def main(argv: list[str]) -> int:
     write_log(out)
     write_genesis_aborts(out)
     write_trust_rejections(out)
+    write_trust_acceptances(out)
     write_trust(out)
     write_policies(out)
     write_requests(out)

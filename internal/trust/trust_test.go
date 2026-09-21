@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -262,9 +263,21 @@ func TestTheTrustRulesEachHaveAnIsolatedNegative(t *testing.T) {
 // numeric prefix can move as cases are inserted.
 func isolated(t *testing.T, suffix string) string {
 	t.Helper()
-	matches, err := filepath.Glob(filepath.Join(vectorRoot(), "trust-bad", "*-"+suffix+".cbor"))
+	all, err := filepath.Glob(filepath.Join(vectorRoot(), "trust-bad", "*-"+suffix+".cbor"))
 	if err != nil {
 		t.Fatal(err)
+	}
+	// Only `NN-<suffix>`, so that `name-too-long` does not also match
+	// `witness-name-too-long`. A helper that silently picks one of two is a
+	// helper that tests whichever it happened to sort first.
+	var matches []string
+	for _, m := range all {
+		stem := strings.TrimSuffix(filepath.Base(m), ".cbor")
+		if prefix := strings.TrimSuffix(stem, "-"+suffix); prefix != stem {
+			if _, err := strconv.Atoi(prefix); err == nil {
+				matches = append(matches, m)
+			}
+		}
 	}
 	if len(matches) != 1 {
 		t.Fatalf("%d trust-bad cases end in %q; §9.1's rule is unpinned without "+
@@ -324,5 +337,65 @@ func TestTheWitnessKeyAlgorithmNegativeIsIsolated(t *testing.T) {
 	if !noteKey {
 		t.Error("no witness publishes a note key, so this case is not about the " +
 			"algorithm rule at all")
+	}
+}
+
+// --- Cold-model gate run 8, defect D22 ----------------------------------
+//
+// §9.1's table shows seven members it never constrains, and seven variants
+// passed the whole suite. Three of them were live disagreements again: the Go
+// side had no cap on a witness `name` while the reference did, the reference
+// accepted an `anchor` missing `max_lag` while Go refused it, and neither
+// constrained `anchor.mode` — so a file could say `enforcing` and two readers
+// would do different things with it.
+
+func TestEveryTrustMemberRuleHasItsCase(t *testing.T) {
+	for _, c := range []struct{ suffix, why string }{
+		{"witness-open-schema", "a witness element is a closed map of name, key and url"},
+		// ...refused at whichever layer owns the rule: the closed-schema one
+		// belongs to the codec, the rest to validation.
+		{"witness-name-too-long", "a witness name is bounded, as the network name is"},
+		{"log-url-empty-string", "`log_urls` holds non-empty strings"},
+		{"anchor-missing-member", "when `anchor` is present all three members are required"},
+		{"anchor-unknown-mode", "an unknown enforcement mode is not safely ignorable"},
+		{"policy-log-key-mismatch", "the policy's `log` line names this network's log"},
+	} {
+		t.Run(c.suffix, func(t *testing.T) {
+			name := isolated(t, c.suffix)
+			raw, err := os.ReadFile(filepath.Join(vectorRoot(), "trust-bad", name+".cbor"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			doc, err := Parse(raw)
+			if err != nil {
+				t.Logf("§9.1: %s (refused by the schema)", c.why)
+				return
+			}
+			if err := doc.Validate(); err == nil {
+				t.Errorf("%s is accepted; §9.1 says %s", name, c.why)
+			}
+		})
+	}
+}
+
+// ...and the two that must be ACCEPTED, which only a positive can show: a
+// reader that requires `url`, or that refuses an anchor type it does not know,
+// rejects files this document permits. An unknown anchor *type* is ignorable —
+// anchoring is advisory (D-009) — where an unknown *mode* is not.
+func TestTheOptionalTrustMembersAreOptional(t *testing.T) {
+	for _, name := range []string{"witness-without-url", "anchor-unknown-type"} {
+		t.Run(name, func(t *testing.T) {
+			raw, err := os.ReadFile(filepath.Join(vectorRoot(), "trust-good", name+".cbor"))
+			if err != nil {
+				t.Fatalf("no positive vector: %v", err)
+			}
+			doc, err := Parse(raw)
+			if err != nil {
+				t.Fatalf("refused at parse a file §9.1 permits: %v", err)
+			}
+			if err := doc.Validate(); err != nil {
+				t.Fatalf("refused a file §9.1 permits: %v", err)
+			}
+		})
 	}
 }

@@ -894,6 +894,15 @@ def genesis_aborts() -> list[tuple[str, bytes, "replay.Anchor"]]:
 
     # `case` rather than `name`, because `name` is also a genesis body key and
     # a case that damages it would collide with this parameter.
+    # §5.1 entry-0 step 7 counts signatures **in the `root` role**. Every
+    # genesis in the suite declared `root`, so `genesis-sigs-any-role` -- which
+    # counts a signature whatever role it claims -- passed (run 8, D20).
+    wrong_role = _signed(entry.new("genesis", NET, ts=T0, body=genesis()["body"]),
+                         [("root1", "signer"), ("root2", "signer")])
+    raw = entry.encode(wrong_role)
+    cases.append(("18-bootstrap-sigs-wrong-role", raw,
+                  replay.Anchor(NET, entry.leaf_hash(raw))))
+
     def bad_body(case: str, **changes: Any) -> None:
         body = dict(genesis()["body"], **changes)
         env = _signed(entry.new("genesis", NET, ts=T0, body=body),
@@ -914,6 +923,12 @@ def genesis_aborts() -> list[tuple[str, bytes, "replay.Anchor"]]:
     # end, so `no-name-len` passed -- and the Python reference had no such
     # check, which is what an unpinned rule looks like from the inside.
     bad_body("14-name-too-long", name="n" * 65)
+    # Cold gate run 8, D20: the keys of a genesis `params` were checked and the
+    # values were not, so `genesis-params-no-typecheck` and
+    # `genesis-params-nonempty` both passed -- while a `params` *entry* has
+    # required both since Phase 1.
+    bad_body("16-params-wrong-type", params={"staleness": True})
+    bad_body("17-params-empty", params={})
     bad_body("15-name-empty", name="")
 
     assert good_anchor  # the good anchor is exercised by the log fixture
@@ -1074,8 +1089,68 @@ def trust_rejections() -> list[tuple[str, dict[str, Any]]]:
         # nothing else, so the policy names two witnesses the file does not.
         # This file lists all three *and* a byte-identical second `pi`: the
         # names and keys correspond exactly, and only uniqueness is broken.
+        # Cold gate run 8, D22: seven §9.1 members the table shows and never
+        # constrains. Three were live disagreements -- the witness-name cap,
+        # the anchor's completeness, and `anchor.mode`, which neither side
+        # constrained at all.
+        ("31-witness-open-schema", damaged(witnesses=[
+            dict(base["witnesses"][0], surprise="an unpermitted witness key")]
+            + base["witnesses"][1:])),
+        # Renamed in the policy too, so correspondence holds and only the
+        # length bound can refuse this file.
+        ("32-witness-name-too-long", damaged(
+            witnesses=[dict(base["witnesses"][0], name="w" * 65)] + base["witnesses"][1:],
+            policy=_policy_with(rename="w" * 65))),
+        ("33-log-url-empty-string", damaged(log_urls=[""])),
+        ("34-anchor-missing-member", damaged(
+            anchor={"type": "opentimestamps", "mode": "advisory"})),
+        ("35-anchor-unknown-mode", damaged(
+            anchor={"type": "opentimestamps", "max_lag": 86400, "mode": "enforcing"})),
+        ("36-policy-log-key-mismatch", damaged(
+            policy=_policy_with(log_key=note.vkey(ORIGIN, KEYS["logkey2"].public)))),
         ("30-duplicate-witness-name-only", damaged(
             witnesses=base["witnesses"] + [dict(base["witnesses"][0])])),
+    ]
+
+
+def _policy_with(**subs: str) -> str:
+    """`policy_text()` with a `witness` renamed or the `log` key replaced.
+
+    A trust negative about one member must leave the policy/witness
+    correspondence intact, or that rule decides instead -- the defect 6.5h-vi-b
+    found in `07` and `08` and run 8 found again in `15`.
+    """
+    rename, log_key = subs.get("rename"), subs.get("log_key")
+    lines = []
+    for line in policy_text().split("\n"):
+        fields = line.split(" ")
+        if log_key and fields[0] == "log":
+            fields[1] = log_key
+        if rename and fields[0] == "witness" and fields[1] == "pi":
+            fields[1] = rename
+        if rename and fields[0] == "group":
+            fields = [f if f != "pi" else rename for f in fields]
+        lines.append(" ".join(fields))
+    return "\n".join(lines)
+
+
+def trust_acceptances() -> list[tuple[str, dict[str, Any]]]:
+    """Trust files §9.1 permits, which only a positive can show.
+
+    A reader that requires a witness `url`, or refuses an `anchor` type it does
+    not recognise, rejects files this document allows -- and run 8's variants
+    for both passed the suite, because every shipped file had a url and a known
+    type (D22).
+    """
+    base = trust_file()
+    without_url = [{k: v for k, v in base["witnesses"][0].items() if k != "url"}]
+    return [
+        ("witness-without-url", dict(base, witnesses=without_url + base["witnesses"][1:])),
+        # Anchoring is advisory (D-009): a reader that cannot check an unknown
+        # type simply does not check it. An unknown `mode` is different and is
+        # refused, because an unrecognised enforcement mode is not ignorable.
+        ("anchor-unknown-type", dict(base, anchor={
+            "type": "roughtime", "max_lag": 86400, "mode": "advisory"})),
     ]
 
 
