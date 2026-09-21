@@ -34,7 +34,7 @@ OWNED = frozenset({
     "keys.json", "entries", "log", "genesis", "state.json",
     "trust.cbor", "trust.toml", "trust.fingerprint", "trust-bad", "trust-good",
     "receipt.note", "receipt.json", "requests", "requests-bad", "policies",
-    "entries-hostile", "proven",
+    "entries-hostile", "proven", "log-empty",
 })
 
 #: Produced by `make vectors-log` from the Go implementation, because building
@@ -200,6 +200,27 @@ def write_trust_rejections(out: pathlib.Path) -> None:
                    "rule; the file name says which rule it is about",
         "cases": cases,
     }) + "\n")
+
+
+def write_empty_log(out: pathlib.Path) -> None:
+    """§5.1: replay of an EMPTY list yields the zero state (run 8, D19).
+
+    "There is nothing to reject" -- so `size` is 0 and `rejected` is empty,
+    which is not the same as `bad-genesis`. Every log in the suite had at least
+    one entry, so `empty-log-is-bad-genesis` reproduced everything.
+    """
+    from nornref import replay as replaymod
+    anchor = replaymod.Anchor(fixture.NET, entry.leaf_hash(
+        entry.encode(fixture.genesis())))
+    state = replaymod.replay(anchor, [])
+    write(out / "log-empty" / "manifest.json", canonjson.dumps({
+        "anchor": {"net": fixture.NET, "genesis_hash": anchor.genesis_hash},
+        "entries": [],
+        "comment": "a log with no entries at all. SPEC 5.1: replay yields the "
+                   "zero state -- size 0, `rejected` empty -- and NOT a "
+                   "`bad-genesis` abort, because there is nothing to reject",
+    }) + "\n")
+    write(out / "log-empty" / "state.json", state.to_json() + "\n")
 
 
 def write_trust_acceptances(out: pathlib.Path) -> None:
@@ -405,6 +426,7 @@ def main(argv: list[str]) -> int:
     write_genesis_aborts(out)
     write_trust_rejections(out)
     write_trust_acceptances(out)
+    write_empty_log(out)
     write_trust(out)
     write_policies(out)
     write_requests(out)

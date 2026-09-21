@@ -510,3 +510,44 @@ func TestACheckpointWithTwoLinesFromOneWitnessIsRefused(t *testing.T) {
 			"verify, masked by a good line from the same witness:\n%s", out)
 	}
 }
+
+// --- Cold-model gate run 8, defect D21 ----------------------------------
+//
+// §7 restates the signed-note format "so an implementer needs nothing else",
+// and four of its framing rules were enforced by both implementations and
+// vectored by neither: the em-dash prefix, the newline ending the signature
+// block, a canonical decimal size line, and how many signature lines a
+// checkpoint may carry under the log's key.
+//
+// None of them is exotic. An ASCII hyphen instead of U+2014 is what a reader
+// writes if they never look at the bytes, and a checkpoint with two log
+// signatures -- one valid, one not -- is the same shape as the per-line
+// cosignature rule §10 already settles.
+
+func TestEveryNoteFramingRuleHasACheckpointCase(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join(vectors(), "checkpoints-bad", "cases.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Cases []string `json:"cases"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	have := map[string]bool{}
+	for _, name := range doc.Cases {
+		have[name] = true
+	}
+	for _, want := range []string{
+		"13-ascii-dash-signature",
+		"14-unterminated-signature-block",
+		"15-size-leading-zero",
+		"16-two-log-signatures",
+	} {
+		if !have[want] {
+			t.Errorf("§7 states this and `checkpoints-bad/%s` does not ship, so a "+
+				"reader that frames notes differently reproduces the whole suite", want)
+		}
+	}
+}

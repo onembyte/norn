@@ -1108,9 +1108,27 @@ def trust_rejections() -> list[tuple[str, dict[str, Any]]]:
             anchor={"type": "opentimestamps", "max_lag": 86400, "mode": "enforcing"})),
         ("36-policy-log-key-mismatch", damaged(
             policy=_policy_with(log_key=note.vkey(ORIGIN, KEYS["logkey2"].public)))),
+        # D21: a verifier key is `name+<keyid>+<data>` and the id is a hash of
+        # the name, the key AND the algorithm -- which is what makes a note key
+        # and a cosignature key over the same public key two different
+        # verifiers. Every shipped key had a correct id, so a reader that never
+        # checked one passed the suite.
+        ("37-log-key-id-mismatch", damaged(log_key=_vkey_with_wrong_id())),
         ("30-duplicate-witness-name-only", damaged(
             witnesses=base["witnesses"] + [dict(base["witnesses"][0])])),
     ]
+
+
+def _vkey_with_wrong_id() -> str:
+    """The log's verifier key with one hex digit of its key id flipped.
+
+    Everything else about it is correct: the name is the origin, the algorithm
+    is a note key, the public key is the one the log signs with. Only the id
+    disagrees, so only the id check can refuse it.
+    """
+    name, key_id, data = log_vkey().split("+", 2)
+    flipped = ("1" if key_id[0] != "1" else "2") + key_id[1:]
+    return "+".join([name, flipped, data])
 
 
 def _policy_with(**subs: str) -> str:

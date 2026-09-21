@@ -1030,6 +1030,7 @@ suite is checked only against its own author.
 | `trust.cbor` · `trust.toml` · `trust.fingerprint` | the trust anchor (§9), authoritative bytes, human rendering, and its fingerprint |
 | `receipt.note` | a submission receipt: the signed note itself (§7) |
 | `policies/<name>.txt` | §9.1's restated grammar, one whole policy per rule. `cases.json` marks each `accept` true or false and says which rule it is about |
+| `log-empty/` | a log with **no entries**: `manifest.json` and the zero state §5.1 says it replays to. Not a `bad-genesis` abort — there is nothing to reject |
 | `trust-good/<name>.cbor` | trust files §9.1 **permits**, for the members it marks optional or leaves open. `cases.json` lists them |
 | `requests/<name>.cbor` · `.txt` · `.json` | enrollment requests (§16): the request bytes, its bech32m text form, and a mirror `{request, preimage_sha256, text, size}`. `cases.json` lists them, each with a `form` — `canonical` for §16.2's lowercase form, or `uppercase` for the same request in the form §16.2 says a reader MUST also accept, which names the canonical case it duplicates |
 | `requests-bad/<name>.txt` | requests that MUST be refused — by the text layer, the CBOR profile, a field rule or signature verification. `cases.json` gives each case's reason |
@@ -1105,8 +1106,11 @@ this table drifted out of date the moment one was.
 | §5.3 the derivation of `T` | `served/checkpoint`, whose three witnesses cosign seven seconds apart, so the **newest** and the **oldest** are both separated from the answer; `proofs/cases.json` records the value `T` must come out as | — |
 | §5.3 evaluation time | `proven/cases.json`: the admitted set at four values of `T` — no clock, before, **exactly at**, and after the one deadline the fixture carries. `state.json` is clock-independent by design, so this is the only vector that exercises expiry | the `at-the-deadline` case, where `expires == T` and the device is **out** |
 | §7 receipt | `receipt.note` | — |
+| §7 the note framing | `served/checkpoint` | `checkpoints-bad/13-ascii-dash-signature` (an ASCII hyphen for §7's em dash), `14-unterminated-signature-block` (the final line does not end in a newline), `15-size-leading-zero` (a size line that is not canonical decimal) and `16-two-log-signatures` — two lines under the log's key, one forged. **This implementation accepted the last two** until run 8 asked for them |
+| §9.1 a verifier key's id binds its name, key and algorithm | `trust.cbor` | `37-log-key-id-mismatch`: the right name, the right key, the right algorithm and one hex digit of the id changed |
+| §5.1 an empty log | `log-empty/`: the zero state, `rejected` empty | a reader that treats *no* genesis as a *missing* one reports `bad-genesis` and differs by a whole field |
 | §9.1 the members the table shows and never constrained | `trust-good/witness-without-url` and `trust-good/anchor-unknown-type`, both **accepted**: a reader that requires an optional member refuses files this document allows | `31-witness-open-schema`, `32-witness-name-too-long` (renamed in the policy too, so correspondence holds), `33-log-url-empty-string`, `34-anchor-missing-member`, `35-anchor-unknown-mode` and `36-policy-log-key-mismatch`. An unknown anchor **type** is ignorable — anchoring is advisory (D-009) — where an unknown **mode** is not |
-| §9 trust file, fingerprint | `trust.cbor` | **36 rejected anchors** in `trust-bad/`. **`15`** and **`16`** parse cleanly as verifier keys and are refused only by the algorithm rule; **`17`** and **`18`** are a witness the policy never names and a policy naming a witness the file does not list, each otherwise perfectly valid |
+| §9 trust file, fingerprint | `trust.cbor` | **37 rejected anchors** in `trust-bad/`. **`15`** and **`16`** parse cleanly as verifier keys and are refused only by the algorithm rule; **`17`** and **`18`** are a witness the policy never names and a policy naming a witness the file does not list, each otherwise perfectly valid |
 | §9.1 four rules that another rule used to decide | `trust.cbor` | `26-name-too-long` and `27-name-empty` (both ends of the 1–64 byte bound; `14` covers absent), `28-empty-log-urls` (present and empty, which is a different path from absent), `29-no-witnesses-only` — whose policy is `quorum none` and names no witnesses either, so the correspondence rule agrees and only the "a file with no witnesses MUST be rejected" minimum can refuse it — and `30-duplicate-witness-name-only`, which lists all three witnesses *and* a byte-identical second `pi`, so the names and keys correspond exactly and only uniqueness is broken |
 | §14 canonical JSON | every `.json`; `enroll-astral-labels`, whose `escapes` label carries every row of §14.2's tables into `state.json`, and `enroll-unicode-labels` | — |
 | §10 a bad cosignature is refused, not merely uncounted | `served/checkpoint` | `checkpoints-bad/11-forged-cosignature-with-quorum`: three named witnesses, two verifying, so the quorum is met without the third and §10 refuses it anyway. `08` cannot tell the two readings apart, because one valid line falls short either way |
@@ -1140,6 +1144,11 @@ admits its holes, so:
 - **§5's `state.net` coming from the anchor rather than from the genesis
   entry.** Unobservable: entry 0 aborts whenever the two differ, so no file can
   tell the two readings apart. Recorded here because a reader will look.
+- **§10's requirement that a witness key be a cosignature key, checked at
+  *verification* rather than at the trust file.** Unreachable: §9.1 refuses a
+  trust file whose witness publishes a note key, so no policy carrying one
+  ever reaches the cosignature check. It is defence in depth, and no vector
+  can tell an implementation that omits it from one that does not.
 - **§5.2's `dup-wg` for `enroll` meaning "active for **any** device" rather
   than "for another device".** The two readings differ only when the key is
   active for the enrolling `device_id` itself — which requires that id to be

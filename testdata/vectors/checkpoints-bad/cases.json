@@ -11,6 +11,10 @@
     "10-wrong-body-origin",
     "11-forged-cosignature-with-quorum",
     "12-second-line-from-one-witness",
+    "13-ascii-dash-signature",
+    "14-unterminated-signature-block",
+    "15-size-leading-zero",
+    "16-two-log-signatures",
     "08-forged-cosignature"
   ],
   "comment": "each file is served in place of served/checkpoint, over the honest tiles, under trust.cbor; every one MUST be refused. `signature_blind_accepts` lists the ones whose only defect is a signature that does not verify: a reader that never calls Ed25519 accepts exactly those, and nothing else here",
@@ -26,7 +30,11 @@
     "09-extension-line": "a fourth body line, signed and cosigned exactly as correctly as the real one: §6 allows origin, size and root and nothing else",
     "10-wrong-body-origin": "signed by this network's log key, under this network's name, and its origin line names another log",
     "11-forged-cosignature-with-quorum": "three named witnesses, two of whose cosignatures verify: the quorum is met without the third, and §10 refuses the checkpoint anyway",
-    "12-second-line-from-one-witness": "all three witnesses cosign and verify, and `friend` carries a second, newer line that does not: a reader taking each witness's newest verifying line sees a full quorum, and §10 refuses the checkpoint anyway"
+    "12-second-line-from-one-witness": "all three witnesses cosign and verify, and `friend` carries a second, newer line that does not: a reader taking each witness's newest verifying line sees a full quorum, and §10 refuses the checkpoint anyway",
+    "13-ascii-dash-signature": "the log's signature line opens with an ASCII hyphen instead of §7's em dash",
+    "14-unterminated-signature-block": "the last signature line does not end in a newline, so the block is unterminated",
+    "15-size-leading-zero": "the size line carries a leading zero, which is not canonical decimal",
+    "16-two-log-signatures": "two signature lines name the log's key and one does not verify: a reader that stops at the first valid one accepts a checkpoint carrying a forgery"
   },
   "signature_blind_accepts": [
     "04-forged-log-signature",

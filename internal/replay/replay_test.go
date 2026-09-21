@@ -1128,3 +1128,32 @@ func TestTheGenesisParamsAreOverlaidOnTheDefaults(t *testing.T) {
 			"reach the same state and the rule is unpinned")
 	}
 }
+
+// Cold-model gate run 8, defect D19. §5.1: "Replay of an **empty** list of
+// entries yields the zero state of §5.3 with `size` 0 and `rejected` empty:
+// there is nothing to reject." Every log in the suite had at least one entry,
+// so `empty-log-is-bad-genesis` -- which treats no genesis as a missing one --
+// reproduced everything.
+//
+// The two readings differ by a whole field: one reports `rejected: []`, the
+// other `[{0, bad-genesis}]`, and §5.3 makes that byte-identical between
+// implementations.
+func TestAnEmptyLogReplaysToTheZeroStateWithNothingRejected(t *testing.T) {
+	dir := filepath.Join(vectorRoot(), "log-empty")
+	anchor, entries, _ := loadCase(t, dir)
+	if len(entries) != 0 {
+		t.Fatalf("%d entries; the case is a log with none", len(entries))
+	}
+	want, err := os.ReadFile(filepath.Join(dir, "state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := Replay(anchor, entries).MarshalCanonical()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Errorf("an empty log does not replay to the shipped zero state.\n got: %s\nwant: %s",
+			got, want)
+	}
+}

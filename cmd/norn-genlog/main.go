@@ -1365,6 +1365,50 @@ func policyOf(root string) string {
 	return doc.Policy
 }
 
+// paddedSizeLine re-signs the checkpoint over a body whose size line carries a
+// leading zero, so the signature is valid and only the canonical-decimal rule
+// can refuse it.
+func paddedSizeLine(base, origin string, key ed25519.PrivateKey,
+	signers []cosignpkg.Signer) (string, error) {
+
+	body, err := noteBody(base)
+	if err != nil {
+		return "", err
+	}
+	lines := strings.SplitN(body, "\n", 3)
+	if len(lines) < 3 {
+		return "", fmt.Errorf("a checkpoint body has three lines, this has %d", len(lines))
+	}
+	lines[1] = "0" + lines[1]
+	signed, err := note.Sign(strings.Join(lines, "\n"), origin, key)
+	if err != nil {
+		return "", err
+	}
+	return staggeredCosigner(signers)(signed)
+}
+
+// appendForgedLogSignature adds a second line under the log's own key that does
+// not verify. Both name the log; a reader that takes the first valid one and
+// stops never looks at the other.
+func appendForgedLogSignature(signed, origin string) (string, error) {
+	lines := strings.Split(strings.TrimRight(signed, "\n"), "\n")
+	for _, line := range lines {
+		if !strings.HasPrefix(line, note.SigPrefix+origin+" ") {
+			continue
+		}
+		payload, err := base64.StdEncoding.DecodeString(
+			strings.TrimPrefix(line, note.SigPrefix+origin+" "))
+		if err != nil {
+			return "", err
+		}
+		forged := append([]byte(nil), payload...)
+		forged[len(forged)-1] ^= 0x01
+		return strings.Join(lines, "\n") + "\n" +
+			note.SignatureLine(origin, forged) + "\n", nil
+	}
+	return "", fmt.Errorf("no log signature line for %q", origin)
+}
+
 // appendForgedSecondLine gives one witness a second cosignature line: newer
 // than its first, and not verifying. Everything else about the checkpoint is
 // correct, so only a per-line reading of §10 can refuse it.
@@ -1623,6 +1667,37 @@ func buildBadCheckpoints(root, origin string, key ed25519.PrivateKey,
 		"all three witnesses cosign and verify, and `friend` carries a second, newer " +
 			"line that does not: a reader taking each witness's newest verifying line " +
 			"sees a full quorum, and §10 refuses the checkpoint anyway", secondLine})
+
+	// Cold gate run 8, D21: four framing rules §7 states, both
+	// implementations enforce, and no file exercised. An ASCII hyphen instead
+	// of U+2014 is what a reader writes who never looks at the bytes.
+	out = append(out, badCheckpoint{"13-ascii-dash-signature",
+		"the log's signature line opens with an ASCII hyphen instead of §7's em dash",
+		strings.Replace(allThree, "\n"+note.SigPrefix, "\n- ", 1)})
+
+	out = append(out, badCheckpoint{"14-unterminated-signature-block",
+		"the last signature line does not end in a newline, so the block is unterminated",
+		strings.TrimRight(allThree, "\n")})
+
+	// A size line with a leading zero: two readers that parse it differently
+	// disagree about which tree they are looking at.
+	zeroPadded, err := paddedSizeLine(base, origin, key, signers)
+	if err != nil {
+		return nil, err
+	}
+	out = append(out, badCheckpoint{"15-size-leading-zero",
+		"the size line carries a leading zero, which is not canonical decimal", zeroPadded})
+
+	// Two signature lines under the log's key, one of which does not verify.
+	// The same shape as §10's per-line cosignature rule, on the log itself.
+	twice, err := appendForgedLogSignature(allThree, origin)
+	if err != nil {
+		return nil, err
+	}
+	out = append(out, badCheckpoint{"16-two-log-signatures",
+		"two signature lines name the log's key and one does not verify: a reader " +
+			"that stops at the first valid one accepts a checkpoint carrying a forgery",
+		twice})
 
 	out = append(out, badCheckpoint{"08-forged-cosignature",
 		"two cosignature lines, both naming witnesses the policy lists, one of which does not verify: " +

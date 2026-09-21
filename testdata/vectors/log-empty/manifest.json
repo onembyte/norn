@@ -1,0 +1,1 @@
+{"anchor":{"genesis_hash":"f168d197a35cc00bc320f27ee248efa6394e139312c3343cfe154bc5b24183d3","net":"6e6f726e2d746573746e65742d303031"},"comment":"a log with no entries at all. SPEC 5.1: replay yields the zero state -- size 0, `rejected` empty -- and NOT a `bad-genesis` abort, because there is nothing to reject","entries":[]}

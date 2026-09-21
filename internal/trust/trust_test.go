@@ -399,3 +399,13 @@ func TestTheOptionalTrustMembersAreOptional(t *testing.T) {
 		})
 	}
 }
+
+// Cold-model gate run 8, defect D21. A verifier key is `name+<keyid>+<data>`,
+// and the key id is a hash of the name, the key **and the algorithm** -- which
+// is what makes a note key and a cosignature key over the same public key two
+// different verifiers (§9.1). Nothing forced a reader to check it: every
+// shipped key had a correct id, so `vkey-no-id-check` passed.
+func TestAVerifierKeyWhoseIdIsWrongIsRefused(t *testing.T) {
+	doc := parseBad(t, isolated(t, "log-key-id-mismatch"))
+	_ = doc
+}

@@ -150,6 +150,13 @@ func Split(signed string) (string, []Signature, error) {
 	}
 	text += "\n"
 
+	// Every signature line ends in a newline, the last one included. This
+	// accepted a block that simply stopped, so a note with an unterminated
+	// final line was valid here and invalid to a stricter reader
+	// (cold gate run 8, D21).
+	if !strings.HasSuffix(block, "\n") {
+		return "", nil, noteErrorf("the signature block does not end in a newline")
+	}
 	var sigs []Signature
 	for _, line := range strings.Split(strings.TrimRight(block, "\n"), "\n") {
 		if !strings.HasPrefix(line, SigPrefix) {
@@ -192,6 +199,11 @@ func Verify(signed string, vkeys []string) (string, error) {
 		}
 		trusted = append(trusted, v)
 	}
+	// Per line, not per key. This returned on the first line that verified, so
+	// a note carrying a valid signature **and** a forgery under the same key
+	// was accepted and the forgery never looked at -- the same reading §10
+	// settles for cosignatures, on the log itself (cold gate run 8, D21).
+	var verified bool
 	for _, sig := range sigs {
 		// A cosignature is not a signature over this text, so it is skipped
 		// rather than failed: a checkpoint carrying the log's signature *and*
@@ -204,12 +216,16 @@ func Verify(signed string, vkeys []string) (string, error) {
 			if v.Name != sig.Name || v.IsCosigner() || string(v.ID()) != string(sig.KeyID) {
 				continue
 			}
-			if ed25519.Verify(v.Public, []byte(text), sig.Sig) {
-				return text, nil
+			if !ed25519.Verify(v.Public, []byte(text), sig.Sig) {
+				return "", noteErrorf("a signature line naming %s does not verify", v.Name)
 			}
+			verified = true
 		}
 	}
-	return "", noteErrorf("no valid signature from a trusted key")
+	if !verified {
+		return "", noteErrorf("no valid signature from a trusted key")
+	}
+	return text, nil
 }
 
 // ReceiptText builds the body of a submission receipt (§7).
