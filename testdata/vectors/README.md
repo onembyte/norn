@@ -36,8 +36,8 @@ of having it.
 |---|---|
 | `keys.json` | every test key: Ed25519 `{seed, public, kid}` by name, X25519 public keys, and `net` |
 | `entries/` | one valid entry per type, canonical bytes, each with a `.json` mirror carrying its hashes and preimage |
-| `log/` | the 125-entry replay fixture. **Read the order from `manifest.json`**, never by sorting filenames; entries that must be refused carry a `.reason` file |
-| `state.json` | the state those 125 entries replay to, in canonical JSON (§14) |
+| `log/` | the 126-entry replay fixture. **Read the order from `manifest.json`**, never by sorting filenames; entries that must be refused carry a `.reason` file |
+| `state.json` | the state those 126 entries replay to, in canonical JSON (§14) |
 | `proven/` | the devices a node admits at four evaluation times, including the boundary where `expires == T`. `state.json` is clock-independent on purpose, so this is the only vector that exercises expiry — the rule that decides when a device stops being admitted |
 | `entries-hostile/` | input the profile must refuse: the eight `bare-` cases are one banned item each — null, undefined, float, negative integer, tag, indefinite length, a non-text map key and invalid UTF-8 — with no schema above them, so only the profile can refuse. The rest are input at and past §4.0's three resource limits — the entry size, the nesting depth and the map-key cap. A case with `says` must be refused for that reason; one marked `accepted` sits exactly at a limit and must be accepted, which is what bounds the limit from below |
 | `genesis/` | eighteen ways a genesis entry is refused |

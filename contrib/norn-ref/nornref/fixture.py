@@ -654,6 +654,19 @@ def log() -> list[LogItem]:
     b.add_raw(f"{b.index}-bad-precedence-decode-before-unknown-type",
               cbor.encode(unknown_and_open), "decode")
 
+    # Step 3 (the envelope schema) precedes step 6 (`after`). A reader that
+    # decodes leniently, reads `after` and applies the schema afterwards is
+    # what run 10's V213 models, and nothing separated it: no entry was
+    # malformed in the envelope AND out of order at the same time. This one is
+    # both, and only `decode` may appear.
+    open_and_late = {
+        "v": entry.VERSION, "t": "note", "net": NET,
+        "ts": T0 + b.index * 60, "after": b.index + 5000,
+        "body": {"text": "an unpermitted envelope key, and from the future"},
+        "sigs": [], "surprise": "an unpermitted envelope key"}
+    b.add_raw(f"{b.index}-bad-precedence-decode-before-after",
+              cbor.encode(open_and_late), "decode")
+
     # Step 6 (`after`) precedes step 7 (the signature count).
     b.add(f"{b.index}-bad-precedence-after-before-threshold", b.build(
         "note", {"text": "from the future, and unsigned"}, [],

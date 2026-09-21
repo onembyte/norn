@@ -370,7 +370,14 @@ still yields a state identified with the right network.
 
 Entry 0 is handled once, then every later entry runs the same numbered list.
 The order is **normative**: several vectors are simultaneously wrong in more
-than one way, so the first matching step decides the reason code.
+than one way, so the first matching step decides the reason code. The four
+that carry the weight are `log/99-bad-precedence-decode-before-unknown-type`
+(step 3 before step 4), `log/100-bad-precedence-decode-before-after` (step 3
+before step 6 — a reader that decodes leniently, reads `after` and applies the
+envelope schema afterwards answers `after` where this document says `decode`),
+`log/101-bad-precedence-after-before-threshold` (step 6 before step 7) and the
+two `threshold-before-dup-*` entries for step 7 against step 8. An ordering
+with no such vector is an ordering a second implementation may reverse.
 
 Replay of an **empty** list of entries yields the zero state of §5.3 with
 `size` 0 and `rejected` empty: there is nothing to reject.
@@ -1109,7 +1116,7 @@ suite is checked only against its own author.
 | `keys.json` | every test key: Ed25519 `{seed, public, kid}` by name, X25519 public keys by name, and `net` |
 | `entries/NN-<type>.cbor` | one valid entry per type, canonical bytes |
 | `entries/NN-<type>.json` | mirror: `{entry, entry_hash, leaf_hash, preimage_sha256, size}` where `size` is the byte length of the `.cbor`. The `entry` object mirrors the **CBOR**, so an optional field absent from the entry is absent here too — unlike `state.json`, where §5.3's schema fields are always emitted |
-| `log/NN-<name>.cbor` | the replay fixture, **125 entries** in order. The file names are labels, not the order: **read the sequence from `manifest.json`**, never by globbing and sorting |
+| `log/NN-<name>.cbor` | the replay fixture, **126 entries** in order. The file names are labels, not the order: **read the sequence from `manifest.json`**, never by globbing and sorting |
 | `log/NN-<name>.reason` | beside each entry that must be rejected: its §5.2 reason code |
 | `log/manifest.json` | `{"anchor": {"net", "genesis_hash"}, "entries": [{"index", "name", "reason"}]}` — the replay input and expected outcome; `reason` is `""` for an accepted entry |
 | `state.json` | canonical replay output for `log/` (§5.3) |
@@ -1182,7 +1189,7 @@ this table drifted out of date the moment one was.
 | §5.3 genesis `params` is **overlaid** | `state.json`'s `checkpoint_interval`, which the genesis body does not set and the §4.5 default supplies | a reader that *replaces* the defaults instead loses the key entirely |
 | §4.3 the request's `ts` is unconstrained | `enroll-request-from-the-future`: an accepted `enroll` whose embedded request is dated ten days after the entry carrying it | the check a reader is most likely to add unasked |
 | §4.4 `after` is a floor | `after-below-index` | `bad-after` |
-| §5 replay, 15 of the 16 reason codes | the log | **83 rejecting entries** |
+| §5 replay, 15 of the 16 reason codes | the log | **84 rejecting entries** |
 | §5 `bad-genesis` | — | `genesis/`; it cannot appear in the log, since it aborts replay |
 | §5.1 genesis | the log's entry 0 | **18 abort paths** in `genesis/`, one single-entry log each |
 | §5.1 seen set, §4.3 roles | — | `bad-repeat-of-rejected`, `bad-one-of-two-signers`, `bad-role-mismatch`. Step 1's two stated properties are `bad-repeat-of-undecodable` (the hash is recorded **before** the entry is decoded, so a copy of one that never decoded is `dup-entry` and not a second `decode`) and `bad-repeat-of-genesis` (entry 0's hash is recorded too, so a byte copy of it is `dup-entry` and not `dup-genesis`) |
@@ -1407,7 +1414,7 @@ Everything else is emitted verbatim as UTF-8. In particular:
 These rules are load-bearing rather than cosmetic: `policy` and `note` text is
 free-form UTF-8 up to 4096 bytes and lands verbatim in the canonical state, so
 two implementations disagreeing about `<` or `é` would violate §5.3's MUST on
-the first realistic policy. Vector `log/105-enroll-astral-labels` exercises every
+the first realistic policy. Vector `log/106-enroll-astral-labels` exercises every
 row of both tables above: its `escapes` label holds the quote, the backslash, the
 control characters, the solidus that MUST NOT be escaped and multi-byte UTF-8
 including an astral character, and that value lands verbatim in `state.json`.
