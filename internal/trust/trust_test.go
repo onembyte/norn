@@ -272,3 +272,57 @@ func isolated(t *testing.T, suffix string) string {
 	}
 	return strings.TrimSuffix(filepath.Base(matches[0]), ".cbor")
 }
+
+// --- Cold-model gate run 8, defect D5 -----------------------------------
+//
+// §12.1 said `15` and `16` "parse cleanly as verifier keys and are refused
+// only by the algorithm rule". For `16` that was true. `15` listed **one**
+// witness against a policy naming three, so §9.1's correspondence rule
+// refused it and the witness-key-algorithm MUST was never reached:
+// `trust-no-witness-key-alg` — dropping that MUST outright — passed all 582
+// checks.
+//
+// This is the same defect 6.5h-vi-b found in `07` and `08`, in a third file
+// nobody thought to look at. So this test asks the question of the whole
+// directory rather than of one case: any negative that is *about* a witness
+// key must correspond with its policy, or it is about correspondence instead.
+
+func TestTheWitnessKeyAlgorithmNegativeIsIsolated(t *testing.T) {
+	doc := parseBad(t, isolated(t, "witness-key-is-a-note-key"))
+
+	named := map[string]string{}
+	for _, line := range strings.Split(doc.Policy, "\n") {
+		fields := strings.FieldsFunc(line, func(r rune) bool { return r == ' ' || r == '\t' })
+		if len(fields) >= 3 && fields[0] == "witness" {
+			named[fields[1]] = fields[2]
+		}
+	}
+	if len(named) != len(doc.Witnesses) {
+		t.Errorf("the file lists %d witnesses and its policy names %d, so the "+
+			"correspondence rule refuses it before the algorithm rule is reached",
+			len(doc.Witnesses), len(named))
+	}
+	for _, w := range doc.Witnesses {
+		key, ok := named[w.Name]
+		if !ok {
+			t.Errorf("witness %q is not in the policy, so correspondence decides", w.Name)
+			continue
+		}
+		if key != w.Key {
+			t.Errorf("witness %q has one key in `witnesses` and another in the policy, "+
+				"so correspondence decides", w.Name)
+		}
+	}
+
+	// ...and the defect it IS about has to be present.
+	var noteKey bool
+	for _, w := range doc.Witnesses {
+		if v, err := parseKey(w.Key); err == nil && !v.IsCosigner() {
+			noteKey = true
+		}
+	}
+	if !noteKey {
+		t.Error("no witness publishes a note key, so this case is not about the " +
+			"algorithm rule at all")
+	}
+}

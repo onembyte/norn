@@ -272,6 +272,9 @@ func run(root string) error {
 	if err := writeRotatedHead(root, origin, signed, st, signers); err != nil {
 		return err
 	}
+	if err := writeTwiceCosignedHead(root, signed, signers); err != nil {
+		return err
+	}
 	if err := writeSupersededHead(root, origin, signed, key, signers); err != nil {
 		return err
 	}
@@ -340,6 +343,62 @@ func writeRotatedHead(root, origin, signed string, st *state.State,
 			"the rotation. A reader that has replayed this log MUST accept it. The two " +
 			"answers are both correct, and which applies depends on what the reader has " +
 			"done rather than on anything in the file",
+	}
+	blob, err := json.MarshalIndent(meta, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, "cases.json"), append(blob, '\n'), 0o644)
+}
+
+// writeTwiceCosignedHead ships §5.3's tie-break: one witness, two verifying
+// cosignature lines, at different times.
+//
+// Cold gate run 8, D5... D13: §5.3 says "two verifying lines from the same
+// witness with different timestamps are its newest", and nothing in the suite
+// had two lines from one witness that BOTH verify.
+// `checkpoints-bad/12-second-line-from-one-witness` cannot stand in: its
+// second line does not verify, so §10's per-line rule refuses the checkpoint
+// before the tie-break is reached. `quorum-time-oldest-line` -- a reader that
+// reduces each witness to its OLDEST line -- passed all 582 checks.
+//
+// `pi` answers again three spreads out, so the two readings give different
+// answers: newest-per-witness puts pi ahead of both others and the 2-of-3
+// instant lands on `friend`; oldest-per-witness leaves pi at the back and it
+// lands on `vps`. Every line here verifies, so the checkpoint is valid and the
+// only question is which instant it vouches for.
+func writeTwiceCosignedHead(root, signed string, signers []cosignpkg.Signer) error {
+	if len(signers) < 3 {
+		return fmt.Errorf("the fixture has %d witnesses; this case needs three", len(signers))
+	}
+	again := time.Unix(CosignedAt+int64(3*CosignSpread), 0)
+	head, err := cosignpkg.Append([]cosignpkg.Signer{signers[0]}, cosignpkg.At(again))(signed)
+	if err != nil {
+		return err
+	}
+
+	dir := filepath.Join(root, "served-twice-cosigned")
+	if err := os.RemoveAll(dir); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(dir, "checkpoint"), []byte(head), 0o644); err != nil {
+		return err
+	}
+	meta := map[string]any{
+		"serve_over":   "served",
+		"signs_twice":  signers[0].Name,
+		"quorum_time":  CosignedAt + int64(2*CosignSpread),
+		"oldest_would": CosignedAt + int64(CosignSpread),
+		"comment": "the served head with a FOURTH cosignature line: " +
+			signers[0].Name + " answers a second time, later, and both of its lines " +
+			"verify. SPEC 5.3 says a witness counts once, at its newest, so this head " +
+			"MUST be accepted and its evaluation time is `quorum_time`. A reader that " +
+			"takes each witness's oldest line instead gets `oldest_would`, which is " +
+			"the reading this case exists to rule out. Serve it in place of " +
+			"served/checkpoint over the same tiles",
 	}
 	blob, err := json.MarshalIndent(meta, "", "  ")
 	if err != nil {
@@ -1595,12 +1654,32 @@ func writeBadCheckpoints(root, origin string, key ed25519.PrivateKey,
 		names = append(names, c.Name)
 		reasons[c.Name] = c.Reason
 	}
+	// Cold gate run 8, D6. The comment used to say "04 and 08 are the two a
+	// signature-blind verifier accepts". That stopped being true when `11` was
+	// added and again when `12` was: every one of these four is a checkpoint
+	// whose ONLY defect is a signature of the right shape that does not
+	// verify, so a reader that never calls Ed25519 accepts all four. Listed
+	// rather than described, and checked below, because a sentence counting
+	// files is a sentence that goes stale.
+	blind := []string{
+		"04-forged-log-signature",
+		"08-forged-cosignature",
+		"11-forged-cosignature-with-quorum",
+		"12-second-line-from-one-witness",
+	}
+	for _, want := range blind {
+		if _, ok := reasons[want]; !ok {
+			return fmt.Errorf("signature-blind list names %q, which is not a case", want)
+		}
+	}
 	manifest := map[string]any{
-		"cases":   names,
-		"reasons": reasons,
+		"cases":                   names,
+		"reasons":                 reasons,
+		"signature_blind_accepts": blind,
 		"comment": "each file is served in place of served/checkpoint, over the honest tiles, " +
-			"under trust.cbor; every one MUST be refused. 04 and 08 are the two that a " +
-			"verifier which never checks a signature will accept",
+			"under trust.cbor; every one MUST be refused. `signature_blind_accepts` lists " +
+			"the ones whose only defect is a signature that does not verify: a reader that " +
+			"never calls Ed25519 accepts exactly those, and nothing else here",
 	}
 	raw, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {

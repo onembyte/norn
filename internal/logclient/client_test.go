@@ -1039,3 +1039,97 @@ func shippedLogAnchor(t *testing.T) Anchor {
 		Policy:  doc.Policy,
 	}
 }
+
+// --- Cold-model gate run 8, defect D13 ----------------------------------
+//
+// §5.3: "Two verifying lines from the same witness with different timestamps
+// are its newest." Nothing in the suite had two lines from one witness that
+// BOTH verify. `checkpoints-bad/12-second-line-from-one-witness` could not
+// stand in — its second line does not verify, so §10's per-line rule refuses
+// the whole checkpoint before the tie-break is reached — and §5.3 said it
+// could, which is how the round before this one overclaimed it.
+//
+// `served-twice-cosigned/` is the head that separates the readings: `pi`
+// answers again, later, and both of its lines verify, so newest-per-witness
+// and oldest-per-witness land on different instants. Run 8's
+// `quorum-time-oldest-line` passed all 582 checks without it.
+
+func TestAWitnessCountsAtItsNewestVerifyingLine(t *testing.T) {
+	dir := filepath.Join(vectorRoot(), "served-twice-cosigned")
+	raw, err := os.ReadFile(filepath.Join(dir, "cases.json"))
+	if err != nil {
+		t.Fatalf("§5.3's tie-break has no vector: %v", err)
+	}
+	var doc struct {
+		ServeOver   string `json:"serve_over"`
+		SignsTwice  string `json:"signs_twice"`
+		QuorumTime  int64  `json:"quorum_time"`
+		OldestWould int64  `json:"oldest_would"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	if doc.QuorumTime == doc.OldestWould {
+		t.Fatal("the two readings give the same instant, so this case pins nothing")
+	}
+
+	// The case only works if that witness really does sign twice and both
+	// lines verify -- otherwise the per-line rule of §10 decides instead.
+	signed, err := os.ReadFile(filepath.Join(dir, "checkpoint"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var lines int
+	for _, line := range strings.Split(strings.TrimRight(string(signed), "\n"), "\n") {
+		if strings.HasPrefix(line, "— "+doc.SignsTwice+" ") {
+			lines++
+		}
+	}
+	if lines != 2 {
+		t.Fatalf("%s signs %d times; the tie-break needs exactly two lines", doc.SignsTwice, lines)
+	}
+
+	served := servedWith(t, filepath.Join(vectorRoot(), doc.ServeOver), string(signed))
+	result, err := Verify(Dir(served), shippedLogAnchor(t))
+	if err != nil {
+		t.Fatalf("refused a head every line of which verifies: %v", err)
+	}
+	if result.QuorumTime == nil {
+		t.Fatal("no evaluation time at all")
+	}
+	if got := result.QuorumTime.Unix(); got != doc.QuorumTime {
+		t.Errorf("evaluation time %d, want %d (a reader taking each witness's "+
+			"oldest line would get %d)", got, doc.QuorumTime, doc.OldestWould)
+	}
+}
+
+// servedWith copies a served log and replaces its checkpoint.
+func servedWith(t *testing.T, from, checkpoint string) string {
+	t.Helper()
+	dir := t.TempDir()
+	err := filepath.WalkDir(from, func(path string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		rel, err := filepath.Rel(from, path)
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(dir, rel)
+		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			return err
+		}
+		body, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(target, body, 0o644)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "checkpoint"), []byte(checkpoint), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}

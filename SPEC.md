@@ -508,6 +508,9 @@ Three things that decision needs and the rest of this document does not supply:
   refused by §10 like any other, and a reader that takes its newest verifying
   line and looks no further accepts a checkpoint the previous section refuses.
   `checkpoints-bad/12-second-line-from-one-witness` is that reader's vector.
+  The **tie-break itself** — which of two *verifying* lines a witness counts at
+  — is `served-twice-cosigned/`, where one witness answers twice, both lines
+  verify, and the oldest-line reading lands on a different instant.
 - **Under `quorum none` there is no clock.** Not because the policy is
   satisfied at no instant — it is satisfied at *every* instant, and a reader
   taking the definition literally gets an unbounded `T` and drops every device
@@ -959,7 +962,7 @@ suite is checked only against its own author.
 | `requests-bad/<name>.txt` | requests that MUST be refused — by the text layer, the CBOR profile, a field rule or signature verification. `cases.json` gives each case's reason |
 | `receipt.json` | `{comment, origin, leaf_hash, deadline, text_sha256}`, where `text_sha256` is `SHA-256` of the **signed text** — through the newline ending the last text line, excluding the blank separator and the signature lines |
 | `checkpoints-bad/<NN-case>.checkpoint` | checkpoints that MUST be refused, each served in place of `served/checkpoint` over the honest tiles. `cases.json` lists them and says which two a signature-blind verifier accepts |
-| `entries-hostile/<name>.cbor` | input that is not an entry and never could be, for §4.0's two resource limits. `cases.json` says what each refusal must be about |
+| `entries-hostile/<name>.cbor` | input that is not an entry and never could be, for §4.0's three resource limits — the entry size, the nesting depth and the map-key cap. `cases.json` says what each refusal must be about, and marks the cases that sit exactly **at** a limit and MUST be accepted |
 | `proven/cases.json` | the devices admitted at four evaluation times (§5.3), including the boundary where `expires` equals `T` |
 | `fork/` | `evidence.cbor` and the `conflicting.checkpoint` it is about (§11.1), plus `bad-consistent` and `bad-other-origin`, which MUST be refused. `cases.json` lists them |
 | `anchors/` | OpenTimestamps proofs written by `python-opentimestamps`: `checkpoint-<size>.ots` over the fixture's checkpoint body, `sample.ots` over an arbitrary digest, and a calendar's reply |
@@ -1018,6 +1021,7 @@ this table drifted out of date the moment one was.
 | §5.1 `params`: non-empty, §4.5 keys, right types | `params` entries in the log | `bad-params-empty`, `bad-params-unknown-key`, and `bad-params-wrong-type` — a CBOR `true` where a uint belongs, which a loose decoder reads as 1. The same key rule at entry 0 is `genesis/13-params-unknown-key`, where the two readings differ by the whole log: one aborts to the zero state, the other replays every entry |
 | §14.1 key order above the BMP | `enroll-astral-labels`, whose labels carry one astral key and one private-use key: the only pair in the suite where UTF-8 bytewise order and UTF-16 code-unit order disagree | — |
 | §5.3 state, incl. D-028 and `expires` | `state.json`, `enroll-contractor` | `signer_remove-below-threshold` accepted, then `signer_add-recover` |
+| §5.3 a witness counts at its **newest** verifying line | `served-twice-cosigned/`: one witness answers twice and both lines verify, so the head is valid and only the tie-break decides. `cases.json` records the instant it must come out at, and the one an oldest-line reader would get instead | `checkpoints-bad/12-second-line-from-one-witness` cannot pin this — its second line does not verify, so §10's per-line rule refuses the checkpoint first |
 | §5.3 the derivation of `T` | `served/checkpoint`, whose three witnesses cosign seven seconds apart, so the **newest** and the **oldest** are both separated from the answer; `proofs/cases.json` records the value `T` must come out as | — |
 | §5.3 evaluation time | `proven/cases.json`: the admitted set at four values of `T` — no clock, before, **exactly at**, and after the one deadline the fixture carries. `state.json` is clock-independent by design, so this is the only vector that exercises expiry | the `at-the-deadline` case, where `expires == T` and the device is **out** |
 | §7 receipt | `receipt.note` | — |
@@ -1030,7 +1034,7 @@ this table drifted out of date the moment one was.
 | §11.1 the carried `policy` decides nothing | `fork/policy-not-the-readers.cbor`: sound evidence whose `policy` requires a witness that cosigned nothing — it MUST still prove the fork, because the reader verifies under its own | `fork/bad-policy-says-quorum-none`: two checkpoints no quorum cosigned, and a carried policy saying none is needed. A reader that trusts the field concludes a fork any stranger can write, and §11 rule 4 makes it permanent. `fork/bad-policy-unparseable` is the format half |
 | §6 tiles and bundles | `served/`, read back to reproduce `state.json`; a forged head is `checkpoints-bad/04-forged-log-signature` and a fourth body line is `checkpoints-bad/09-extension-line` | `served-bad/`: an entry bundle with one byte changed, one the log will not serve at all, and `tampered-hash-tile` — one byte inside one leaf hash, which leaves the entries and the signed head honest, so only the hash-tile rule can refuse it |
 | §8.1 a bundle's checkpoint is checked per §10 | `proofs/`, whose checkpoints carry the quorum | `proofs-bad/no-quorum` (the log's signature and nobody else's) and `proofs-bad/wrong-origin` (this network's key over another network's origin line) |
-| §8 proof bundles | `proofs/`, one per active device | `proofs-bad/`: a wrong entry, a foreign checkpoint, a tampered proof and a checkpoint signed by a key the anchor does not name — each differing from a valid bundle in exactly one thing |
+| §8 proof bundles | `proofs/`, one per active device | `proofs-bad/`, **6 proof refusals**: a wrong entry, a foreign checkpoint, a tampered proof, a checkpoint signed by a key the anchor does not name, one with no witness quorum and one whose checkpoint names another origin — each differing from a valid bundle in exactly one thing |
 | §10 the signature decides before the origin | — | `proofs-bad/foreign-checkpoint` MUST be refused about "no valid signature from a trusted key" and `proofs-bad/wrong-origin` about "is for origin". A reader that checks the origin first reports the wrong one for the first of them |
 | §10 verifier loop, steps 1–4 | `served/` verified end to end, **signature first** | `checkpoints-bad/01-unsigned`, `02-wrong-log-key`, `03-wrong-origin` and **`04-forged-log-signature`** — the last one being a signature of the right shape under the right key id that does not verify. Without it a verifier that never checks the log signature reproduces the whole suite |
 | §10 step 3, the witness quorum | `served/checkpoint`, cosigned by all three witnesses | `checkpoints-bad/05-one-cosignature-short`, `06-no-cosignatures`, `07-unnamed-witness-only` and **`08-forged-cosignature`**, which carries two lines naming witnesses the policy lists, one of which does not verify: the quorum is met by counting and refused by checking. `quorum none` accepting an uncosigned head needs a second anchor and is **not vectored** |
@@ -1054,6 +1058,13 @@ admits its holes, so:
 - **§5's `state.net` coming from the anchor rather than from the genesis
   entry.** Unobservable: entry 0 aborts whenever the two differ, so no file can
   tell the two readings apart. Recorded here because a reader will look.
+- **§9.1's witness-name uniqueness, for a reader whose correspondence check
+  strikes each name off as it matches.** Such a reader refuses
+  `30-duplicate-witness-name-only` at the correspondence step and so passes the
+  whole suite with no uniqueness rule at all. §9.1 says the correspondence is
+  on the **set** of names precisely so that reader is non-conforming — but the
+  vectors cannot tell it apart from a conforming one, and no construction
+  separates them, because a policy cannot name the same witness twice.
 
 Everything else named in the table above ships, and the build fails if a path
 cited here is missing or a directory here is not named.

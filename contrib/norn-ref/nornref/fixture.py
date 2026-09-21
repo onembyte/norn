@@ -910,9 +910,17 @@ def trust_rejections() -> list[tuple[str, dict[str, Any]]]:
         # cosignatures (algorithm 0x04) and the log signs notes (0x01). A file
         # that mixes them names keys nobody can use, and both directions parse
         # cleanly, so only this rule rejects them.
-        ("15-witness-key-is-a-note-key",
-         damaged(witnesses=[dict(base["witnesses"][0],
-                                 key=note.vkey("norn-witness/pi", KEYS["witness-pi"].public))])),
+        # Cold gate run 8, D5. This listed ONE witness against a policy naming
+        # three, so the correspondence rule refused it and the algorithm MUST
+        # was never reached -- the same defect 6.5h-vi-b fixed in `07` and
+        # `08`. All three witnesses are listed now, and `pi`'s note key is put
+        # in the policy line too, so names and keys correspond exactly and the
+        # only thing wrong with the file is the algorithm of one key.
+        ("15-witness-key-is-a-note-key", damaged(
+            witnesses=[dict(base["witnesses"][0],
+                            key=note.vkey("norn-witness/pi", KEYS["witness-pi"].public))]
+                      + base["witnesses"][1:],
+            policy=_policy_with_pi_note_key())),
         ("16-log-key-is-a-cosignature-key",
          damaged(log_key=note.vkey(ORIGIN, KEYS["logkey"].public, note.ALG_COSIGNATURE))),
         # `witnesses` and `policy` must name the same parties: a quorum over
@@ -965,6 +973,25 @@ def trust_rejections() -> list[tuple[str, dict[str, Any]]]:
         ("30-duplicate-witness-name-only", damaged(
             witnesses=base["witnesses"] + [dict(base["witnesses"][0])])),
     ]
+
+
+def _policy_with_pi_note_key() -> str:
+    """`policy_text()` with `pi`'s verifier key replaced by its NOTE key.
+
+    So that `15-witness-key-is-a-note-key` corresponds with its own policy and
+    only §9.1's "a witness key is a cosignature key" can refuse it. The policy
+    grammar does not constrain key algorithms -- that is the trust file's rule,
+    which is exactly the one under test.
+    """
+    wrong = note.vkey("norn-witness/pi", KEYS["witness-pi"].public)
+    lines = []
+    for line in policy_text().split("\n"):
+        fields = line.split(" ")
+        if len(fields) >= 3 and fields[0] == "witness" and fields[1] == "pi":
+            fields[2] = wrong
+            line = " ".join(fields)
+        lines.append(line)
+    return "\n".join(lines)
 
 
 _REMOVE = object()

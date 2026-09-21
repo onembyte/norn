@@ -1,0 +1,7 @@
+{
+  "comment": "the served head with a FOURTH cosignature line: norn-witness/pi answers a second time, later, and both of its lines verify. SPEC 5.3 says a witness counts once, at its newest, so this head MUST be accepted and its evaluation time is `quorum_time`. A reader that takes each witness's oldest line instead gets `oldest_would`, which is the reading this case exists to rule out. Serve it in place of served/checkpoint over the same tiles",
+  "oldest_would": 1760003607,
+  "quorum_time": 1760003614,
+  "serve_over": "served",
+  "signs_twice": "norn-witness/pi"
+}

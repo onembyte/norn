@@ -13,7 +13,7 @@
     "12-second-line-from-one-witness",
     "08-forged-cosignature"
   ],
-  "comment": "each file is served in place of served/checkpoint, over the honest tiles, under trust.cbor; every one MUST be refused. 04 and 08 are the two that a verifier which never checks a signature will accept",
+  "comment": "each file is served in place of served/checkpoint, over the honest tiles, under trust.cbor; every one MUST be refused. `signature_blind_accepts` lists the ones whose only defect is a signature that does not verify: a reader that never calls Ed25519 accepts exactly those, and nothing else here",
   "reasons": {
     "01-unsigned": "the checkpoint body with no signature line at all: nothing vouches for this tree",
     "02-wrong-log-key": "signed under the log's own name by a key the anchor does not pin",
@@ -27,5 +27,11 @@
     "10-wrong-body-origin": "signed by this network's log key, under this network's name, and its origin line names another log",
     "11-forged-cosignature-with-quorum": "three named witnesses, two of whose cosignatures verify: the quorum is met without the third, and §10 refuses the checkpoint anyway",
     "12-second-line-from-one-witness": "all three witnesses cosign and verify, and `friend` carries a second, newer line that does not: a reader taking each witness's newest verifying line sees a full quorum, and §10 refuses the checkpoint anyway"
-  }
+  },
+  "signature_blind_accepts": [
+    "04-forged-log-signature",
+    "08-forged-cosignature",
+    "11-forged-cosignature-with-quorum",
+    "12-second-line-from-one-witness"
+  ]
 }

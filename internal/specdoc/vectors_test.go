@@ -367,6 +367,7 @@ func TestTheCoverageTablesCountsAreCurrent(t *testing.T) {
 		"request cases":     len(caseNames(t, root, "requests")),
 		"request refusals":  len(caseNames(t, root, "requests-bad")),
 		"rejected anchors":  len(caseNames(t, root, "trust-bad")),
+		"proof refusals":    len(caseNames(t, root, "proofs-bad")),
 	}
 
 	spec, err := os.ReadFile(filepath.Join("..", "..", "SPEC.md"))
@@ -515,4 +516,60 @@ func TestTheVerifierProcedureChecksTheSignatureBeforeTheOrigin(t *testing.T) {
 		"A checkpoint signed by a key this anchor does not trust must be refused for "+
 			"that, whatever origin it names -- `proofs-bad/foreign-checkpoint` says so, "+
 			"and §12.1 calls the loop `signature first`.")
+}
+
+// Cold-model gate run 8, defect D6. The vectors README told a reader to start
+// with `checkpoints-bad/` because "`04` and `08` are the only files a verifier
+// which never checks a signature will accept". That was true when it was
+// written and false from the moment `11` was added, and again when `12` was.
+// The set is generated now; this checks the sentence against it, so the two
+// cannot drift apart again.
+func TestTheSignatureBlindClaimNamesTheRightFiles(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join(vectorRoot(t), "checkpoints-bad", "cases.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Blind []string `json:"signature_blind_accepts"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	if len(doc.Blind) == 0 {
+		t.Fatal("cases.json no longer says which files a signature-blind verifier accepts")
+	}
+
+	readme, err := os.ReadFile(filepath.Join(vectorRoot(t), "README.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The sentence names them by their numeric prefix.
+	for _, name := range doc.Blind {
+		prefix, _, _ := strings.Cut(name, "-")
+		if !strings.Contains(string(readme), "`"+prefix+"`") {
+			t.Errorf("a signature-blind verifier accepts %s and the vectors README "+
+				"does not name `%s`", name, prefix)
+		}
+	}
+	// ...and names no others.
+	listed := map[string]bool{}
+	for _, name := range doc.Blind {
+		prefix, _, _ := strings.Cut(name, "-")
+		listed[prefix] = true
+	}
+	for _, other := range caseNames(t, vectorRoot(t), "checkpoints-bad") {
+		var name string
+		if err := json.Unmarshal(other, &name); err != nil {
+			continue
+		}
+		prefix, _, _ := strings.Cut(name, "-")
+		if listed[prefix] {
+			continue
+		}
+		if strings.Contains(string(readme), "`"+prefix+"` and") ||
+			strings.Contains(string(readme), "and `"+prefix+"`") {
+			t.Errorf("the vectors README lists `%s` among the files a signature-blind "+
+				"verifier accepts; it does not", prefix)
+		}
+	}
 }
