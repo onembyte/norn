@@ -7,3 +7,14 @@ __pycache__/
 /coverage.out
 .DS_Store
 build/
+
+# Compiled binaries from a manual `go build` at the repo root. `make` puts its
+# own in /bin, which is already ignored above; these were not.
+/norn
+/norn-genlog
+
+# The real transparency-dev/witness writes its generated signing key into a
+# directory named after its own verifier key when it runs from cmd/norn. That
+# is a private key, and it was committed by accident once (4.4, scrubbed from
+# history 2026-09-22). Never again.
+/cmd/norn/norn-witness/
