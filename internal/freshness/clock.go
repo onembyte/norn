@@ -85,13 +85,20 @@ type Limits struct {
 // State names where `age` falls. `haveClock` is the second return of Age: with
 // no witness clock the answer is Unknown, never Fresh.
 func (l Limits) State(age time.Duration, haveClock bool) string {
+	// The states are tested in this order and the first that holds is the
+	// answer (§8.1, D-060). `hard_stale` comes BEFORE `fresh` because the two
+	// are both true whenever `S_hard < elapsed <= S`, and `S` moves by root
+	// quorum: testing `fresh` first would let a `params` entry raise every
+	// node's local hard limit out of reach, which is the opposite of what
+	// makes it local (D-034 makes the same argument for the witness policy).
+	// A hard limit means what the operator typed.
 	switch {
 	case !haveClock:
 		return Unknown
-	case age <= l.Staleness:
-		return Fresh
 	case l.Hard > 0 && age > l.Hard:
 		return HardStale
+	case age <= l.Staleness:
+		return Fresh
 	default:
 		return Degraded
 	}

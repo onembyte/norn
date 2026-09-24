@@ -158,9 +158,14 @@ func ParsePoll(text string) (time.Duration, error) {
 //
 // Empty or zero means never, because this is the one setting that lets Norn
 // take a node off its own network: an operator has to ask for it in writing.
-// A value below the §4.5 `staleness` default is refused -- it would drop every
-// peer before the network had even called the view degraded, which is a typo
-// with an outage attached rather than a configuration.
+//
+// A very small value is refused as a typo guard, and that is ALL the floor is
+// for. It is not a rule that S_hard must exceed the network's `staleness`: a
+// tighter-than-network hard limit is legitimate and is the point of having a
+// local one, since §8.1 tests `hard_stale` before `fresh` precisely so a root
+// quorum cannot raise it (D-060). What the floor rules out is a limit so short
+// the node would be hard-stale essentially always -- `5s` is a slipped unit,
+// not a policy.
 func ParseHardStale(text string) (time.Duration, error) {
 	if text == "" {
 		return 0, nil
@@ -173,14 +178,17 @@ func ParseHardStale(text string) (time.Duration, error) {
 		return 0, nil
 	}
 	if hard < MinHardStale {
-		return 0, fmt.Errorf("hard_stale must be at least %s (the §4.5 staleness "+
-			"default), or 0 to leave it off; got %s", MinHardStale, hard)
+		return 0, fmt.Errorf("hard_stale must be at least %s, or 0 to leave it "+
+			"off; got %s. A hard limit shorter than the interval a log issues "+
+			"checkpoints at would hard-stale this node almost always", MinHardStale, hard)
 	}
 	return hard, nil
 }
 
-// MinHardStale is SPEC §4.5's default `staleness`: below it, hard-stale would
-// fire before degraded.
+// MinHardStale is the typo floor. Its value is §4.5's default `staleness`,
+// which is also a sane lower bound on how often a log issues checkpoints -- a
+// hard limit below that is almost certainly a slipped unit. It is NOT a claim
+// that S_hard must sit above the network's staleness (D-060).
 const MinHardStale = 600 * time.Second
 
 // ParseMaxSkew reads Δclock. Empty means the freshness package's default.

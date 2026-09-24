@@ -667,6 +667,17 @@ func writeDetectCases(root, origin string, key ed25519.PrivateKey, entries [][]b
 				"hard": 0, "expect": "degraded"},
 			{"name": "unconfigured-hard-still-fresh", "elapsed": 0,
 				"hard": 0, "expect": "fresh"},
+			// Cold gate run 11, D1 (D-060). Every case above has `hard` 3600
+			// ABOVE `staleness` 900, so the region where both `fresh` and
+			// `hard_stale` hold was unreachable and `HardBeforeFresh` -- the
+			// table read the other way round -- passed all 622 checks. The
+			// fixture builds this trap itself: genesis sets `staleness` 600
+			// and `log/29-params` raises it to 900, so a node that chose
+			// S_hard 700 lands in the overlap with no reconfiguration.
+			{"name": "hard-below-staleness", "elapsed": 800,
+				"hard": 700, "expect": "hard_stale"},
+			{"name": "at-the-hard-boundary", "elapsed": 700,
+				"hard": 700, "expect": "fresh"},
 		},
 		"comment": "SPEC 8.1's ladder as a table: `elapsed` is the " +
 			"node's monotonic time since it learned the checkpoint's quorum time, " +
@@ -676,7 +687,12 @@ func writeDetectCases(root, origin string, key ed25519.PrivateKey, entries [][]b
 			"`unknown` rather than guessing. A case may carry its own `hard`, " +
 			"overriding the top-level one: zero means S_hard is NOT CONFIGURED, " +
 			"not a limit of zero, so such a node stays `degraded` however old the " +
-			"view gets rather than dropping every peer",
+			"view gets rather than dropping every peer. The states are tested in " +
+			"SPEC 8.1's order and the first that holds is the answer: `hard_stale` " +
+			"comes BEFORE `fresh`, so a node whose own S_hard is tighter than the " +
+			"network's staleness goes hard-stale at its own limit -- see " +
+			"`hard-below-staleness`, which is the only case separating the two " +
+			"readings of the table",
 	}
 	staleBlob, err := json.MarshalIndent(stale, "", "  ")
 	if err != nil {

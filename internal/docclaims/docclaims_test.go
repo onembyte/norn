@@ -277,3 +277,33 @@ func TestMeasureCountsThisPackage(t *testing.T) {
 		t.Errorf("Measure should tolerate a tree with no Go in it: %v", err)
 	}
 }
+
+// --- D-060 -------------------------------------------------------------
+//
+// `GOSSIP.md` carries the operational state machine, so it has to agree with
+// §8.1 about which state wins when both hold. Before D-060 it drew `degraded`
+// as `S < age ≤ S_hard`, which silently assumes `S_hard > S`, and repeated the
+// config floor's old justification — that a limit below the network's
+// `staleness` "would drop every peer before the network had even called the
+// view degraded". Under D-060 that configuration is legitimate and is the
+// point of a local floor.
+
+func TestTheGossipStateMachineAgreesWithD060(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "GOSSIP.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := string(raw)
+
+	if strings.Contains(doc, "before the network had even called the view degraded") {
+		t.Error("GOSSIP.md still gives the pre-D-060 reason for the hard_stale " +
+			"floor. A hard limit tighter than the network's `staleness` is now " +
+			"legitimate — it is what makes S_hard a limit the roots cannot raise")
+	}
+	if !strings.Contains(doc, "S_hard is tighter than S") {
+		t.Error("GOSSIP.md's state machine does not say what happens when a " +
+			"node's own limit is tighter than the network's, which is the case " +
+			"D-060 is about: `degraded` is empty and the node goes from fresh " +
+			"straight to hard-stale")
+	}
+}

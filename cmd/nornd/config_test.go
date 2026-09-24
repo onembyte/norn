@@ -294,3 +294,43 @@ func TestDegradedPollingOnlySpeedsUp(t *testing.T) {
 		}
 	}
 }
+
+// --- D-060 -------------------------------------------------------------
+//
+// Before D-060 this guard's stated reason was that a hard limit below the
+// network's `staleness` "would drop every peer before the network had even
+// called the view degraded, which is a typo with an outage attached". D-060
+// makes that configuration legitimate and indeed the point: `S_hard` is the
+// node's own floor, and the network cannot raise it. The numeric floor stays,
+// but only as a typo guard.
+
+func TestAHardLimitTighterThanTheNetworksIsAccepted(t *testing.T) {
+	// The configuration D1 is about: the fixture's genesis sets `staleness`
+	// to 600 and a later `params` entry raises it to 900, so 700 is a sensible
+	// choice that the network later overtakes.
+	got, err := ParseHardStale("700s")
+	if err != nil {
+		t.Fatalf("a hard limit tighter than the network's staleness must be "+
+			"accepted — it is the whole point of a local floor: %v", err)
+	}
+	if got != 700*time.Second {
+		t.Errorf("parsed %s, want 700s", got)
+	}
+}
+
+func TestTheHardLimitFloorIsATypoGuardAndSaysSo(t *testing.T) {
+	_, err := ParseHardStale("5s")
+	if err == nil {
+		t.Fatal("a five-second hard limit must be refused; it drops every peer " +
+			"whenever the log is five seconds stale")
+	}
+	// The message must not tell the operator that being below the network's
+	// staleness is the fault, because after D-060 it is not.
+	for _, wrong := range []string{"degraded", "staleness default"} {
+		if strings.Contains(err.Error(), wrong) {
+			t.Errorf("the refusal still explains itself with %q, which D-060 "+
+				"makes wrong: a hard limit below the network's staleness is "+
+				"legitimate. Got: %v", wrong, err)
+		}
+	}
+}

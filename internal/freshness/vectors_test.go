@@ -279,3 +279,91 @@ func TestTheUnconfiguredHardLimitIsVectored(t *testing.T) {
 			"S_hard as no headroom -- dropping every peer -- passes the whole suite")
 	}
 }
+
+// --- Cold-model gate run 11, defect D1 (D-060) --------------------------
+//
+// §8.1's four states were a table with no stated evaluation order, and
+// `fresh` and `hard_stale` are both true whenever `S_hard < elapsed ≤ S`. The
+// implementation tested `fresh` first, which made a node's own hard limit
+// unreachable whenever the network's `staleness` was at or above it — and
+// `staleness` moves by root quorum, so a root quorum could silently disable
+// every node's local hard stop. §8.1 cites D-034 (the witness policy is local,
+// not a `params` key) as the reason `S_hard` is local at all; a local limit the
+// network can raise is not local.
+//
+// D-060 settles it: `hard_stale` is tested first. A hard limit means what the
+// operator typed.
+//
+// The fixture builds the trap itself. Genesis sets `staleness: 600` and
+// `log/29-params` raises it to 900, so `S_hard = 700` — legal and sensible
+// while `S` was 600 — lands in the overlap with no reconfiguration.
+
+func TestAHardLimitBelowTheNetworksStalenessStillFires(t *testing.T) {
+	limits := Limits{Staleness: 900 * time.Second, Hard: 700 * time.Second}
+
+	// Inside the overlap: past this node's own limit, but not past the
+	// network's. The operator asked to drop everything past 700.
+	if got := limits.State(800*time.Second, true); got != HardStale {
+		t.Errorf("elapsed 800s with S_hard 700s and S 900s is %q; a hard limit the "+
+			"network's `staleness` can override is not a limit, and `staleness` "+
+			"moves by root quorum", got)
+	}
+
+	// The boundary is the same shape as the staleness one: `elapsed > S_hard`
+	// is the violation, so sitting exactly on it has not crossed it.
+	if got := limits.State(700*time.Second, true); got != Fresh {
+		t.Errorf("elapsed exactly equal to S_hard is %q; the rule is "+
+			"`elapsed > S_hard`, so the boundary has not been crossed", got)
+	}
+
+	// And the ordering must not cost the states below it: with no hard limit
+	// configured, nothing changes.
+	open := Limits{Staleness: 900 * time.Second}
+	if got := open.State(800*time.Second, true); got != Fresh {
+		t.Errorf("with no S_hard configured, elapsed 800s under S 900s is %q, want %q",
+			got, Fresh)
+	}
+}
+
+// ...and the suite has to pin it too, or a second implementation reading the
+// table the other way round passes everything. No shipped case reached the
+// overlap: every one had `S_hard` 3600 above `S` 900, which is exactly why
+// run 11's `HardBeforeFresh` variant survived 622 checks.
+func TestTheOverlapRegionIsVectored(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join(vectorRoot(), "detect", "staleness.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Staleness int64 `json:"staleness"`
+		Cases     []struct {
+			Name    string `json:"name"`
+			Elapsed int64  `json:"elapsed"`
+			Hard    *int64 `json:"hard"`
+			Expect  string `json:"expect"`
+		} `json:"cases"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+
+	var overlap int
+	for _, c := range doc.Cases {
+		if c.Hard == nil || *c.Hard == 0 {
+			continue
+		}
+		if *c.Hard < doc.Staleness && c.Elapsed > *c.Hard && c.Elapsed <= doc.Staleness {
+			overlap++
+			if c.Expect != HardStale {
+				t.Errorf("%s sits in the overlap (S_hard %d < elapsed %d ≤ S %d) and "+
+					"expects %q; D-060 says the hard limit wins",
+					c.Name, *c.Hard, c.Elapsed, doc.Staleness, c.Expect)
+			}
+		}
+	}
+	if overlap == 0 {
+		t.Error("no case has `hard` below `staleness` with `elapsed` between them, " +
+			"so nothing separates testing `fresh` first from testing `hard_stale` " +
+			"first — which is the variant that passed all 622 checks in run 11")
+	}
+}

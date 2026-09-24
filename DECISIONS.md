@@ -603,3 +603,37 @@ run. Rejected: a hand-rolled netlink client (untestable here, and the failure
 mode is silent) · UAPI-only support (would drop kernel WireGuard, which is the
 platform the gate measures) · shelling out to `wg` (parsing a human-readable
 format as an authority, with no way to distinguish absent from empty).
+
+## D-060 · `hard_stale` is tested before `fresh` (2026-09-24)
+§8.1's four freshness states are evaluated in the order listed, first match
+wins, and `hard_stale` comes before `fresh`.
+
+**Why.** The two predicates overlap: both hold whenever `S_hard < elapsed ≤ S`.
+`S` is `params.staleness`, which a **root quorum can raise**; `S_hard` is the
+node's own opt-in floor and is deliberately not a `params` key, for the reason
+D-034 gives about the witness policy — things that decide whether to trust stay
+local so the network cannot lower them. Testing `fresh` first makes `S_hard`
+unreachable whenever `S` is at or above it, so the roots could lift every
+node's local hard stop without touching a single node's configuration. A limit
+the network can raise is not a local limit.
+
+The fixture builds the trap without anyone arranging it: genesis sets
+`staleness: 600`, `log/29-params` raises it to 900, and `cmd/nornd` accepts any
+`S_hard` at or above 600 — so `S_hard = 700`, a sensible choice while `S` was
+600, lands in the overlap permanently and silently.
+
+**Rejected.** *Keep `fresh` first and require `S_hard > S`* — preserves the
+ladder as originally drawn (fresh → degraded → hard_stale, ordered by elapsed),
+but leaves the overlap quietly meaning "no hard limit", and the config guard
+compares against §4.5's *default* rather than the live `staleness`, so it does
+not prevent the inversion it was written for. *Keep `fresh` first and alarm on
+the inversion* — most in keeping with "no silent divergence", and the honest
+runner-up; rejected as the larger change for the same outcome, since under
+D-060 there is no inversion to alarm about. The cost of D-060 is that a node in
+the overlap goes straight from `fresh` to `hard_stale` with no `degraded` band,
+which is what asking for a tight hard limit means.
+
+Consequence: `cmd/nornd`'s floor on `hard_stale` stays, but only as a typo
+guard. It is no longer a claim that `S_hard` must exceed the network's
+`staleness`; that configuration is legitimate and is the point.
+

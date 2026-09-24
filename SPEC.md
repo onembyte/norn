@@ -770,6 +770,19 @@ Let `elapsed` be condition 4's monotonic duration, `S` be `params.staleness`
 | `hard_stale` | `S_hard` is configured **and** `elapsed > S_hard` |
 | `degraded` | otherwise |
 
+**The states are tested in the order given, and the first whose condition holds
+is the answer.** The order is load-bearing rather than editorial, because
+`fresh` and `hard_stale` are both true whenever `S_hard < elapsed ≤ S` — and
+**`hard_stale` is tested before `fresh`**, so a node whose own limit is tighter
+than the network's goes hard-stale at its own limit. The alternative reading
+makes `S_hard` unreachable whenever `S` is at or above it, and `S` is
+`params.staleness`, which a **root quorum can raise**: testing `fresh` first
+would let the roots lift every node's local hard stop out of reach without
+touching a single node's configuration. A limit the network can raise is not a
+local limit, which is the whole of why this one is not a `params` key (D-034,
+and D-060 for this ordering). `detect/staleness.json`'s `hard-below-staleness`
+is the only case that separates the two readings.
+
 `S` is the log's, so the whole network agrees when a view is too old to trust.
 **`S_hard` is the node's own and is opt-in**: zero means not configured, and a
 node that was never configured for it stays `degraded` for ever rather than

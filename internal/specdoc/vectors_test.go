@@ -1450,3 +1450,26 @@ func TestConditionThreeSaysWhichKeyItMeans(t *testing.T) {
 		}
 	}
 }
+
+// --- Cold-model gate run 11, defect D1 (D-060) --------------------------
+
+func TestTheFreshnessStatesAreTestedInAStatedOrder(t *testing.T) {
+	doc := load(t)
+	section, ok := doc.Section("8.1")
+	if !ok {
+		t.Fatal("§8.1 is missing")
+	}
+	// A table of four predicates two of which can both hold is not a ladder
+	// until something says which is consulted first.
+	if !strings.Contains(section.Body, "tested in the order given") {
+		t.Error("§8.1 presents four states as a table and never says they are " +
+			"ordered — but `fresh` and `hard_stale` are both true whenever " +
+			"`S_hard < elapsed ≤ S`, so two conforming nodes enforce opposite " +
+			"things from the same inputs")
+	}
+	// And the order has to be the one D-060 chose, stated where the reader is.
+	if !strings.Contains(section.Body, "`hard_stale` is tested before `fresh`") {
+		t.Error("§8.1 does not say that `hard_stale` is tested before `fresh`, " +
+			"which is what makes S_hard a limit the network cannot raise")
+	}
+}

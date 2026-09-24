@@ -134,15 +134,28 @@ A node's wall clock is untrusted (A11). Define for an adopted checkpoint:
 State machine:
 
 ```
-fresh      age ≤ S (10 min)            normal
-degraded   S < age ≤ S_hard, or S_hard off   keep proven set; alarm every 5 min; poll all sources every 10 s
 hard-stale age > S_hard (opt-in)       enforcer drops all peers (owner: ReplacePeers []; watchdog: evict all)
+fresh      age ≤ S (10 min)            normal
+degraded   otherwise                   keep proven set; alarm every 5 min; poll all sources every 10 s
 ```
 
+**Tested top to bottom, first match wins** — `hard-stale` before `fresh`, per
+§8.1 and D-060. That matters only when **S_hard is tighter than S**, and then it
+decides everything: `degraded` is empty and the node goes from fresh straight to
+hard-stale at its own limit. The alternative — `fresh` first — would mean a root
+quorum could raise `params.staleness` past a node's S_hard and lift that node's
+hard stop out of reach without touching its configuration, which is the opposite
+of a local limit.
+
+In the ordinary configuration, where S_hard sits above S, the three read as the
+ladder they look like: fresh, then degraded, then hard-stale.
+
 `hard-stale` is a deliberate outage, so it is **opt-in twice**: `nornd` leaves S_hard
-unset unless `-hard-stale` or `hard_stale` says otherwise, and a value below §4.5's
-`staleness` default is refused — it would drop every peer before the network had even
-called the view degraded.
+unset unless `-hard-stale` or `hard_stale` says otherwise, and a very small value is
+refused as a typo guard — a limit shorter than the interval a log issues checkpoints
+at would hard-stale the node almost always. That floor is **not** a rule that S_hard
+must exceed the network's `staleness`; that configuration is legitimate and is the
+point of having a local floor at all.
 
 The `degraded` alarm repeats on its cadence rather than once, because a degraded node
 that simply went quiet is indistinguishable from one that recovered; recovering resets
