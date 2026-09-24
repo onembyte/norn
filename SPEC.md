@@ -741,7 +741,7 @@ A node MUST treat a peer as proven only if:
 
 1. the bundle's checkpoint verifies under the node's trust policy (§9), and
 2. the bundle's checkpoint is consistent with the node's stored checkpoint, and
-3. replay of the log up to that checkpoint yields the device as `active` with that `wg_pk`, and
+3. replay of the log up to that checkpoint yields the device as `active`, and **the `wg_pk` the node will install is the one that replay yields** — not the one the bundle's own entry carries, and
 4. the checkpoint is not stale: **`elapsed > params.staleness`** makes it so,
    where `elapsed` is the node's **monotonic** reading now minus its monotonic
    reading when it learned this checkpoint's quorum time (§5.3).
@@ -777,6 +777,19 @@ going `hard_stale`. That asymmetry is deliberate — crossing `S_hard` drops eve
 peer, so a log unreachable over a weekend must not take a network down by
 itself. It is a local decision for the same reason the witness policy is not a
 `params` key (D-034).
+
+**And what the bundle's own entry proves.** It proves that this device was
+enrolled — or rotated, or whatever its type is — at that index, in a tree this
+checkpoint commits to. It does **not** prove the device's *current* key. §5.3
+leaves `since_index` on the entry that made the device active, so a `rotate`
+does not move it: for any device that has ever rotated, the bundle that proves
+it is older than its key, and that is the normal case rather than an edge one.
+A reader that required the bundle's `wg_pk` to equal the replayed one would
+drop every rotated peer, quietly, in the ordinary course of operation.
+`proven/cases.json`'s `bundles` map gives both keys for every active device —
+`nas` is the one where they differ (its bundle proves the enrol at index 1;
+`log/35-rotate-nas` changed the key), and `nas` is proven in all four cases
+(cold gate run 11, D14).
 
 Because the node replays the whole log, condition 3 is what actually decides;
 the bundle is the portable, offline-checkable evidence that goes in alerts and

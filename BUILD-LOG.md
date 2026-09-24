@@ -518,7 +518,8 @@ them, and then run the gate.
 | 6.5k-v-d | D15's entry-0 bootstrap key set | a genesis signed only by keys in `signers` declaring `role: "root"` — a valid network under one reading and `bad-genesis` under the other | ✅ |
 | 6.5k-vi | Cold-model gate run 11 | a *fresh* agent on a *new* copy; the target remains `SPEC SUFFICIENT` | ⚠️ **SUFFICIENT WITH GAPS** — 622/622 checks, `SHA256SUMS` clean, **23 of 148** variants survive and **0 of 5,151** composites rescue a half the suite caught alone; 14 defects (`SPEC-DEFECTS-11.md`). Five are prose gaps and two change what a conforming node does, so the PLAN gate line stays open |
 | 6.5l-i | §6 stops deferring what a reader cannot fetch | the `tlog-tiles` layout restated, `anchors/` given a format and a `cases.json`, and "the checkpoint body" stopped meaning two byte ranges one bullet apart (run 11's structural note, D11, D13) | ✅ |
-| 6.5l-ii | The freshness ladder is a ladder | D1 (`fresh` and `hard_stale` are both true when `S_hard < elapsed ≤ S`) and D14 (§8.1 condition 3's `with that wg_pk` has no antecedent, and the strict reading silently drops every rotated peer) | ⬜ |
+| 6.5l-ii-a | Condition 3 says which key it means | D14: §8.1's `with that `wg_pk`` had no antecedent, and the strict reading silently drops every device that has ever rotated | ✅ |
+| 6.5l-ii-b | The freshness ladder is a ladder | D1: `fresh` and `hard_stale` are both true when `S_hard < elapsed ≤ S`, and the implementation tests `fresh` first — so a root-quorum `params` change can disable a node's local hard limit | ⛔ **DECISION NEEDED** (see below) |
 | 6.5l-iii | The policy grammar's last three | D2 (no key twice — the rule §9.1's own `log lines` row leans on), D5 (an empty group is unreachable behind the field count) and D12 (the whitespace set is not enumerated) | ⬜ |
 | 6.5l-iv | Key ids, names and the state before an entry | D3 (`37-log-key-id-mismatch` is refused by the correspondence rule, exactly as 11/13/16 were), D9 (the composite that opens), D7 (prefix and case-folded origin matches) and D8 (§4.2's *before this entry*) | ⬜ |
 | 6.5l-v | Bytes, not characters | D6 (every over-long vector is ASCII, so `name`/`reason`/`text`/label caps do not separate byte counting from character counting) and D4 (the receipt `deadline` has no canonical-decimal rule while §6's size line does) | ⬜ |
@@ -1043,6 +1044,13 @@ the signer keeps one job — decide, and place the entry in the log.
   - **Why that one is worth the care**: anchoring is advisory (D-009), so a reader who computes a neighbouring range never matches a stamp and **never says so**. Silent, in the one mechanism whose job is to constrain the log operator about time. One control, red: hashing §7's range instead fails the manifest test and four others.
   - **D13**: §4.0 opened by naming three artifacts and governs five; proof bundles and fork evidence are in the first sentence now, not two paragraphs down.
   - **`make test` grew a `-timeout`.** `cmd/norn` takes about five minutes and hit Go's default per-package 600s once, under the load of the gate run. A suite that flakes under load teaches people to re-run rather than to read.
+
+- **6.5l-ii-a — condition 3 is about the key the node installs, not the key the bundle carries.**
+  - **D14 was a quiet peer-dropper.** §8.1 condition 3 reads "replay … yields the device as `active` with that `wg_pk`", and *that* has no antecedent in its own sentence. The nearest candidate is the bundle's, because the whole list is about a bundle — and `rotate` is routine, while §5.3 deliberately leaves `since_index` on the entry that made the device active. So for **any device that has ever rotated**, the bundle proving it is older than its key. The strict reading drops those peers in the ordinary course of operation, and passed all 622 checks doing it.
+  - **Nothing joined the two halves.** `proofs/cases.json` exercises the "Checking a bundle" procedure, which does not include conditions 1–4; `proven/cases.json` was computed from `state.json` alone. `proven/cases.json` now carries a `bundles` map: per active device, the index its bundle proves, the key that entry carries, the key replay yields, and whether the two differ. `nas` is the one where they do — bundle at index 1 (`116f00fa…`), state `2a955fd2…` after `log/35-rotate-nas` — and `nas` is proven in all four cases.
+  - **The facts come from the replay, not from the `.bundle` files.** Those are written by the Go generator, so a reader checking one against the other is checking two implementations against each other. The Go guard decodes the shipped bundle and requires it to agree with what the Python-written manifest claims.
+  - **Two controls.** Modelling the strict reader against the shipped vectors drops `nas`, which the proven set requires — so the *vectors* catch it, which is what run 11 said nothing did. Erasing the separation in the manifest turns the in-repo guard red.
+  - **A generator bug caught on the way**: `wg_pk` is bytes in the in-memory state and hex only once serialised, so comparing the two reported *every* device as rotated — a separation that separates nothing. Both sides are normalised now.
   - **"Who this is not for" is five paragraphs of reasons to close the tab**, including the one that costs most: Norn's failure direction is to refuse peers it cannot prove, so a log outage plus a strict policy is an outage. A reader who needs the network up more than correct should learn that from me, in the README, and not from their own network at 03:00.
 
 
@@ -1654,3 +1662,59 @@ code does not have.
   - **The single largest barrier is one this session never saw, because it is a barrier only for someone holding the sealed copy.** §6 defers `tlog-tiles` paths and does not restate them — and the C2SP document is not in the sealed directory, so a reader with only `SPEC.md` and `vectors/` **cannot use `served/`, `served-bad/`, `served-*/` or `detect/` at all**. Run 11 derived `tile/entries/000.p/126` from outside knowledge. §7 and §9.1 both took the opposite decision, in as many words: "a verifier cannot be written without it". §6 did not, and two lines close it.
   - **§12.1's self-assessment came back accurate**, which is worth recording: all six of its not-vectored claims that a variant can express behaved exactly as written. The one place it claims coverage it does not have is `37-log-key-id-mismatch` — refused by the log-line correspondence rule, which is precisely the defect 6.5k-v-a fixed in `11`, `13` and `16` and did not extend to `37`.
   - **The gate line stays open.** The verdict improved a tier from run 10 and the variant survival rate fell from 25% to 15.5%, but "passing the checks was never the bar". Two defects change node behaviour; that is not a PASS with partial credit. 6.5l is the seven checkpoints that close them.
+
+---
+
+## OPEN DECISION — 6.5l-ii-b: when the network's `staleness` overtakes a node's `S_hard`
+
+**Written 2026-09-24. The loop is stopped on this.**
+
+Run 11's defect D1 says §8.1's four freshness states are a table, not a ladder:
+nothing states the evaluation order, and `fresh` and `hard_stale` are both true
+whenever `S_hard < elapsed ≤ S`. The variant `HardBeforeFresh` passes all 622
+checks, because every `detect/staleness.json` case has `S_hard` (3600) above
+`S` (900), so the overlap is unreachable by any shipped file.
+
+**It is not hypothetical, and the fixture builds the trap itself.** Genesis sets
+`staleness: 600`; `log/29-params` raises it to `900`. `cmd/nornd` refuses an
+`S_hard` below **600** — the §4.5 *default* — so `S_hard = 700` is a legal,
+sensible choice while `S` is 600. After that `params` entry the node sits in the
+overlap permanently, with no reconfiguration and no notice.
+
+**The implementation currently tests `fresh` first**, which means: whenever the
+network's `S` is at or above a node's `S_hard`, that node's hard limit is
+unreachable. A limit that only fires when it is *looser* than the network's is
+not a safety limit — and the roots can move `S` by quorum, so a root quorum can
+silently disable every node's local hard stop. §8.1 cites D-034 (the witness
+policy is local, not a `params` key) as the reason `S_hard` is local at all;
+this is that same argument one level down.
+
+**Three defensible answers. This one is yours.**
+
+1. **`hard_stale` wins — test it before `fresh`.** `S_hard` becomes a genuine
+   local floor the network cannot raise. Honours the operator's explicit
+   instruction; costs the `degraded` band for a node in the overlap, which goes
+   straight from `fresh` to `hard_stale`. Changes daemon behaviour. Also means
+   `cmd/nornd`'s guard should be re-framed: a hard limit *tighter* than the
+   network's becomes legitimate rather than a typo.
+2. **`fresh` wins — keep the ladder, state the order, and require `S_hard > S`.**
+   Preserves the design as written (fresh → degraded → hard_stale, ordered by
+   elapsed). But it leaves the overlap silently meaning "no hard limit", and the
+   config guard checks against the §4.5 default rather than the live `staleness`,
+   so it does not actually prevent the inversion.
+3. **`fresh` wins, and the inversion is an alarm.** The node detects at replay
+   that `S` has overtaken its `S_hard` and says so — refusing to be quietly
+   reconfigured by a `params` entry — rather than either semantics applying in
+   silence. Most in keeping with "no silent divergence", and the largest change:
+   a new alarm plus revalidation whenever `params` moves.
+
+**My recommendation: 1**, with the `nornd` guard re-framed. It is the only one
+of the three where a hard limit means what the operator typed, and it keeps the
+property §8.1 already claims for `S_hard` — that it is *local*, which is worth
+nothing if a root quorum can raise it.
+
+Whichever is chosen, the fix also needs: the evaluation order stated in §8.1 in
+one clause, and a `detect/staleness.json` case with `hard` below `staleness`
+(none exists today).
+
+---

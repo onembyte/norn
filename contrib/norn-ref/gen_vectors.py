@@ -15,7 +15,7 @@ import sys
 
 import hashlib
 
-from nornref import canonjson, enrollreq, entry, fixture, note, replay, trust
+from nornref import canonjson, cbor, enrollreq, entry, fixture, note, replay, trust
 
 
 #: Every path this run has written, so stale files can be pruned afterwards.
@@ -131,10 +131,10 @@ def write_log(out: pathlib.Path) -> None:
     }) + "\n")
     final = replay.replay(anchor, raw)
     write(out / "state.json", final.to_json() + "\n")
-    write_proven(out, final)
+    write_proven(out, final, raw)
 
 
-def write_proven(out: pathlib.Path, final: Any) -> None:
+def write_proven(out: pathlib.Path, final: Any, entries: list[bytes]) -> None:
     """The proven set at four evaluation times (SPEC §5.3).
 
     `state.json` is deliberately clock-independent, so until this existed the
@@ -160,14 +160,77 @@ def write_proven(out: pathlib.Path, final: Any) -> None:
          "expires == T has passed: the boundary two implementations disagree about"),
         (deadline + 1, "after-the-deadline", "one second after"),
     ]
+    # Cold gate run 11, D14. §8.1's condition 3 says replay must yield the
+    # device "active with that `wg_pk`" and never says whose. Nothing joined a
+    # bundle to a proven set, so a reader that required the BUNDLE's key --
+    # and therefore dropped every device that has ever rotated -- passed the
+    # whole suite. This states, per active device, the entry its bundle proves
+    # and both keys, so the two readings can be told apart.
+    #
+    # The facts come from the replay, not from the .bundle files: those are
+    # written by the Go generator, so a reader checking one against the other
+    # is checking two implementations against each other.
+    bundles = {}
+    for name, dev in sorted(final.devices.items()):
+        if dev["status"] != "active":
+            continue
+        at = dev["since_index"]
+        enrolled = _wg_pk_of(entries[at])
+        # `wg_pk` is bytes in the in-memory state and hex only once it is
+        # serialised, so both sides are normalised before they are compared --
+        # comparing a hex string with bytes silently reports every device as
+        # rotated, which is a case that separates nothing.
+        current = _as_hex(dev["wg_pk"])
+        rotated = enrolled != current
+        bundles[name] = {
+            "file": f"proofs/{name}.bundle",
+            "proves_index": at,
+            "bundle_wg_pk": enrolled,
+            "state_wg_pk": current,
+            "rotated_since": rotated,
+            "says": (
+                "condition 3 is about the `wg_pk` REPLAY yields -- the key this "
+                "node will install -- not the one the bundle's own entry carries. "
+                + ("`" + name + "` rotated after it was enrolled, so the two "
+                   "differ and this case separates the two readings: it MUST be "
+                   "proven, on the replayed key. A reader that requires the "
+                   "bundle's key drops it, and drops every device that ever "
+                   "rotates, which is routine."
+                   if rotated else
+                   "`" + name + "` never rotated, so both keys agree and this "
+                   "case cannot separate the readings. It is here so the set is "
+                   "complete rather than curated.")),
+        }
+
     write(out / "proven" / "cases.json", canonjson.dumps({
         "comment": "the devices a node admits at evaluation time `t` (SPEC §5.3). "
                    "`t` is the checkpoint's quorum time, never a wall clock, and "
                    "t = 0 means there is no clock at all. A device is expired "
-                   "exactly when expires != 0 and expires <= t",
+                   "exactly when expires != 0 and expires <= t. `bundles` joins "
+                   "each active device to the §8.1 proof bundle that proves it, "
+                   "and gives both keys, because condition 3 means the replayed "
+                   "one and the fixture is the only thing that says so",
         "cases": [{"name": name, "t": t, "why": why, "proven": final.proven(t)}
                   for t, name, why in cases],
+        "bundles": bundles,
     }) + "\n")
+
+
+def _as_hex(value: bytes | str) -> str:
+    """Lowercase hex, whether the value arrived as bytes or already encoded."""
+    return value.hex() if isinstance(value, (bytes, bytearray)) else value
+
+
+def _wg_pk_of(raw: bytes) -> str:
+    """The WireGuard key an entry establishes, as lowercase hex.
+
+    An `enroll` carries it inside the embedded request (SPEC §4.3); a `rotate`
+    carries it in the body.
+    """
+    body = cbor.decode(raw)["body"]
+    if "request" in body:
+        return cbor.decode(body["request"])["wg_pk"].hex()
+    return body["wg_pk"].hex()
 
 
 def write_genesis_aborts(out: pathlib.Path) -> None:

@@ -1421,3 +1421,32 @@ func TestTheEncodingProfileNamesEveryArtifactItGoverns(t *testing.T) {
 		}
 	}
 }
+
+// --- Cold-model gate run 11, defect D14 ---------------------------------
+//
+// §8.1's condition 3 says replay must yield the device "active with that
+// `wg_pk`" and never says whose. The nearest antecedent is the bundle's,
+// because the whole list is about a bundle — and that reading drops every
+// device that has ever rotated, quietly, while passing every check in the
+// suite.
+
+func TestConditionThreeSaysWhichKeyItMeans(t *testing.T) {
+	doc := load(t)
+	section, ok := doc.Section("8.1")
+	if !ok {
+		t.Fatal("§8.1 is missing")
+	}
+	for _, c := range []struct{ needle, why string }{
+		{"the `wg_pk` the node will install",
+			"condition 3's `that wg_pk` has no antecedent in its own sentence"},
+		{"what the bundle's own entry proves",
+			"a reader needs to be told that the bundle proves enrolment at an " +
+				"index, not the device's current key — `rotate` leaves " +
+				"`since_index` on the enrol, so a stale bundle is the normal " +
+				"case for any device that has ever rotated"},
+	} {
+		if !strings.Contains(section.Body, c.needle) {
+			t.Errorf("§8.1 does not say %q — %s", c.needle, c.why)
+		}
+	}
+}

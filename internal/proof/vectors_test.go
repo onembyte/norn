@@ -1,6 +1,7 @@
 package proof
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"github.com/onembyte/norn/internal/trust"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/onembyte/norn/internal/cbor"
+	"github.com/onembyte/norn/internal/entry"
 )
 
 // Cold-model gate run 5, defect G12. §8.1 said the bundle format carries
@@ -234,4 +236,178 @@ func TestEveryBundleSchemaRuleHasItsCase(t *testing.T) {
 			}
 		})
 	}
+}
+
+// --- Cold-model gate run 11, defect D14 ---------------------------------
+//
+// §8.1's condition 3 — "replay of the log up to that checkpoint yields the
+// device as `active` with that `wg_pk`" — never says whose `wg_pk`. The
+// nearest antecedent is the bundle's, because the whole list is about a
+// bundle; the other reading is that replay simply supplies the key and
+// condition 3 only asserts `active`.
+//
+// The fixture separates them and nothing joined the two halves. `proofs/` is
+// one bundle per active device, each proving **the entry that made that
+// device active** — the enrol. `nas` rotated afterwards at `log/35`, and §5.3
+// deliberately leaves `since_index` on the enrol, so the bundle's own entry
+// carries the *old* key while the state carries the current one. Under the
+// strict reading `nas` fails condition 3 and is dropped; under the other it is
+// proven, which is what `proven/cases.json` requires.
+//
+// `rotate` is routine, so a stale bundle is the normal case for any device
+// that has ever changed its WireGuard key: the strict reading drops peers in
+// the ordinary course of operation, quietly, while passing every check in the
+// suite.
+
+func TestARotatedDevicesBundleProvesEnrolmentNotItsCurrentKey(t *testing.T) {
+	root := filepath.Join("..", "..", "testdata", "vectors")
+	var manifest struct {
+		Bundles map[string]struct {
+			File        string `json:"file"`
+			ProvesIndex int64  `json:"proves_index"`
+			BundleWgPk  string `json:"bundle_wg_pk"`
+			StateWgPk   string `json:"state_wg_pk"`
+			Says        string `json:"says"`
+		} `json:"bundles"`
+	}
+	raw, err := os.ReadFile(filepath.Join(root, "proven", "cases.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(raw, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	if len(manifest.Bundles) == 0 {
+		t.Fatal("`proven/cases.json` joins no bundle to a proven set, so a reader " +
+			"that requires the bundle's own `wg_pk` in condition 3 — and therefore " +
+			"drops every device that has ever rotated — passes the whole suite")
+	}
+
+	stateRaw, err := os.ReadFile(filepath.Join(root, "state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var st struct {
+		Devices map[string]struct {
+			Status     string `json:"status"`
+			WgPk       string `json:"wg_pk"`
+			SinceIndex int64  `json:"since_index"`
+		} `json:"devices"`
+	}
+	if err := json.Unmarshal(stateRaw, &st); err != nil {
+		t.Fatal(err)
+	}
+
+	var separating int
+	for device, c := range manifest.Bundles {
+		t.Run(device, func(t *testing.T) {
+			body, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(c.File)))
+			if err != nil {
+				t.Fatalf("the manifest names a bundle that does not ship: %v", err)
+			}
+			b, err := Decode(body)
+			if err != nil {
+				t.Fatalf("the bundle does not decode: %v", err)
+			}
+			if b.Index != c.ProvesIndex {
+				t.Errorf("the bundle proves index %d, the manifest says %d",
+					b.Index, c.ProvesIndex)
+			}
+
+			// The key the bundle's own entry carries...
+			inBundle := wgKeyOf(t, b.Entry)
+			if inBundle != c.BundleWgPk {
+				t.Errorf("the bundle's entry carries wg_pk %s, the manifest says %s",
+					inBundle, c.BundleWgPk)
+			}
+
+			// ...and the key replay yields, which is the one the node installs.
+			dev, ok := st.Devices[device]
+			if !ok {
+				t.Fatalf("`state.json` has no device %q", device)
+			}
+			if dev.WgPk != c.StateWgPk {
+				t.Errorf("the state's wg_pk is %s, the manifest says %s",
+					dev.WgPk, c.StateWgPk)
+			}
+			if dev.Status != "active" {
+				t.Errorf("the device is %q, not active, so condition 3 fails for a "+
+					"reason other than the key", dev.Status)
+			}
+			if c.Says == "" {
+				t.Error("the case says nothing about which key condition 3 means, " +
+					"which is the only thing a reader cannot derive here")
+			}
+
+			if inBundle != dev.WgPk {
+				separating++
+				// This is the whole point of the case: the device must still be
+				// proven, on the replayed key.
+				if !provenEverywhere(t, root, device) {
+					t.Errorf("%s rotated, so its bundle's key and its state key "+
+						"differ — and it is missing from a proven set, which is "+
+						"the strict reading of condition 3", device)
+				}
+			}
+		})
+	}
+	if separating == 0 {
+		t.Error("no bundle in the manifest carries a key that differs from the " +
+			"state's, so none of them separates the two readings of condition 3")
+	}
+}
+
+// provenEverywhere reports whether the device appears in every `proven/` case.
+func provenEverywhere(t *testing.T, root, device string) bool {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(root, "proven", "cases.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Cases []struct {
+			Name   string   `json:"name"`
+			Proven []string `json:"proven"`
+		} `json:"cases"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range doc.Cases {
+		var found bool
+		for _, d := range c.Proven {
+			if d == device {
+				found = true
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return len(doc.Cases) > 0
+}
+
+// wgKeyOf pulls the WireGuard key an entry establishes, as lowercase hex.
+func wgKeyOf(t *testing.T, raw []byte) string {
+	t.Helper()
+	env, err := entry.Decode(raw)
+	if err != nil {
+		t.Fatalf("the bundle's entry does not decode: %v", err)
+	}
+	if req, ok := env.Body["request"].([]byte); ok {
+		inner, err := cbor.Decode(req)
+		if err != nil {
+			t.Fatalf("the embedded request does not decode: %v", err)
+		}
+		if m, ok := inner.(map[string]any); ok {
+			if pk, ok := m["wg_pk"].([]byte); ok {
+				return hex.EncodeToString(pk)
+			}
+		}
+	}
+	if pk, ok := env.Body["wg_pk"].([]byte); ok {
+		return hex.EncodeToString(pk)
+	}
+	t.Fatalf("the entry establishes no wg_pk")
+	return ""
 }
