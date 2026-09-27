@@ -850,6 +850,23 @@ def log() -> list[LogItem]:
     b.add(f"{b.index}-bad-enroll-request-expires-at-ts", b.build(
         "enroll", expired, both), "decode")
 
+    # Cold gate run 11, D8. §4.2 says signatures are verified against the key
+    # the `kid` resolves to in the state BEFORE this entry, and no entry in the
+    # log was ever signed by a key it was itself adding -- so
+    # `ResolveKeysAfterEntry`, which lets a `root_add`'s incoming key count
+    # toward its own quorum, passed all 622 checks.
+    #
+    # `root_thr` is 3 here and the roots are root1..root3, so this carries TWO
+    # valid root signatures and a third by `root4`, the key in its own body.
+    # Under §4.2 that is two of three and the entry is `threshold`; under the
+    # other reading it is a root quorum that bootstraps itself. §9.4 makes the
+    # same ordering argument for log keys -- "a stolen log key cannot name its
+    # own successor" -- and the root-key version of it was stated once in §4.2
+    # and exercised by nothing.
+    b.add(f"{b.index}-bad-root_add-counts-its-own-key", b.build(
+        "root_add", {"pk": KEYS["root4"].public},
+        [("root1", "root"), ("root2", "root"), ("root4", "root")]), "threshold")
+
     return b.items
 
 
