@@ -329,6 +329,9 @@ def write_trust_rejections(out: pathlib.Path) -> None:
         "35-anchor-unknown-mode": mode, "36-policy-log-key-mismatch": polkey,
         "37-log-key-id-mismatch": keyid, "38-oversize": size,
         "39-witness-key-id-mismatch": keyid,
+        # D7: equality, not a prefix match.
+        "40-log-key-name-suffix": {
+            "section": "9.1", "says": "its note name MUST equal `origin`"},
     }
     for name_, _ in fixture.trust_rejections():
         if name_ not in trust_rules:

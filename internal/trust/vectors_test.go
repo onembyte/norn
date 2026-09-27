@@ -191,3 +191,48 @@ func honestWitnessKey(t *testing.T, name string) string {
 	t.Fatalf("the anchor lists no witness %q", name)
 	return ""
 }
+
+// D7's third variant: the log key's note name "MUST equal `origin`", and
+// `LogKeyNamePrefix` — a prefix match on that name — passed all 622 checks.
+// `11-log-key-name-mismatch` uses `someone/else`, which is not a prefix of
+// anything, so nothing separated the two readings.
+func TestTheLogKeyNameComparisonIsEquality(t *testing.T) {
+	const name = "40-log-key-name-suffix"
+	doc := trustBad(t, name)
+
+	origin, _ := doc["origin"].(string)
+	logKey, _ := doc["log_key"].(string)
+	if origin == "" || logKey == "" {
+		t.Fatalf("%s carries origin=%q log_key=%q", name, origin, logKey)
+	}
+	keyName, _, _ := strings.Cut(logKey, "+")
+	if keyName == origin || !strings.HasPrefix(keyName, origin) {
+		t.Errorf("the log key is named %q and the origin is %q; the name must be "+
+			"the origin plus at least one character, or a prefix match is not "+
+			"separated from equality", keyName, origin)
+	}
+
+	// And, as `37` taught, the damage has to reach the policy too, or the
+	// correspondence rule refuses the file before this rule is consulted.
+	text, _ := doc["policy"].(string)
+	for _, line := range strings.Split(text, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) >= 2 && fields[0] == "log" && fields[1] != logKey {
+			t.Errorf("the policy's log line names %s and `log_key` is %s, so the "+
+				"correspondence rule decides instead", fields[1], logKey)
+		}
+	}
+
+	raw, err := os.ReadFile(filepath.Join("..", "..", "testdata", "vectors",
+		"trust-bad", name+".cbor"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := Parse(raw)
+	if err == nil {
+		err = parsed.Validate()
+	}
+	if err == nil {
+		t.Error("the file must be refused")
+	}
+}

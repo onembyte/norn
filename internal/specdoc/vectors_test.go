@@ -1519,3 +1519,36 @@ func TestTheEmptyGroupCaseIsCreditedToTheRuleThatRefusesIt(t *testing.T) {
 			"subsumed")
 	}
 }
+
+// The vectors README states a count for two directories in words or digits,
+// and it has silently drifted twice while cases were added. A number in prose
+// that nothing checks is a claim, and §12.1 opens by saying an inaccurate
+// coverage claim is the same failure wearing a different hat.
+func TestTheVectorsREADMEStatesTheRightCounts(t *testing.T) {
+	root := vectorRoot(t)
+	raw, err := os.ReadFile(filepath.Join(root, "README.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	words := map[int]string{
+		1: "one", 2: "two", 3: "three", 4: "four", 5: "five", 6: "six",
+		7: "seven", 8: "eight", 9: "nine", 10: "ten", 11: "eleven",
+		12: "twelve", 13: "thirteen", 14: "fourteen", 15: "fifteen",
+		16: "sixteen", 17: "seventeen", 18: "eighteen", 19: "nineteen",
+		20: "twenty", 21: "twenty-one", 22: "twenty-two", 23: "twenty-three",
+		24: "twenty-four", 25: "twenty-five",
+	}
+	for _, c := range []struct{ dir, noun string }{
+		{"checkpoints-bad", "checkpoints that MUST be refused"},
+		{"trust-bad", "anchors that must be rejected"},
+	} {
+		n := len(caseNames(t, root, c.dir))
+		row := readmeRow(t, string(raw), "`"+c.dir+"/`")
+		digits := fmt.Sprintf("%d %s", n, c.noun)
+		spelled := words[n] + " " + c.noun
+		if !strings.Contains(row, digits) && !strings.Contains(row, spelled) {
+			t.Errorf("`%s/` ships %d cases and its README row says neither %q nor %q",
+				c.dir, n, digits, spelled)
+		}
+	}
+}

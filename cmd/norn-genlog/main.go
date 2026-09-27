@@ -1761,6 +1761,39 @@ func paddedSizeLine(base, origin string, key ed25519.PrivateKey,
 	return staggeredCosigner(signers)(signed)
 }
 
+// rewriteBodyOrigin replaces the checkpoint body's first line and re-signs,
+// leaving the note name and everything else exactly as it was. The note still
+// verifies under this network's key, so only §10's origin comparison can
+// refuse the result.
+func rewriteBodyOrigin(base, noteName, bodyOrigin string, key ed25519.PrivateKey,
+	signers []cosignpkg.Signer) (string, error) {
+
+	body, err := noteBody(base)
+	if err != nil {
+		return "", err
+	}
+	_, rest, found := strings.Cut(body, "\n")
+	if !found {
+		return "", fmt.Errorf("a checkpoint body has three lines")
+	}
+	signed, err := note.Sign(bodyOrigin+"\n"+rest, noteName, key)
+	if err != nil {
+		return "", err
+	}
+	return staggeredCosigner(signers)(signed)
+}
+
+// caseFlipped upper-cases the first letter of the origin's base32 tail, which
+// §2 defines as lowercase. The string is otherwise byte-identical.
+func caseFlipped(origin string) string {
+	for i := 0; i < len(origin); i++ {
+		if origin[i] >= 'a' && origin[i] <= 'z' && i > strings.Index(origin, "/") {
+			return origin[:i] + string(origin[i]-32) + origin[i+1:]
+		}
+	}
+	return origin
+}
+
 // shortRootLine re-encodes the root with one byte appended -- 33 bytes, whose
 // first 32 are the honest root -- then re-signs and re-cosigns the body. The
 // note is impeccable and the tree still matches for anyone who reads 32 bytes
@@ -2228,6 +2261,31 @@ func buildBadCheckpoints(root, origin string, key ed25519.PrivateKey,
 			"byte-distinct forms that are all valid",
 		rewriteLastSignature(logSignatureLast(allThree, origin), appendByte)})
 
+	// Cold gate run 11, D7. §10's `require cp.origin == norn.trust.origin` was
+	// separated from neither a prefix match nor a case-folded one: every origin
+	// negative used an UNRELATED origin, so none of them is a prefix or a case
+	// variant of this network's. §10 argues at length that the cosignature
+	// match must be name AND key id because a name-only match hands anyone a
+	// veto; this is the same argument from the other side, where a loose match
+	// hands an attacker an acceptance.
+	suffixed, err := rewriteBodyOrigin(base, origin, origin+"a", key, signers)
+	if err != nil {
+		return nil, err
+	}
+	out = append(out, badCheckpoint{"21-origin-with-a-suffix",
+		"the origin line is this network's origin plus one base32 character, " +
+			"signed and cosigned exactly as correctly as the real head: a reader " +
+			"matching on a prefix accepts it", suffixed})
+
+	folded, err := rewriteBodyOrigin(base, origin, caseFlipped(origin), key, signers)
+	if err != nil {
+		return nil, err
+	}
+	out = append(out, badCheckpoint{"22-origin-case-changed",
+		"the same origin with one character in the other case: a reader folding " +
+			"case accepts it, and §2's origin is lowercase base32 by construction",
+		folded})
+
 	out = append(out, badCheckpoint{"08-forged-cosignature",
 		"two cosignature lines, both naming witnesses the policy lists, one of which does not verify: " +
 			"the quorum is met only by a verifier that does not check them", forgedCosig})
@@ -2306,6 +2364,8 @@ func writeBadCheckpoints(root, origin string, key ed25519.PrivateKey,
 		"14-unterminated-signature-block":   {"section": "7", "says": "including the last, ends in one"},
 		"15-size-leading-zero":              {"section": "6", "says": "no leading zeroes"},
 		"17-root-wrong-length":              {"section": "6", "says": "32 bytes once decoded"},
+		"21-origin-with-a-suffix":           {"section": "10", "says": "cp.origin == norn.trust.origin"},
+		"22-origin-case-changed":            {"section": "10", "says": "cp.origin == norn.trust.origin"},
 		"18-signature-name-with-space":      {"section": "7", "says": "contains no space"},
 		"19-signature-unpadded-base64":      {"section": "7", "says": "standard base64 **with padding**"},
 		"20-signature-payload-too-long":     {"section": "7", "says": "The decoded payload is **exactly** that length"},

@@ -842,3 +842,95 @@ func witnessKeyID(t *testing.T, name string) string {
 	t.Fatalf("the policy publishes no key for %s", name)
 	return ""
 }
+
+// --- Cold-model gate run 11, defect D7 ----------------------------------
+//
+// §10 says `require cp.origin == norn.trust.origin`, and three readings of
+// that passed all 622 checks: `OriginPrefixMatch`, `OriginCaseFold`, and the
+// same prefix reading on the log key's note name. Every origin negative in the
+// suite used an *unrelated* origin — `03-wrong-origin` and `10-wrong-body-
+// origin` name another network, `trust-bad/11` uses `someone/else`, `13` uses
+// `norn/aaaa…` — so none is a prefix or a case variant of this one.
+//
+// §10 spends a paragraph arguing the cosignature match must be on name **and**
+// key id, because a name-only match hands anyone a veto, and ships
+// `served-name-collision/` to pin it. The origin comparison is the same
+// argument from the other side: a prefix match hands an attacker an
+// *acceptance*. It was not pinned.
+
+func TestTheOriginComparisonIsEquality(t *testing.T) {
+	dir := filepath.Join(vectors(), "checkpoints-bad")
+	raw, err := os.ReadFile(filepath.Join(dir, "cases.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Cases []string `json:"cases"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	find := func(suffix string) string {
+		for _, n := range doc.Cases {
+			if strings.HasSuffix(n, suffix) {
+				return n
+			}
+		}
+		return ""
+	}
+
+	honest := anchorOrigin(t)
+
+	// A longer origin whose first characters are this network's. Under a
+	// prefix match it is accepted, and the checkpoint is otherwise perfect.
+	suffixed := find("-origin-with-a-suffix")
+	if suffixed == "" {
+		t.Fatal("no `checkpoints-bad` case whose origin line is this network's " +
+			"origin plus a character, so a prefix match passes the whole suite")
+	}
+	got := bodyOrigin(t, filepath.Join(dir, suffixed+".checkpoint"))
+	if got == honest || !strings.HasPrefix(got, honest) {
+		t.Errorf("%s has origin %q; it must be the honest origin %q plus at least "+
+			"one character, or it does not separate a prefix match from equality",
+			suffixed, got, honest)
+	}
+
+	// The same origin in a different case. Under a case-folded comparison it
+	// is accepted.
+	folded := find("-origin-case-changed")
+	if folded == "" {
+		t.Fatal("no `checkpoints-bad` case whose origin differs from this " +
+			"network's only in case, so a case-folded match passes the whole suite")
+	}
+	got = bodyOrigin(t, filepath.Join(dir, folded+".checkpoint"))
+	if got == honest || !strings.EqualFold(got, honest) {
+		t.Errorf("%s has origin %q; it must equal the honest origin %q under case "+
+			"folding and differ from it exactly, or it separates nothing",
+			folded, got, honest)
+	}
+}
+
+// bodyOrigin is a checkpoint's first line.
+func bodyOrigin(t *testing.T, path string) string {
+	t.Helper()
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	line, _, _ := strings.Cut(string(raw), "\n")
+	return line
+}
+
+// anchorOrigin is the origin the shipped trust file names.
+func anchorOrigin(t *testing.T) string {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(vectors(), "trust.cbor"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, err := trust.Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return doc.Origin
+}

@@ -1268,6 +1268,15 @@ def trust_rejections() -> list[tuple[str, dict[str, Any]]]:
         # somebody recomputes the id. With `TrustNoKeyIDCheck` and a line
         # matched on the id alone, a reader has verified nothing about the
         # name, and no shipped file carried a mis-declared WITNESS id.
+        # Cold gate run 11, D7. §9.1 says the log key's note name MUST EQUAL
+        # the origin, and `LogKeyNamePrefix` -- a prefix match -- passed all
+        # 622 checks, because `11` uses `someone/else`, which is a prefix of
+        # nothing. The name here is the origin plus one base32 character, so
+        # only equality can refuse it; the policy carries it too, or the
+        # correspondence rule decides instead (the lesson `37` taught).
+        ("40-log-key-name-suffix", damaged(
+            log_key=note.vkey(ORIGIN + "a", KEYS["logkey"].public),
+            policy=_policy_with(log_key=note.vkey(ORIGIN + "a", KEYS["logkey"].public)))),
         ("39-witness-key-id-mismatch", damaged(
             witnesses=[dict(base["witnesses"][0], key=_witness_vkey_with_wrong_id("pi"))]
             + [dict(w) for w in base["witnesses"][1:]],
