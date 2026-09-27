@@ -77,6 +77,7 @@ func Parse(text string) (*Policy, error) {
 	p := &Policy{groups: map[string]group{}, names: map[string]bool{}}
 	seenKeys := map[string]bool{}
 	quorumLines := 0
+	logLines := 0
 
 	for number, raw := range strings.Split(text, "\n") {
 		where := fmt.Sprintf("line %d", number+1)
@@ -109,6 +110,7 @@ func Parse(text string) (*Policy, error) {
 				return nil, policyErrorf("%s: that key is already in this policy", where)
 			}
 			seenKeys[fields[1]] = true
+			logLines++
 			entry := Log{Key: fields[1]}
 			if len(fields) == 3 {
 				entry.URL = fields[2]
@@ -175,6 +177,14 @@ func Parse(text string) (*Policy, error) {
 
 	if quorumLines != 1 {
 		return nil, policyErrorf("a policy has exactly one quorum line, this one has %d", quorumLines)
+	}
+	// §9.1's `log count` row. Its `log lines` row used to argue that this
+	// followed from key uniqueness -- it does not, because two `log` lines may
+	// carry two different keys, and until cold gate run 11 (D2) no
+	// implementation enforced it at all. A reader takes the log key from
+	// `norn.trust.log_key` rather than guessing which of two lines meant it.
+	if logLines > 1 {
+		return nil, policyErrorf("a policy carries at most one log line, this one has %d", logLines)
 	}
 	if p.quorum != NoQuorum && !p.names[p.quorum] {
 		return nil, policyErrorf("the quorum names %q, which nothing defines", p.quorum)

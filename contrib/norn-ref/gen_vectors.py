@@ -434,11 +434,19 @@ def write_policies(out: pathlib.Path) -> None:
         "section": "9.1", "says": "the four directives"}
     for name in ("bad-vertical-tab", "bad-carriage-return"):
         policy_rules[name] = {
-            "section": "9.1", "says": "is an **error**, not a separator and not content"}
+            "section": "9.1", "says": "neither a separator nor content"}
     policy_rules["bad-extra-field"] = {
         "section": "9.1", "says": "a line with more is an **error**"}
     for name in ("bad-trailing-comment", "witness-url-fragment"):
         policy_rules[name] = {"section": "9.1", "says": "an ordinary character"}
+    policy_rules["bad-duplicate-key"] = {
+        "section": "9.1", "says": "a `vkey` is used **once**"}
+    policy_rules["bad-two-log-lines"] = {
+        "section": "9.1", "says": "at most one `log` line"}
+    policy_rules["bad-form-feed"] = {
+        "section": "9.1", "says": "neither a separator nor content"}
+    policy_rules["witness-url-nbsp"] = {
+        "section": "9.1", "says": "and every other byte is content"}
     policy_rules["comment-tab-indented"] = {
         "section": "9.1", "says": "first character other than ASCII space or tab"}
     write(out / "policies" / "cases.json", canonjson.dumps({

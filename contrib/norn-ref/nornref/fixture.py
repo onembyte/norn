@@ -1052,6 +1052,30 @@ def policy_grammar() -> list[tuple[str, str, bool, str]]:
         ("bad-trailing-comment", f"{log}\n{pi}\nquorum pi # note\n", False,
          "`#` after a directive's fields is an ordinary character, so this is a "
          "`quorum` line with two names; a reader that strips from `#` accepts it"),
+        # Cold gate run 11, D2 and D12. §9.1's `log lines` row argued from two
+        # rules the table never stated: key uniqueness (which the reference
+        # parser did not enforce, so one key under two names parsed there and
+        # was an error in Go) and at-most-one-`log` (which NEITHER enforced).
+        # D12 is the third: the whitespace ban reads as examples, and the
+        # reference used Unicode `isspace`, refusing a non-breaking space Go
+        # accepted.
+        ("bad-duplicate-key",
+         f"{log}\nwitness a {witness_vkey('pi')}\nwitness b {witness_vkey('pi')}\n"
+         "group home 2 a b\nquorum home\n", False,
+         "one key under two names: `2 of a b` is then met by one witness "
+         "answering once, which is the `group` members rule one level down"),
+        ("bad-two-log-lines",
+         f"{log}\nlog {note.vkey(ORIGIN, KEYS['logkey2'].public)} {LOG_URLS[0]}\n{pi}\nquorum pi\n", False,
+         "two `log` lines carrying two DIFFERENT keys, so key uniqueness cannot "
+         "catch it -- at most one is its own rule"),
+        ("bad-form-feed", f"{log}\n{pi}\nquorum\fpi\n", False,
+         "the third of §9.1's three banned bytes; `bad-vertical-tab` and "
+         "`bad-carriage-return` cover the other two"),
+        ("witness-url-nbsp",
+         f"{log}\nwitness pi {witness_vkey('pi')} https://example/\u00a0w\nquorum pi\n",
+         True, "the ban is a CLOSED set of three bytes and every other byte is "
+         "content: a reader using a Unicode whitespace definition refuses this "
+         "policy, which §9.1 allows"),
         ("witness-url-fragment",
          f"{log}\nwitness pi {witness_vkey('pi')} https://example/w#tag\nquorum pi\n",
          True, "a `#` inside a field is content: a reader for which `#` is illegal "

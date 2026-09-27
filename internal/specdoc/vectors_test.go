@@ -1473,3 +1473,49 @@ func TestTheFreshnessStatesAreTestedInAStatedOrder(t *testing.T) {
 			"which is what makes S_hard a limit the network cannot raise")
 	}
 }
+
+// --- Cold-model gate run 11, defects D2, D5 and D12 ---------------------
+
+func TestThePolicyGrammarStatesTheRulesItArguesFrom(t *testing.T) {
+	doc := load(t)
+	section, ok := doc.Section("9.1")
+	if !ok {
+		t.Fatal("§9.1 is missing")
+	}
+	// The `log lines` row argues from two rules. Both have to be rules.
+	for _, c := range []struct{ needle, why string }{
+		{"a `vkey` is used **once**",
+			"the `log lines` row leans on key uniqueness and the table never " +
+				"stated it — the reference parser did not enforce it, so one key " +
+				"under two names parsed there and was an error in Go"},
+		{"at most one `log` line",
+			"the same row asserts it as a consequence, and it is not one: two " +
+				"`log` lines may carry two different keys, and until run 11 " +
+				"neither implementation enforced it"},
+		{"and every other byte is content",
+			"§9.1 names `\\r`, `\\v`, `\\f` after an em dash, which reads as " +
+				"examples; the reference used Unicode `isspace` and refused a " +
+				"non-breaking space that Go accepted"},
+	} {
+		if !strings.Contains(section.Body, c.needle) {
+			t.Errorf("§9.1 does not say %q — %s", c.needle, c.why)
+		}
+	}
+}
+
+// D5. `bad-empty-group` is `group g all` — three fields — so the field-count
+// row refuses it before the members row is reached. Both readings refuse, so
+// there is no hazard; the fault is that §12.1 credits it to the members rule.
+func TestTheEmptyGroupCaseIsCreditedToTheRuleThatRefusesIt(t *testing.T) {
+	doc := load(t)
+	section, ok := doc.Section("12.1")
+	if !ok {
+		t.Fatal("§12.1 is missing")
+	}
+	if !strings.Contains(section.Body, "**refused by the field count row**") {
+		t.Error("§12.1 lists `bad-empty-group` under the restated grammar as if it " +
+			"exercised the `group` members rule. It does not: the line has three " +
+			"fields, so the field-count row fires first and the members rule is " +
+			"subsumed")
+	}
+}

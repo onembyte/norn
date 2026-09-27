@@ -299,3 +299,92 @@ func TestTheCommentRuleIsPinnedInBothDirections(t *testing.T) {
 			"does not separate the comment readings", err)
 	}
 }
+
+// --- Cold-model gate run 11, defects D2 and D12 -------------------------
+//
+// §9.1's `log lines` row argues that a Norn policy carries at most one `log`
+// line "since a `log` line that is present must name `norn.trust.log_key` and
+// **no key may appear twice in one policy**, a second one cannot be written".
+// Both premises are rules; neither appears anywhere else in the document. The
+// table they sit in is introduced as "the rest of the grammar, stated because
+// a restatement that leaves it out is not enough to write an agreeing
+// verifier" — and it left these out.
+//
+// Measured before fixing, the two implementations already disagreed:
+//
+//	same key under two names   Go refuses     · reference accepts
+//	two `log` lines            Go accepts     · reference accepts   (nobody)
+//	U+00A0 inside a URL        Go accepts     · reference refuses
+//
+// The last is D12: §9.1 names `\r`, `\v`, `\f` after an em dash, which reads
+// as examples. Go took it as the whole set; the reference used Unicode
+// `isspace`, which makes a non-breaking space an error. The set is closed —
+// those three bytes and nothing else — so every other byte is content.
+//
+// None of this is cosmetic. Policy text is carried verbatim in a `policy` log
+// entry, which is `decode` unless it parses, so a policy one implementation
+// refuses and the other accepts splits `state.json` — a byte-identical MUST —
+// and with it every subsequent checkpoint's quorum.
+
+func TestAKeyIsUsedOnceInAPolicy(t *testing.T) {
+	const key = "norn-witness/pi+051d1c51+BHeagefoK0s3F5shdMl1Ahsd1ZCE9MC5F5gvM3cLTnZa"
+	good := "witness a " + key + "\nquorum a\n"
+	if _, err := Parse(good); err != nil {
+		t.Fatalf("the control policy does not parse: %v", err)
+	}
+	// The same key under two names. `group home 2 a b` is then met by one
+	// witness answering once, which is exactly what §9.1's `group` members row
+	// exists to prevent — stated there for members and missing for keys.
+	twice := "witness a " + key + "\nwitness b " + key + "\nquorum a\n"
+	if _, err := Parse(twice); err == nil {
+		t.Error("one key under two names was accepted; a quorum over `a` and `b` " +
+			"is then met by a single witness")
+	}
+}
+
+func TestAPolicyCarriesAtMostOneLogLine(t *testing.T) {
+	const a = "norn/x+bea4a666+AV6v97lmGyW99eHglI8syFAU2uY+/HuHHq0VYz9Rmio1"
+	const b = "norn/y+11111111+AV6v97lmGyW99eHglI8syFAU2uY+/HuHHq0VYz9Rmio2"
+	const key = "norn-witness/pi+051d1c51+BHeagefoK0s3F5shdMl1Ahsd1ZCE9MC5F5gvM3cLTnZa"
+	if _, err := Parse("log " + a + "\nwitness w " + key + "\nquorum w\n"); err != nil {
+		t.Fatalf("one log line must parse: %v", err)
+	}
+	// Two different keys, so the uniqueness rule cannot catch this one. §9.1
+	// asserts at most one; until now neither implementation enforced it, so
+	// the assertion was true of no parser.
+	two := "log " + a + "\nlog " + b + "\nwitness w " + key + "\nquorum w\n"
+	if _, err := Parse(two); err == nil {
+		t.Error("two `log` lines were accepted; §9.1 says a policy carries at " +
+			"most one, and a reader takes the log key from `norn.trust.log_key` " +
+			"rather than guessing which line meant it")
+	}
+}
+
+func TestTheWhitespaceBanIsAClosedSetOfThreeBytes(t *testing.T) {
+	const key = "norn-witness/pi+051d1c51+BHeagefoK0s3F5shdMl1Ahsd1ZCE9MC5F5gvM3cLTnZa"
+	line := func(mid string) string {
+		return "witness a " + key + " https://example/" + mid + "w\nquorum a\n"
+	}
+	// The three that are errors, named in §9.1.
+	for _, c := range []struct{ name, ch string }{
+		{"carriage return", "\r"}, {"vertical tab", "\v"}, {"form feed", "\f"},
+	} {
+		if _, err := Parse(line(c.ch)); err == nil {
+			t.Errorf("a %s passed as content; §9.1 bans it by name", c.name)
+		}
+	}
+	// ...and everything else is content, including bytes a Unicode-aware
+	// `isspace` would call whitespace. Closing the set is the point: an open
+	// one leaves each implementer to pick a different definition.
+	for _, c := range []struct{ name, ch string }{
+		{"non-breaking space", " "},
+		{"en quad", " "},
+		{"ideographic space", "　"},
+	} {
+		if _, err := Parse(line(c.ch)); err != nil {
+			t.Errorf("a %s was refused (%v); §9.1's ban is three bytes and every "+
+				"other byte is content, so a Unicode whitespace definition "+
+				"refuses policies this document allows", c.name, err)
+		}
+	}
+}
