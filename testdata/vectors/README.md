@@ -79,5 +79,12 @@ a `tlog-tiles` reader. `trust-bad/`, `requests-bad/` and `log/*.reason` are the
 half most implementations get wrong: each is a file that **must be refused**,
 and for the stated reason.
 
+**`cases.json`'''s `says` field is a semantic hint**, not the bytes your
+implementation must produce. §5.2 gives replay a closed list of reason codes and
+no other layer has one, so outside replay there is nothing to compare: map each
+`says` onto your own error by hand, once. What it is for is the discipline it
+enforces here — a negative must be refused for its own rule and nothing else,
+and a phrase naming that rule is how the generators check it.
+
 A file being absent from this list is a bug in the list — a test in
 `internal/specdoc` fails if anything here is undescribed.

@@ -1653,3 +1653,55 @@ func genesisName(t *testing.T, root, dir string) string {
 	s, _ := body["name"].(string)
 	return s
 }
+
+// --- Cold-model gate run 11, defect D10 ---------------------------------
+//
+// §5.2 is a closed, normative list of sixteen reason codes — for replay, and
+// for nothing else. The trust file, the policy parser, the note and checkpoint
+// parsers, the bundle and evidence checkers, the request decoder and the CBOR
+// profile all refuse without one. The vectors nevertheless score against
+// strings: `entries-hostile`'s `says` reads `simple value`, `deeper than`,
+// `map key must be 1-23 bytes`; `fork`'s reads `can only speak for what it
+// holds`. None of those phrases is in this document.
+//
+// Run 11 reverse-engineered its error vocabulary from `cases.json` to make the
+// suite pass — so for those checks the suite measured its ability to read
+// `cases.json`, not the specification. §12 has to say what `says` is, or the
+// next reader does the same.
+
+func TestTheSuiteSaysWhatItsSaysFieldIs(t *testing.T) {
+	doc := load(t)
+	section, ok := doc.Section("12")
+	if !ok {
+		t.Fatal("§12 is missing")
+	}
+	for _, c := range []struct{ needle, why string }{
+		{"`says` is a **semantic hint**",
+			"a reader who takes it for a required string reverse-engineers an " +
+				"error vocabulary out of a JSON file instead of reading this document"},
+		{"not the bytes your implementation must produce",
+			"the suite asks that a negative be refused for the right reason, not " +
+				"that two implementations phrase it the same way"},
+	} {
+		if !strings.Contains(section.Body, c.needle) {
+			t.Errorf("§12 does not say %q — %s", c.needle, c.why)
+		}
+	}
+}
+
+// ...and the three rules whose only pin is a `says` match have to be named,
+// because a semantic hint cannot carry a normative ordering.
+func TestTheOrderingsPinnedOnlyByASaysMatchAreNamed(t *testing.T) {
+	doc := load(t)
+	section, ok := doc.Section("12.1")
+	if !ok {
+		t.Fatal("§12.1 is missing")
+	}
+	if !strings.Contains(section.Body, "pinned only by a `says` match") {
+		t.Error("§12.1 does not record that §10's signature-before-origin ordering " +
+			"and §11.1's two step orderings are observable only through `says`. " +
+			"Outside replay there is no reason code, so two refusals are the same " +
+			"event to a black-box run — and an ordering between them cannot be " +
+			"seen at all")
+	}
+}

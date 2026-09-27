@@ -1148,6 +1148,20 @@ libraries neither implementation wrote: `transparency-dev/formats` parses the
 checkpoint, and `x/mod/sumdb/tlog` checks every inclusion proof. Nothing in the
 suite is checked only against its own author.
 
+**What `cases.json`'s `says` field is.** Every negative in this suite carries a
+`says` string, and **`says` is a **semantic hint** — the rule the case is about,
+in words, and **not the bytes your implementation must produce**.** §5.2 gives
+replay a closed list of reason codes; no other refusing layer has one, so
+outside replay there is nothing for a second implementation to emit and nothing
+to compare. A reader is expected to map each `says` onto its own error by hand,
+once, and a suite runner that string-matches it is testing this repository's
+phrasing rather than the document (cold gate run 11, D10, where a fresh reader
+reverse-engineered its whole error vocabulary out of these files).
+
+What `says` *is* for is the discipline it enforces on the suite itself: a
+negative must be refused **for its own rule and nothing else**, and a phrase
+naming that rule is how the generators and the placement guards check it.
+
 | file | contents |
 |---|---|
 | `keys.json` | every test key: Ed25519 `{seed, public, kid}` by name, X25519 public keys by name, and `net` |
@@ -1281,6 +1295,15 @@ this table drifted out of date the moment one was.
 **What is not vectored.** A suite that looks complete is worse than one that
 admits its holes, so:
 
+- **Three orderings that are pinned only by a `says` match**, and therefore by
+  a JSON file rather than by this document: §10's rule that the **signature
+  decides before the origin** (`proofs-bad/foreign-checkpoint`), and §11.1's two
+  step orderings (`fork/bad-size-mismatch` and `fork/bad-other-origin` against
+  their neighbours). Outside replay there is no reason code, so both readings
+  refuse and a black-box run sees one event either way; the ordering is visible
+  only in the words. §5.2 is the artefact that would fix this — a closed
+  vocabulary makes an ordering observable — and extending it to the verifier and
+  evidence layers is not done (cold gate run 11, D10).
 - **`quorum none` accepting an uncosigned head.** It needs a second trust
   anchor, and one is not shipped.
 - **§4.3's "a key contributes at most once".** `sigs` is sorted by `kid` with
