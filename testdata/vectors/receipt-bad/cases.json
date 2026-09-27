@@ -1,0 +1,1 @@
+{"cases":[{"name":"leading-zero.note","says":"the deadline line is canonical decimal, as SPEC 6's size line is: `0` + the honest deadline is the same number and a second spelling of it","section":"7"}],"comment":"receipts that MUST be refused. Each is `receipt.note` with one thing changed and re-signed, so the note verifies and only the named rule can refuse it"}

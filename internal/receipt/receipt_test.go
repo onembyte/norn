@@ -4,12 +4,17 @@ import (
 	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/onembyte/norn/internal/note"
+	"github.com/onembyte/norn/internal/trust"
 )
 
 const origin = "norn/receipt-test"
@@ -188,4 +193,94 @@ func TestAPreEpochClockDoesNotWrap(t *testing.T) {
 		time.Unix(-100, 0)); err != nil {
 		t.Errorf("a clock set before 1970 refused a valid receipt: %v", err)
 	}
+}
+
+// --- Cold-model gate run 11, defect D4 ----------------------------------
+//
+// §6 is emphatic that the checkpoint's size line is canonical decimal — "`0124`
+// and `124` are the same number and two spellings of one head" — and §7 showed
+// the receipt's deadline as a bare `<uint>` with no such rule and no vector, so
+// `ReceiptDeadlineLax` passed all 622 checks.
+//
+// It matters less than for a checkpoint, since a receipt is not gossiped and
+// nothing is keyed on its bytes. But §7 sells a receipt as "non-repudiable
+// proof of log misbehaviour", which means two parties will one day compare two
+// copies of one, and a number with two spellings is a comparison with two
+// answers. The asymmetry had no reason behind it.
+
+func TestTheDeadlineIsCanonicalDecimal(t *testing.T) {
+	root := filepath.Join("..", "..", "testdata", "vectors")
+	padded, err := os.ReadFile(filepath.Join(root, "receipt-bad", "leading-zero.note"))
+	if err != nil {
+		t.Fatalf("no receipt negative for the deadline's spelling: %v", err)
+	}
+	honest, err := os.ReadFile(filepath.Join(root, "receipt.note"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	keys := anchorLogKey(t, root)
+	leaf, origin, deadline := receiptFacts(t, root)
+
+	// The control parses, so the vector differs from it in one thing only.
+	if _, err := Check(string(honest), keys, origin, leaf, time.Unix(deadline-1, 0)); err != nil {
+		t.Fatalf("the shipped receipt does not verify: %v", err)
+	}
+	if _, err := Check(string(padded), keys, origin, leaf, time.Unix(deadline-1, 0)); err == nil {
+		t.Error("a deadline written with a leading zero was accepted; §7 says " +
+			"canonical decimal, as §6's size line is")
+	}
+
+	// ...and the only thing wrong with it is that zero. The note is re-signed
+	// over its own text, so its signature is impeccable -- verify it under the
+	// log key -- and stripping the zero from the TEXT gives the honest text
+	// back exactly. The signature lines differ of necessity and are not part
+	// of the comparison.
+	paddedText, err := note.Verify(string(padded), keys)
+	if err != nil {
+		t.Fatalf("the vector's own signature does not verify (%v), so it would be "+
+			"refused for that rather than for the deadline's spelling", err)
+	}
+	honestText, err := note.Verify(string(honest), keys)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Replace(paddedText, "\n0", "\n", 1) != honestText {
+		t.Errorf("the vector's text is not the honest text with one leading zero "+
+			"added:\n got %q\nwant %q", paddedText, honestText)
+	}
+}
+
+func receiptFacts(t *testing.T, root string) (leaf []byte, origin string, deadline int64) {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(root, "receipt.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Origin   string `json:"origin"`
+		LeafHash string `json:"leaf_hash"`
+		Deadline int64  `json:"deadline"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	leaf, err = hex.DecodeString(doc.LeafHash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return leaf, doc.Origin, doc.Deadline
+}
+
+// anchorLogKey is the verifier key the shipped trust file names for the log.
+func anchorLogKey(t *testing.T, root string) []string {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(root, "trust.cbor"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, err := trust.Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return []string{doc.LogKey}
 }

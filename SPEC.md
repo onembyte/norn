@@ -604,8 +604,15 @@ Response `200` body is a signed note (`c2sp.org/signed-note`) by the log key:
 norn/receipt/v1
 <origin>
 <b64 leaf hash>
-<uint deadline unix seconds>       # = now + params.mmd
+<uint deadline unix seconds>       # = now + params.mmd, canonical decimal
 ```
+
+The `deadline` line is **canonical decimal**, exactly as §6's size line is: no
+leading zeroes, no sign. §7 sells a receipt as "non-repudiable proof of log
+misbehaviour", which means two parties will one day compare two copies of one,
+and a number with two spellings is a comparison with two answers. The rule was
+stated for the checkpoint three sections earlier and left implicit here, which
+is an asymmetry with no reason behind it (cold gate run 11, D4).
 
 The note framing is `c2sp.org/signed-note`, restated here so an implementer needs
 nothing else (D22). These rules are **verified against `golang.org/x/mod/sumdb/note`**,
@@ -1156,6 +1163,7 @@ suite is checked only against its own author.
 | `proofs/<device>.bundle` | one §8.1 proof bundle per active device, each proving the entry that made that device active; `cases.json` gives the origin, the log-key seed and the device list |
 | `trust.cbor` · `trust.toml` · `trust.fingerprint` | the trust anchor (§9), authoritative bytes, human rendering, and its fingerprint |
 | `receipt.note` | a submission receipt: the signed note itself (§7) |
+| `receipt-bad/<name>.note` | receipts that MUST be refused (§7). Each is `receipt.note` with one thing changed and **re-signed**, so the note verifies under the log key and only the named rule can refuse it; `cases.json` gives that rule |
 | `policies/<name>.txt` | §9.1's restated grammar, one whole policy per rule. `cases.json` marks each `accept` true or false and says which rule it is about |
 | `log-empty/` | a log with **no entries**: `manifest.json` and the zero state §5.1 says it replays to. Not a `bad-genesis` abort — there is nothing to reject |
 | `trust-good/<name>.cbor` | trust files §9.1 **permits**, for the members it marks optional or leaves open. `cases.json` lists them |
@@ -1233,7 +1241,7 @@ this table drifted out of date the moment one was.
 | §5.3 a witness counts at its **newest** verifying line | `served-twice-cosigned/`: one witness answers twice and both lines verify, so the head is valid and only the tie-break decides. `cases.json` records the instant it must come out at, and the one an oldest-line reader would get instead | `checkpoints-bad/12-second-line-from-one-witness` cannot pin this — its second line does not verify, so §10's per-line rule refuses the checkpoint first |
 | §5.3 the derivation of `T` | `served/checkpoint`, whose three witnesses cosign seven seconds apart, so the **newest** and the **oldest** are both separated from the answer; `proofs/cases.json` records the value `T` must come out as | — |
 | §5.3 evaluation time | `proven/cases.json`: the admitted set at four values of `T` — no clock, before, **exactly at**, and after the one deadline the fixture carries. `state.json` is clock-independent by design, so this is the only vector that exercises expiry | the `at-the-deadline` case, where `expires == T` and the device is **out** |
-| §7 receipt | `receipt.note` | — |
+| §7 receipt | `receipt.note` | `receipt-bad/leading-zero.note`: the same receipt with one leading zero on the deadline, re-signed. §6 fixes a checkpoint's size line at exactly one spelling and §7 showed the deadline as a bare `<uint>`, so `ReceiptDeadlineLax` passed all 622 checks. A receipt is offered as non-repudiable proof, which means two copies of one get compared (cold gate run 11, D4) |
 | §7 the note framing | `served/checkpoint` | `checkpoints-bad/13-ascii-dash-signature` (an ASCII hyphen for §7's em dash), `14-unterminated-signature-block` (the final line does not end in a newline), `15-size-leading-zero` (a size line that is not canonical decimal) and `16-two-log-signatures` — two lines under the log's key, one forged. **This implementation accepted the last two** until run 8 asked for them |
 | §9.1 a verifier key's id binds its name, key and algorithm | `trust.cbor` | `37-log-key-id-mismatch` and `39-witness-key-id-mismatch`: the right name, the right key, the right algorithm and one hex digit of the id changed — the log key in one, a witness key in the other. Each carries the damaged key in the **policy** too, so the correspondence rule agrees and only the id check can refuse it. `37` did not until cold gate run 11 (D3) found this row claiming otherwise, and a loader that treats a declared id as an opaque label passed all 622 checks. The witness case closes D9's pair as well: an id is a *claim*, and "the id binds the name" is a property only while somebody recomputes it |
 | §5.1 an empty log | `log-empty/`: the zero state, `rejected` empty | a reader that treats *no* genesis as a *missing* one reports `bad-genesis` and differs by a whole field |

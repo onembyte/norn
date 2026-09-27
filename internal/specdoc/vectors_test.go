@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 
+	cborpkg "github.com/onembyte/norn/internal/cbor"
+	entrypkg "github.com/onembyte/norn/internal/entry"
 	"github.com/onembyte/norn/internal/forkevidence"
 	"github.com/onembyte/norn/internal/policy"
 	"github.com/onembyte/norn/internal/proof"
@@ -1551,4 +1553,103 @@ func TestTheVectorsREADMEStatesTheRightCounts(t *testing.T) {
 				c.dir, n, digits, spelled)
 		}
 	}
+}
+
+// --- Cold-model gate run 11, defect D6 ----------------------------------
+//
+// §4.0 counts `name`, `reason`, `text` and label values in **bytes**. The
+// prose is unambiguous; the vectors were not. Every over-long negative was
+// pure ASCII and exactly one byte past its cap, so bytes and characters gave
+// the same answer and `TextCapChars` and `LabelValueChars` — readers that
+// count runes — passed all 622 checks.
+//
+// §12.1 records finding and fixing precisely this for §4.0's map-key cap in
+// run 9 ("both were ASCII until run 9, so 23 bytes and 23 characters gave the
+// same answer everywhere"). The same fix was not carried to the four field
+// caps.
+//
+// `reason` is the clearest: free-form human text on a `revoke`, where 256
+// bytes is about 85 CJK characters. A revocation written in any non-Latin
+// script and run past the cap is `decode` for one reader and accepted by the
+// other, so the two disagree about whether the device is revoked at all —
+// and §5.3 makes `state.json` a byte-identical MUST.
+
+func TestTheByteCapsAreSeparatedFromCharacterCounting(t *testing.T) {
+	root := vectorRoot(t)
+	for _, c := range []struct {
+		what string
+		cap  int
+		text string
+	}{
+		{"revoke `reason`", 256, logEntryField(t, root, "-bad-revoke-reason-too-long", "reason")},
+		{"note `text`", 4096, logEntryField(t, root, "-bad-text-too-long", "text")},
+		{"genesis `name`", 64, genesisName(t, root, "14-name-too-long")},
+	} {
+		t.Run(c.what, func(t *testing.T) {
+			bytes := len(c.text)
+			runes := len([]rune(c.text))
+			if bytes <= c.cap {
+				t.Fatalf("%d bytes is not over the %d-byte cap", bytes, c.cap)
+			}
+			if runes > c.cap {
+				t.Errorf("%s is %d bytes and %d characters, and the cap is %d — over "+
+					"it both ways, so a reader counting characters refuses it too and "+
+					"nothing separates the two readings. It needs multi-byte content: "+
+					"over the cap in bytes and under it in characters",
+					c.what, bytes, runes, c.cap)
+			}
+		})
+	}
+}
+
+// logEntryField pulls one body field from the log entry whose name ends in
+// suffix, as a string.
+func logEntryField(t *testing.T, root, suffix, field string) string {
+	t.Helper()
+	var doc struct {
+		Entries []struct{ Name string } `json:"entries"`
+	}
+	readJSON(t, filepath.Join(root, "log", "manifest.json"), &doc)
+	for _, e := range doc.Entries {
+		if !strings.HasSuffix(e.Name, suffix) {
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join(root, "log", e.Name+".cbor"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		env, err := entrypkg.Decode(raw)
+		if err != nil {
+			// The entry is deliberately malformed for its own rule; read the
+			// field out of the raw map instead.
+			value, err := cborpkg.Decode(raw)
+			if err != nil {
+				t.Fatalf("%s does not decode at all: %v", e.Name, err)
+			}
+			m, _ := value.(map[string]any)
+			body, _ := m["body"].(map[string]any)
+			s, _ := body[field].(string)
+			return s
+		}
+		s, _ := env.Body[field].(string)
+		return s
+	}
+	t.Fatalf("no log entry named *%s", suffix)
+	return ""
+}
+
+func genesisName(t *testing.T, root, dir string) string {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(root, "genesis", dir, "00-genesis.cbor"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	value, err := cborpkg.Decode(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, _ := value.(map[string]any)
+	body, _ := m["body"].(map[string]any)
+	s, _ := body["name"].(string)
+	return s
 }

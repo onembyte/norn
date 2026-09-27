@@ -80,6 +80,14 @@ func Check(signed string, logKeys []string, origin string, leaf []byte, now time
 	if err != nil {
 		return nil, receiptErrorf("the deadline is not a unix timestamp: %w", err)
 	}
+	// Canonical decimal, exactly as §6's size line: no leading zeroes, no
+	// sign. §7 calls a receipt non-repudiable proof of log misbehaviour, which
+	// means two parties will one day compare two copies of one -- and a number
+	// with two spellings is a comparison with two answers (cold gate run 11,
+	// D4). `ParseUint` alone accepts `00123`.
+	if lines[3] != strconv.FormatUint(deadline, 10) {
+		return nil, receiptErrorf("the deadline %q is not canonical decimal", lines[3])
+	}
 
 	if leaf != nil && string(leaf) != string(hash) {
 		return nil, receiptErrorf("it promises a different entry than the one submitted")

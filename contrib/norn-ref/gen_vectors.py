@@ -33,7 +33,7 @@ def write(path: pathlib.Path, data: bytes | str) -> None:
 OWNED = frozenset({
     "keys.json", "entries", "log", "genesis", "state.json",
     "trust.cbor", "trust.toml", "trust.fingerprint", "trust-bad", "trust-good",
-    "receipt.note", "receipt.json", "requests", "requests-bad", "policies",
+    "receipt.note", "receipt.json", "receipt-bad", "requests", "requests-bad", "policies",
     "entries-hostile", "proven", "log-empty",
 })
 
@@ -406,6 +406,33 @@ def write_trust(out: pathlib.Path) -> None:
         "leaf_hash": genesis_leaf,
         "deadline": deadline,
         "text_sha256": __import__("hashlib").sha256(text.encode()).digest(),
+    }) + "\n")
+
+    # Cold gate run 11, D4. §7 showed the deadline as a bare <uint> with no
+    # canonicality rule and no vector, while §6 is emphatic that the
+    # checkpoint's size line has exactly one spelling -- so `ReceiptDeadlineLax`
+    # passed all 622 checks. A receipt is "non-repudiable proof of log
+    # misbehaviour", which means two parties will one day compare two copies of
+    # one, and a number with two spellings is a comparison with two answers.
+    #
+    # The same receipt with one leading zero, re-signed so the signature is
+    # impeccable and only the spelling is wrong.
+    padded_text = note.receipt_text(doc["origin"], genesis_leaf, deadline)
+    lines = padded_text.split("\n")
+    lines[3] = "0" + lines[3]
+    padded = note.sign("\n".join(lines), doc["origin"], fixture.KEYS["logkey"])
+    write(out / "receipt-bad" / "leading-zero.note", padded)
+    write(out / "receipt-bad" / "cases.json", canonjson.dumps({
+        "comment": "receipts that MUST be refused. Each is `receipt.note` with one "
+                   "thing changed and re-signed, so the note verifies and only the "
+                   "named rule can refuse it",
+        "cases": [{
+            "name": "leading-zero.note",
+            "says": "the deadline line is canonical decimal, as SPEC 6's size "
+                    "line is: `0` + the honest deadline is the same number and a "
+                    "second spelling of it",
+            "section": "7",
+        }],
     }) + "\n")
 
 

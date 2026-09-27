@@ -784,8 +784,17 @@ def log() -> list[LogItem]:
     # §4.0 caps `revoke`'s `reason` at 256 bytes. `bad-text-too-long` covers
     # `note` and `policy`, whose cap is 4096 and a different rule -- so this
     # one was stated, and the Python reference did not implement it at all.
+    # Cold gate run 11, D6. This was 257 ASCII bytes -- over the cap in bytes
+    # AND in characters, so a reader counting runes refused it too and nothing
+    # separated the two readings. `reason` is the clearest case of the four:
+    # free-form human text, where 256 bytes is about 85 CJK characters, so a
+    # revocation written in any non-Latin script is `decode` for one reader and
+    # accepted by the other -- and the two then disagree about whether the
+    # device is revoked at all. 129 two-byte characters is 258 bytes and 129
+    # characters: over the cap one way and well under it the other. §12.1
+    # records the same fix for the map-key cap in run 9.
     b.add(f"{b.index}-bad-revoke-reason-too-long", b.build(
-        "revoke", {"device_id": "nas", "reason": "x" * 257}, roots3), "decode")
+        "revoke", {"device_id": "nas", "reason": "é" * 129}, roots3), "decode")
 
     # §4.3 deliberately does NOT constrain the embedded request's `ts` against
     # the entry's: the device is headless and its clock is advisory (§4.1).
@@ -978,7 +987,9 @@ def genesis_aborts() -> list[tuple[str, bytes, "replay.Anchor"]]:
     # §4.0 bounds `name` at 1-64 bytes and `genesis/` had no case at either
     # end, so `no-name-len` passed -- and the Python reference had no such
     # check, which is what an unpinned rule looks like from the inside.
-    bad_body("14-name-too-long", name="n" * 65)
+    # Run 11, D6: 33 two-byte characters is 66 bytes and 33 characters, over
+    # the 64-byte cap and under it in runes.
+    bad_body("14-name-too-long", name="é" * 33)
     # Cold gate run 8, D20: the keys of a genesis `params` were checked and the
     # values were not, so `genesis-params-no-typecheck` and
     # `genesis-params-nonempty` both passed -- while a `params` *entry* has
@@ -1230,7 +1241,7 @@ def trust_rejections() -> list[tuple[str, dict[str, Any]]]:
         #
         # `14-missing-name` covers an absent `name`; the 1-64 byte bound has
         # two ends and neither was reached.
-        ("26-name-too-long", damaged(name="n" * 65)),
+        ("26-name-too-long", damaged(name="é" * 33)),  # run 11, D6: 66 bytes, 33 chars
         ("27-name-empty", damaged(name="")),
         # `24-missing-log-urls` covers absent. Present-and-empty is a different
         # code path in both implementations.
@@ -1711,7 +1722,10 @@ def field_negatives() -> list[tuple[str, bytes]]:
     ok = {"v": 1, "ts": T0 + 9000, "net": NET, "device_id": "probe",
           "device_pk": KEYS["spare"].public, "wg_pk": WG["rogue"]}
 
-    long_note = entry.new("note", NET, ts=T0 + 9000, after=62, body={"text": "x" * 4097})
+    # Run 11, D6: multi-byte, so 4098 bytes and 2049 characters -- over the
+    # 4096-byte cap and far under it counted in runes.
+    long_note = entry.new("note", NET, ts=T0 + 9000, after=62,
+                          body={"text": "é" * 2049})
     _signed(long_note, [("signer1", "signer")])
 
     bad_sig = entry.new("note", NET, ts=T0 + 9000, after=62, body={"text": "short sig"})
@@ -1813,7 +1827,9 @@ def request_negatives() -> list[tuple[str, str, str]]:
         ("bool-expires", mutate(expires=True), "a CBOR bool where a uint is required"),
         ("expires-at-ts", _expires_at_ts(), "expires must be after ts"),
         ("too-many-labels", mutate(labels={f"k{i}": "v" for i in range(33)}), "over 32 labels"),
-        ("oversize-label", mutate(labels={"ip": "x" * 257}), "label over 256 bytes"),
+        # Run 11, D6: multi-byte, so 258 bytes and 129 characters -- over the
+        # 256-byte cap and under it counted in runes.
+        ("oversize-label", mutate(labels={"ip": "é" * 129}), "label over 256 bytes"),
         ("non-string-label", mutate(labels={"ip": 1}), "label value is not text"),
         ("ts-is-text", mutate(ts="now"), "ts is not a uint"),
         ("unsorted-keys", text_of_unsorted(base), "map keys out of §4.0 order"),
