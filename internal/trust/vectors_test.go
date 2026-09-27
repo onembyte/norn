@@ -51,6 +51,12 @@ func TestTheLogKeyNegativesDoNotAlsoBreakTheCorrespondenceRule(t *testing.T) {
 		"11-log-key-name-mismatch",
 		"13-origin-only",
 		"16-log-key-is-a-cosignature-key",
+		// Run 11, D3: §12.1 claimed this one got the same treatment and it did
+		// not. Its damaged id was left out of the policy, so the correspondence
+		// rule refused the file and `TrustNoKeyIDCheck` -- a loader that takes
+		// a declared key id as an opaque label, which is the natural thing to
+		// do since the id is also what you match on -- passed all 622 checks.
+		"37-log-key-id-mismatch",
 	} {
 		t.Run(name, func(t *testing.T) {
 			doc := trustBad(t, name)
@@ -91,4 +97,97 @@ func TestTheLogKeyNegativesDoNotAlsoBreakTheCorrespondenceRule(t *testing.T) {
 			}
 		})
 	}
+}
+
+// --- Cold-model gate run 11, defects D3 and D9 --------------------------
+//
+// The witness half of the same rule. §7 makes a key id bind the name, the
+// algorithm and the public key, and §10 leans on that: a cosignature line
+// counts when its name **and** id match. Both halves of that test imply each
+// other — but only while somebody recomputes the id. Take the recomputation
+// away and `TrustNoKeyIDCheck,CosigIDOnlyMatch` has verified nothing about the
+// name at all, and the pair passed all 622 checks because no shipped trust
+// file carried a mis-declared *witness* key id.
+
+func TestTheWitnessKeyIDNegativeDoesNotAlsoBreakTheCorrespondenceRule(t *testing.T) {
+	const name = "39-witness-key-id-mismatch"
+	doc := trustBad(t, name)
+
+	witnesses, ok := doc["witnesses"].([]any)
+	if !ok || len(witnesses) == 0 {
+		t.Fatalf("%s carries no witnesses", name)
+	}
+	text, _ := doc["policy"].(string)
+	if text == "" {
+		t.Fatalf("%s carries no policy", name)
+	}
+
+	// Every witness the array lists must appear in the policy under the same
+	// name with the same key, or §9.1's correspondence rule refuses the file
+	// before the key-id rule is reached — which is exactly how `37` went wrong.
+	inPolicy := map[string]string{}
+	for _, line := range strings.Split(text, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) >= 3 && fields[0] == "witness" {
+			inPolicy[fields[1]] = fields[2]
+		}
+	}
+	var damaged int
+	for _, w := range witnesses {
+		m, _ := w.(map[string]any)
+		wname, _ := m["name"].(string)
+		key, _ := m["key"].(string)
+		got, listed := inPolicy[wname]
+		if !listed {
+			t.Errorf("witness %q is in the array and not in the policy, so the "+
+				"correspondence rule refuses this file", wname)
+			continue
+		}
+		if got != key {
+			t.Errorf("witness %q is %s in the array and %s in the policy; the "+
+				"damage must be carried into both or the correspondence rule "+
+				"decides instead of the key-id rule", wname, key, got)
+		}
+		if key != honestWitnessKey(t, wname) {
+			damaged++
+		}
+	}
+	if damaged != 1 {
+		t.Errorf("%d witness keys differ from the honest anchor's; the case needs "+
+			"exactly one, or it is about something other than a single mis-declared id",
+			damaged)
+	}
+
+	raw, err := os.ReadFile(filepath.Join("..", "..", "testdata", "vectors",
+		"trust-bad", name+".cbor"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := Parse(raw)
+	if err == nil {
+		err = parsed.Validate()
+	}
+	if err == nil {
+		t.Error("the file must be refused")
+	}
+}
+
+// honestWitnessKey is the key the shipped anchor publishes for this witness.
+func honestWitnessKey(t *testing.T, name string) string {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join("..", "..", "testdata", "vectors", "trust.cbor"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, err := Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, w := range doc.Witnesses {
+		if w.Name == name {
+			return w.Key
+		}
+	}
+	t.Fatalf("the anchor lists no witness %q", name)
+	return ""
 }

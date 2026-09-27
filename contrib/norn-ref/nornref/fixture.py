@@ -1254,7 +1254,24 @@ def trust_rejections() -> list[tuple[str, dict[str, Any]]]:
         # and a cosignature key over the same public key two different
         # verifiers. Every shipped key had a correct id, so a reader that never
         # checked one passed the suite.
-        ("37-log-key-id-mismatch", damaged(log_key=_vkey_with_wrong_id())),
+        # Cold gate run 11, D3. This one was given a different treatment from
+        # `11`, `13` and `16` while §12.1 claimed the same: the damaged id was
+        # left out of the policy, so the `log`-line correspondence rule refused
+        # the file and `TrustNoKeyIDCheck` -- a loader that takes a declared id
+        # as an opaque label -- passed all 622 checks. The damage goes in both
+        # halves now, so only the id check can refuse it.
+        ("37-log-key-id-mismatch", damaged(
+            log_key=_vkey_with_wrong_id(),
+            policy=_policy_with(log_key=_vkey_with_wrong_id()))),
+        # D9, the composite `37` alone cannot close. §7 makes a key id bind the
+        # name, and §10's cosignature match leans on that -- but only while
+        # somebody recomputes the id. With `TrustNoKeyIDCheck` and a line
+        # matched on the id alone, a reader has verified nothing about the
+        # name, and no shipped file carried a mis-declared WITNESS id.
+        ("39-witness-key-id-mismatch", damaged(
+            witnesses=[dict(base["witnesses"][0], key=_witness_vkey_with_wrong_id("pi"))]
+            + [dict(w) for w in base["witnesses"][1:]],
+            policy=_policy_with(witness_key=("pi", _witness_vkey_with_wrong_id("pi"))))),
         # Cold gate run 9, D8. §9.1 states MAX_TRUST_BYTES and nothing in the
         # suite was ever close, so a reader with no cap -- or a cap of a
         # million -- passed everything. Padded with *valid* `log_urls`, whose
@@ -1279,6 +1296,18 @@ def _vkey_with_wrong_id() -> str:
     return "+".join([name, flipped, data])
 
 
+def _witness_vkey_with_wrong_id(name: str) -> str:
+    """A witness's verifier key with one hex digit of its key id flipped.
+
+    The name, the algorithm and the public key are all correct, so only the id
+    check can refuse it -- provided the same string goes into the policy too
+    (run 11, D3 is the case where it did not).
+    """
+    label, key_id, data = witness_vkey(name).split("+", 2)
+    flipped = ("1" if key_id[0] != "1" else "2") + key_id[1:]
+    return "+".join([label, flipped, data])
+
+
 def _policy_with(**subs: str) -> str:
     """`policy_text()` with a `witness` renamed or the `log` key replaced.
 
@@ -1287,11 +1316,14 @@ def _policy_with(**subs: str) -> str:
     found in `07` and `08` and run 8 found again in `15`.
     """
     rename, log_key = subs.get("rename"), subs.get("log_key")
+    witness_key = subs.get("witness_key")
     lines = []
     for line in policy_text().split("\n"):
         fields = line.split(" ")
         if log_key and fields[0] == "log":
             fields[1] = log_key
+        if witness_key and fields[0] == "witness" and fields[1] == witness_key[0]:
+            fields[2] = witness_key[1]
         if rename and fields[0] == "witness" and fields[1] == "pi":
             fields[1] = rename
         if rename and fields[0] == "group":

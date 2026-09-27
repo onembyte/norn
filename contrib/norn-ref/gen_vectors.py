@@ -292,6 +292,11 @@ def write_trust_rejections(out: pathlib.Path) -> None:
     origin = {"section": "9.1", "says": "MUST equal `norn/` + lowercase unpadded"}
     ghash = {"section": "9.1", "says": "| `genesis_hash` | 32 bytes |"}
     logkey = {"section": "9.1", "says": "MUST parse as one, MUST NOT be a cosignature key"}
+    # Run 11, D3/D9. A verifier key declares its own id and the id is a hash of
+    # the name, the algorithm and the public key -- so it is a claim, not a
+    # label, and it only binds anything if somebody recomputes it.
+    keyid = {"section": "9.1",
+             "says": "a reader MUST **recompute**"}
     logname = {"section": "9.1", "says": "its note name MUST equal `origin`"}
     urls = {"section": "9.1", "says": "URL is non-empty"}
     witnesses = {"section": "9.1", "says": "A file with no witnesses MUST be rejected"}
@@ -322,7 +327,8 @@ def write_trust_rejections(out: pathlib.Path) -> None:
         "31-witness-open-schema": closed, "32-witness-name-too-long": wname,
         "33-log-url-empty-string": urls, "34-anchor-missing-member": anchor,
         "35-anchor-unknown-mode": mode, "36-policy-log-key-mismatch": polkey,
-        "37-log-key-id-mismatch": logkey, "38-oversize": size,
+        "37-log-key-id-mismatch": keyid, "38-oversize": size,
+        "39-witness-key-id-mismatch": keyid,
     }
     for name_, _ in fixture.trust_rejections():
         if name_ not in trust_rules:
