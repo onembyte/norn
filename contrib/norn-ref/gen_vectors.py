@@ -33,7 +33,7 @@ def write(path: pathlib.Path, data: bytes | str) -> None:
 OWNED = frozenset({
     "keys.json", "entries", "log", "genesis", "state.json",
     "trust.cbor", "trust.toml", "trust.fingerprint", "trust-bad", "trust-good",
-    "receipt.note", "receipt.json", "requests", "requests-bad", "policies",
+    "receipt.note", "receipt.json", "receipts-bad", "requests", "requests-bad", "policies",
     "entries-hostile", "proven", "log-empty",
 })
 
@@ -336,9 +336,13 @@ def write_trust(out: pathlib.Path) -> None:
     write(out / "trust.fingerprint", trust.fingerprint(doc) + "\n")
 
     genesis_leaf = doc["genesis_hash"]
-    deadline = fixture.T0 + 60  # params.mmd
-    text = note.receipt_text(doc["origin"], genesis_leaf, deadline)
-    signed = note.sign(text, doc["origin"], fixture.KEYS["logkey"])
+    deadline = fixture.RECEIPT_DEADLINE  # params.mmd
+    text = fixture.receipt_text()
+    signed = fixture.receipt()
+    # The oracle: the receipt this suite calls honest is one §7's reader keeps.
+    held = note.check_receipt(signed, doc["log_key"], doc["origin"])
+    if (held.origin, held.leaf_hash, held.deadline) != (doc["origin"], genesis_leaf, deadline):
+        raise SystemExit("receipt.note does not read back as the promise it was built from")
     write(out / "receipt.note", signed)
     write(out / "receipt.json", canonjson.dumps({
         "comment": "receipt for the genesis entry; verifies under trust.log_key",
@@ -346,6 +350,80 @@ def write_trust(out: pathlib.Path) -> None:
         "leaf_hash": genesis_leaf,
         "deadline": deadline,
         "text_sha256": __import__("hashlib").sha256(text.encode()).digest(),
+    }) + "\n")
+
+
+def write_receipt_rejections(out: pathlib.Path) -> None:
+    """Receipts SPEC §7 says whoever holds one MUST refuse (cold gate run 11, D4).
+
+    The oracle is the reference's own reader, and the shape is checked before
+    the verdict: each case is the honest receipt with exactly one line changed
+    (or, for `extension-line`, one line added) and a signature that verifies,
+    except `two-log-signatures`, whose text is the honest one. A case that
+    breaks two rules, or none, is a generator bug and not a vector.
+    """
+    doc = fixture.trust_file()
+    honest_text = fixture.receipt_text()
+    honest = honest_text[:-1].split("\n")
+    note.check_receipt(fixture.receipt(), doc["log_key"], doc["origin"])
+    cases = []
+    for name, signed, why in fixture.receipt_rejections():
+        text, _ = note.split(signed)
+        lines = text[:-1].split("\n")
+        if name == "two-log-signatures":
+            if text != honest_text:
+                raise SystemExit(f"receipt case {name}: the text is not the honest receipt's")
+        else:
+            if note.verify(signed, [doc["log_key"]]) != text:
+                raise SystemExit(f"receipt case {name}: not signed by the log key")
+            changed = [i for i in range(min(len(lines), 4)) if lines[i] != honest[i]]
+            added = len(lines) - len(honest)
+            if len(changed) + added != 1 or added < 0:
+                raise SystemExit(f"receipt case {name}: differs from receipt.note in "
+                                 f"{len(changed)} lines and adds {added}; it must differ in one")
+        try:
+            note.check_receipt(signed, doc["log_key"], doc["origin"])
+        except note.NoteError:
+            pass
+        else:
+            raise SystemExit(f"receipt case {name}: the reference accepts it")
+        write(out / "receipts-bad" / f"{name}.note", signed)
+        cases.append({"name": name, "why": why})
+    fields = {"section": "7", "says": "exactly these four lines"}
+    origin = {"section": "7", "says": "the second is `norn.trust.origin`, **byte for byte** (§2)"}
+    rules = {
+        "two-log-signatures": {"section": "7",
+                               "says": "every line whose name and key id match MUST verify"},
+        "extension-line": fields,
+        "wrong-version": {"section": "7", "says": "the first is `norn/receipt/v1`"},
+        "origin-with-a-suffix": origin,
+        "origin-in-upper-case": origin,
+        "origin-truncated": origin,
+        "leaf-hash-too-long": {"section": "7", "says": "**exactly 32 bytes once decoded**"},
+        "leaf-hash-too-short": {"section": "7", "says": "**exactly 32 bytes once decoded**"},
+        "leaf-hash-unpadded": {"section": "7", "says": "**exactly its `b64` encoding**"},
+        "leaf-hash-non-canonical-pad-bits": {"section": "7",
+                                             "says": "**exactly its `b64` encoding**"},
+        "leaf-hash-carriage-return": {"section": "7", "says": "**exactly its `b64` encoding**"},
+        "deadline-leading-zero": {"section": "7",
+                                  "says": "**canonical decimal, as §6's size line is**"},
+        "deadline-plus-sign": {"section": "7", "says": "ASCII digits with **no leading zeroes**"},
+        "deadline-above-uint64": {"section": "7", "says": "**fits in 64 bits**"},
+    }
+    for case in cases:
+        if case["name"] not in rules:
+            raise SystemExit(f"receipt case {case['name']} names no section for its rule")
+    write(out / "receipts-bad" / "cases.json", canonjson.dumps({
+        "rules": rules,
+        "comment": "every .note here MUST be refused as a receipt (SPEC 7). Read each "
+                   "exactly as receipt.note is read, which MUST be accepted: under "
+                   "trust.cbor's log_key and origin, with no entry in hand and no clock, "
+                   "since whether the leaf is yours and whether the deadline has passed "
+                   "are the holder's questions and not properties of the file. Each but "
+                   "two-log-signatures is receipt.note with one line changed or added and "
+                   "re-signed by the log key, so its signature verifies; two-log-signatures "
+                   "is receipt.note itself plus a forged copy of its signature line",
+        "cases": cases,
     }) + "\n")
 
 
@@ -590,6 +668,7 @@ def main(argv: list[str]) -> int:
     write_trust_acceptances(out)
     write_empty_log(out)
     write_trust(out)
+    write_receipt_rejections(out)
     write_policies(out)
     write_requests(out)
     removed = prune(out)

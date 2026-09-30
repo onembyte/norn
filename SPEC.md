@@ -612,6 +612,34 @@ norn/receipt/v1
 <uint deadline unix seconds>       # = now + params.mmd
 ```
 
+A receipt's text is exactly these four lines, with no extension lines.
+Whoever holds one and relies on it MUST refuse it unless each line is
+exactly this:
+
+- the first is `norn/receipt/v1`;
+- the second is `norn.trust.origin`, **byte for byte** (§2): not an extension
+  of it, not a truncation of it, and not the same letters in another case;
+- the third is `b64` (§1) of a §6 leaf hash, **exactly 32 bytes once decoded**
+  and **exactly its `b64` encoding**: 44 characters, padded, with zero padding
+  bits, and nothing else in the line. 33 bytes whose first 32 are a leaf hash
+  are not one, and neither are 31. A line a lenient decoder maps to the same
+  32 bytes — unpadded, with non-zero padding bits, or with a control character
+  the decoder skips — is another spelling, and one promise has one;
+- the fourth is the deadline in **canonical decimal, as §6's size line is**:
+  ASCII digits with **no leading zeroes**, no sign, and it **fits in 64 bits**,
+  as the cosignature timestamps §5.3 compares it with do. `01760000060`,
+  `+1760000060` and `1760000060` are one deadline and three receipts.
+
+The note MUST verify under a log key §10 would accept for a checkpoint —
+`norn.trust.log_key`, or a `pk` in `log_keys` of a state the holder has
+accepted (§9.4) — by the rule §10 applies to a checkpoint's log signature:
+every line whose name and key id match MUST verify, and at least one such
+line MUST be present. The canonical signed-note implementation does not
+impose this: its `Open` verifies one line per name and opens
+`receipts-bad/two-log-signatures`. Norn does. None of this needs the entry
+or a clock. Whether the leaf is the entry the holder sent, and whether the
+deadline has passed, are the holder's own questions.
+
 The note framing is `c2sp.org/signed-note`, restated here so an implementer needs
 nothing else (D22). These rules are **verified against `golang.org/x/mod/sumdb/note`**,
 the canonical implementation the transparency ecosystem uses: it accepts the
@@ -1169,7 +1197,7 @@ ships the same bytes under stable names so they can be referred to.
 Paths below are relative to the vector root, which ships as `testdata/vectors/`
 in this repository and may be rooted anywhere when the suite is distributed.
 
-**Three provenances, stated plainly.** The entry, state, trust and enrollment-request
+**Three provenances, stated plainly.** The entry, state, trust, receipt and enrollment-request
 vectors come from the Python reference implementation, and the Go code must match them. The
 `served/`, `proofs/`, `fork/` and `checkpoints-bad/` vectors come from the **Go**
 implementation instead, because producing a tiled log requires one. `anchors/`
@@ -1200,6 +1228,7 @@ suite is checked only against its own author.
 | `requests/<name>.cbor` · `.txt` · `.json` | enrollment requests (§16): the request bytes, its bech32m text form, and a mirror `{request, preimage_sha256, text, size}`. `cases.json` lists them, each with a `form` — `canonical` for §16.2's lowercase form, or `uppercase` for the same request in the form §16.2 says a reader MUST also accept, which names the canonical case it duplicates |
 | `requests-bad/<name>.txt` | requests that MUST be refused — by the text layer, the CBOR profile, a field rule or signature verification. `cases.json` gives each case's reason |
 | `receipt.json` | `{comment, origin, leaf_hash, deadline, text_sha256}`, where `text_sha256` is `SHA-256` of the **signed text** — through the newline ending the last text line, excluding the blank separator and the signature lines |
+| `receipts-bad/<name>.note` | receipts that MUST be refused (§7), each read exactly as `receipt.note` is: under `trust.cbor`'s `log_key` and `origin`, with no entry in hand and no clock. `cases.json` lists them, and its `rules` map names the §7 phrase each one breaks |
 | `checkpoints-bad/<NN-case>.checkpoint` | checkpoints that MUST be refused, each served in place of `served/checkpoint` over the honest tiles. `cases.json` lists them, and its `signature_blind_accepts` names the ones a verifier that never calls Ed25519 accepts. That set is **computed** from the shipped files, not asserted |
 | `entries-hostile/<name>.cbor` | input that is not an entry and never could be, for §4.0's three resource limits — the entry size, the nesting depth and the map-key cap. `cases.json` says what each refusal must be about, and marks the cases that sit exactly **at** a limit and MUST be accepted |
 | `proven/cases.json` | the devices admitted at four evaluation times (§5.3), including the boundary where `expires` equals `T` |
@@ -1271,7 +1300,7 @@ this table drifted out of date the moment one was.
 | §5.3 a witness counts at its **newest** verifying line | `served-twice-cosigned/`: one witness answers twice and both lines verify, so the head is valid and only the tie-break decides. `cases.json` records the instant it must come out at, and the one an oldest-line reader would get instead | `checkpoints-bad/12-second-line-from-one-witness` cannot pin this — its second line does not verify, so §10's per-line rule refuses the checkpoint first |
 | §5.3 the derivation of `T` | `served/checkpoint`, whose three witnesses cosign seven seconds apart, so the **newest** and the **oldest** are both separated from the answer; `proofs/cases.json` records the value `T` must come out as | — |
 | §5.3 evaluation time | `proven/cases.json`: the admitted set at four values of `T` — no clock, before, **exactly at**, and after the one deadline the fixture carries. `state.json` is clock-independent by design, so this is the only vector that exercises expiry | the `at-the-deadline` case, where `expires == T` and the device is **out** |
-| §7 receipt | `receipt.note` | — |
+| §7 receipt | `receipt.note`, which MUST be accepted when read as `receipts-bad/cases.json` says | `receipts-bad/`, one file per rule and one per lax reading of it. `receipts-bad/wrong-version` for the first line. `receipts-bad/origin-with-a-suffix`, `origin-in-upper-case` and `origin-truncated` for the second (§10's `21`–`23` on the receipt). For the third, `receipts-bad/leaf-hash-too-long` and `leaf-hash-too-short` (33 and 31 bytes, either side of **exactly 32**; §6's `17` on the receipt) and three other spellings of the honest 32 bytes that a lenient decoder maps to the same leaf: `leaf-hash-unpadded`, `leaf-hash-non-canonical-pad-bits` and `leaf-hash-carriage-return`. Only a reader that requires the exact encoding refuses all three, and this implementation accepted the last two. For the fourth, `receipts-bad/deadline-leading-zero` (§6's `15` on the receipt), `deadline-plus-sign` — the other half of "ASCII digits": a reader that parses with a sign and checks only for a leading zero accepts it — and `deadline-above-uint64`. `receipts-bad/extension-line` for the line count. And `receipts-bad/two-log-signatures` for the signature: the honest receipt plus a forged copy of its own signature line, which a reader that never verifies the receipt accepts, and so does one that stops at the first line that verifies, `x/mod`'s `Open` among them. Every other file is re-signed by the log key over its one changed or added line, so the signature cannot refuse it first. The receipt had no negative until cold gate run 11 asked for one, and this implementation accepted a deadline with a leading zero (D4) |
 | §7 the note framing | `served/checkpoint` | `checkpoints-bad/13-ascii-dash-signature` (an ASCII hyphen for §7's em dash), `14-unterminated-signature-block` (the final line does not end in a newline), `15-size-leading-zero` (a size line that is not canonical decimal) and `16-two-log-signatures` — two lines under the log's key, one forged. **This implementation accepted the last two** until run 8 asked for them |
 | §7 and §9.1 a verifier key's id is **recomputed**, because it binds the name, the key and the algorithm | `trust.cbor` | `37-log-key-id-mismatch` and `39-witness-key-id-mismatch`: the right name, the right key, the right algorithm and one hex digit of the id changed — the log's key in `log_key`, and `pi`'s in `witnesses`. Each carries the damaged string in its **policy** too, so the `log`-line and witness correspondence rules agree and only the id check can refuse it. `37` did not until 6.5l-iv: its policy kept the honest id, the correspondence rule refused it first, and a reader that never recomputed an id passed the whole suite (cold gate run 11, D3 and D9). The two also pin §9.1's "MUST parse as one" for both keys, which `06-bad-log-key` and `12-witness-key-unparseable` cannot: their policies keep the honest key, so the correspondence rules refuse them first. `40-log-key-id-upper-case` is the right id spelled in upper case, which a reader that compares the id as an integer accepts |
 | §5.1 an empty log | `log-empty/`: the zero state, `rejected` empty | a reader that treats *no* genesis as a *missing* one reports `bad-genesis` and differs by a whole field |
@@ -1315,15 +1344,15 @@ admits its holes, so:
 
 - **`quorum none` accepting an uncosigned head.** It needs a second trust
   anchor, and one is not shipped.
-- **The other three origin comparisons, against anything but an unrelated
-  origin.** §8.1 checks a bundle's checkpoint "per §10", §11.1 checks both
-  checkpoints in fork evidence, and §7 checks a receipt's origin line. Each
-  compares with `norn.trust.origin` and each is pinned only by a wholly
-  different origin (`proofs-bad/wrong-origin`, `fork/bad-other-origin`, and
-  no receipt negative at all). An implementation that routes all four
-  through one comparison is held to §2's byte equality by §10's `21`–`23`;
-  one with a separate prefix or case-folding comparison in any of the three
-  is not. Twins of `21`–`23` inside `proofs-bad/` and `fork/` would close it.
+- **Two other origin comparisons, against anything but an unrelated
+  origin.** §8.1 checks a bundle's checkpoint "per §10", and §11.1 checks
+  both checkpoints in fork evidence. Each compares with `norn.trust.origin`
+  and each is pinned only by a wholly different origin
+  (`proofs-bad/wrong-origin` and `fork/bad-other-origin`). An implementation
+  that routes them through §10's comparison is held to §2's byte equality by
+  `21`–`23`; one with a separate prefix or case-folding comparison in either
+  is not. Twins of `21`–`23` inside `proofs-bad/` and `fork/` would close it,
+  as `receipts-bad/`'s three origin cases close it for §7's receipt.
 - **§4.3's "a key contributes at most once".** `sigs` is sorted by `kid` with
   no repeats (§4.1), and `kid` is `SHA-256(pk)[0:8]` — a function of the key —
   so one key cannot appear twice in one entry and the de-duplication in
@@ -1355,7 +1384,7 @@ admits its holes, so:
   §10 — "at least one such line MUST be present" — and §10's check is reached
   first, so a checkpoint with an empty signature block is refused before the
   framing rule applies. No artifact tells a reader that enforces both from one
-  that enforces only the second.
+  that enforces only the second. The same holds for a receipt: §7's own "at least one such line" and the framing refuse one together, so no `receipts-bad/` file separates them.
 - **§10's "the root the SERVED branch has at `at` … recomputed from the
   entries, **never from a supplied proof**".** No shipped file supplies one: a
   `detect/` pair serves both branches with their own tiles, so a reader takes

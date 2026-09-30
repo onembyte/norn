@@ -6,6 +6,7 @@ writing files.
 
 from __future__ import annotations
 
+import base64
 from typing import Any
 
 from . import entry, keys, note, trust
@@ -99,6 +100,114 @@ def trust_file() -> dict[str, Any]:
         policy=policy_text(),
         anchor={"type": "opentimestamps", "max_lag": 86400, "mode": "advisory"},
     )
+
+
+#: The receipt's deadline: the genesis entry's `ts` plus `params.mmd` (§7).
+RECEIPT_DEADLINE = T0 + 60
+
+
+def receipt_text() -> str:
+    """The shipped receipt's text: a promise to include the genesis entry."""
+    genesis_leaf = entry.leaf_hash(entry.encode(genesis()))
+    return note.receipt_text(ORIGIN, genesis_leaf, RECEIPT_DEADLINE)
+
+
+def receipt() -> str:
+    """`receipt.note`: `receipt_text()` signed by the log key under its name."""
+    return note.sign(receipt_text(), ORIGIN, KEYS["logkey"])
+
+
+def receipt_rejections() -> list[tuple[str, str, str]]:
+    """Receipts SPEC §7 says whoever holds one MUST refuse (cold gate run 11, D4).
+
+    Each is `receipt()` with one line changed or added and the text **re-signed** by the
+    log key under the log's name, so the signature verifies and only the rule
+    the case is named after can refuse it. `two-log-signatures` is the one
+    that is not re-signed: it is `receipt()` itself plus a forged copy of its
+    own signature line, which is the case the signature rule refuses.
+    """
+    lines = receipt_text()[:-1].split("\n")
+    if len(lines) != 4:
+        raise SystemExit(f"the honest receipt has {len(lines)} lines, not 4")
+    header, origin, leaf, deadline = lines
+
+    def resigned(index: int, value: str) -> str:
+        changed = list(lines)
+        changed[index] = value
+        return note.sign("\n".join(changed) + "\n", ORIGIN, KEYS["logkey"])
+
+    honest = receipt()
+    text, sep, block = honest.partition("\n\n")
+    name, _, blob = block.rstrip("\n")[len(note.SIG_PREFIX):].partition(" ")
+    payload = bytearray(base64.b64decode(blob, validate=True))
+    payload[-1] ^= 0x01
+    forged = f"{note.SIG_PREFIX}{name} {base64.b64encode(bytes(payload)).decode('ascii')}\n"
+
+    leaf_bytes = base64.b64decode(leaf, validate=True)
+    too_long = base64.b64encode(leaf_bytes + b"\x00").decode("ascii")
+    too_short = base64.b64encode(leaf_bytes[:31]).decode("ascii")
+    # 32 bytes are 256 bits; 43 base64 characters carry 258, so the 43rd has
+    # two padding bits that an encoder leaves zero and a lenient decoder
+    # ignores. Set one: the same 32 bytes to that decoder, another line.
+    alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+    last = alphabet.index(leaf[42])
+    if last & 0b11 or leaf[43] != "=":
+        raise SystemExit("the honest leaf line is not a canonical 44-character encoding")
+    pad_bits = leaf[:42] + alphabet[last | 0b01] + "="
+    return [
+        ("two-log-signatures", honest + forged,
+         "receipt.note with a second line under the log's name and key id whose "
+         "signature does not verify: a reader that accepts the note once one line "
+         "verifies, or never verifies it at all, accepts it"),
+        ("extension-line", note.sign(receipt_text() + "norn extension line\n", ORIGIN,
+                                     KEYS["logkey"]),
+         "the honest four lines and a fifth, re-signed: a reader that reads the four "
+         "lines it expects and ignores the rest accepts it"),
+        ("wrong-version", resigned(0, "norn/receipt/v2"),
+         "the first line names version 2, re-signed: a reader that never looks at "
+         "the first line accepts it"),
+        ("origin-with-a-suffix", resigned(1, origin + "a"),
+         "this network's origin plus one base32 character, re-signed: a reader that "
+         "accepts an origin line extending this network's accepts it"),
+        ("origin-in-upper-case", resigned(1, _upper_origin()),
+         "this network's origin with its base32 in upper case, re-signed: a reader "
+         "that folds case accepts it"),
+        ("origin-truncated", resigned(1, origin[:-1]),
+         "this network's origin less its last character, re-signed: a reader that "
+         "accepts an origin line this network's origin extends accepts it"),
+        ("leaf-hash-too-long", resigned(2, too_long),
+         "the leaf hash line decodes to 33 bytes whose first 32 are the honest leaf "
+         "hash, re-signed: a reader that takes the first 32, or never checks the "
+         "length, accepts it"),
+        ("deadline-leading-zero", resigned(3, "0" + deadline),
+         "the deadline line with a leading zero, re-signed: the same number to a "
+         "reader that parses it as an integer, and not canonical decimal"),
+        # Cold gate run 11, the D4 review. A leading zero is one half of
+        # "ASCII digits"; a sign is the other. A reader that parses with a
+        # sign and checks only for a leading zero accepts this one.
+        ("deadline-plus-sign", resigned(3, "+" + deadline),
+         "the deadline line with a plus sign, re-signed: the same number to a "
+         "signed parser, and not ASCII digits"),
+        ("deadline-above-uint64", resigned(3, str(2**64)),
+         "a deadline of 2^64, re-signed: canonical decimal, and one more than "
+         "the cosignature timestamps it is compared with can carry"),
+        # The third line, both sides of "exactly 32 bytes" and three other
+        # spellings of the same 32. A lenient decoder maps each to the honest
+        # leaf; only a reader that requires the exact encoding refuses them.
+        ("leaf-hash-too-short", resigned(2, too_short),
+         "the leaf hash line decodes to 31 bytes, the honest leaf hash less its "
+         "last byte, re-signed: a reader that zero-fills a short leaf accepts it"),
+        ("leaf-hash-unpadded", resigned(2, leaf.rstrip("=")),
+         "the leaf hash line without its padding, re-signed: a decoder that "
+         "accepts unpadded base64 reads the honest leaf from it"),
+        ("leaf-hash-non-canonical-pad-bits", resigned(2, pad_bits),
+         "the leaf hash line with a non-zero padding bit in its last data "
+         "character, re-signed: a decoder that ignores padding bits reads the "
+         "honest leaf from it, and this line is not the leaf's encoding"),
+        ("leaf-hash-carriage-return", resigned(2, leaf[:22] + "\r" + leaf[22:]),
+         "the leaf hash line with a carriage return inside it, re-signed: a "
+         "decoder that skips control characters reads the honest leaf from it"),
+    ]
 
 
 def _signed(env: dict[str, Any], signers: list[tuple[str, str]]) -> dict[str, Any]:

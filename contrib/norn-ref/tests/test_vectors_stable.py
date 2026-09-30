@@ -17,6 +17,7 @@ class Deterministic(unittest.TestCase):
             gen_vectors.write_genesis_aborts(out)
             gen_vectors.write_trust_rejections(out)
             gen_vectors.write_trust(out)
+            gen_vectors.write_receipt_rejections(out)
             gen_vectors.write_requests(out)
             return {str(p.relative_to(out)): p.read_bytes() for p in sorted(out.rglob("*")) if p.is_file()}
 
@@ -39,7 +40,7 @@ class Deterministic(unittest.TestCase):
         self.assertIn("keys.json", files)
         self.assertIn("state.json", files)
         for name in ("trust.cbor", "trust.toml", "trust.fingerprint", "receipt.note",
-                     "genesis/cases.json", "trust-bad/cases.json"):
+                     "genesis/cases.json", "trust-bad/cases.json", "receipts-bad/cases.json"):
             self.assertIn(name, files)
 
         counts = {
@@ -49,6 +50,7 @@ class Deterministic(unittest.TestCase):
             "log/*.reason": len(rejecting),
             "genesis/*/state.json": len(fixture.genesis_aborts()),
             "trust-bad/*.cbor": len(fixture.trust_rejections()),
+            "receipts-bad/*.note": len(fixture.receipt_rejections()),
         }
         actual = {
             "entries/*.cbor": self._count(files, "entries/", ".cbor"),
@@ -57,6 +59,7 @@ class Deterministic(unittest.TestCase):
             "log/*.reason": self._count(files, "log/", ".reason"),
             "genesis/*/state.json": self._count(files, "genesis/", "state.json"),
             "trust-bad/*.cbor": self._count(files, "trust-bad/", ".cbor"),
+            "receipts-bad/*.note": self._count(files, "receipts-bad/", ".note"),
         }
         self.assertEqual(actual, counts)
         self.assertEqual(len(entry.TYPES), 14, "a new entry type needs a catalogue vector")

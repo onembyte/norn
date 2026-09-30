@@ -76,9 +76,25 @@ func Check(signed string, logKeys []string, origin string, leaf []byte, now time
 	if len(hash) != 32 {
 		return nil, receiptErrorf("the leaf hash is %d bytes, want 32", len(hash))
 	}
+	// Exactly its encoding (§7). StdEncoding skips a CR inside the line and
+	// ignores non-zero padding bits, so two lines could decode to one leaf
+	// and one promise had two spellings -- the same hazard as the deadline
+	// below, one line up (cold gate run 11, the D4 review).
+	if base64.StdEncoding.EncodeToString(hash) != lines[2] {
+		return nil, receiptErrorf("the leaf hash line %q is not the encoding of the leaf hash", lines[2])
+	}
 	deadline, err := strconv.ParseUint(lines[3], 10, 64)
+	if errors.Is(err, strconv.ErrRange) {
+		return nil, receiptErrorf("the deadline %q does not fit in 64 bits", lines[3])
+	}
 	if err != nil {
 		return nil, receiptErrorf("the deadline is not a unix timestamp: %w", err)
+	}
+	// Canonical decimal, as §6's size line is. ParseUint reads `01760000060`
+	// as 1760000060, so without this one promise had two spellings, and two
+	// copies of one receipt could differ byte for byte (cold gate run 11, D4).
+	if lines[3] != strconv.FormatUint(deadline, 10) {
+		return nil, receiptErrorf("the deadline %q is not canonical decimal", lines[3])
 	}
 
 	if leaf != nil && string(leaf) != string(hash) {

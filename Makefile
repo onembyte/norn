@@ -34,7 +34,7 @@ PY      ?= contrib/norn-ref/.venv/bin/python
 vectors:
 	PYTHONPATH=contrib/norn-ref $(PY) contrib/norn-ref/gen_vectors.py testdata/vectors
 
-# The suite has two provenances (SPEC 12): the entry, state and trust vectors
+# The suite has two provenances (SPEC 12): the entry, state, trust and receipt vectors
 # come from the Python reference, and the served log and proof bundles come
 # from the Go implementation, because producing a tiled log needs one. Each
 # half is checked against its own generator; neither is checked against itself

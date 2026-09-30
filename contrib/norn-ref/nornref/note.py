@@ -11,7 +11,9 @@ torchwood in Phase 2. Until then this module is only self-consistent.
 from __future__ import annotations
 
 import base64
+import binascii
 import hashlib
+import re
 from dataclasses import dataclass
 
 from . import keys
@@ -115,15 +117,27 @@ def split(signed: str) -> tuple[str, list[tuple[str, bytes]]]:
 
 
 def verify(signed: str, vkeys: list[str]) -> str:
-    """Return the note text if any listed key signed it; raise otherwise."""
+    """Return the note text if a listed key signed it; raise otherwise.
+
+    Per line, not per key (SPEC §10, and §7 for a receipt): every line whose
+    name and key id match a listed key MUST verify, and at least one must be
+    present. This returned on the first line that verified, so a note carrying
+    the log's signature *and* a forgery under the same name and id was
+    accepted -- the reading Go's reader dropped in run 8, and which nothing
+    here caught because this module never read a checkpoint.
+    """
     text, signatures = split(signed)
     trusted = [parse_vkey(v) for v in vkeys]
+    verified = False
     for name, raw in signatures:
         for verifier in trusted:
             if verifier.name == name and verifier.id == raw[:4]:
-                if keys.verify(verifier.public, text.encode("utf-8"), raw[4:]):
-                    return text
-    raise NoteError("no valid signature from a trusted key")
+                if not keys.verify(verifier.public, text.encode("utf-8"), raw[4:]):
+                    raise NoteError(f"a signature line naming {name} does not verify")
+                verified = True
+    if not verified:
+        raise NoteError("no valid signature from a trusted key")
+    return text
 
 
 def receipt_text(origin: str, leaf_hash: bytes, deadline: int) -> str:
@@ -132,3 +146,55 @@ def receipt_text(origin: str, leaf_hash: bytes, deadline: int) -> str:
         raise NoteError("leaf hash must be 32 bytes")
     blob = base64.b64encode(leaf_hash).decode("ascii")
     return f"{RECEIPT_HEADER}\n{origin}\n{blob}\n{deadline}\n"
+
+
+#: Canonical decimal: `0`, or ASCII digits with no leading zero. `[0-9]`, not
+#: `\d`, which matches every Unicode digit.
+_CANONICAL_DECIMAL = re.compile(r"0|[1-9][0-9]*")
+
+#: SPEC §7: the deadline fits in 64 bits, as the cosignature timestamps it is
+#: compared with do.
+_UINT64_MAX = 2**64 - 1
+
+
+@dataclass(frozen=True)
+class Receipt:
+    origin: str
+    leaf_hash: bytes
+    deadline: int
+
+
+def check_receipt(signed: str, log_key: str, origin: str) -> Receipt:
+    """Read a submission receipt the way SPEC §7 says whoever holds one must.
+
+    No entry and no clock: whether the leaf is the submitter's entry, and
+    whether the deadline has passed, are questions for the caller. Everything
+    here is a property of the receipt alone, which is what `receipts-bad/`
+    pins.
+    """
+    text = verify(signed, [log_key])
+    lines = text[:-1].split("\n")
+    if len(lines) != 4:
+        raise NoteError(f"a receipt is exactly four lines, this one has {len(lines)}")
+    header, named, leaf, deadline = lines
+    if header != RECEIPT_HEADER:
+        raise NoteError(f"first line is {header!r}, want {RECEIPT_HEADER!r}")
+    if named != origin:
+        raise NoteError(f"the receipt is for {named!r}, not {origin!r}")
+    try:
+        leaf_hash = base64.b64decode(leaf, validate=True)
+    except (ValueError, binascii.Error) as exc:
+        raise NoteError("the leaf hash is not base64") from exc
+    if len(leaf_hash) != 32:
+        raise NoteError(f"the leaf hash is {len(leaf_hash)} bytes, want 32")
+    # Exactly its encoding (SPEC §7): a lenient decoder maps unpadded text,
+    # non-zero padding bits and skipped control characters to the same 32
+    # bytes, and one promise has one spelling.
+    if base64.b64encode(leaf_hash).decode("ascii") != leaf:
+        raise NoteError("the leaf hash line is not the encoding of the leaf hash")
+    if not _CANONICAL_DECIMAL.fullmatch(deadline):
+        raise NoteError(f"the deadline {deadline!r} is not canonical decimal")
+    value = int(deadline)
+    if value > _UINT64_MAX:
+        raise NoteError(f"the deadline {deadline} does not fit in 64 bits")
+    return Receipt(named, leaf_hash, value)
