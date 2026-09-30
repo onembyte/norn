@@ -1,12 +1,14 @@
 package forkevidence
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/onembyte/norn/internal/cbor"
 	"github.com/onembyte/norn/internal/policy"
 )
 
@@ -161,6 +163,113 @@ func TestEveryEvidenceSchemaRuleHasItsCase(t *testing.T) {
 			}
 			if _, err := Check(ev, anchor.Origin, anchor.LogKey, anchor.Policy); err == nil {
 				t.Errorf("%s was accepted; §11.1 says it must not be", want)
+			}
+		})
+	}
+}
+
+// Cold-model gate run 12, defect D4. RFC 6962 §2.1.2's consistency proof for
+// a `first` that is a power of two starts from `held_root` rather than
+// carrying it. The only shipped evidence was at 40, so a reader that always
+// expected the first hash in the path passed the suite and would reject sound
+// evidence at sizes 1, 2, 4, ... -- and never raise the alarm.
+func TestEveryPositiveEvidenceProvesAForkAtItsSize(t *testing.T) {
+	root := filepath.Join("..", "..", "testdata", "vectors")
+	raw, err := os.ReadFile(filepath.Join(root, "fork", "cases.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Proves []struct {
+			Name  string `json:"name"`
+			Size  int64  `json:"size"`
+			About string `json:"about"`
+		} `json:"proves"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	if len(doc.Proves) < 2 {
+		t.Fatalf("%d positive evidence files; the suite needs one at a power of two and one not", len(doc.Proves))
+	}
+	anchor := shippedAnchor(t, root)
+	var powerOfTwo bool
+	for _, c := range doc.Proves {
+		t.Run(c.Name, func(t *testing.T) {
+			body, err := os.ReadFile(filepath.Join(root, "fork", c.Name+".cbor"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			ev, err := Parse(body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if ev.Size != c.Size {
+				t.Fatalf("the file claims a disagreement at %d, cases.json says %d", ev.Size, c.Size)
+			}
+			if c.Size&(c.Size-1) == 0 {
+				powerOfTwo = true
+				// The shape the case exists for: a non-empty proof that does
+				// not begin with the held root, so a reader that prepends it
+				// has one hash too many.
+				if len(ev.Proof) == 0 {
+					t.Fatal("an empty proof at a size below the held head separates nothing")
+				}
+				if string(ev.Proof[0]) == string(ev.HeldRoot) {
+					t.Fatal("the proof carries the held root first; RFC 6962 omits it at a power of two")
+				}
+			}
+			finding, err := Check(ev, anchor.Origin, anchor.LogKey, anchor.Policy)
+			if err != nil {
+				t.Fatalf("sound evidence was refused (%s): %v", c.About, err)
+			}
+			if finding.Size != c.Size {
+				t.Errorf("proved a fork at %d, want %d", finding.Size, c.Size)
+			}
+		})
+	}
+	if !powerOfTwo {
+		t.Error("no positive evidence at a power of two: RFC 6962's step 1 is exercised by nothing")
+	}
+}
+
+// Cold-model gate run 12, defect D7. `bad-open-schema` and `bad-wrong-version`
+// were built over a consistent pair -- a log and its own earlier self -- which
+// step 4 refuses anyway, so an open-schema reader passed. Each is now the real
+// evidence with exactly one change, and this pins that.
+func TestTheSchemaNegativesAreARealForkPlusOneChange(t *testing.T) {
+	root := filepath.Join("..", "..", "testdata", "vectors")
+	honest, err := os.ReadFile(filepath.Join(root, "fork", "evidence.cbor"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		name string
+		undo func(m map[string]any)
+	}{
+		{"bad-open-schema", func(m map[string]any) { delete(m, "surprise") }},
+		{"bad-wrong-version", func(m map[string]any) { m["version"] = uint64(1) }},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			raw, err := os.ReadFile(filepath.Join(root, "fork", c.name+".cbor"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			v, err := cbor.Decode(raw)
+			if err != nil {
+				t.Fatal(err)
+			}
+			m, ok := v.(map[string]any)
+			if !ok {
+				t.Fatal("not a map")
+			}
+			c.undo(m)
+			back, err := cbor.Encode(m)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(back, honest) {
+				t.Fatal("undoing the one change does not give evidence.cbor, so more than the rule under test differs")
 			}
 		})
 	}

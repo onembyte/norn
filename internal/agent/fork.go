@@ -178,11 +178,25 @@ func (a *Agent) writeEvidence(fork *logclient.ForkError) (string, error) {
 	if a.last == nil {
 		return "", errors.New("nothing held to compare against")
 	}
-	// Built from **this node's** branch, not the served one: the served tree
-	// is the one under suspicion, and evidence drawn from it would be the
-	// accused certifying the accusation.
-	evidence, err := forkevidence.Build(fork.Held, a.last.SignedCheckpoint,
-		fork.Signed, fork.Conflicting)
+	// `held` is the branch whose entries this node holds (§11.1). At or below
+	// the stored size that is this node's own branch, and the served tree --
+	// the one under suspicion -- is what it is accused with. When the served
+	// branch is the LONGER one, this node's branch does not reach the
+	// conflicting head's size and cannot speak for it; but the node has just
+	// fetched the served entries, so the roles swap: the served head is
+	// `held`, this node's stored head is `conflicting`, and the disagreement
+	// is at the stored size. Written to the letter, this returned an error
+	// here, the node froze in memory only, and a restart unfroze it
+	// (SEC-005 (a); cold gate run 12, D5).
+	var evidence *forkevidence.Evidence
+	var err error
+	if fork.Conflicting.Size > fork.Stored.Size {
+		evidence, err = forkevidence.Build(fork.Tree, fork.Signed,
+			a.last.SignedCheckpoint, fork.Stored)
+	} else {
+		evidence, err = forkevidence.Build(fork.Held, a.last.SignedCheckpoint,
+			fork.Signed, fork.Conflicting)
+	}
 	if err != nil {
 		return "", err
 	}

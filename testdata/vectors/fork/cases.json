@@ -50,6 +50,18 @@
     }
   ],
   "comment": "evidence that MUST NOT be acted on, checked against trust.cbor. bad-consistent is a log and its own earlier self -- every signature valid, both heads cosigned, the roots agreeing. bad-other-origin is a real fork of another network, which this anchor has no business accepting. `says` is what the refusal must be about. `policy-not-the-readers.cbor` is not listed here: it carries a policy the reader does not share and MUST still prove the fork, because the field is informational and the reader's own policy decides",
+  "proves": [
+    {
+      "about": "a branch diverging at entry 40, 41 entries long; the proof carries the held root",
+      "name": "evidence",
+      "size": 41
+    },
+    {
+      "about": "a branch diverging at a power of two: RFC 6962 2.1.2's proof starts from held_root rather than carrying it, and a reader that always expects it as the first hash rejects sound evidence",
+      "name": "evidence-at-64",
+      "size": 64
+    }
+  ],
   "rules": {
     "bad-consistent": {
       "says": "only if `held_root` differs",

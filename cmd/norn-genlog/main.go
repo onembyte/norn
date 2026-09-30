@@ -910,9 +910,18 @@ func writeDetectCases(root, origin string, key ed25519.PrivateKey, entries [][]b
 			{"name": "shorter-with-no-held-branch", "stored": "current.checkpoint",
 				"serve": "fork-shorter", "outcome": "refuse", "held": "none",
 				"about": "a log does not shrink"},
+			// Cold gate run 12, D5. The mirror of fork-on-a-shorter-branch:
+			// this node holds the shorter branch's entries and is offered the
+			// full log. §10 says FORK; §11.1's `held` row says how evidence is
+			// written when the accuser's branch does not reach `size`.
+			{"name": "fork-on-a-longer-branch", "stored": "fork-shorter/checkpoint",
+				"serve": "../served", "held_branch": "fork-shorter", "outcome": "fork",
+				"about": "longer and divergent is a fork too, and the one where the " +
+					"accuser's own branch cannot speak for the conflicting size"},
 		},
 		"comment": "pairs, not single artifacts. `stored` is the checkpoint this reader " +
-			"already holds, over the entries in `../served`; `serve` is the log it is " +
+			"already holds, over the entries in `../served` unless `held_branch` names " +
+			"another directory here; `serve` is the log it is " +
 			"then offered, tiles and all, as a real log would serve it. §10's " +
 			"stored-checkpoint block and §11's duties are reached by nothing else here. " +
 			"fork-on-a-shorter-branch is the one that matters most: it is what a forking " +
@@ -1395,6 +1404,46 @@ func writeForkEvidence(root, origin string, key ed25519.PrivateKey,
 		[]byte(forkedSigned), 0o644); err != nil {
 		return err
 	}
+
+	// Cold gate run 12, D4. RFC 6962 §2.1.2's consistency proof for a `first`
+	// that is a power of two does not carry `held_root`: the verifier starts
+	// from it. The only evidence shipped was at 40, and the `detect/` forks
+	// compare at 40 and 41, so a reader that always expected the first hash
+	// in the path passed the suite and would reject sound evidence at sizes
+	// 1, 2, 4, ... -- and, under §11, never raise the alarm.
+	const powerOfTwo = 64
+	if len(entries) <= powerOfTwo {
+		return fmt.Errorf("the log has %d entries; the power-of-two fork needs more than %d", len(entries), powerOfTwo)
+	}
+	branch64 := append(append([][]byte(nil), entries[:powerOfTwo-1]...), divergent)
+	forked64, err := signedHeadOver(root, origin, key, branch64, signers)
+	if err != nil {
+		return err
+	}
+	cp64, err := tlog.Verify(forked64, []string{note.VerifierKey(origin,
+		key.Public().(ed25519.PublicKey))})
+	if err != nil {
+		return err
+	}
+	ev64, err := forkevidence.Build(heldTree, heldSigned, forked64, cp64)
+	if err != nil {
+		return err
+	}
+	ev64.Policy = policyOf(root)
+	if len(ev64.Proof) == 0 || bytes.Equal(ev64.Proof[0], ev64.HeldRoot) {
+		return fmt.Errorf("the power-of-two proof carries the held root, so it separates nothing")
+	}
+	raw64, err := ev64.Encode()
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(dir, "evidence-at-64.cbor"), raw64, 0o644); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(dir, "conflicting-at-64.checkpoint"),
+		[]byte(forked64), 0o644); err != nil {
+		return err
+	}
 	return writeForkNegatives(root, origin, key, entries, heldSigned, heldTree, signers,
 		evidence, forkedSigned, forkedCP)
 }
@@ -1719,12 +1768,19 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 	// seven keys" and `Parse` read the seven it wanted, ignoring the rest --
 	// so the rule was prose only. Evidence is the artifact strangers exchange;
 	// a field a reader silently drops is one an accuser can hide something in.
+	// Both over `evidence.cbor`, a real fork, with the one change. Until cold
+	// gate run 12 (D7) they were built over the consistent pair above, which
+	// step 4 refuses anyway, so an open-schema reader passed.
+	rawEvidence, err := evidence.Encode()
+	if err != nil {
+		return err
+	}
 	if err := os.WriteFile(filepath.Join(dir, "bad-open-schema.cbor"),
-		withExtraKey(raw, "surprise", "an unpermitted evidence key"), 0o644); err != nil {
+		withExtraKey(rawEvidence, "surprise", "an unpermitted evidence key"), 0o644); err != nil {
 		return err
 	}
 	if err := os.WriteFile(filepath.Join(dir, "bad-wrong-version.cbor"),
-		withVersion(raw, 2), 0o644); err != nil {
+		withVersion(rawEvidence, 2), 0o644); err != nil {
 		return err
 	}
 	// An accuser can only speak for sizes its own branch reaches.
@@ -1780,6 +1836,14 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 			"bad-forged-proof":             {"section": "11.1", "says": "check `proof` chains"},
 			"bad-unverifiable-conflicting": {"section": "11.1", "says": "verify **both** checkpoints"},
 			"bad-size-mismatch":            {"section": "11.1", "says": "`conflicting`'s size equals `size`"},
+		},
+		"proves": []map[string]any{
+			{"name": "evidence", "size": forkAt + 1,
+				"about": "a branch diverging at entry 40, 41 entries long; the proof carries the held root"},
+			{"name": "evidence-at-64", "size": 64,
+				"about": "a branch diverging at a power of two: RFC 6962 2.1.2's proof " +
+					"starts from held_root rather than carrying it, and a reader that " +
+					"always expects it as the first hash rejects sound evidence"},
 		},
 		"cases": []map[string]string{
 			{"name": "bad-oversize", "about": "exceeds"},

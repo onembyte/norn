@@ -35,7 +35,15 @@
       "outcome": "refuse",
       "serve": "fork-shorter",
       "stored": "current.checkpoint"
+    },
+    {
+      "about": "longer and divergent is a fork too, and the one where the accuser's own branch cannot speak for the conflicting size",
+      "held_branch": "fork-shorter",
+      "name": "fork-on-a-longer-branch",
+      "outcome": "fork",
+      "serve": "../served",
+      "stored": "fork-shorter/checkpoint"
     }
   ],
-  "comment": "pairs, not single artifacts. `stored` is the checkpoint this reader already holds, over the entries in `../served`; `serve` is the log it is then offered, tiles and all, as a real log would serve it. §10's stored-checkpoint block and §11's duties are reached by nothing else here. fork-on-a-shorter-branch is the one that matters most: it is what a forking log looks like when it hides behind \"logs do not shrink\""
+  "comment": "pairs, not single artifacts. `stored` is the checkpoint this reader already holds, over the entries in `../served` unless `held_branch` names another directory here; `serve` is the log it is then offered, tiles and all, as a real log would serve it. §10's stored-checkpoint block and §11's duties are reached by nothing else here. fork-on-a-shorter-branch is the one that matters most: it is what a forking log looks like when it hides behind \"logs do not shrink\""
 }

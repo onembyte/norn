@@ -18,6 +18,7 @@ import (
 	"github.com/onembyte/norn/internal/peertable"
 	"github.com/onembyte/norn/internal/reconcile"
 	"github.com/onembyte/norn/internal/replay"
+	"github.com/onembyte/norn/internal/tlog"
 	"github.com/onembyte/norn/internal/tlogstore"
 	"github.com/onembyte/norn/internal/trust"
 )
@@ -449,5 +450,65 @@ func writeEvidenceFor(t *testing.T, dir, logDir string, entries [][]byte) {
 	}
 	if err := os.WriteFile(filepath.Join(dir, "1760000000.evidence"), raw, 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// Cold-model gate run 12, defect D5 (SEC-005 (a)). A node holding the shorter
+// branch and offered the longer one is looking at a fork -- and, written to
+// the letter, could write no evidence: its own branch does not reach the
+// conflicting head's size. §11.1 swaps the roles; this is the node doing it.
+func TestAForkOnTheLongerBranchStillLeavesEvidence(t *testing.T) {
+	real, _, entries := writableLog(t)
+	forked := forkedLog(t, entries, 40)
+	runDir := t.TempDir()
+	rec := &recorder{}
+	a, err := New(Config{
+		Anchor: anchor(t), Fetcher: logclient.Dir(forked), Device: peertable.NewFake(),
+		Mode: reconcile.Owner, RunDir: runDir, Emit: rec.emit,
+		Now:  func() time.Time { return time.Unix(fixtureCosignedAt, 0) },
+		Mono: func() time.Duration { return 0 },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Once(); err != nil {
+		t.Fatalf("the shorter branch is a valid log on its own: %v", err)
+	}
+	stored := a.last.Checkpoint.Size
+
+	// The log now serves the full history, which is longer and diverges.
+	a.cfg.Fetcher = logclient.Dir(real)
+	_ = a.Once()
+	if rec.kinds()[Fork] == 0 {
+		t.Fatalf("a longer, divergent branch was not reported as a fork: %v", rec.kinds())
+	}
+	files, _ := filepath.Glob(filepath.Join(runDir, ForkDir, "*.evidence"))
+	if len(files) != 1 {
+		t.Fatalf("evidence files = %v; a node meeting a fork on the longer branch owes one too", files)
+	}
+	raw, err := os.ReadFile(files[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	ev, err := forkevidence.Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := anchor(t)
+	finding, err := forkevidence.Check(ev, doc.Origin, doc.LogKey, doc.Policy)
+	if err != nil {
+		t.Fatalf("the node wrote evidence a stranger refuses: %v", err)
+	}
+	if finding.Size != stored {
+		t.Errorf("the disagreement is at %d, want the stored size %d", finding.Size, stored)
+	}
+	// The roles swapped: `held` is the served head, whose entries the node
+	// fetched, and `conflicting` is what it was holding.
+	heldCP, err := tlog.Verify(ev.Held, []string{doc.LogKey})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if heldCP.Size != int64(len(entries)) {
+		t.Errorf("held is a %d-entry head; the served, longer branch is %d", heldCP.Size, len(entries))
 	}
 }

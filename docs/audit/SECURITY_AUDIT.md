@@ -36,7 +36,7 @@ divergence.
 | SEC-002 | **CRITICAL** | One colluding witness (not *k*) plus the log hides a revocation from chosen nodes, fresh and unalarmed, because gossip never runs while a view is fresh | Open |
 | SEC-003 | **HIGH** (two verifiers: CRITICAL) | One silent proven peer stalls every node's enforcement loop forever: gossip fetch has no timeout and precedes reconcile | **Bounded** (2026-09-30): every peer read and every submission has a deadline and follows no redirect; the structural half — reconcile before peer I/O, a cycle-overrun alarm — is open |
 | SEC-004 | **HIGH** | Verifier state is not durable: a restarted node accepts a rolled-back checkpoint as `fresh` and reinstalls revoked devices | Open |
-| SEC-005 | MEDIUM | Fork evidence is built and checked under the trust file's key and policy only: not produced for a longer branch or after a log-key rotation; weaker evidence still freezes | Open |
+| SEC-005 | MEDIUM | Fork evidence is built and checked under the trust file's key and policy only: not produced for a longer branch or after a log-key rotation; weaker evidence still freezes | (a) **fixed** 2026-09-30 (6.5m-iv): the node swaps the roles and writes evidence on the longer branch, and `detect/fork-on-a-longer-branch` pins the detector; (b) and (c) open |
 | SEC-006 | MEDIUM | The fork freeze lives under `/run/norn` by default and is lost at reboot | Open |
 | SEC-007 | MEDIUM | Checkpoint gossip runs only when a view is stale; GOSSIP §2/§6, D-016 and PLAN's T1 "software half closed" claim otherwise | Open |
 | SEC-008 | MEDIUM (auditor: HIGH) | No shipped tool can build `revoke`, `rotate` or any governance entry; the runbooks describe commands that do not exist | Open |

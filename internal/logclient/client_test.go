@@ -950,6 +950,7 @@ func TestEveryDetectVectorReachesItsOutcome(t *testing.T) {
 		Cases []struct {
 			Name, Stored, Serve, Outcome, About string
 			Held                                string `json:"held"`
+			HeldBranch                          string `json:"held_branch"`
 		} `json:"cases"`
 	}
 	if err := json.Unmarshal(raw, &doc); err != nil {
@@ -978,6 +979,15 @@ func TestEveryDetectVectorReachesItsOutcome(t *testing.T) {
 				// refuses and does not accuse. Unreachable inside §10's own
 				// loop, where the node always holds `at` (run 9, D10).
 				with.Held = nil
+			}
+			if c.HeldBranch != "" {
+				// The node holds another branch's entries: the longer-branch
+				// fork, where the served log outgrows what this node holds.
+				other, err := Verify(Dir(filepath.Join(dir, c.HeldBranch)), anchor)
+				if err != nil {
+					t.Fatalf("the held branch %s does not verify on its own: %v", c.HeldBranch, err)
+				}
+				with.Held = other.Tree
 			}
 
 			// Each branch is served with its own tiles, as a real log would.

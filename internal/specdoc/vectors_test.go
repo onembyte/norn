@@ -835,6 +835,14 @@ func TestEveryVectoredRuleIsStatedWhereItLives(t *testing.T) {
 		// Run 12, D10: the grammar never parses a key; §5.1 asks the question.
 		{"5.1", "**every `witness` line's key MUST parse as a cosignature verifier key**",
 			"log/bad-policy-witness-key-not-a-cosigner"},
+		// Run 12, D5: the accuser's branch may not reach `size`; §11.1 says
+		// which head is `held` then, and the detector case is the mirror of
+		// the shorter-branch fork.
+		{"11.1", "the served head is `held`, its stored head is `conflicting`",
+			"detect/fork-on-a-longer-branch"},
+		// Run 12, D4: RFC 6962's step 1 is walked by evidence at a power of two.
+		{"11.1", "a reader implementing their own ordering will reject sound evidence",
+			"fork/evidence-at-64"},
 	} {
 		t.Run(c.vector, func(t *testing.T) {
 			section, ok := doc.Section(c.section)
