@@ -247,6 +247,8 @@ def write_trust_rejections(out: pathlib.Path) -> None:
     keyid = {"section": "7", "says": "MUST recompute `key_id` from the name"}
     lower = {"section": "7", "says": "**Lowercase, and only lowercase.**"}
     wuniq = {"section": "9.1", "says": "and unique within the file"}
+    bytewise = {"section": "9.1", "says": "MUST equal `origin` **byte for byte** (§2)"}
+    derive = {"section": "9.1", "says": "**compared as text, by encoding `net`**"}
     trust_rules = {
         "01-unknown-key": closed, "02-wrong-version": version, "03-short-net": net,
         "04-origin-mismatch": origin, "05-short-genesis-hash": ghash,
@@ -267,6 +269,9 @@ def write_trust_rejections(out: pathlib.Path) -> None:
         "35-anchor-unknown-mode": mode, "36-policy-log-key-mismatch": polkey,
         "37-log-key-id-mismatch": keyid, "38-oversize": size,
         "39-witness-key-id-mismatch": keyid, "40-log-key-id-upper-case": lower,
+        "41-log-key-name-with-a-suffix": bytewise, "42-log-key-name-in-upper-case": bytewise,
+        "43-log-key-name-truncated": bytewise, "44-origin-in-upper-case": derive,
+        "45-origin-non-canonical-padding-bits": derive,
     }
     for name_, _ in fixture.trust_rejections():
         if name_ not in trust_rules:

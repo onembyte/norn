@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/onembyte/norn/internal/cosign"
 	"github.com/onembyte/norn/internal/note"
 	"github.com/onembyte/norn/internal/policy"
 	"github.com/onembyte/norn/internal/trust"
@@ -360,16 +361,94 @@ func TestEveryServedNegativeIsRefused(t *testing.T) {
 // every vector: `03-wrong-origin` is refused by the note name and key id, not
 // by any origin comparison. A checkpoint's origin is the field that says which
 // log it is about, and nothing was reading it.
+//
+// Cold-model gate run 11, D7: `10` names an unrelated origin, so it separates
+// `==` from no comparison and from nothing else. `21`-`23` move the origin
+// line as little as it can be moved -- extended, upper-cased, truncated. The
+// shape is asserted before the verdict: the log's line verifies under
+// trust.cbor's key, the witnesses meet the policy over this very body, and
+// size and root are the served head's, so the origin comparison is the only
+// rule left that can refuse each of them.
 func TestACheckpointForAnotherOriginIsRefusedByTheOriginCheck(t *testing.T) {
-	dir := servedWithCheckpoint(t,
-		filepath.Join(vectors(), "checkpoints-bad", "10-wrong-body-origin.checkpoint"))
-	out, err := exec.Command(nornBinary(t), "verify",
-		"-trust", filepath.Join(vectors(), "trust.cbor"), "-log", dir).CombinedOutput()
-	if err == nil {
-		t.Fatalf("accepted a checkpoint whose origin names another log:\n%s", out)
+	raw, err := os.ReadFile(filepath.Join(vectors(), "trust.cbor"))
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !strings.Contains(string(out), "origin") {
-		t.Errorf("refused, but not for its origin -- so the check is still unforced:\n%s", out)
+	anchor, err := trust.Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rules, err := policy.Parse(anchor.Policy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	honest, err := os.ReadFile(filepath.Join(vectors(), "served", "checkpoint"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, honestRest, _ := strings.Cut(string(honest), "\n")
+	honestRest, _, _ = strings.Cut(honestRest, "\n\n")
+	bin := nornBinary(t)
+	for _, c := range []struct {
+		name     string
+		relation func(got, want string) bool
+	}{
+		{"10-wrong-body-origin", func(got, want string) bool {
+			return !strings.HasPrefix(got, want) && !strings.HasPrefix(want, got) &&
+				!strings.EqualFold(got, want)
+		}},
+		{"21-origin-with-a-suffix", func(got, want string) bool {
+			return len(got) == len(want)+1 && strings.HasPrefix(got, want)
+		}},
+		{"22-origin-in-upper-case", func(got, want string) bool {
+			return got != want && strings.EqualFold(got, want)
+		}},
+		{"23-origin-truncated", func(got, want string) bool {
+			return len(got)+1 == len(want) && strings.HasPrefix(want, got)
+		}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			path := filepath.Join(vectors(), "checkpoints-bad", c.name+".checkpoint")
+			body, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			text, err := note.Verify(string(body), []string{anchor.LogKey})
+			if err != nil {
+				t.Fatalf("the log's line does not verify under trust.cbor, so the "+
+					"signature refuses this before its origin is read: %v", err)
+			}
+			origin, rest, _ := strings.Cut(text, "\n")
+			if strings.TrimSuffix(rest, "\n") != honestRest {
+				t.Errorf("size or root differ from the served head, so the rebuild can refuse it")
+			}
+			if !c.relation(origin, anchor.Origin) {
+				t.Errorf("origin line %q does not stand in the relation this case is "+
+					"about to %q", origin, anchor.Origin)
+			}
+			cosigs, err := cosign.Verify(string(body), rules.Keys())
+			if err != nil {
+				t.Fatalf("a cosignature line does not verify: %v", err)
+			}
+			names := make([]string, 0, len(cosigs))
+			for _, cs := range cosigs {
+				names = append(names, rules.Label(cs.Name))
+			}
+			if !rules.Satisfied(names) {
+				t.Fatalf("the witnesses do not meet the policy over this body (%v), so "+
+					"the quorum refuses it first", names)
+			}
+
+			out, err := exec.Command(bin, "verify", "-trust",
+				filepath.Join(vectors(), "trust.cbor"), "-log",
+				servedWithCheckpoint(t, path)).CombinedOutput()
+			if err == nil {
+				t.Fatalf("accepted a checkpoint whose origin is not this network's:\n%s", out)
+			}
+			if !strings.Contains(string(out), "is for origin") {
+				t.Errorf("refused, but not for its origin -- so the check is still unforced:\n%s", out)
+			}
+		})
 	}
 }
 

@@ -52,7 +52,7 @@ explains does not apply here.
 | Name | Form | Rule |
 |---|---|---|
 | `net_id` | 16 random bytes | generated at genesis; never changes |
-| `origin` | `norn/` + **RFC 4648 §6** base32 of `net_id`, lowercased, padding stripped — alphabet `abcdefghijklmnopqrstuvwxyz234567` | checkpoint origin line; the log key's signed-note name MUST equal it. Note this document also uses *Crockford* base32, in §9.3 only. The two alphabets are given in full, in both places, because they differ and a reader who assumes one is the other produces an origin no log will match. |
+| `origin` | `norn/` + **RFC 4648 §6** base32 of `net_id`, lowercased, padding stripped — alphabet `abcdefghijklmnopqrstuvwxyz234567` | checkpoint origin line; the log key's signed-note name MUST equal it. **Every comparison with an `origin` is byte for byte**: a string that extends it, one it extends, and one that differs from it only in case are all other origins. Note this document also uses *Crockford* base32, in §9.3 only. The two alphabets are given in full, in both places, because they differ and a reader who assumes one is the other produces an origin no log will match. |
 | `device_id` | UTF-8 string, 1–64 bytes, `[a-z0-9][a-z0-9.-]*` | unique among `active` devices; MAY be reused after `revoke` |
 
 ## 3. Keys
@@ -841,10 +841,10 @@ below exists for humans.
 |---|---|---|
 | `version` | uint | `1` |
 | `net` | 16 bytes | the network id; `state.net` and every entry's `net` must equal it |
-| `origin` | text | MUST equal `norn/` + lowercase unpadded **RFC 4648** base32 of `net` (§2) |
+| `origin` | text | MUST equal `norn/` + lowercase unpadded **RFC 4648** base32 of `net` (§2), **compared as text, by encoding `net`**. Decoding `origin` and comparing bytes is not the same rule: standard decoders fold case and ignore the two padding bits of a 26-character base32 string, so they accept an upper-case spelling and one whose last character carries non-zero padding bits, and each of those is another origin |
 | `name` | text, 1–64 bytes | human label for the network |
 | `genesis_hash` | 32 bytes | the **leaf hash** `SHA-256(0x00 ‖ entry0)` (§4.0), not the entry hash |
-| `log_key` | text | signed-note verifier key for the log (algorithm `0x01`); MUST parse as one, MUST NOT be a cosignature key, and its note name MUST equal `origin`. Parsing it includes recomputing its key id (§7) |
+| `log_key` | text | signed-note verifier key for the log (algorithm `0x01`); MUST parse as one, MUST NOT be a cosignature key, and its note name MUST equal `origin` **byte for byte** (§2) — an extension, a truncation or a case variant of it is another name. Parsing it includes recomputing its key id (§7) |
 | `log_urls` | array of text, ≥ 1 | where to fetch checkpoint and tiles. **Each URL is non-empty**: an array holding `""` satisfies "≥ 1" and names nowhere |
 | `witnesses` | array of `{name, key, url?}`, **≥ 1** | `key` is a **cosignature** verifier key — `c2sp.org/tlog-cosignature` algorithm `0x04`, not a note key's `0x01` — and MUST parse as one, which includes recomputing its key id (§7); **a witness `name` is 1–64 bytes** and unique within the file — bounded like the network `name` above, and for the same reason: it is a label an operator reads. The algorithm is part of the key id, so the same public key published under the two algorithms is **two different verifiers**: a file naming a witness with a note key names a key no witness will ever sign with. A file with no witnesses MUST be rejected: with nothing to cosign, the policy's quorum can never be met, so the anchor could never accept a checkpoint. |
 | `policy` | text | verbatim `c2sp.org/tlog-policy`; MUST parse, and MUST name **exactly** the witnesses `witnesses` lists, with the same keys. The two are not redundant: `witnesses` is where a node learns a witness's name and address, `policy` is where it learns whether that witness counts — so a file where they differ configures a quorum over parties the node cannot reach, or lists parties nothing requires, and either way the operator believes they set something they did not. A `log` line, if the policy carries one, is subject to the same argument: **it MUST be `norn.trust.log_key`**. A file whose two halves name different logs is the same operator error, and the only one of the two a verifier ever uses is `log_key`. The correspondence is on the **set** of names: a witness listed twice is refused by the uniqueness rule above, not by this one, and an implementation that strikes each name off as it matches conflates the two — it then refuses a duplicate here and passes the suite without the uniqueness rule at all |
@@ -1015,9 +1015,11 @@ Two consequences worth stating rather than discovering:
 loop every T_g or on demand:
   cp := fetch checkpoint (log_urls, then peers)         # part 6
   # The SIGNATURE decides first. A checkpoint signed by a key this anchor does
-  # not trust is refused for that, whatever origin it names: `wrong-origin` is
-  # about a checkpoint this network's own key signed, and until the signature
-  # has been checked there is no reason to believe any field in the note.
+  # not trust is refused for that, whatever origin it names:
+  # `checkpoints-bad/10-wrong-body-origin` is about a checkpoint this
+  # network's own key signed under this network's name, and until the
+  # signature has been checked there is no reason to believe any field in
+  # the note.
   # Signed by norn.trust.log_key, or by a key a state this node already
   # accepted names (§9.4). Never by a key learned from this checkpoint.
   # Every signature line whose name and key id match a trusted log key MUST
@@ -1037,6 +1039,9 @@ loop every T_g or on demand:
                                                         # acceptance cannot depend
                                                         # on anything the log says
   require cp.origin == norn.trust.origin                # which log this is about
+      # Byte for byte (§2): neither an extension of it nor a truncation of
+      # it matches, and case is not folded. `10` names an unrelated origin
+      # and cannot tell `==` from any of those; `21`-`23` can.
   verify witness policy: every cosignature LINE naming a witness the policy
       names must verify, and the quorum must be satisfied  # refuse otherwise
       # A line NAMES a witness the policy lists when its **name and key id**
@@ -1190,7 +1195,7 @@ suite is checked only against its own author.
 | `requests/<name>.cbor` · `.txt` · `.json` | enrollment requests (§16): the request bytes, its bech32m text form, and a mirror `{request, preimage_sha256, text, size}`. `cases.json` lists them, each with a `form` — `canonical` for §16.2's lowercase form, or `uppercase` for the same request in the form §16.2 says a reader MUST also accept, which names the canonical case it duplicates |
 | `requests-bad/<name>.txt` | requests that MUST be refused — by the text layer, the CBOR profile, a field rule or signature verification. `cases.json` gives each case's reason |
 | `receipt.json` | `{comment, origin, leaf_hash, deadline, text_sha256}`, where `text_sha256` is `SHA-256` of the **signed text** — through the newline ending the last text line, excluding the blank separator and the signature lines |
-| `checkpoints-bad/<NN-case>.checkpoint` | checkpoints that MUST be refused, each served in place of `served/checkpoint` over the honest tiles. `cases.json` lists them, and its `signature_blind_accepts` names the ones a verifier that never calls Ed25519 accepts — five of the sixteen. That set is **computed** from the shipped files, not asserted |
+| `checkpoints-bad/<NN-case>.checkpoint` | checkpoints that MUST be refused, each served in place of `served/checkpoint` over the honest tiles. `cases.json` lists them, and its `signature_blind_accepts` names the ones a verifier that never calls Ed25519 accepts. That set is **computed** from the shipped files, not asserted |
 | `entries-hostile/<name>.cbor` | input that is not an entry and never could be, for §4.0's three resource limits — the entry size, the nesting depth and the map-key cap. `cases.json` says what each refusal must be about, and marks the cases that sit exactly **at** a limit and MUST be accepted |
 | `proven/cases.json` | the devices admitted at four evaluation times (§5.3), including the boundary where `expires` equals `T` |
 | `fork/` | `evidence.cbor` and the `conflicting.checkpoint` it is about (§11.1), plus `bad-consistent` and `bad-other-origin`, which MUST be refused. `cases.json` lists them |
@@ -1223,7 +1228,7 @@ this table drifted out of date the moment one was.
 | §10 the stored checkpoint, §11's duties | `detect/`: accepting a head that grows, refusing one that shrinks **without** accusing, and proving a fork at the same size and on a shorter branch | the shorter-branch case is what a forking log looks like when it hides behind "a log does not shrink". It also pins §10's **order**: under a size-rule-first reading it comes out `refuse` rather than `fork`, so no evidence is written and no alarm is raised |
 | §8.1 condition 4 | `detect/staleness.json`, including `elapsed` exactly on `staleness` | a node with no corroborated instant reports `unknown` rather than guessing |
 | §9.4 rotation | `served-rotated/`: the same head under a key the roots published — refused by a reader holding only `trust.cbor`, accepted by one that has replayed the rotation | a key that vouched for itself is what the ordering forbids |
-| §10 the checkpoint's origin | `served/checkpoint` | `checkpoints-bad/10-wrong-body-origin`: signed by this network's key under this network's name, naming another log |
+| §10 the checkpoint's origin | `served/checkpoint` | `checkpoints-bad/10-wrong-body-origin`: signed by this network's key under this network's name, naming another log. `10` cannot tell `==` from a prefix match or a case-folded one, so `21-origin-with-a-suffix` (this network's origin plus one base32 character), `22-origin-in-upper-case` and `23-origin-truncated` (the prefix test the other way round) are the same construction with the origin line moved as little as it can be. Each is cosigned afresh by every witness over its own body, so the quorum cannot refuse it first. A reader that also enforces §6's "`origin` line = §2 `origin`" when it parses refuses all three there, and that is conforming. `03-wrong-origin` is not an origin case: it is signed under another log's name, so the signature refuses it first (cold gate run 11, D7) |
 | §4.0 both limits, at the boundary | `entries-hostile/at-the-depth-limit` and `at-the-size-limit`, which MUST be accepted | `past-the-depth-limit` and `past-the-size-limit`, one step beyond each. Without the accepted half a decoder enforcing 4, 16 or 64 passes |
 | §16.2 padding | every request's text form | `requests-bad/excess-padding` and `non-zero-padding`: the payload is the valid request with its encoding corrupted, so only §16.2 refuses them |
 | §9.4 the anchor key is kept **alongside** | `served/checkpoint`, signed by `norn.trust.log_key`, which the log publishes **nowhere**: the two `log_key` entries name other keys entirely | a reader that *replaces* `log_keys` with the published ones cannot read the head the log is serving. Replacing is the weakening — it trusts only what the log said about itself |
@@ -1267,9 +1272,9 @@ this table drifted out of date the moment one was.
 | §9.1 and §11.1's byte caps | — | `trust-bad/38-oversize`, padded with **valid** `log_urls` whose count nothing bounds, and `fork/bad-oversize`, padded through a `witness` URL the policy grammar does not bound. Each is correct in every other respect, so only its size can refuse it, and each is refused **on length** before anything it declares is allocated |
 | §9.1 `anchor` is OPTIONAL | `trust-good/no-anchor` — **accepted**. Every other trust file in the suite carries one, so a reader that required it rejected nothing | — |
 | §9.1 the members the table shows and never constrained | `trust-good/witness-without-url` and `trust-good/anchor-unknown-type`, both **accepted**: a reader that requires an optional member refuses files this document allows | `31-witness-open-schema`, `32-witness-name-too-long` (renamed in the policy too, so correspondence holds), `33-log-url-empty-string`, `34-anchor-missing-member`, `35-anchor-unknown-mode` and `36-policy-log-key-mismatch`. An unknown anchor **type** is ignorable — anchoring is advisory (D-009) — where an unknown **mode** is not |
-| §9 trust file, fingerprint | `trust.cbor` | **40 rejected anchors** in `trust-bad/`. **`15`** and **`16`** parse cleanly as verifier keys and are refused only by the algorithm rule; **`17`** and **`18`** are a witness the policy never names and a policy naming a witness the file does not list, each otherwise perfectly valid |
+| §9 trust file, fingerprint | `trust.cbor` | **45 rejected anchors** in `trust-bad/`. **`15`** and **`16`** parse cleanly as verifier keys and are refused only by the algorithm rule; **`17`** and **`18`** are a witness the policy never names and a policy naming a witness the file does not list, each otherwise perfectly valid |
 | §9.1 four rules that another rule used to decide | `trust.cbor` | `26-name-too-long` and `27-name-empty` (both ends of the 1–64 byte bound; `14` covers absent), `28-empty-log-urls` (present and empty, which is a different path from absent), `29-no-witnesses-only` — whose policy is `quorum none` and names no witnesses either, so the correspondence rule agrees and only the "a file with no witnesses MUST be rejected" minimum can refuse it — and `30-duplicate-witness-name-only`, which lists all three witnesses *and* a byte-identical second `pi`, so the names and keys correspond exactly and only uniqueness is broken |
-| §9.1's three MUSTs about the **log key** | `trust.cbor` | `11-log-key-name-mismatch` (the note name is not `origin`), `13-origin-only` (`origin` is not `norn/` + base32(`net`)) and `16-log-key-is-a-cosignature-key`. Each carries its damaged key in its **policy** as well, so the `log`-line correspondence rule agrees and only the rule the case is named after can refuse it. Without that, all three rules were deletable one at a time with the whole suite still green, and `04-origin-mismatch` — which breaks two of them at once — hid the fact (cold gate run 10, D12) |
+| §9.1's three MUSTs about the **log key** | `trust.cbor` | `11-log-key-name-mismatch` (the note name is not `origin`), `13-origin-only` (`origin` is not `norn/` + base32(`net`)) and `16-log-key-is-a-cosignature-key`. `41-log-key-name-with-a-suffix`, `42-log-key-name-in-upper-case` and `43-log-key-name-truncated` hold the note-name rule to byte equality, and `44-origin-in-upper-case` and `45-origin-non-canonical-padding-bits` hold the derivation to encoding `net` rather than decoding `origin`: a decoder folds case and ignores the padding bits, so it accepts both (cold gate run 11, D7). Each carries its damaged key in its **policy** as well, so the `log`-line correspondence rule agrees and only the rule the case is named after can refuse it. Without that, all three rules were deletable one at a time with the whole suite still green, and `04-origin-mismatch` — which breaks two of them at once — hid the fact (cold gate run 10, D12) |
 | §14 canonical JSON | every `.json`; `enroll-astral-labels`, whose `escapes` label carries every row of §14.2's tables into `state.json`, and `enroll-unicode-labels` | — |
 | §10 a bad cosignature is refused, not merely uncounted | `served/checkpoint` | `checkpoints-bad/11-forged-cosignature-with-quorum`: three named witnesses, two verifying, so the quorum is met without the third and §10 refuses it anyway. `08` cannot tell the two readings apart, because one valid line falls short either way |
 | §10 the rule is per **line**, not per witness | `served/checkpoint`, one line per witness | `checkpoints-bad/12-second-line-from-one-witness`: all three verify and `friend` carries a second, newer line that does not. A reader taking each witness's newest *verifying* line sees a full quorum. `11` cannot stand in — there the bad line's witness has no good line, so declining to count it still leaves a quorum of two |
@@ -1304,6 +1309,15 @@ admits its holes, so:
 
 - **`quorum none` accepting an uncosigned head.** It needs a second trust
   anchor, and one is not shipped.
+- **The other three origin comparisons, against anything but an unrelated
+  origin.** §8.1 checks a bundle's checkpoint "per §10", §11.1 checks both
+  checkpoints in fork evidence, and §7 checks a receipt's origin line. Each
+  compares with `norn.trust.origin` and each is pinned only by a wholly
+  different origin (`proofs-bad/wrong-origin`, `fork/bad-other-origin`, and
+  no receipt negative at all). An implementation that routes all four
+  through one comparison is held to §2's byte equality by §10's `21`–`23`;
+  one with a separate prefix or case-folding comparison in any of the three
+  is not. Twins of `21`–`23` inside `proofs-bad/` and `fork/` would close it.
 - **§4.3's "a key contributes at most once".** `sigs` is sorted by `kid` with
   no repeats (§4.1), and `kid` is `SHA-256(pk)[0:8]` — a function of the key —
   so one key cannot appear twice in one entry and the de-duplication in

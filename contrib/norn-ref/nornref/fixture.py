@@ -1315,7 +1315,53 @@ def trust_rejections() -> list[tuple[str, dict[str, Any]]]:
         ("40-log-key-id-upper-case",
          damaged(log_key=_with_upper_id(log_vkey()),
                  policy=_policy_with(log_key=_with_upper_id(log_vkey())))),
+        # Cold gate run 11, D7. `11` names the log key `someone/else`, which a
+        # prefix match and a case-folded one refuse as readily as `==` does.
+        # These move the note name as little as it can be moved -- one base32
+        # character appended, the base32 in upper case, one character dropped
+        # -- with a key id computed for the new name and the POLICY carrying
+        # the same key, as `11` does, so only "its note name MUST equal
+        # `origin`" can refuse them. The truncation is the prefix test run the
+        # other way round.
+        *[(name, damaged(log_key=note.vkey(n, KEYS["logkey"].public),
+                         policy=_policy_with(log_key=note.vkey(n, KEYS["logkey"].public))))
+          for name, n in (("41-log-key-name-with-a-suffix", ORIGIN + "a"),
+                          ("42-log-key-name-in-upper-case", _upper_origin()),
+                          ("43-log-key-name-truncated", ORIGIN[:-1]))],
+        # The derivation, spelled two ways a decoder cannot see. Standard base32
+        # decoders fold case and ignore the two padding bits a 16-byte `net`
+        # leaves in the last character, so a reader that decodes `origin` and
+        # compares bytes with `net` accepts both; §9.1 encodes `net` and
+        # compares text. The log key is named for the altered origin and the
+        # policy carries it, as in `13`, so only the derivation can refuse them.
+        *[(name, damaged(origin=o, log_key=note.vkey(o, KEYS["logkey"].public),
+                         policy=_policy_with(log_key=note.vkey(o, KEYS["logkey"].public))))
+          for name, o in (("44-origin-in-upper-case", _upper_origin()),
+                          ("45-origin-non-canonical-padding-bits", _origin_with_padding_bits()))],
     ]
+
+
+def _upper_origin() -> str:
+    """This network's origin with its base32 in upper case: RFC 4648's own
+    alphabet, which §2 says to lowercase."""
+    return "norn/" + ORIGIN[len("norn/"):].upper()
+
+
+def _origin_with_padding_bits() -> str:
+    """This network's origin with a non-zero padding bit in its last character.
+
+    16 bytes are 128 bits and 26 base32 characters carry 130, so the last
+    character's two low bits are padding. Setting one names the same `net` to
+    any decoder that ignores them, and is a different string.
+    """
+    alphabet = "abcdefghijklmnopqrstuvwxyz234567"
+    body = ORIGIN[len("norn/"):]
+    if len(body) != 26:
+        raise SystemExit(f"origin body is {len(body)} characters, not 26")
+    last = alphabet.index(body[-1])
+    if last & 0b11:
+        raise SystemExit("the origin's padding bits are already non-zero")
+    return "norn/" + body[:-1] + alphabet[last | 0b01]
 
 
 def _with_wrong_id(vkey: str) -> str:

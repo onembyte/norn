@@ -19,13 +19,16 @@
     "18-signature-name-with-space",
     "19-signature-unpadded-base64",
     "20-signature-payload-too-long",
+    "21-origin-with-a-suffix",
+    "22-origin-in-upper-case",
+    "23-origin-truncated",
     "08-forged-cosignature"
   ],
   "comment": "each file is served in place of served/checkpoint, over the honest tiles, under trust.cbor; every one MUST be refused. `signature_blind_accepts` lists the ones whose only defect is a signature that does not verify: a reader that never calls Ed25519 accepts exactly those, and nothing else here",
   "reasons": {
     "01-unsigned": "the checkpoint body with no signature line at all: nothing vouches for this tree",
     "02-wrong-log-key": "signed under the log's own name by a key the anchor does not pin",
-    "03-wrong-origin": "a perfectly valid checkpoint for another log: right key, wrong network",
+    "03-wrong-origin": "another log's checkpoint, signed by this network's key under that log's name: the key id is not the anchor's, so the signature refuses it before the origin line is read. Either rule alone refuses it; `10` is the origin case",
     "04-forged-log-signature": "the log's signature line is the right shape and the right key id, and does not verify",
     "05-one-cosignature-short": "one witness of the two the policy requires",
     "06-no-cosignatures": "signed by the log and cosigned by nobody",
@@ -42,7 +45,10 @@
     "17-root-wrong-length": "the root line decodes to 33 bytes whose first 32 are the honest root: a reader that takes the first 32 and reads on matches the rebuilt tree and accepts it, so §6's length is the only rule that can refuse it",
     "18-signature-name-with-space": "a signature line whose name carries a space: split at the first space the payload is not base64, split at the last it is a signature from a name nobody lists, which §10 ignores rather than refuses",
     "19-signature-unpadded-base64": "the last signature line's payload is unpadded base64: the same bytes to a raw-base64 reader, and not §7's encoding",
-    "20-signature-payload-too-long": "one byte appended to the log's 68-byte payload: a verifier that reads the first 68 and stops verifies it, so this head has unboundedly many byte-distinct forms that are all valid"
+    "20-signature-payload-too-long": "one byte appended to the log's 68-byte payload: a verifier that reads the first 68 and stops verifies it, so this head has unboundedly many byte-distinct forms that are all valid",
+    "21-origin-with-a-suffix": "this network's origin plus one base32 character, signed by this network's key under this network's name and cosigned by every witness: a reader that accepts an origin line extending this network's accepts it",
+    "22-origin-in-upper-case": "this network's origin with its base32 in upper case, signed by this network's key under this network's name and cosigned by every witness: a reader that folds case accepts it",
+    "23-origin-truncated": "this network's origin less its last character, signed by this network's key under this network's name and cosigned by every witness: a reader that accepts an origin line this network's origin extends accepts it"
   },
   "rules": {
     "01-unsigned": {
@@ -54,7 +60,7 @@
       "section": "10"
     },
     "03-wrong-origin": {
-      "says": "cp.origin == norn.trust.origin",
+      "says": "whatever origin it names",
       "section": "10"
     },
     "04-forged-log-signature": {
@@ -124,6 +130,18 @@
     "20-signature-payload-too-long": {
       "says": "The decoded payload is **exactly** that length",
       "section": "7"
+    },
+    "21-origin-with-a-suffix": {
+      "says": "neither an extension of it nor a truncation",
+      "section": "10"
+    },
+    "22-origin-in-upper-case": {
+      "says": "case is not folded",
+      "section": "10"
+    },
+    "23-origin-truncated": {
+      "says": "neither an extension of it nor a truncation",
+      "section": "10"
     }
   },
   "signature_blind_accepts": [

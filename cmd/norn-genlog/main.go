@@ -2176,8 +2176,15 @@ func buildBadCheckpoints(root, origin string, key ed25519.PrivateKey,
 	if err != nil {
 		return nil, err
 	}
+	// Cold gate run 11, D7: this is not an origin vector, and was declared as
+	// one. It is signed under another log's NAME, so its key id is not the
+	// anchor's, and §10's signature step refuses it before the origin line is
+	// read. `10` and `21`-`23` are the origin vectors.
 	out = append(out, badCheckpoint{"03-wrong-origin",
-		"a perfectly valid checkpoint for another log: right key, wrong network", otherLog})
+		"another log's checkpoint, signed by this network's key under that log's name: " +
+			"the key id is not the anchor's, so the signature refuses it before the " +
+			"origin line is read. Either rule alone refuses it; `10` is the origin case",
+		otherLog})
 
 	forged, err := forgeLastSignature(base, origin)
 	if err != nil {
@@ -2347,6 +2354,43 @@ func buildBadCheckpoints(root, origin string, key ed25519.PrivateKey,
 			"byte-distinct forms that are all valid",
 		rewriteLastSignature(logSignatureLast(allThree, origin), appendByte)})
 
+	// Cold gate run 11, D7. `10` names an unrelated origin, so it cannot tell
+	// `==` from a prefix match or a case-folded one: a reader doing either
+	// refuses `norn/elsewhere` too. These three are `10`'s construction with
+	// the origin line moved as little as it can be -- one base32 character
+	// appended, the base32 in upper case, and one character dropped -- each
+	// signed by this network's key under this network's name and cosigned
+	// afresh by every witness over its own body, so §10's `==` is the only rule
+	// left that can refuse it. The truncation is for the prefix test run the
+	// other way round: this network's origin starting with the checkpoint's.
+	for _, v := range []struct{ name, reason, origin string }{
+		{"21-origin-with-a-suffix",
+			"this network's origin plus one base32 character, signed by this network's " +
+				"key under this network's name and cosigned by every witness: a reader " +
+				"that accepts an origin line extending this network's accepts it",
+			origin + "a"},
+		{"22-origin-in-upper-case",
+			"this network's origin with its base32 in upper case, signed by this " +
+				"network's key under this network's name and cosigned by every witness: " +
+				"a reader that folds case accepts it",
+			"norn/" + strings.ToUpper(strings.TrimPrefix(origin, "norn/"))},
+		{"23-origin-truncated",
+			"this network's origin less its last character, signed by this network's " +
+				"key under this network's name and cosigned by every witness: a reader " +
+				"that accepts an origin line this network's origin extends accepts it",
+			origin[:len(origin)-1]},
+	} {
+		head, err := note.Sign(v.origin+body[strings.Index(body, "\n"):], origin, key)
+		if err != nil {
+			return nil, err
+		}
+		head, err = cosignWith(head, signers...)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, badCheckpoint{v.name, v.reason, head})
+	}
+
 	out = append(out, badCheckpoint{"08-forged-cosignature",
 		"two cosignature lines, both naming witnesses the policy lists, one of which does not verify: " +
 			"the quorum is met only by a verifier that does not check them", forgedCosig})
@@ -2411,7 +2455,7 @@ func writeBadCheckpoints(root, origin string, key ed25519.PrivateKey,
 	rules := map[string]map[string]string{
 		"01-unsigned":                       {"section": "10", "says": "verify log signature"},
 		"02-wrong-log-key":                  {"section": "10", "says": "norn.trust.log_key"},
-		"03-wrong-origin":                   {"section": "10", "says": "cp.origin == norn.trust.origin"},
+		"03-wrong-origin":                   {"section": "10", "says": "whatever origin it names"},
 		"04-forged-log-signature":           {"section": "10", "says": "MUST\n  # verify"},
 		"05-one-cosignature-short":          {"section": "10", "says": "the quorum must be satisfied"},
 		"06-no-cosignatures":                {"section": "10", "says": "the quorum must be satisfied"},
@@ -2429,6 +2473,9 @@ func writeBadCheckpoints(root, origin string, key ed25519.PrivateKey,
 		"19-signature-unpadded-base64":      {"section": "7", "says": "standard base64 **with padding**"},
 		"20-signature-payload-too-long":     {"section": "7", "says": "The decoded payload is **exactly** that length"},
 		"16-two-log-signatures":             {"section": "10", "says": "Every signature line whose name and key id match"},
+		"21-origin-with-a-suffix":           {"section": "10", "says": "neither an extension of it nor a truncation"},
+		"22-origin-in-upper-case":           {"section": "10", "says": "case is not folded"},
+		"23-origin-truncated":               {"section": "10", "says": "neither an extension of it nor a truncation"},
 	}
 	for name := range reasons {
 		if _, ok := rules[name]; !ok {
