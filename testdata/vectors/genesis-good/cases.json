@@ -1,0 +1,1 @@
+{"cases":["name-at-the-cap"],"comment":"each subdirectory is a one-entry log whose genesis replay MUST accept, with its own anchor, manifest and state; `genesis/` holds the aborts. `name-at-the-cap` is a `name` of exactly 64 bytes of UTF-8 and fewer characters (SPEC 4.0)"}

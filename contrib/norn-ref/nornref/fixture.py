@@ -86,6 +86,56 @@ def policy_text() -> str:
     return "\n".join(lines) + "\n"
 
 
+# SPEC §4.0: every length given to a text string in bytes counts its UTF-8
+# encoding. Until 6.5l-v every over-long vector was ASCII, so a reader that
+# counted characters passed the whole suite (cold gate run 11, D6).
+#
+# The motif holds one character of each UTF-8 width -- ASCII, `Ж` and `é`
+# (two bytes), `日` and `本` (three), and U+1D11E (four bytes, and two UTF-16
+# code units). No character in it combines with another, so code points and
+# grapheme clusters are the same count. `é` (U+00E9) decomposes: it is three
+# bytes under NFD, so a reader that normalises before counting finds every
+# positive over its cap. The text is measured as encoded (SPEC §4.0).
+_WIDTHS_MOTIF = "ab-Жé-日本-\U0001d11e-"
+#: The one-byte difference between each positive and its negative: an ASCII
+#: letter in the positive, a two-byte letter in the negative. Both are one
+#: code point, one UTF-16 code unit and one grapheme cluster.
+_AT_THE_CAP, _ONE_OVER = "x", "Ж"
+
+
+def at_the_cap(cap: int) -> str:
+    """Exactly `cap` bytes of UTF-8, ending in the ASCII letter the negative swaps.
+
+    More ASCII than three-byte characters, so a reader counting UTF-16 *bytes*
+    (two per code unit) finds it over the cap; and a four-byte character, so a
+    reader counting modified UTF-8 (six bytes for one outside the BMP) does too.
+    """
+    out = ""
+    while len((out + _WIDTHS_MOTIF).encode()) < cap:
+        out += _WIDTHS_MOTIF
+    out += _AT_THE_CAP * (cap - len(out.encode()))
+    assert len(out.encode()) == cap and out.endswith(_AT_THE_CAP), cap
+    return out
+
+
+def one_byte_over(text: str) -> str:
+    """`text` with its LAST ASCII `x` replaced by `Ж`: one byte longer, same characters."""
+    i = text.rindex(_AT_THE_CAP)
+    return text[:i] + _ONE_OVER + text[i + 1:]
+
+
+def policy_at_the_cap(policy: str, over: bool = False, cap: int = 4096) -> str:
+    """`policy` under a leading comment that brings it to exactly `cap` bytes.
+
+    A comment is ignored in its entirety (§9.1), so the padded policy means
+    what `policy` means. With `over`, the comment's last `x` is `Ж`: the extra
+    byte lies inside the comment, and every directive is byte-identical.
+    """
+    room = cap - len(policy.encode()) - len("# \n")
+    comment = one_byte_over(at_the_cap(room)) if over else at_the_cap(room)
+    return "# " + comment + "\n" + policy
+
+
 def trust_file() -> dict[str, Any]:
     """The trust anchor a node is provisioned with out of band (SPEC §9)."""
     genesis_hash = entry.leaf_hash(entry.encode(genesis()))
@@ -475,7 +525,9 @@ def log() -> list[LogItem]:
     b.add(f"{b.index}-params", b.build("params", {"staleness": 900, "rotate_needs_signer": True}, roots3))
 
     both = [("signer1", "signer"), ("signer3", "signer")]
-    b.add(f"{b.index}-note", b.build("note", {"text": "quarterly key review completed"},
+    # §4.0: exactly 4096 bytes, and fewer characters, so it is the positive
+    # twin `bad-text-too-long` is one byte over (6.5l-v).
+    b.add(f"{b.index}-note", b.build("note", {"text": at_the_cap(4096)},
                              [("signer1", "signer")]))
     b.add(f"{b.index}-enroll-printer", b.build("enroll", _enroll_body("printer"),
                                        both))
@@ -543,7 +595,9 @@ def log() -> list[LogItem]:
     # A real policy, because §5.1 now requires a `policy` entry to be one. The
     # canonical-JSON escape torture moved to a label value below, where free
     # text belongs and where it still reaches `state.json`.
-    rotated = policy_text().replace("group home 2 ", "group home 3 ")
+    # Exactly 4096 bytes (§4.0) -- the positive twin of
+    # `bad-policy-text-too-long` -- under a comment, so it means 3-of-3.
+    rotated = policy_at_the_cap(policy_text().replace("group home 2 ", "group home 3 "))
     b.add(f"{b.index}-policy-rotated", b.build("policy", {"text": rotated}, roots3))
     # ...and the refusal that rule needs.
     b.add(f"{b.index}-bad-policy-unparseable", b.build(
@@ -720,8 +774,10 @@ def log() -> list[LogItem]:
     b.add(f"{b.index}-enroll-rootrevoked", b.build("enroll", _enroll_body(
         "rootrevoked", wg="rootrevoked"),
         both))
+    # Its `reason` is exactly 256 bytes: the positive twin of
+    # `bad-revoke-reason-too-long`, which is signed by the same three roots.
     b.add(f"{b.index}-revoke-by-roots", b.build(
-        "revoke", {"device_id": "rootrevoked", "reason": "root quorum"}, roots3))
+        "revoke", {"device_id": "rootrevoked", "reason": at_the_cap(256)}, roots3))
 
     # §5.1: step 7 precedes step 8, so an under-signed governance entry with a
     # malformed body is `threshold` and never reaches the body check.
@@ -891,10 +947,13 @@ def log() -> list[LogItem]:
         [("printer", "signer")] + both), "no-device-sig")
 
     # §4.0 caps `revoke`'s `reason` at 256 bytes. `bad-text-too-long` covers
-    # `note` and `policy`, whose cap is 4096 and a different rule -- so this
-    # one was stated, and the Python reference did not implement it at all.
+    # `note`, whose cap is 4096 and a different rule -- so this one was
+    # stated, and the Python reference did not implement it at all.
+    # `revoke-by-roots`'s reason with its last `x` made `Ж`: 257 bytes, and the
+    # same number of characters as a reason this log accepts (6.5l-v, D6).
     b.add(f"{b.index}-bad-revoke-reason-too-long", b.build(
-        "revoke", {"device_id": "nas", "reason": "x" * 257}, roots3), "decode")
+        "revoke", {"device_id": "nas", "reason": one_byte_over(at_the_cap(256))}, roots3),
+        "decode")
 
     # §4.3 deliberately does NOT constrain the embedded request's `ts` against
     # the entry's: the device is headless and its clock is advisory (§4.1).
@@ -980,6 +1039,17 @@ def log() -> list[LogItem]:
         "rotate", {"device_id": "printer", "wg_pk": WG["printer"],
                    "device_pk": KEYS["printer-id2"].public},
         [("printer-id2", "device")] + both), "no-device-sig")
+
+    # Cold gate run 11, D6. §4.0 caps a `policy` entry's `text` at 4096
+    # bytes, and no `policy` here was ever over it -- `bad-text-too-long` is a
+    # `note` -- so deleting the cap from the policy path passed everything.
+    # `policy-rotated`'s text with the last `x` in its comment made `Ж`: one
+    # byte over, the same characters, every directive byte-identical, and a
+    # valid policy, so only the cap can refuse it.
+    b.add(f"{b.index}-bad-policy-text-too-long", b.build(
+        "policy", {"text": policy_at_the_cap(
+            policy_text().replace("group home 2 ", "group home 3 "), over=True)}, roots3),
+        "decode")
 
     return b.items
 
@@ -1092,7 +1162,9 @@ def genesis_aborts() -> list[tuple[str, bytes, "replay.Anchor"]]:
     # §4.0 bounds `name` at 1-64 bytes and `genesis/` had no case at either
     # end, so `no-name-len` passed -- and the Python reference had no such
     # check, which is what an unpinned rule looks like from the inside.
-    bad_body("14-name-too-long", name="n" * 65)
+    # 65 bytes and 37 characters: `genesis-good/name-at-the-cap`'s name with
+    # its last `x` made `Ж` (6.5l-v, D6).
+    bad_body("14-name-too-long", name=one_byte_over(at_the_cap(64)))
     # Cold gate run 8, D20: the keys of a genesis `params` were checked and the
     # values were not, so `genesis-params-no-typecheck` and
     # `genesis-params-nonempty` both passed -- while a `params` *entry* has
@@ -1103,6 +1175,22 @@ def genesis_aborts() -> list[tuple[str, bytes, "replay.Anchor"]]:
 
     assert good_anchor  # the good anchor is exercised by the log fixture
     return cases
+
+
+def genesis_acceptances() -> list[tuple[str, bytes, "replay.Anchor"]]:
+    """Genesis entries replay MUST accept, one single-entry log per case.
+
+    `genesis/` holds only aborts. §4.0's `name` cap is 64 bytes, and no
+    genesis in the suite sat at it, so a reader that refused 64 (`<` for `≤`)
+    or counted a longer encoding than UTF-8 was held by nothing (6.5l-v, D6).
+    """
+    from . import replay
+
+    env = _signed(entry.new("genesis", NET, ts=T0,
+                            body=dict(genesis()["body"], name=at_the_cap(64))),
+                  [("root1", "root"), ("root2", "root")])
+    raw = entry.encode(env)
+    return [("name-at-the-cap", raw, replay.Anchor(NET, entry.leaf_hash(raw)))]
 
 
 def policy_grammar() -> list[tuple[str, str, bool, str]]:
@@ -1371,7 +1459,8 @@ def trust_rejections() -> list[tuple[str, dict[str, Any]]]:
         #
         # `14-missing-name` covers an absent `name`; the 1-64 byte bound has
         # two ends and neither was reached.
-        ("26-name-too-long", damaged(name="n" * 65)),
+        # `trust-good/name-at-the-cap` with its last `x` made `Ж` (6.5l-v).
+        ("26-name-too-long", damaged(name=one_byte_over(at_the_cap(64)))),
         ("27-name-empty", damaged(name="")),
         # `24-missing-log-urls` covers absent. Present-and-empty is a different
         # code path in both implementations.
@@ -1397,9 +1486,11 @@ def trust_rejections() -> list[tuple[str, dict[str, Any]]]:
             + base["witnesses"][1:])),
         # Renamed in the policy too, so correspondence holds and only the
         # length bound can refuse this file.
+        # `trust-good/witness-name-at-the-cap` with its last `x` made `Ж`.
         ("32-witness-name-too-long", damaged(
-            witnesses=[dict(base["witnesses"][0], name="w" * 65)] + base["witnesses"][1:],
-            policy=_policy_with(rename="w" * 65))),
+            witnesses=[dict(base["witnesses"][0], name=one_byte_over(at_the_cap(64)))]
+            + base["witnesses"][1:],
+            policy=_policy_with(rename=one_byte_over(at_the_cap(64))))),
         ("33-log-url-empty-string", damaged(log_urls=[""])),
         ("34-anchor-missing-member", damaged(
             anchor={"type": "opentimestamps", "mode": "advisory"})),
@@ -1560,6 +1651,13 @@ def trust_acceptances() -> list[tuple[str, dict[str, Any]]]:
         # trust files carried one -- so a reader that required it rejected
         # nothing in the suite.
         ("no-anchor", {k: v for k, v in base.items() if k != "anchor"}),
+        # §9.1's two 64-byte caps, met exactly by a name of fewer characters
+        # (6.5l-v, D6): the positive twins of `trust-bad/26` and `32`.
+        ("name-at-the-cap", dict(base, name=at_the_cap(64))),
+        ("witness-name-at-the-cap", dict(
+            base, witnesses=[dict(base["witnesses"][0], name=at_the_cap(64))]
+            + base["witnesses"][1:],
+            policy=_policy_with(rename=at_the_cap(64)))),
     ]
 
 
@@ -1892,7 +1990,8 @@ def field_negatives() -> list[tuple[str, bytes]]:
     ok = {"v": 1, "ts": T0 + 9000, "net": NET, "device_id": "probe",
           "device_pk": KEYS["spare"].public, "wg_pk": WG["rogue"]}
 
-    long_note = entry.new("note", NET, ts=T0 + 9000, after=62, body={"text": "x" * 4097})
+    long_note = entry.new("note", NET, ts=T0 + 9000, after=62,
+                          body={"text": one_byte_over(at_the_cap(4096))})
     _signed(long_note, [("signer1", "signer")])
 
     bad_sig = entry.new("note", NET, ts=T0 + 9000, after=62, body={"text": "short sig"})
@@ -1935,6 +2034,10 @@ def enroll_requests() -> list[tuple[str, dict[str, Any]]]:
                                  labels={"site": "buenos-aires ñ", "emoji": "\U0001f512"})),
         # §2 boundary: 64 bytes is the longest device_id there is.
         ("req-long-id", _request("d" + "e" * 63, "printer", "printer", 40)),
+        # §4.0: a label value of exactly 256 bytes and fewer characters -- the
+        # positive twin of `requests-bad/oversize-label` (6.5l-v, D6).
+        ("req-label-at-the-cap", _request("pi-cam", "pi-cam", "pi-cam", 10,
+                                          labels={"owner": at_the_cap(256)})),
     ]
 
 
@@ -1994,7 +2097,9 @@ def request_negatives() -> list[tuple[str, str, str]]:
         ("bool-expires", mutate(expires=True), "a CBOR bool where a uint is required"),
         ("expires-at-ts", _expires_at_ts(), "expires must be after ts"),
         ("too-many-labels", mutate(labels={f"k{i}": "v" for i in range(33)}), "over 32 labels"),
-        ("oversize-label", mutate(labels={"ip": "x" * 257}), "label over 256 bytes"),
+        ("oversize-label", mutate(labels={"owner": one_byte_over(at_the_cap(256))}),
+         f"label value 257 bytes in {len(at_the_cap(256))} characters, as many as "
+         "req-label-at-the-cap's 256-byte value"),
         ("non-string-label", mutate(labels={"ip": 1}), "label value is not text"),
         ("ts-is-text", mutate(ts="now"), "ts is not a uint"),
         ("unsorted-keys", text_of_unsorted(base), "map keys out of §4.0 order"),

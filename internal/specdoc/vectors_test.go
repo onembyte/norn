@@ -827,6 +827,10 @@ func TestEveryVectoredRuleIsStatedWhereItLives(t *testing.T) {
 		// `rules` map, so its negatives are placed here.
 		{"4.2", "**A key an entry adds counts for nothing on the entry that adds it**",
 			"log/bad-root_add-signed-by-the-added-key and bad-rotate-signed-by-the-incoming-key-only"},
+		// D6: every text cap is on the UTF-8 encoding. Each negative has as
+		// many characters as a positive at the cap, so only the unit refuses it.
+		{"4.0", "**A length in bytes counts the UTF-8 encoding, never characters.**",
+			"log/bad-revoke-reason-too-long, bad-text-too-long and bad-policy-text-too-long"},
 	} {
 		t.Run(c.vector, func(t *testing.T) {
 			section, ok := doc.Section(c.section)

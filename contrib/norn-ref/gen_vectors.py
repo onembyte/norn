@@ -31,7 +31,7 @@ def write(path: pathlib.Path, data: bytes | str) -> None:
 #: Top-level paths this generator owns, and may therefore delete stale files
 #: from. Everything else under `testdata/vectors` belongs to somebody else.
 OWNED = frozenset({
-    "keys.json", "entries", "log", "genesis", "state.json",
+    "keys.json", "entries", "log", "genesis", "genesis-good", "state.json",
     "trust.cbor", "trust.toml", "trust.fingerprint", "trust-bad", "trust-good",
     "receipt.note", "receipt.json", "receipts-bad", "requests", "requests-bad", "policies",
     "entries-hostile", "proven", "log-empty",
@@ -191,6 +191,7 @@ def write_genesis_aborts(out: pathlib.Path) -> None:
     step6 = {"section": "5.1", "says": "Body checks: `roots` and `signers` are non-empty"}
     step6params = {"section": "5.1", "says": "`params`, if present, is **non-empty**"}
     step7 = {"section": "5.1", "says": "genesis signatures are counted against the `roots`"}
+    namecap = {"section": "4.0", "says": "| `name`, `reason` | UTF-8, 1–64 / 0–256 bytes |"}
     genesis_rules = {
         "01-hash-mismatch": step4, "02-not-genesis": step3, "03-wrong-net": step3,
         "04-after-nonzero": step5, "05-root-thr-above-set": step6,
@@ -198,7 +199,9 @@ def write_genesis_aborts(out: pathlib.Path) -> None:
         "08-duplicate-root": step6, "09-role-overlap": step6,
         "10-duplicate-signer": step6, "11-signer-thr-above-set": step6,
         "12-empty-roots": step6, "13-params-unknown-key": step6params,
-        "14-name-too-long": step6, "15-name-empty": step6,
+        # The name bound is §4.0's field rule, not step 6's body checks, which
+        # never mention `name` (6.5l-v).
+        "14-name-too-long": namecap, "15-name-empty": namecap,
         "16-params-wrong-type": step6params, "17-params-empty": step6params,
         "18-bootstrap-sigs-wrong-role": step7,
         # The role string and the key SET are two different halves of step 7;
@@ -214,6 +217,30 @@ def write_genesis_aborts(out: pathlib.Path) -> None:
         "comment": "each subdirectory is a one-entry log whose replay MUST abort "
                    "with bad-genesis; an abort stops replay, so cases cannot share a log",
         "cases": index,
+    }) + "\n")
+
+
+def write_genesis_acceptances(out: pathlib.Path) -> None:
+    """Genesis entries replay MUST accept: the other side of `genesis/` (6.5l-v)."""
+    cases = []
+    for name, raw, anchor in fixture.genesis_acceptances():
+        state = replay.replay(anchor, [raw])
+        if state.rejected or state.size != 1:
+            raise SystemExit(f"genesis-good case {name} is refused: {state.rejected}")
+        folder = out / "genesis-good" / name
+        write(folder / "00-genesis.cbor", raw)
+        write(folder / "manifest.json", canonjson.dumps({
+            "anchor": {"net": anchor.net, "genesis_hash": anchor.genesis_hash},
+            "entries": [{"index": 0, "name": "00-genesis", "reason": ""}],
+        }) + "\n")
+        write(folder / "state.json", state.to_json() + "\n")
+        cases.append(name)
+    write(out / "genesis-good" / "cases.json", canonjson.dumps({
+        "comment": "each subdirectory is a one-entry log whose genesis replay MUST "
+                   "accept, with its own anchor, manifest and state; `genesis/` holds "
+                   "the aborts. `name-at-the-cap` is a `name` of exactly 64 bytes of "
+                   "UTF-8 and fewer characters (SPEC 4.0)",
+        "cases": cases,
     }) + "\n")
 
 
@@ -319,10 +346,12 @@ def write_trust_acceptances(out: pathlib.Path) -> None:
         cases.append(name)
     write(out / "trust-good" / "cases.json", canonjson.dumps({
         "comment": "every file here MUST be accepted as a trust anchor. Each "
-                   "exercises a member SPEC 9.1 marks optional, or a value it "
-                   "leaves open: a reader that requires a witness `url`, or "
+                   "exercises a member SPEC 9.1 marks optional or a value it "
+                   "leaves open -- a reader that requires a witness `url`, or "
                    "refuses an `anchor` type it does not recognise, rejects "
-                   "files this document permits",
+                   "files this document permits -- or puts one of 9.1's two "
+                   "64-byte names exactly at the cap in fewer characters, the "
+                   "positive twins of trust-bad/26 and 32",
         "cases": cases,
     }) + "\n")
 
@@ -664,6 +693,7 @@ def main(argv: list[str]) -> int:
     write_entries(out)
     write_log(out)
     write_genesis_aborts(out)
+    write_genesis_acceptances(out)
     write_trust_rejections(out)
     write_trust_acceptances(out)
     write_empty_log(out)

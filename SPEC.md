@@ -219,6 +219,19 @@ every failure is `bad-genesis` and aborts replay, per §5.1's entry-0 list):
 | `kid` (in `sigs`, and in `signer_remove`/`root_remove` bodies) | exactly 16 characters matching `^[0-9a-f]{16}$`. A malformed `kid` is a schema violation (`decode`), **not** a `kid` that merely fails to resolve — that distinction matters because the two produce different reason codes. |
 | `sigs` array | sorted by `kid` and free of repeats (§4.0); an unsorted or repeating array is `decode` |
 
+**A length in bytes counts the UTF-8 encoding, never characters.** The text
+is measured **as encoded, with no Unicode normalisation**. That holds
+for every length this document gives a text string in bytes: the map-key cap
+above, `name`, `reason`, `text` and label values in this table, §2's
+`device_id`, and §9.1's two names. It is not a count of code points, of UTF-16
+code units or of grapheme clusters: a 256-byte `reason` holds at most 256 ASCII
+letters, 128 Cyrillic ones, 85 of the CJK ideographs in the Basic Multilingual
+Plane, or 64 characters outside it. A reader that counts characters accepts
+text this document refuses: a `revoke` whose `reason` is 300 bytes of Cyrillic
+is `decode` on one node and a revocation on the other, and a `policy` entry
+over 4096 bytes and under 4096 characters is a replaced `state.policy` on one
+and `decode` on the other.
+
 Reserved label keys (advisory hints for owner mode, D-026): `ip` — comma-separated
 CIDR list used as allowed-ips; `endpoint` — `host:port`. A control plane may
 override endpoints; it can never override keys.
@@ -294,9 +307,9 @@ only by the incoming key is not signed by the device.
 | `root_thr` | `thr` (uint) | ≥ `root_thr` roots (the *old* threshold) |
 | `params` | partial §4.5 map | ≥ `root_thr` roots |
 
-| `note` | `text` (string ≤ 4096) | any 1 signer or root; **no state effect** |
+| `note` | `text` (string, ≤ 4096 bytes, §4.0) | any 1 signer or root; **no state effect** |
 | `log_key` | `pk` (bytes32), `overlap` (uint s) | ≥ `root_thr` roots — log-key rotation; both keys valid for `overlap` (`ENROLLMENT.md` §6) |
-| `policy` | `text` (verbatim tlog-policy) | ≥ `root_thr` roots — replaces witness policy in state |
+| `policy` | `text` (verbatim tlog-policy, ≤ 4096 bytes, §4.0) | ≥ `root_thr` roots — replaces witness policy in state |
 
 `thr` is a plain uint **here**, deliberately. Its range — `1 … len(set)` — is a
 **replay** decision, not a schema one (§5.2's `bad-thr`): the value is a
@@ -589,7 +602,7 @@ devices on a number nobody signed.
 - Layout, tiles, entry bundles, and `checkpoint` exactly per `tlog-tiles`. Tile height 8 (width 256), as torchwood requires.
 - A checkpoint body is exactly three lines (`c2sp.org/tlog-checkpoint`): the origin, the tree size in decimal with **no leading zeroes**, and the root as **standard base64 with padding, 32 bytes once decoded** — any other decoded length is an error, and so is base64 the line's own length does not account for. `0124` and `124` are the same number and two spellings of one head. The length bound is not decoration: a reader that skips it and also skips the rebuild below accepts a head that is not a SHA-256 root at all, and the two rules are the only ones that look at that line (cold gate run 10, D11).
 - Leaf hash = `H(0x00 ‖ entry_bytes)` (RFC 6962 §2.1). An entry bundle is each entry's length as a **big-endian** uint16 followed by that many bytes, repeated — the framing `c2sp.org/tlog-tiles` defines, and the reason §4.0's `MAX_ENTRY_BYTES` is 65535 rather than 65536. A partial bundle holds **exactly** the number of entries its path declares.
-- **The paths, restated.** `c2sp.org/tlog-tiles` defines them and this document does not vary them — but it restates them here for the same reason §7 restates the note framing and §9.1 the policy grammar: a verifier cannot be written without them, and a reader holding this document and the vectors has no other copy. A hash tile at level `L` covering index group `N` is `tile/<L>/<N>`, and an entry bundle is `tile/entries/<N>`, where `<N>` is the tile's index written in **three-digit groups, most significant first, joined by `/`** — `0`, `1000` and `1234567` are `000`, `x001/000` and `x001/x234/567`, with every group but the last prefixed `x`. A tile that is not yet full is **partial**: its path gains `.p/<W>`, where `<W>` is how many of the 256 entries it holds. So a log of 128 entries serves its only hash tile at `tile/0/000.p/128` and its only bundle at `tile/entries/000.p/128` — both of which this suite ships, and every concrete path written here is one a reader can open. When a tile fills, the `.p/<W>` suffix goes away and the path is the bare group; the next tile starts again at width 1. Tile height is 8, so width is 256 and level `L` covers 256^(L+1) leaves.
+- **The paths, restated.** `c2sp.org/tlog-tiles` defines them and this document does not vary them — but it restates them here for the same reason §7 restates the note framing and §9.1 the policy grammar: a verifier cannot be written without them, and a reader holding this document and the vectors has no other copy. A hash tile at level `L` covering index group `N` is `tile/<L>/<N>`, and an entry bundle is `tile/entries/<N>`, where `<N>` is the tile's index written in **three-digit groups, most significant first, joined by `/`** — `0`, `1000` and `1234567` are `000`, `x001/000` and `x001/x234/567`, with every group but the last prefixed `x`. A tile that is not yet full is **partial**: its path gains `.p/<W>`, where `<W>` is how many of the 256 entries it holds. So a log of 129 entries serves its only hash tile at `tile/0/000.p/129` and its only bundle at `tile/entries/000.p/129` — both of which this suite ships, and every concrete path written here is one a reader can open. When a tile fills, the `.p/<W>` suffix goes away and the path is the bare group; the next tile starts again at width 1. Tile height is 8, so width is 256 and level `L` covers 256^(L+1) leaves.
 - A verifier rebuilds the tree from the **entry bundles** and compares its head with the signed checkpoint; that comparison is what binds the entries to the head. The served `tile/<L>/…` hashes MUST also agree with the tree it rebuilt. They are not needed to reach the head, and checking them is not optional: a node serves the tiles it fetched onward to its peers (`GOSSIP.md`), so a node that accepted tiles it never checked would pass on a lie it had the means to catch.
 - The checkpoint is a `tlog-checkpoint` note: `origin` line = §2 `origin`, size, root; **no extension lines**. Signed by the log key; cosigned by witnesses per `tlog-cosignature` v1.
 - The log MUST issue a new checkpoint after every append and at least every `checkpoint_interval`.
@@ -1212,11 +1225,12 @@ suite is checked only against its own author.
 | `keys.json` | every test key: Ed25519 `{seed, public, kid}` by name, X25519 public keys by name, and `net` |
 | `entries/NN-<type>.cbor` | one valid entry per type, canonical bytes |
 | `entries/NN-<type>.json` | mirror: `{entry, entry_hash, leaf_hash, preimage_sha256, size}` where `size` is the byte length of the `.cbor`. The `entry` object mirrors the **CBOR**, so an optional field absent from the entry is absent here too — unlike `state.json`, where §5.3's schema fields are always emitted |
-| `log/NN-<name>.cbor` | the replay fixture, **128 entries** in order. The file names are labels, not the order: **read the sequence from `manifest.json`**, never by globbing and sorting |
+| `log/NN-<name>.cbor` | the replay fixture, **129 entries** in order. The file names are labels, not the order: **read the sequence from `manifest.json`**, never by globbing and sorting |
 | `log/NN-<name>.reason` | beside each entry that must be rejected: its §5.2 reason code |
 | `log/manifest.json` | `{"anchor": {"net", "genesis_hash"}, "entries": [{"index", "name", "reason"}]}` — the replay input and expected outcome; `reason` is `""` for an accepted entry |
 | `state.json` | canonical replay output for `log/` (§5.3) |
 | `genesis/<NN-case>/` | one single-entry log per way entry 0 can abort, each with its own `manifest.json` and `state.json`; an abort stops replay, so the cases cannot share a log. `cases.json` lists them |
+| `genesis-good/<case>/` | single-entry logs in the same layout whose genesis MUST be **accepted**: `name-at-the-cap`, a `name` of exactly 64 bytes. `cases.json` lists them |
 | `trust-bad/<NN-case>.cbor` | trust files that decode cleanly but MUST be rejected as anchors; the file name says why, `cases.json` lists them |
 | `served/` | the fixture's entries as a real **tlog-tiles directory**: `tile/entries/…` bundles, `tile/<L>/…` hashes, and `checkpoint` — which **is** the signed note (§6), not an unsigned file with a signed sibling |
 | `proofs/<device>.bundle` | one §8.1 proof bundle per active device, each proving the entry that made that device active; `cases.json` gives the origin, the log-key seed, the device list and, under `installs`, the key a node installs for each device (§8.1 condition 3) |
@@ -1224,7 +1238,7 @@ suite is checked only against its own author.
 | `receipt.note` | a submission receipt: the signed note itself (§7) |
 | `policies/<name>.txt` | §9.1's restated grammar, one whole policy per rule. `cases.json` marks each `accept` true or false and says which rule it is about |
 | `log-empty/` | a log with **no entries**: `manifest.json` and the zero state §5.1 says it replays to. Not a `bad-genesis` abort — there is nothing to reject |
-| `trust-good/<name>.cbor` | trust files §9.1 **permits**, for the members it marks optional or leaves open. `cases.json` lists them |
+| `trust-good/<name>.cbor` | trust files §9.1 **permits**: the members it marks optional or leaves open, and its two 64-byte names exactly at the cap. `cases.json` lists them |
 | `requests/<name>.cbor` · `.txt` · `.json` | enrollment requests (§16): the request bytes, its bech32m text form, and a mirror `{request, preimage_sha256, text, size}`. `cases.json` lists them, each with a `form` — `canonical` for §16.2's lowercase form, or `uppercase` for the same request in the form §16.2 says a reader MUST also accept, which names the canonical case it duplicates |
 | `requests-bad/<name>.txt` | requests that MUST be refused — by the text layer, the CBOR profile, a field rule or signature verification. `cases.json` gives each case's reason |
 | `receipt.json` | `{comment, origin, leaf_hash, deadline, text_sha256}`, where `text_sha256` is `SHA-256` of the **signed text** — through the newline ending the last text line, excluding the blank separator and the signature lines |
@@ -1282,12 +1296,13 @@ this table drifted out of date the moment one was.
 | §4.2 a signature resolves in the state **before** its entry | `root_add-root4`, signed by roots the state already held | `bad-root_add-signed-by-the-added-key`: two of the three root signatures `root_thr` requires, and a third, declaring `root`, by the key the body adds. That key has never held a role, so only a reader resolving against the state **after** the entry counts it, and that reader admits a root quorum that bootstrapped itself. `bad-rotate-signed-by-the-incoming-key-only`: a `rotate` carrying a new `device_pk`, signed by that key and both signers and not by the current one. A reader that takes the incoming key as the current one, or accepts either, hands the device to whoever holds the new key. These are the entries whose body adds a key to the role that authorises them, which is where the after-reading is the more permissive one. On `root_remove` and `root_thr` it is the stricter one, and `bad-root-invariant` and `root_thr-3` already refuse it (cold gate run 11, D8) |
 | §5.2 a signature counts only **in its declared role** | — | `bad-role-mismatch` for the root/signer direction, and `bad-device-sig-wrong-role` for the device one: the device's key really did sign, under `role: "signer"`, where it resolves to nothing. An implementation that ignores the declared role accepts it |
 | §4.0 the `kid` **body** rule | `signer_remove-below-threshold` | `bad-kid-format-in-body`: a `signer_remove` whose body `kid` is not `^[0-9a-f]{16}$` → `decode`, not `unknown-key`. `bad-kid-format` puts the malformed kid in `sigs`, which is the other half of the distinction this document draws |
-| §4.0 `revoke`'s `reason` cap | `revoke-by-roots` | `bad-revoke-reason-too-long`: 257 bytes. `bad-text-too-long` covers `note` and `policy`, whose cap is 4096 and a different rule |
-| §4.0 the genesis `name` bound | the log's entry 0 | `genesis/14-name-too-long` and `15-name-empty` — both ends, because a reader enforcing only the cap and one enforcing only the floor are different implementations |
+| §4.0 `revoke`'s `reason` cap | `revoke-by-roots` | `bad-revoke-reason-too-long`. `bad-text-too-long` covers `note`, and `bad-policy-text-too-long` covers `policy`: their cap is 4096 and a different rule |
+| §4.0 the genesis `name` bound | `genesis-good/name-at-the-cap` | `genesis/14-name-too-long` and `15-name-empty` — both ends, because a reader enforcing only the cap and one enforcing only the floor are different implementations |
+| §4.0's text caps in **bytes** of UTF-8, and §9.1's | a value at **exactly** each cap, in fewer characters: `revoke-by-roots`'s `reason` (256 bytes), the `text` of the entry named `note` and of `policy-rotated` (4096), `genesis-good/name-at-the-cap`, `requests/req-label-at-the-cap`'s label value (256), and `trust-good/name-at-the-cap` and `witness-name-at-the-cap` (64). Each MUST be accepted. None of them is ASCII | `bad-revoke-reason-too-long`, `bad-text-too-long`, `bad-policy-text-too-long`, `genesis/14-name-too-long`, `requests-bad/oversize-label`, `trust-bad/26-name-too-long` and `32-witness-name-too-long`. Each is its positive's value with one ASCII `x` replaced by `Ж` (for `policy`, the last `x` of its comment, so every directive is the same; that padding is a §9.1 comment, so a reader without comments fails the positive too, and the state it replays to carries the comment): one byte over the cap, and the same number of code points, UTF-16 code units and grapheme clusters as a value the reader MUST accept. So a reader that counts any of those three accepts both files or refuses both, and fails one. Until 6.5l-v every one of these negatives was ASCII, so a reader counting characters passed the suite; no value sat at a cap, so a reader refusing it (`<` for `≤`) did too; and a `policy` over 4096 bytes had no negative at all (cold gate run 11, D6) |
 | §5.3 genesis `params` is **overlaid** | `state.json`'s `checkpoint_interval`, which the genesis body does not set and the §4.5 default supplies | a reader that *replaces* the defaults instead loses the key entirely |
 | §4.3 the request's `ts` is unconstrained | `enroll-request-from-the-future`: an accepted `enroll` whose embedded request is dated ten days after the entry carrying it | the check a reader is most likely to add unasked |
 | §4.4 `after` is a floor | `after-below-index` | `bad-after` |
-| §5 replay, 15 of the 16 reason codes | the log | **86 rejecting entries** |
+| §5 replay, 15 of the 16 reason codes | the log | **87 rejecting entries** |
 | §5 `bad-genesis` | — | `genesis/`; it cannot appear in the log, since it aborts replay |
 | §5.1 genesis | the log's entry 0 | **19 abort paths** in `genesis/`, one single-entry log each. Two of them are step 7's two halves: `18-bootstrap-sigs-wrong-role` varies the **role string** a signature declares, `19-bootstrap-sigs-from-signers` varies the **key set** it resolves against — signed only by keys the body lists under `signers`, each line declaring `root`. Step 6 requires the two sets disjoint, so a reader that bootstrap-resolves against `signers` too admits a network this one aborts on (cold gate run 10, D15) |
 | §5.1 seen set, §4.3 roles | — | `bad-repeat-of-rejected`, `bad-one-of-two-signers`, `bad-role-mismatch`. Step 1's two stated properties are `bad-repeat-of-undecodable` (the hash is recorded **before** the entry is decoded, so a copy of one that never decoded is `dup-entry` and not a second `decode`) and `bad-repeat-of-genesis` (entry 0's hash is recorded too, so a byte copy of it is `dup-entry` and not `dup-genesis`) |
@@ -1327,7 +1342,7 @@ this table drifted out of date the moment one was.
 | §10 step 3, the witness quorum | `served/checkpoint`, cosigned by all three witnesses | `checkpoints-bad/05-one-cosignature-short`, `06-no-cosignatures`, `07-unnamed-witness-only` and **`08-forged-cosignature`**, which carries two lines naming witnesses the policy lists, one of which does not verify: the quorum is met by counting and refused by checking. `quorum none` accepting an uncosigned head needs a second anchor and is **not vectored** |
 | §10 step 1, **which** lines are the log's | `served-log-id-collision/`: one more line under a name that is not the log's, carrying the log key's id and a signature that verifies under nothing. It MUST be accepted; a reader matching the log's line on the id alone refuses it (cold gate run 11, D9) | `checkpoints-bad/16-two-log-signatures`, where the name *and* id are the log's and one signature is forged |
 | §10 step 3, **which** lines count as a listed witness's | `served-extra-witness/` (an unlisted **name**), `served-name-collision/` (a listed name under an unlisted **key id**) and `served-witness-id-collision/` (a listed key id under an unlisted **name**) — all three MUST be accepted. The second separates matching on the name alone from matching on both; the third separates matching on the id alone. Run 10's `V236_CosigNoKeyIDMatch` passed 236/236 without the second, and run 11 called the id-only reading "individually safe" once ids are recomputed: it is not, because the id on a line is four bytes its writer chose (§7) | the negatives are `checkpoints-bad/08-forged-cosignature`, `11-forged-cosignature-with-quorum` and `12-second-line-from-one-witness`, where the line's name *and* id are the policy's and the signature is not |
-| §16 enrollment requests | `requests/`, **5 request cases** including a 64-byte `device_id`, non-ASCII labels and an uppercase text form | `requests-bad/`, **25 request refusals** across all four layers, including **`forged-signature`** (structurally perfect, signed by another key) and `oversize-label-key` (§4.0's map-key cap) |
+| §16 enrollment requests | `requests/`, **6 request cases** including a 64-byte `device_id`, non-ASCII labels, a label value at the 256-byte cap and an uppercase text form | `requests-bad/`, **25 request refusals** across all four layers, including **`forged-signature`** (structurally perfect, signed by another key) and `oversize-label-key` (§4.0's map-key cap) |
 | §11.1 fork evidence | `fork/evidence.cbor` and `fork/conflicting.checkpoint`: a second branch of this same network, diverging at entry 40, signed by the same log key and cosigned by the same witnesses. Checking it needs only `trust.cbor` | one per reader step: `fork/bad-other-origin` and `fork/bad-unverifiable-conflicting` (step 1, each half), `fork/bad-size-mismatch` (step 2), `fork/bad-forged-proof` (step 3 — both checkpoints verify and the sizes agree, so nothing but the proof can refuse it), and `fork/bad-consistent` (step 4: a log and its own earlier self) |
 | §16.1's `expires > ts`, at the entry layer | every `enroll` | `bad-enroll-request-expires-at-ts`: an entry whose embedded request breaks §16.1. The only other vector for the rule is a *request*, and an `enroll` decodes its request under §16.1 too |
 | §4.0's map-key cap in **bytes** | `entries-hostile/at-the-key-limit`: 23 bytes and 12 characters | `past-the-key-limit` is 24 bytes and 13 characters. Both were ASCII until run 9, so "23 bytes" and "23 characters" gave the same answer everywhere |
@@ -1342,6 +1357,14 @@ this table drifted out of date the moment one was.
 **What is not vectored.** A suite that looks complete is worse than one that
 admits its holes, so:
 
+- **The label-value cap inside an `enroll`.** An `enroll` carries a §16
+  request verbatim, and the cap is vectored on the request
+  (`requests-bad/oversize-label`, `requests/req-label-at-the-cap`). No entry in
+  `log/` carries a label value at or past 256 bytes, so an implementation that
+  checks an embedded request with separate code, and omits the cap there,
+  applies it with `<`, or counts characters there, is held by nothing in
+  `log/`. `bad-enroll-request-expires-at-ts` spent a log entry on exactly this
+  entry-layer copy of a request rule; this one does not, and that is a choice.
 - **`quorum none` accepting an uncosigned head.** It needs a second trust
   anchor, and one is not shipped.
 - **Two other origin comparisons, against anything but an unrelated
@@ -1522,8 +1545,9 @@ Everything else is emitted verbatim as UTF-8. In particular:
 - non-ASCII is **not** escaped — no `\uXXXX` for characters above U+007F, and
   no surrogate pairs. An emoji is four UTF-8 bytes in the output.
 
-These rules are load-bearing rather than cosmetic: `policy` and `note` text is
-free-form UTF-8 up to 4096 bytes and lands verbatim in the canonical state, so
+These rules are load-bearing rather than cosmetic: `policy` text is free-form
+UTF-8 up to 4096 bytes and lands verbatim in the canonical state (a `note`'s
+text has no state effect and never reaches it), so
 two implementations disagreeing about `<` or `é` would violate §5.3's MUST on
 the first realistic policy. Vector `log/106-enroll-astral-labels` exercises every
 row of both tables above: its `escapes` label holds the quote, the backslash, the
