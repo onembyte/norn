@@ -1,11 +1,11 @@
-# Norn — Security audit (COWORKER.md §36, first assignment)
+# Norn — Security audit (docs/COWORKER-v1.md §36, first assignment)
 
 **Date:** 2026-09-30 · **Scope:** commit `7f77554` on `claude/tender-mccarthy-bzllsp`
 (128-entry fixture, 752 Go tests, `make ci` green) · **Method:** read-only.
 
 **How this was produced.** Six auditors, one per area (repository map and
 features; entries and replay; checkpoints, witnesses and trust; enforcement
-and daemons; drift from `COWORKER.md`; dependencies, tooling and tests), each
+and daemons; drift from `docs/COWORKER-v1.md`; dependencies, tooling and tests), each
 working in a scratch copy of the tree. Every finding rated MEDIUM or higher
 then went to a second agent told to *refute* it: re-read the cited code,
 follow every earlier check, look for a test or vector that already pins the

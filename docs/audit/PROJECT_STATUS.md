@@ -1,9 +1,9 @@
-# Norn — Project status (COWORKER.md §36, first assignment)
+# Norn — Project status (docs/COWORKER-v1.md §36, first assignment)
 
 **Date:** 2026-09-30 · **Commit:** `7f77554` · **Companion documents:**
 `SECURITY_AUDIT.md` (findings, with IDs `SEC-nnn`) and `ROADMAP.md`.
 
-This is the read-only audit `COWORKER.md` §36 asks for before any
+This is the read-only audit `docs/COWORKER-v1.md` §36 asks for before any
 architectural change. It records what exists, what works, what is
 incomplete, and where the documents and the code disagree. Nothing was
 rewritten to produce it.
@@ -78,7 +78,7 @@ and GOSSIP §9 name; `POST /norn/hint`; paper roots; `lab/` and `demo/`.
 5. **Publish.** `proven.json`, proof bundles, a mirror and fork evidence
    under `/run/norn`, served read-only on the tunnel address.
 
-Where the design departs from `COWORKER.md` and the departure is
+Where the design departs from `docs/COWORKER-v1.md` and the departure is
 **recorded and sound**: Ed25519 device identity separate from the WG key
 (D-008, D-032); deterministic CBOR with domain separation (D-027); two-tier
 root/signer quorums (D-007, D-028, D-033); current state by full local
@@ -155,7 +155,7 @@ policy a replayed node uses for evidence (§11.1), payload-length vs
 
 ## 7. Missing tests (collected)
 
-**Adversarial (COWORKER §19), currently absent:**
+**Adversarial (COWORKER-v1 §19), currently absent:**
 - Sig-array variants of logged entries refused as duplicates: extra
   unresolvable kid, dropped surplus signature, changed role — for
   enroll-after-revoke, rotate rollback, signer_add-after-remove, policy
@@ -205,7 +205,7 @@ follows a blank line.
 
 ## 8. Missing documents
 
-- `SECURITY.md` (disclosure process) and `CONTRIBUTING.md` — COWORKER §22/§27.
+- `SECURITY.md` (disclosure process) and `CONTRIBUTING.md` — COWORKER-v1 §22/§27.
   `PUBLICATION.md` plans a public launch without either.
 - A durable-state section for `nornd`: what it keeps, where (not `/run`),
   what a restart forgets, what happens at boot before the first
@@ -217,7 +217,7 @@ follows a blank line.
 - Superseding decision entries for: D-011 (own bundle format), D-026
   (label names), peers-only-when-stale vs D-016, S_hard/offline policy,
   policy-grammar comment tolerance, log-key retirement, the privacy
-  model (COWORKER §13), and the SEC-001 identity change once decided.
+  model (COWORKER-v1 §13), and the SEC-001 identity change once decided.
 - A complete information-leakage statement (labels incl. endpoints,
   reasons, notes, expiry, signer attribution) in README, THREAT-MODEL §7
   and PLAN non-goals.
@@ -227,7 +227,7 @@ follows a blank line.
   the same origin does not clear it); the policy-rotation runbook for late
   or offline nodes.
 - A `nornd.toml` reference and a sample systemd unit.
-- `PRIOR-ART.md`: Netmaker, DefGuard, Google Key Transparency (COWORKER §9).
+- `PRIOR-ART.md`: Netmaker, DefGuard, Google Key Transparency (COWORKER-v1 §9).
 - An architecture overview mapping packages to roles (this document's §1
   and §3 are a start).
 - A dependency record (why each module, which binary links it, license,

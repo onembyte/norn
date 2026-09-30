@@ -83,7 +83,7 @@ PLAN gates.
 ## Decisions that are the maintainer's
 
 These change the protocol, a recorded decision, or a public claim. Under
-`COWORKER.md` §34 and the project's own rule they are not made inside a
+`docs/COWORKER-v1.md` §34 and the project's own rule they are not made inside a
 fix.
 
 | # | Decision | Options on the table | Blocks |
@@ -96,7 +96,7 @@ fix.
 | D-f | Reserved label name and CIDR canonical form (SEC-018/019) | `ip` per SPEC/D-026, `allowed_ips` as a deprecated alias; reject unmasked and 4-in-6 prefixes | owner mode on real interfaces |
 | D-g | Whether a node excludes its own key from the desired set (SEC-012) | yes, read it from the interface | owner mode on real interfaces |
 | D-h | Ed25519 verification semantics and key validity (SEC-023); empty `labels` (SEC-022) | RFC 8032 cofactorless with canonical A/R, or ZIP-215; `labels: {}` is `decode` or preserved | Python/Go agreement; vectors |
-| D-i | Privacy model vs COWORKER §13 | record the "public log, opaque origin, readable labels" choice and the alternatives rejected | DECISIONS |
+| D-i | Privacy model vs COWORKER-v1 §13 | record the "public log, opaque origin, readable labels" choice and the alternatives rejected | DECISIONS |
 | D-j | Whether `nornd` may enforce under `quorum none` / 1-of-1 (GOSSIP §3) | refuse, require an override flag, or document | SEC-033 |
 | D-l | Which policy computes a checkpoint's `T` (cold gate runs 12 D3 and 13 D1; `BUILD-LOG.md` "Decision needed — 6.5m-iii") | (i) the policy the head was accepted under — what the suite pins and the code does, `T` depends on history for one poll after a policy change; (ii) the policy in force after replay — `T` a function of the head alone, changes `proofs/cases.json`, `proven/` and both verifiers | who is admitted at an expiry boundary after a policy change |
 | D-k | Closed reason codes for every refusing layer (cold gate run 11, D10) | (i) lists in §5.2's style for §7, §8.1, §9.1, §11.1 and §16, with `cases.json` naming codes — makes check order observable and lets two nodes triage a §11 rule-4 freeze together; (ii) `about` as a non-normative hint (current choice, 6.5l-vi) | cross-implementation triage of a permanent refusal |
