@@ -239,7 +239,8 @@ def write_genesis_acceptances(out: pathlib.Path) -> None:
         "comment": "each subdirectory is a one-entry log whose genesis replay MUST "
                    "accept, with its own anchor, manifest and state; `genesis/` holds "
                    "the aborts. `name-at-the-cap` is a `name` of exactly 64 bytes of "
-                   "UTF-8 and fewer characters (SPEC 4.0)",
+                   "UTF-8 and fewer characters (SPEC 4.0); `after-zero` carries `after: 0`, "
+                   "which SPEC 5.1's entry-0 step 5 permits",
         "cases": cases,
     }) + "\n")
 
@@ -603,6 +604,17 @@ def write_requests(out: pathlib.Path) -> None:
 
     bad = []
     for name, text, why in fixture.request_negatives():
+        # The oracle: the reference refuses every negative, at whichever
+        # layer. Until cold gate run 12 (D6) nothing here checked that, and a
+        # case refused by the wrong layer -- `excess-padding` by §4.0's
+        # trailing byte rather than §16.2's padding rule -- shipped for
+        # seven runs.
+        try:
+            enrollreq.check(enrollreq.decode_text(text), fixture.NET)
+        except Exception:  # noqa: BLE001 -- any layer's refusal is the point
+            pass
+        else:
+            raise SystemExit(f"request negative {name} is accepted by the reference")
         write(out / "requests-bad" / f"{name}.txt", text + "\n")
         bad.append({"name": name, "why": why,
                     "signature": _signature_state(name, text)})
@@ -631,7 +643,7 @@ def write_requests(out: pathlib.Path) -> None:
         "bare-tag": {"section": "4.0", "says": "Floats, tags, `undefined`, indefinite-length items"},
         "bare-indefinite-text": {"section": "4.0", "says": "Floats, tags, `undefined`, indefinite-length items"},
         "bare-nontext-map-key": {"section": "4.0", "says": "every **map key** is a text string"},
-        "bare-invalid-utf8": {"section": "4.0", "says": "valid UTF-8"},
+        "bare-invalid-utf8": {"section": "4.0", "says": "definite length; valid UTF-8"},
         "oversize-entry": {"section": "4.0", "says": "MAX_ENTRY_BYTES"},
         "deep-nesting": {"section": "4.0", "says": "Nesting depth is at most 8"},
         "at-the-depth-limit": {"section": "4.0", "says": "Nesting depth is at most 8"},
@@ -640,6 +652,8 @@ def write_requests(out: pathlib.Path) -> None:
         "past-the-size-limit": {"section": "4.0", "says": "MAX_ENTRY_BYTES"},
         "at-the-key-limit": {"section": "4.0", "says": "every **map key** is a text string of 1–23 bytes"},
         "past-the-key-limit": {"section": "4.0", "says": "every **map key** is a text string of 1–23 bytes"},
+        "bare-empty-map-key": {"section": "4.0", "says": "every **map key** is a text string of 1–23 bytes"},
+        "bare-utf8-surrogate": {"section": "4.0", "says": "definite length; valid UTF-8"},
     }
     for name, _, _ in fixture.hostile_inputs():
         if name not in hostile_rules:

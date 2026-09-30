@@ -167,3 +167,31 @@ func TestThePadBitCheckpointDecodesToTheHonestSignature(t *testing.T) {
 		t.Errorf("§7 holds a line to its exact encoding; got %v", err)
 	}
 }
+
+// Cold-model gate run 12, defect D13. `25` carries a signature line with an
+// empty name and `26` a stranger's line with an 80-byte payload. Both parsers
+// here ignored the first as a stranger's and refused the second; §7 now says
+// a name is non-empty and that the length rule holds whatever name a line
+// carries. The claim: nothing else about either head is wrong.
+func TestTheTwoMalformedStrangerLinesAreTheOnlyDefect(t *testing.T) {
+	honest := read(t, "served", "checkpoint")
+	for _, c := range []struct{ name, want string }{
+		{"25-empty-signature-name", "empty key name"},
+		{"26-stranger-line-wrong-length", "4-byte key id plus 64 or 72 bytes"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			bad := read(t, "checkpoints-bad", c.name+".checkpoint")
+			if !strings.HasPrefix(bad, strings.TrimRight(honest, "\n")+"\n") {
+				t.Fatal("the case is not the honest checkpoint plus one line")
+			}
+			extra := strings.TrimPrefix(bad, strings.TrimRight(honest, "\n")+"\n")
+			if strings.Count(extra, "\n") != 1 {
+				t.Fatalf("%d extra lines; the case adds exactly one", strings.Count(extra, "\n"))
+			}
+			_, _, err := note.Split(bad)
+			if err == nil || !strings.Contains(err.Error(), c.want) {
+				t.Errorf("want a framing refusal about %q, got %v", c.want, err)
+			}
+		})
+	}
+}

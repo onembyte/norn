@@ -1189,6 +1189,15 @@ func writeBadServed(root, served string, size int64) error {
 		return err
 	}
 
+	// Cold gate run 12, D13. §6 says a partial bundle holds exactly the
+	// number of entries its path declares; no bundle with anything after its
+	// last entry shipped, so a reader that stopped at the declared count and
+	// ignored the rest passed the suite.
+	if err := os.WriteFile(filepath.Join(dir, "bundle-with-a-trailing-byte.bin"),
+		append(append([]byte(nil), honest...), 0x00), 0o644); err != nil {
+		return err
+	}
+
 	// Cold-model gate run 7, defect J4. Both cases above are *entry bundle*
 	// cases, so until this one nothing in the suite ever opened a hash tile
 	// and `blind-tiles` -- a verifier that never fetches `tile/0/...` at all
@@ -1235,10 +1244,11 @@ func writeBadServed(root, served string, size int64) error {
 
 	meta := map[string]any{
 		"rules": map[string]map[string]string{
-			"tampered-entry-bundle":   {"section": "6", "says": "The served `tile/<L>/"},
-			"missing-entry-bundle":    {"section": "6", "says": "The served `tile/<L>/"},
-			"tampered-hash-tile":      {"section": "6", "says": "checking them is not optional"},
-			"consistent-tampered-log": {"section": "6", "says": "that comparison is what binds the entries to the head"},
+			"tampered-entry-bundle":       {"section": "6", "says": "The served `tile/<L>/"},
+			"missing-entry-bundle":        {"section": "6", "says": "The served `tile/<L>/"},
+			"tampered-hash-tile":          {"section": "6", "says": "checking them is not optional"},
+			"consistent-tampered-log":     {"section": "6", "says": "that comparison is what binds the entries to the head"},
+			"bundle-with-a-trailing-byte": {"section": "6", "says": "A partial bundle holds **exactly** the number of entries its path declares"},
 		},
 		"cases": []map[string]any{
 			{"name": "tampered-entry-bundle", "path": bundlePath,
@@ -1248,6 +1258,10 @@ func writeBadServed(root, served string, size int64) error {
 			{"name": "missing-entry-bundle", "path": bundlePath, "remove": true,
 				"about": "a log that will not serve its entries cannot be replayed, and a " +
 					"verifier must refuse rather than report what it has"},
+			{"name": "bundle-with-a-trailing-byte", "path": bundlePath,
+				"file": "bundle-with-a-trailing-byte.bin",
+				"about": "one byte after the last entry of the partial bundle: the declared " +
+					"entries are all there and honest, and the bundle is not exactly them"},
 			{"name": "consistent-tampered-log", "files": []map[string]string{
 				{"path": bundlePath, "file": "consistent-entry-bundle.bin"},
 				{"path": tilePath, "file": "consistent-hash-tile.bin"},
@@ -2530,6 +2544,26 @@ func buildBadCheckpoints(root, origin string, key ed25519.PrivateKey,
 	// the padding bits reads the honest payload from this line and one head
 	// had two byte forms, which is the hazard the "exactly that length"
 	// paragraph exists for.
+	// Cold gate run 12, D13. §7 says a key name contains no space and the
+	// line splits at its first one; it did not say a name is non-empty, and
+	// both parsers here read `—  <payload>` as a stranger's line and ignored
+	// it. And "a line whose payload is the wrong length is a malformed note"
+	// had no length to name for a key the reader does not hold; it holds for
+	// every line, whatever name it carries.
+	strangerPayload := make([]byte, 4+8+ed25519.SignatureSize)
+	copy(strangerPayload, note.KeyIDFor("norn-witness/stranger",
+		stranger.Public().(ed25519.PublicKey), note.AlgCosignature))
+	out = append(out, badCheckpoint{"25-empty-signature-name",
+		"one more signature line whose key name is empty: a reader that reads it " +
+			"as a stranger's line and ignores it accepts a malformed note",
+		strings.TrimRight(allThree, "\n") + "\n" + note.SignatureLine("", strangerPayload) + "\n"})
+	out = append(out, badCheckpoint{"26-stranger-line-wrong-length",
+		"one more signature line under a name the policy does not list, with an " +
+			"80-byte payload: a reader that ignores a stranger's line whatever its " +
+			"length accepts a malformed note",
+		strings.TrimRight(allThree, "\n") + "\n" +
+			note.SignatureLine("norn-witness/stranger", append(strangerPayload, 0, 0, 0, 0)) + "\n"})
+
 	out = append(out, badCheckpoint{"24-signature-non-canonical-pad-bits",
 		"the log's signature line with a non-zero padding bit in its last data " +
 			"character: a decoder that ignores padding bits reads the honest 68 bytes, " +
@@ -2633,6 +2667,8 @@ func writeBadCheckpoints(root, origin string, key ed25519.PrivateKey,
 		"22-origin-in-upper-case":             {"section": "10", "says": "case is not folded"},
 		"23-origin-truncated":                 {"section": "10", "says": "neither an extension of it nor a truncation"},
 		"24-signature-non-canonical-pad-bits": {"section": "7", "says": "with zero padding bits"},
+		"25-empty-signature-name":             {"section": "7", "says": "A key name is **non-empty**"},
+		"26-stranger-line-wrong-length":       {"section": "7", "says": "whatever name it carries"},
 	}
 	for name := range reasons {
 		if _, ok := rules[name]; !ok {

@@ -65,6 +65,10 @@ def parse_vkey(text: str) -> Verifier:
     if len(parts) != 3 or not all(parts):
         raise NoteError("verifier key must be name+keyid+keydata")
     name, keyhash, keydata = parts
+    # SPEC 7: a key name contains no space -- a signature line splits at its
+    # first space, so a name with one could never match its own line.
+    if " " in name:
+        raise NoteError("a key name contains no space")
     try:
         raw = base64.b64decode(keydata, validate=True)
     except (ValueError, base64.binascii.Error) as exc:
@@ -104,6 +108,10 @@ def split(signed: str) -> tuple[str, list[tuple[str, bytes]]]:
         if not line.startswith(SIG_PREFIX):
             raise NoteError(f"bad signature line: {line!r}")
         name, _, blob = line[len(SIG_PREFIX):].partition(" ")
+        # SPEC 7: a key name is non-empty. Both parsers here read an empty
+        # name as a stranger's line and ignored it (cold gate run 12, D13).
+        if not name:
+            raise NoteError("signature line has an empty key name")
         try:
             raw = base64.b64decode(blob, validate=True)
         except (ValueError, base64.binascii.Error) as exc:

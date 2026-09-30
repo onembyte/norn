@@ -23,6 +23,8 @@
     "22-origin-in-upper-case",
     "23-origin-truncated",
     "08-forged-cosignature",
+    "25-empty-signature-name",
+    "26-stranger-line-wrong-length",
     "24-signature-non-canonical-pad-bits"
   ],
   "comment": "each file is served in place of served/checkpoint, over the honest tiles, under trust.cbor; every one MUST be refused. `signature_blind_accepts` lists the ones whose only defect is a signature that does not verify: a reader that never calls Ed25519 accepts exactly those, and nothing else here",
@@ -50,7 +52,9 @@
     "21-origin-with-a-suffix": "this network's origin plus one base32 character, signed by this network's key under this network's name and cosigned by every witness: a reader that accepts an origin line extending this network's accepts it",
     "22-origin-in-upper-case": "this network's origin with its base32 in upper case, signed by this network's key under this network's name and cosigned by every witness: a reader that folds case accepts it",
     "23-origin-truncated": "this network's origin less its last character, signed by this network's key under this network's name and cosigned by every witness: a reader that accepts an origin line this network's origin extends accepts it",
-    "24-signature-non-canonical-pad-bits": "the log's signature line with a non-zero padding bit in its last data character: a decoder that ignores padding bits reads the honest 68 bytes, and this line is not their encoding"
+    "24-signature-non-canonical-pad-bits": "the log's signature line with a non-zero padding bit in its last data character: a decoder that ignores padding bits reads the honest 68 bytes, and this line is not their encoding",
+    "25-empty-signature-name": "one more signature line whose key name is empty: a reader that reads it as a stranger's line and ignores it accepts a malformed note",
+    "26-stranger-line-wrong-length": "one more signature line under a name the policy does not list, with an 80-byte payload: a reader that ignores a stranger's line whatever its length accepts a malformed note"
   },
   "rules": {
     "01-unsigned": {
@@ -147,6 +151,14 @@
     },
     "24-signature-non-canonical-pad-bits": {
       "says": "with zero padding bits",
+      "section": "7"
+    },
+    "25-empty-signature-name": {
+      "says": "A key name is **non-empty**",
+      "section": "7"
+    },
+    "26-stranger-line-wrong-length": {
+      "says": "whatever name it carries",
       "section": "7"
     }
   },

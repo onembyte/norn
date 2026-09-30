@@ -1203,7 +1203,16 @@ def genesis_acceptances() -> list[tuple[str, bytes, "replay.Anchor"]]:
                             body=dict(genesis()["body"], name=at_the_cap(64))),
                   [("root1", "root"), ("root2", "root")])
     raw = entry.encode(env)
-    return [("name-at-the-cap", raw, replay.Anchor(NET, entry.leaf_hash(raw)))]
+    # Cold gate run 12, D13. §5.1's entry-0 step 5 says "`after`, if present,
+    # MUST be 0", and the fixture's genesis carries no `after` at all, so a
+    # reader that refused any `after` at index 0 -- and aborted every log
+    # whose genesis carried one -- passed the suite.
+    with_after = _signed(entry.new("genesis", NET, ts=T0, body=genesis()["body"], after=0),
+                         [("root1", "root"), ("root2", "root")])
+    raw_after = entry.encode(with_after)
+    assert b"after" in raw_after
+    return [("name-at-the-cap", raw, replay.Anchor(NET, entry.leaf_hash(raw))),
+            ("after-zero", raw_after, replay.Anchor(NET, entry.leaf_hash(raw_after)))]
 
 
 def policy_grammar() -> list[tuple[str, str, bool, str]]:
@@ -2283,6 +2292,10 @@ def hostile_inputs() -> list[tuple[str, bytes, str]]:
         ("bare-indefinite-text", b"\x7f\x61\x61\xff", "indefinite"),
         ("bare-nontext-map-key", b"\xa1\x00\x00", "map key must be a text string"),
         ("bare-invalid-utf8", b"\x62\xff\xfe", "UTF-8"),
+        # Cold gate run 12, D13: the lower end of the key cap, and a surrogate
+        # code point, which is well-formed as bytes and is not UTF-8.
+        ("bare-empty-map-key", b"\xa1\x60\x00", "map key must be 1-23 bytes"),
+        ("bare-utf8-surrogate", b"\x63\xed\xa0\x80", "UTF-8"),
     ]
 
     return bare + [
@@ -2348,8 +2361,29 @@ def _padding_negatives(request: dict[str, Any]) -> tuple[str, str]:
     from . import bech32m, enrollreq
     groups = bech32m._convertbits(list(enrollreq.encode(request)), 8, 5, True)
 
-    # Five more bits of padding than the payload needs.
-    excess = bech32m.encode_raw(enrollreq.HRP, groups + [0])
+    # Five more bits of padding than the payload needs -- built from a request
+    # whose natural padding is one or two bits. With three or four, the extra
+    # group regroups to a whole extra byte and §4.0's whole-input rule refuses
+    # the file before the padding rule is reached: `req-minimal` is 204 bytes
+    # and three bits of padding, and this case was exactly that until cold
+    # gate run 12 read the arithmetic (D6). One request, one label, its value
+    # lengthened until the payload's bit length leaves one or two bits over.
+    for k in range(5):
+        padded = _request("pi-cam", "pi-cam", "pi-cam", 10, labels={"pad": "x" * (k + 1)})
+        natural = (5 - (len(enrollreq.encode(padded)) * 8) % 5) % 5
+        if natural in (1, 2):
+            break
+    else:
+        raise SystemExit("no label length leaves one or two padding bits; the loop is wrong")
+    excess_groups = bech32m._convertbits(list(enrollreq.encode(padded)), 8, 5, True)
+    excess = bech32m.encode_raw(enrollreq.HRP, excess_groups + [0])
+    # The proof that only the padding rule can refuse it: regrouped 5->8 by a
+    # reader that never looks at the padding, the bits give exactly the
+    # request and nothing after.
+    bits = "".join(f"{g:05b}" for g in excess_groups + [0])
+    lax = bytes(int(bits[i:i + 8], 2) for i in range(0, len(bits) - len(bits) % 8, 8))
+    assert lax == enrollreq.encode(padded), "an extra byte appeared; the padding rule is not what refuses"
+    assert len(bits) % 8 in (6, 7), len(bits) % 8
 
     # The same payload with a padding bit set. The last group carries the
     # padding, and the number of padding bits is 5 - (len(payload) * 8) % 5.

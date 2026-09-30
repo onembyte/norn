@@ -13,6 +13,12 @@
       "remove": true
     },
     {
+      "about": "one byte after the last entry of the partial bundle: the declared entries are all there and honest, and the bundle is not exactly them",
+      "file": "bundle-with-a-trailing-byte.bin",
+      "name": "bundle-with-a-trailing-byte",
+      "path": "tile/entries/000.p/130"
+    },
+    {
       "about": "the entries and the hash tile are tampered *together*, so the served log agrees with itself and disagrees with the head the checkpoint is signed over: only rebuilding the tree and comparing that head can refuse it",
       "files": [
         {
@@ -35,6 +41,10 @@
   ],
   "comment": "a served log is a directory, so each case names the path to replace with `file`, the paths to replace with `files`, or the path to delete with `remove`, over an otherwise honest copy of `served/`. Every one MUST be refused",
   "rules": {
+    "bundle-with-a-trailing-byte": {
+      "says": "A partial bundle holds **exactly** the number of entries its path declares",
+      "section": "6"
+    },
     "consistent-tampered-log": {
       "says": "that comparison is what binds the entries to the head",
       "section": "6"

@@ -911,7 +911,7 @@ func TestTheSignatureBlindSetIsComputedNotAsserted(t *testing.T) {
 			// of the model would have put three cases in this set that no
 			// reader of any kind accepts (cold gate run 10, D13).
 			name, blob, ok := strings.Cut(rest, " ")
-			if !ok {
+			if !ok || name == "" { // §7: a key name is non-empty -- framing
 				return "", nil
 			}
 			raw, err := base64.StdEncoding.DecodeString(blob)

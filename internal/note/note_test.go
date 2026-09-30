@@ -147,3 +147,25 @@ func TestSignRejectsTextWithoutATrailingNewline(t *testing.T) {
 		t.Error("note text must end with a newline")
 	}
 }
+
+// Cold-model gate run 12, defect D13. §7 says a key name contains no space and
+// the line splits at its first one; neither parser here refused a verifier key
+// whose name carries a space, or a signature line whose name is empty.
+func TestAKeyNameIsNonEmptyAndContainsNoSpace(t *testing.T) {
+	key := ed25519.NewKeyFromSeed(make([]byte, ed25519.SeedSize))
+	if _, err := ParseVerifierKey(VerifierKey("norn testnet", key.Public().(ed25519.PublicKey))); err == nil {
+		t.Error("a verifier key whose name contains a space was accepted")
+	}
+	signed, err := Sign("norn/testnet\n1\nAAAA\n", "norn/testnet", key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text, block, _ := strings.Cut(signed, "\n\n")
+	_, payload, _ := strings.Cut(strings.TrimPrefix(strings.TrimRight(block, "\n"), SigPrefix), " ")
+	if _, _, err := Split(text + "\n\n" + SigPrefix + " " + payload + "\n"); err == nil {
+		t.Error("a signature line with an empty name was accepted")
+	}
+	if _, _, err := Split(signed); err != nil {
+		t.Fatalf("the control does not split: %v", err)
+	}
+}

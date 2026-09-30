@@ -128,5 +128,24 @@ class SignatureLineEncoding(unittest.TestCase):
         note.split(signed)  # the control
 
 
+
+class KeyNames(unittest.TestCase):
+    """SPEC 7 (cold gate run 12, D13): a key name is non-empty and contains no space."""
+
+    def test_a_signature_line_with_an_empty_name_is_malformed(self):
+        key = keys.Ed25519.from_name("logkey")
+        signed = note.sign("norn/testnet\n1\nAAAA\n", "norn/testnet", key)
+        text, block = signed.split("\n\n", 1)
+        _, payload = block.rstrip("\n").rsplit(" ", 1)
+        with self.assertRaises(note.NoteError):
+            note.split(text + "\n\n" + note.SIG_PREFIX + " " + payload + "\n")
+
+    def test_a_key_name_with_a_space_is_refused(self):
+        key = keys.Ed25519.from_name("logkey")
+        with self.assertRaises(note.NoteError):
+            note.parse_vkey(note.vkey("norn testnet", key.public))
+        note.parse_vkey(note.vkey("norn/testnet", key.public))  # the control
+
+
 if __name__ == "__main__":
     unittest.main()

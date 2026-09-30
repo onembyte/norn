@@ -102,6 +102,11 @@ func ParseVerifierKey(text string) (Verifier, error) {
 	if len(parts) != 3 || parts[0] == "" || parts[1] == "" || parts[2] == "" {
 		return Verifier{}, noteErrorf("verifier key must be name+keyid+keydata")
 	}
+	// §7: a key name contains no space. A signature line splits at its first
+	// space, so a name with one could never match its own line.
+	if strings.Contains(parts[0], " ") {
+		return Verifier{}, noteErrorf("a key name contains no space")
+	}
 	raw, err := base64.StdEncoding.DecodeString(parts[2])
 	if err != nil {
 		return Verifier{}, noteErrorf("key data is not base64")
@@ -165,6 +170,11 @@ func Split(signed string) (string, []Signature, error) {
 		name, blob, ok := strings.Cut(strings.TrimPrefix(line, SigPrefix), " ")
 		if !ok {
 			return "", nil, noteErrorf("signature line has no key name")
+		}
+		// §7: a key name is non-empty. Both parsers here read an empty name
+		// as a stranger's line and ignored it (cold gate run 12, D13).
+		if name == "" {
+			return "", nil, noteErrorf("signature line has an empty key name")
 		}
 		raw, err := base64.StdEncoding.DecodeString(blob)
 		if err != nil {

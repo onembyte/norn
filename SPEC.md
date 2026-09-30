@@ -431,8 +431,9 @@ unusable has nothing to verify later entries against.
 1. `entry_hash` already seen → reject (`dup-entry`). Every entry that reaches
    this step is added to the seen set, **whether or not it is later rejected**.
 2. Decode per §4.0 → on failure reject (`decode`).
-3. Envelope check per §4.1: exactly the permitted keys, `v` = 1, `net` =
-   `anchor.net`, well-formed `sigs` → on failure reject (`decode`).
+3. Envelope check per §4.1: exactly the permitted keys, **each of the type §4.1
+   gives it** (a `t` that is not text is `decode` here, never `unknown-type`),
+   `v` = 1, `net` = `anchor.net`, well-formed `sigs` → on failure reject (`decode`).
 4. `t` not in §4.3 → reject (`unknown-type`).
 5. `t` = `genesis` → reject (`dup-genesis`).
 6. `after` present and > index → reject (`after`).
@@ -667,7 +668,7 @@ spec's rules produce.
   Norn artifact only because every note text here has a fixed line count (§12.1).
 - The text is followed by one blank line, then one signature line per signer. **Every signature line, including the last, ends in one `0x0A`**: a block that simply stops is unterminated, not merely short of a newline, and a reader that trims trailing newlines before parsing cannot tell the two apart.
 - A signature line is `\u2014 ` (em dash U+2014, then one space), the key name, one
-  space, then base64 of a payload that begins with a 4-byte `key_id`. A key name
+  space, then base64 of a payload that begins with a 4-byte `key_id`. A key name is **non-empty** and
   **contains no space**, so the line splits at its **first** space and everything
   after it is the payload — split at the *last* one instead and a line carrying
   two spaces parses as a signature from a name nobody lists, which §10 ignores
@@ -698,7 +699,7 @@ spec's rules produce.
   nodes gossiping that head then disagree about its bytes, and everything keyed
   on them — a cache, a de-duplication set, §6's OpenTimestamps digest over the
   body — is keyed on something an attacker chooses. A line whose payload is the
-  wrong length is a malformed note, not a line to skip.
+  wrong length is a malformed note, not a line to skip — **whatever name it carries**: a line under a name the reader does not hold is ignored only if it is well-formed, and this profile admits no third payload length.
 - A note carries **at least one signature line**. A block with none is a
   malformed note rather than an unsigned one; in practice §10's "at least one
   such line MUST be present" refuses such a checkpoint first, which is why
@@ -818,7 +819,12 @@ A node MUST treat a peer as proven only if:
    bundle's entry, and
 4. the checkpoint is not stale: **`elapsed > params.staleness`** makes it so,
    where `elapsed` is the node's **monotonic** reading now minus its monotonic
-   reading when it learned this checkpoint's quorum time (§5.3).
+   reading when it learned this checkpoint's quorum time (§5.3). **With no
+   quorum time there is no `elapsed`** (`quorum none`, §5.3): condition 4 is
+   then vacuously met, the view is `unknown` and never `fresh` (below), and
+   expiry is not judged, so the peers replay yields stay admitted. A node that
+   dropped every peer the moment its roots published `quorum none` would be
+   enforcing a clock nobody vouched for.
 
 Condition 4 is where A11 looks contradictory and is not. §5.3 forbids the local
 clock from supplying an *instant*, because a machine whose time is wrong must
@@ -1314,13 +1320,13 @@ this table drifted out of date the moment one was.
 | §9.4 rotation | `served-rotated/`: the same head under a key the roots published — refused by a reader holding only `trust.cbor`, accepted by one that has replayed the rotation | a key that vouched for itself is what the ordering forbids |
 | §10 the checkpoint's origin | `served/checkpoint` | `checkpoints-bad/10-wrong-body-origin`: signed by this network's key under this network's name, naming another log. `10` cannot tell `==` from a prefix match or a case-folded one, so `21-origin-with-a-suffix` (this network's origin plus one base32 character), `22-origin-in-upper-case` and `23-origin-truncated` (the prefix test the other way round) are the same construction with the origin line moved as little as it can be. Each is cosigned afresh by every witness over its own body, so the quorum cannot refuse it first. A reader that also enforces §6's "`origin` line = §2 `origin`" when it parses refuses all three there, and that is conforming. `03-wrong-origin` is not an origin case: it is signed under another log's name, so the signature refuses it first (cold gate run 11, D7) |
 | §4.0 both limits, at the boundary | `entries-hostile/at-the-depth-limit` and `at-the-size-limit`, which MUST be accepted | `past-the-depth-limit` and `past-the-size-limit`, one step beyond each. Without the accepted half a decoder enforcing 4, 16 or 64 passes |
-| §16.2 padding | every request's text form | `requests-bad/excess-padding` and `non-zero-padding`: the payload is the valid request with its encoding corrupted, so only §16.2 refuses them |
+| §16.2 padding | every request's text form | `requests-bad/excess-padding` and `non-zero-padding`: the payload is a valid request with its encoding corrupted, so only §16.2 refuses them. `excess-padding` was built over a request with three bits of natural padding until run 12 (D6), so the extra group made an extra byte and §4.0 refused it first; it is built over a request with one or two now |
 | §9.4 the anchor key is kept **alongside** | `served/checkpoint`, signed by `norn.trust.log_key`, which the log publishes **nowhere**: the two `log_key` entries name other keys entirely | a reader that *replaces* `log_keys` with the published ones cannot read the head the log is serving. Replacing is the weakening — it trusts only what the log said about itself |
 | §4.1 `sigs` elements are a closed map | every entry | `bad-sigs-fourth-key`: a fourth key beside `kid`, `role` and `sig` |
 | §4.1 `v` MUST be 1 | every entry | `bad-version-two`. No entry carried any other value, so a reader that never looked at `v` reproduced the manifest |
 | §5.1 `rotate` on a revoked device | `rotate-nas` | `bad-rotate-revoked`: `laptop` is known and revoked, so it is `not-active` and not `unknown-device`. The only other `not-active` vector is a `revoke` |
 | §5.1 `dup-key` is across **both** roles | `signer_add-recover` | `bad-root_add-existing-signer`: adding a current signer as a root. Every other dup-key vector re-added a key into the role it was already in |
-| §4.0 the profile's banned items, at the decoder | the three `at-the-…-limit` cases | `bare-null`, `bare-undefined`, `bare-float`, `bare-negative-integer`, `bare-tag`, `bare-indefinite-text`, `bare-nontext-map-key` and `bare-invalid-utf8` — each a whole input with no schema above it, so the profile is the only thing that can refuse, and each refused for **its own** rule. The in-entry negatives cannot pin these: a lenient decoder hands the envelope check a malformed field and the reason is `decode` either way |
+| §4.0 the profile's banned items, at the decoder | the three `at-the-…-limit` cases | `bare-null`, `bare-undefined`, `bare-float`, `bare-negative-integer`, `bare-tag`, `bare-indefinite-text`, `bare-nontext-map-key`, `bare-invalid-utf8`, `bare-empty-map-key` (the lower end of the 1–23 rule, which `past-the-key-limit` cannot pin) and `bare-utf8-surrogate` (three well-formed bytes encoding U+D800, which is not UTF-8) — each a whole input with no schema above it, so the profile is the only thing that can refuse, and each refused for **its own** rule. The in-entry negatives cannot pin these: a lenient decoder hands the envelope check a malformed field and the reason is `decode` either way |
 | §4.0 free text has no lower bound | `note-empty-text`, `revoke-empty-reason` and `revoke-no-reason` — all **accepted**. `text` is bounded above only, `reason` is 0–256, and §4.3 marks it OPTIONAL | a reader that requires one byte rejects entries this document accepts, which only a positive can show |
 | §4.0 resource limits | — | `entries-hostile/oversize-entry` (a header promising 65536 bytes, refused on length before anything is allocated) and `entries-hostile/deep-nesting` (200 nested arrays, deterministic throughout, so only the depth rule can refuse it) |
 | §4.0 the map-key cap, at the decoder | `entries-hostile/at-the-key-limit` (23 bytes, MUST be accepted) | `past-the-key-limit`: a one-pair map with a 24-byte key and a uint value, so nothing but the cap can refuse it. `requests-bad/oversize-label-key` reaches the `labels` *field* rule first, which is a different check in a different layer |
@@ -1333,6 +1339,7 @@ this table drifted out of date the moment one was.
 | §5.2 a signature counts only **in its declared role** | — | `bad-role-mismatch` for the root/signer direction, and `bad-device-sig-wrong-role` for the device one: the device's key really did sign, under `role: "signer"`, where it resolves to nothing. An implementation that ignores the declared role accepts it |
 | §4.0 the `kid` **body** rule | `signer_remove-below-threshold` | `bad-kid-format-in-body`: a `signer_remove` whose body `kid` is not `^[0-9a-f]{16}$` → `decode`, not `unknown-key`. `bad-kid-format` puts the malformed kid in `sigs`, which is the other half of the distinction this document draws |
 | §4.0 `revoke`'s `reason` cap | `revoke-by-roots` | `bad-revoke-reason-too-long`. `bad-text-too-long` covers `note`, and `bad-policy-text-too-long` covers `policy`: their cap is 4096 and a different rule |
+| §5.1 entry 0, step 5: `after`, if present, MUST be 0 | `genesis-good/after-zero`, a genesis carrying `after: 0`. The fixture's own genesis carries no `after`, so a reader refusing any `after` at index 0 — and aborting every log whose genesis has one — passed the suite until run 12 (D13) | `genesis/04-after-nonzero` |
 | §4.0 the genesis `name` bound | `genesis-good/name-at-the-cap` | `genesis/14-name-too-long` and `15-name-empty` — both ends, because a reader enforcing only the cap and one enforcing only the floor are different implementations |
 | §4.0's text caps in **bytes** of UTF-8, and §9.1's | a value at **exactly** each cap, in fewer characters: `revoke-by-roots`'s `reason` (256 bytes), the `text` of the entry named `note` and of `policy-rotated` (4096), `genesis-good/name-at-the-cap`, `requests/req-label-at-the-cap`'s label value (256), and `trust-good/name-at-the-cap` and `witness-name-at-the-cap` (64). Each MUST be accepted. None of them is ASCII | `bad-revoke-reason-too-long`, `bad-text-too-long`, `bad-policy-text-too-long`, `genesis/14-name-too-long`, `requests-bad/oversize-label`, `trust-bad/26-name-too-long` and `32-witness-name-too-long`. Each is its positive's value with one ASCII `x` replaced by `Ж` (for `policy`, the last `x` of its comment, so every directive is the same; that padding is a §9.1 comment, so a reader without comments fails the positive too, and the state it replays to carries the comment): one byte over the cap, and the same number of code points, UTF-16 code units and grapheme clusters as a value the reader MUST accept. So a reader that counts any of those three accepts both files or refuses both, and fails one. Until 6.5l-v every one of these negatives was ASCII, so a reader counting characters passed the suite; no value sat at a cap, so a reader refusing it (`<` for `≤`) did too; and a `policy` over 4096 bytes had no negative at all (cold gate run 11, D6) |
 | §5.3 genesis `params` is **overlaid** | `state.json`'s `checkpoint_interval`, which the genesis body does not set and the §4.5 default supplies | a reader that *replaces* the defaults instead loses the key entirely |
@@ -1367,9 +1374,9 @@ this table drifted out of date the moment one was.
 | §11.1 the proof is empty at the held size | `fork/evidence.cbor` uses the non-degenerate branch | `fork/bad-proof-at-same-size`: a consistency proof where the two signatures say it alone |
 | §8.1 and §11.1 are closed maps, versioned, and bounded | `proofs/`, `fork/evidence.cbor` | `proofs-bad/open-schema` and `wrong-version`; `proofs-bad/device-not-in-entry`, where the proof, the entry and the checkpoint are all honest and only the **label** beside them is another device's — an inclusion proof binds the entry to the log and says nothing about a label. For evidence: `fork/bad-open-schema` and `bad-wrong-version` — each `evidence.cbor`, a real fork, with the one change, so only the schema rule can refuse it; until run 12 (D7) both were built over a consistent pair that step 4 refused anyway — and `bad-size-above-held`, because an accuser can only speak for sizes its own branch reaches. **This implementation left the evidence map open and the device unbound** until run 8 asked |
 | §11.1 the carried `policy` decides nothing | `fork/policy-not-the-readers.cbor`: sound evidence whose `policy` requires a witness that cosigned nothing — it MUST still prove the fork, because the reader verifies under its own | `fork/bad-policy-says-quorum-none`: two checkpoints no quorum cosigned, and a carried policy saying none is needed. A reader that trusts the field concludes a fork any stranger can write, and §11 rule 4 makes it permanent. `fork/bad-policy-unparseable` is the format half |
-| §6 tiles and bundles | `served/`, read back to reproduce `state.json`; a forged head is `checkpoints-bad/04-forged-log-signature` and a fourth body line is `checkpoints-bad/09-extension-line` | `served-bad/`: an entry bundle with one byte changed, one the log will not serve at all, `tampered-hash-tile` — one byte inside one leaf hash, which leaves the entries and the signed head honest, so only the hash-tile rule can refuse it — and `consistent-tampered-log`, where the bundle and the level-0 tile are changed **together**. That last one is the only file that reaches the rebuild-and-compare rule: the other two tamper cases change a leaf hash as a side effect, so the tile rule refuses them first and a reader that never compares the rebuilt head with the checkpoint passed everything (cold gate run 10, D11). `checkpoints-bad/17-root-wrong-length` is the root line's own negative |
+| §6 tiles and bundles | `served/`, read back to reproduce `state.json`; a forged head is `checkpoints-bad/04-forged-log-signature` and a fourth body line is `checkpoints-bad/09-extension-line` | `served-bad/`: an entry bundle with one byte changed, one the log will not serve at all, `tampered-hash-tile` — one byte inside one leaf hash, which leaves the entries and the signed head honest, so only the hash-tile rule can refuse it — and `consistent-tampered-log`, where the bundle and the level-0 tile are changed **together**. That last one is the only file that reaches the rebuild-and-compare rule: the other two tamper cases change a leaf hash as a side effect, so the tile rule refuses them first and a reader that never compares the rebuilt head with the checkpoint passed everything (cold gate run 10, D11). `checkpoints-bad/17-root-wrong-length` is the root line's own negative. `bundle-with-a-trailing-byte` is one byte after a partial bundle's last entry: every declared entry is there and honest, and the bundle is not exactly them (run 12, D13) |
 | §6 the anchor digest | `anchors/cases.json` names the bytes and gives the digest, and `checkpoint-<size>.ots` chains from it. Anchoring is **advisory** (D-009), so a reader computing one of the two neighbouring byte ranges — the three-line body, or §7's signed text — never matches a stamp and never reports one, which is why the range is stated in hex rather than in a word both bullets use | no negative: a proof over the wrong digest simply fails to chain, and the failure is indistinguishable from an anchor for another tree. Run 11's `OTSDigestSignedText` variant is caught by the digest comparison alone |
-| §7 note framing, the three splits a file can separate | `served/checkpoint` and `receipt.note`, both read with these rules | `checkpoints-bad/18-signature-name-with-space` (split at the first space or the last), `19-signature-unpadded-base64` (standard base64, padded) `20-signature-payload-too-long` (the payload is **exactly** 68 or 76 bytes, never a prefix of something longer) and `24-signature-non-canonical-pad-bits` (a non-zero padding bit, which a lenient decoder ignores; this implementation accepted it until run 12, D8). Each is the honest checkpoint with one signature line rewritten, so the line is well-formed under the lax reading and malformed under this document's. The other two splits — a blank line inside the text, and a note with no signature lines — are in **What is not vectored** below |
+| §7 note framing, the three splits a file can separate | `served/checkpoint` and `receipt.note`, both read with these rules | `checkpoints-bad/18-signature-name-with-space` (split at the first space or the last), `19-signature-unpadded-base64` (standard base64, padded) `20-signature-payload-too-long` (the payload is **exactly** 68 or 76 bytes, never a prefix of something longer), `24-signature-non-canonical-pad-bits` (a non-zero padding bit, which a lenient decoder ignores; this implementation accepted it until run 12, D8), `25-empty-signature-name` (a line whose name is empty, which both parsers here ignored as a stranger's until run 12) and `26-stranger-line-wrong-length` (an 80-byte payload under a name the policy does not list: malformed, not ignored). Each is the honest checkpoint with one signature line rewritten, so the line is well-formed under the lax reading and malformed under this document's. The other two splits — a blank line inside the text, and a note with no signature lines — are in **What is not vectored** below |
 | §8.1 a bundle's checkpoint is checked per §10 | `proofs/`, whose checkpoints carry the quorum | `proofs-bad/no-quorum` (the log's signature and nobody else's) and `proofs-bad/wrong-origin` (this network's key over another network's origin line) |
 | §8.1 condition 3, the key a node installs | `proofs/cases.json`'s `installs`: for every device, the `wg_pk` replay gives. `nas` rotated after it enrolled, so `proofs/nas.bundle` proves an entry naming a key `nas` no longer uses and `installs` names the other one. A reader that requires the bundle's key to match installs nothing for `nas` (cold gate run 11, D14) | — |
 | §8 proof bundles | `proofs/`, one per active device | `proofs-bad/`, **9 proof refusals**: a wrong entry, a foreign checkpoint, a tampered proof, a checkpoint signed by a key the anchor does not name, one with no witness quorum and one whose checkpoint names another origin — each differing from a valid bundle in exactly one thing |
@@ -1403,6 +1410,15 @@ admits its holes, so:
   entry-layer copy of a request rule; this one does not, and that is a choice.
 - **`quorum none` accepting an uncosigned head.** It needs a second trust
   anchor, and one is not shipped.
+- **A verifier key whose name contains a space.** Both parsers here refuse
+  it (§7), and no `trust-bad/` file carries one, because §9.1's `policy`
+  cannot: a key with a space in it is two fields to the grammar, and the
+  field count or the correspondence rule refuses the file first.
+- **A checkpoint of size `0`, a bundle over a `rotate` or `revoke` entry, and
+  an empty `labels` map.** The first two are legal and unshipped: the suite has
+  no empty served log, and every bundle proves an `enroll`, so a reader that
+  refuses a size line of `0` or a bundle over another entry type passes. The
+  third is `ROADMAP.md` D-h, the maintainer's.
 - **§8.1 condition 2 as a node's own check.** No shipped bundle carries a head
   other than `served/checkpoint`, and this implementation's bundle checker is a
   reader holding only the trust file, with no stored checkpoint to be consistent
@@ -1677,7 +1693,14 @@ chooses the text of.
 
 bech32m (BIP-350), HRP `norn`, data = the request bytes regrouped from 8-bit to
 5-bit groups, zero-padded to the next group boundary. A decoder MUST reject a
-payload whose padding is 5 bits or more, or whose padding bits are not zero.
+payload whose padding is 5 bits or more, or whose padding bits are not zero —
+as BIP-173 states it: the incomplete group is fewer than five bits, and zero.
+The arithmetic matters for testing the first half: a payload whose natural
+padding is three or four bits, given one whole extra group, regroups to one
+extra byte, which §4.0's whole-input rule refuses before this rule is reached.
+`requests-bad/excess-padding` is therefore built from a request whose natural
+padding is one or two bits, so that the extra group leaves six or seven and no
+extra byte, and only this rule can refuse it (cold gate run 12, D6).
 
 **This section states Norn's choices within bech32m and nothing more:
 everything else in the encoding is BIP-350's** — the 32-character data charset,
