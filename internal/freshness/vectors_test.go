@@ -279,3 +279,72 @@ func TestTheUnconfiguredHardLimitIsVectored(t *testing.T) {
 			"S_hard as no headroom -- dropping every peer -- passes the whole suite")
 	}
 }
+
+// Cold-model gate run 11, defect D1. §8.1's table has `fresh` and `hard_stale`
+// as separate conditions, and both hold when S_hard < elapsed <= S. Every case
+// used to carry S_hard above S, where that region is empty, so `HardBeforeFresh`
+// (identical except that it tests `hard_stale` first) passed all 622 checks.
+//
+// This test is about what the FILE contains, not about Limits.State: the table
+// test above already checks each case's answer. What it guards is that a case
+// in the overlap stays there. A later edit to `staleness` or `hard` that moved
+// it out would leave every case green, and the ordering unpinned.
+func TestTheOverlapBetweenFreshAndHardStaleIsVectored(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join(vectorRoot(), "detect", "staleness.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Staleness int64 `json:"staleness"`
+		Hard      int64 `json:"hard"`
+		Cases     []struct {
+			Name      string `json:"name"`
+			Elapsed   int64  `json:"elapsed"`
+			Hard      *int64 `json:"hard"`
+			HaveClock *bool  `json:"have_clock"`
+			Expect    string `json:"expect"`
+		} `json:"cases"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+
+	var inOverlap, pastBoth bool
+	for _, c := range doc.Cases {
+		hard := doc.Hard
+		if c.Hard != nil {
+			hard = *c.Hard
+		}
+		if c.HaveClock != nil && !*c.HaveClock {
+			continue
+		}
+		if hard == 0 || hard >= doc.Staleness {
+			continue
+		}
+		switch {
+		case c.Elapsed > hard && c.Elapsed <= doc.Staleness:
+			// Both conditions hold. Only the order decides.
+			inOverlap = true
+			if c.Expect != Fresh {
+				t.Errorf("%s: elapsed %ds is past S_hard %ds and within S %ds; §8.1 "+
+					"reads the table top to bottom, so it is %q, and the file says %q",
+					c.Name, c.Elapsed, hard, doc.Staleness, Fresh, c.Expect)
+			}
+		case c.Elapsed > doc.Staleness:
+			pastBoth = true
+			if c.Expect != HardStale {
+				t.Errorf("%s: elapsed %ds is past S %ds and past S_hard %ds; that is "+
+					"%q, never %q", c.Name, c.Elapsed, doc.Staleness, hard, HardStale, c.Expect)
+			}
+		}
+	}
+	if !inOverlap {
+		t.Error("no case has S_hard < elapsed <= S, so a reader that tests " +
+			"`hard_stale` before `fresh` passes the whole suite, and drops every peer " +
+			"on a view the network still calls fresh")
+	}
+	if !pastBoth {
+		t.Error("no case with S_hard below S goes past S, so a reader that ignores " +
+			"such an S_hard (and says `degraded`) passes the whole suite")
+	}
+}

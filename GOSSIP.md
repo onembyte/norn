@@ -144,6 +144,12 @@ unset unless `-hard-stale` or `hard_stale` says otherwise, and a value below §4
 `staleness` default is refused — it would drop every peer before the network had even
 called the view degraded.
 
+That floor only covers the default. `S` is a `params` key and can be raised above an
+`S_hard` a node chose earlier (this project's own fixture goes from 600 to 900). So the
+rows above are read **top to bottom, first match wins** (`SPEC.md` §8.1): such a node
+stays `fresh` up to `S` and then goes straight to `hard-stale`. It never drops peers
+while the network calls its view fresh.
+
 The `degraded` alarm repeats on its cadence rather than once, because a degraded node
 that simply went quiet is indistinguishable from one that recovered; recovering resets
 it, so the next degradation is announced immediately rather than up to five minutes

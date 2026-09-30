@@ -37,9 +37,21 @@
       "expect": "fresh",
       "hard": 0,
       "name": "unconfigured-hard-still-fresh"
+    },
+    {
+      "elapsed": 800,
+      "expect": "fresh",
+      "hard": 700,
+      "name": "hard-below-staleness-still-fresh"
+    },
+    {
+      "elapsed": 901,
+      "expect": "hard_stale",
+      "hard": 700,
+      "name": "hard-below-staleness-past-staleness"
     }
   ],
-  "comment": "SPEC 8.1's ladder as a table: `elapsed` is the node's monotonic time since it learned the checkpoint's quorum time, `staleness` is the network's own from params, and `hard` is this node's local S_hard. The rule is `elapsed \u003e staleness`, so the boundary is still fresh. A node with no corroborated instant has no clock and reports `unknown` rather than guessing. A case may carry its own `hard`, overriding the top-level one: zero means S_hard is NOT CONFIGURED, not a limit of zero, so such a node stays `degraded` however old the view gets rather than dropping every peer",
+  "comment": "SPEC 8.1's ladder as a table: `elapsed` is the node's monotonic time since it learned the checkpoint's quorum time, `staleness` is the network's own from params, and `hard` is this node's local S_hard. The rule is `elapsed \u003e staleness`, so the boundary is still fresh. A node with no corroborated instant has no clock and reports `unknown` rather than guessing. A case may carry its own `hard`, overriding the top-level one: zero means S_hard is NOT CONFIGURED, not a limit of zero, so such a node stays `degraded` however old the view gets rather than dropping every peer. The state is the first row of SPEC 8.1's table whose condition holds, so where `hard` is below `staleness` the view is `fresh` up to `staleness` and `hard_stale` after it: a node never drops its peers while the network calls its view fresh",
   "hard": 3600,
   "staleness": 900
 }

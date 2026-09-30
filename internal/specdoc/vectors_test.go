@@ -794,6 +794,13 @@ func TestEveryVectoredRuleIsStatedWhereItLives(t *testing.T) {
 			"checkpoints-bad/16-two-log-signatures"},
 		{"8.1", "`device` is the `device_id` the `entry` names",
 			"proofs-bad/device-not-in-entry"},
+		// Cold gate run 11, D1: the freshness table's rows overlap, and only
+		// their order says which one wins.
+		{"8.1", "**first row, read top to bottom, whose condition holds**",
+			"detect/staleness.json hard-below-staleness-still-fresh"},
+		// D14: condition 3's "that wg_pk" had no antecedent, and one reading
+		// drops every peer that has rotated.
+		{"8.1", "**the `wg_pk` replay gives**", "proofs/cases.json installs"},
 	} {
 		t.Run(c.vector, func(t *testing.T) {
 			section, ok := doc.Section(c.section)

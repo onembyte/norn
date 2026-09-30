@@ -741,7 +741,10 @@ A node MUST treat a peer as proven only if:
 
 1. the bundle's checkpoint verifies under the node's trust policy (§9), and
 2. the bundle's checkpoint is consistent with the node's stored checkpoint, and
-3. replay of the log up to that checkpoint yields the device as `active` with that `wg_pk`, and
+3. replay of the log up to that checkpoint yields the device as `active`, and
+   the key the node installs for it is **the `wg_pk` replay gives**: the
+   device's current key in the §5.3 state, never the key written in the
+   bundle's entry, and
 4. the checkpoint is not stale: **`elapsed > params.staleness`** makes it so,
    where `elapsed` is the node's **monotonic** reading now minus its monotonic
    reading when it learned this checkpoint's quorum time (§5.3).
@@ -761,7 +764,8 @@ ships that table beside these vectors. The ladder is here rather than in
 specification and the suite must be able to reproduce it.
 
 Let `elapsed` be condition 4's monotonic duration, `S` be `params.staleness`
-(§4.5), and `S_hard` be this node's own hard limit. Then:
+(§4.5), and `S_hard` be this node's own hard limit. Then the state is the
+**first row, read top to bottom, whose condition holds**:
 
 | state | when |
 |---|---|
@@ -778,9 +782,35 @@ peer, so a log unreachable over a weekend must not take a network down by
 itself. It is a local decision for the same reason the witness policy is not a
 `params` key (D-034).
 
+**The order is part of the rule.** `fresh` and `hard_stale` are separate
+conditions, and both hold whenever `S_hard < elapsed ≤ S`. Read in the order
+written, that region is `fresh`: **a node never drops its peers while the
+network calls its view fresh**. So an `S_hard` below `S` does nothing until
+`elapsed` passes `S`, and from there the view goes straight to `hard_stale`
+without being `degraded`. Nobody has to misconfigure a node to get there. `S`
+is a `params` key that a root quorum can raise, and `S_hard` stays where the
+node put it. A node that chose `S_hard = 700` while `S` was 600 is in that
+region as soon as `S` becomes 900, and this suite's own log does exactly that
+(`00-genesis`, then `29-params`). The two `hard-below-staleness` cases in
+`detect/staleness.json` are that node. Letting `S` win costs nothing a root
+quorum did not already have: the same signatures that raise `staleness` could
+enroll a device outright.
+
 Because the node replays the whole log, condition 3 is what actually decides;
 the bundle is the portable, offline-checkable evidence that goes in alerts and
 audit output.
+
+**A bundle proves that its device was enrolled, not which key it uses now.**
+The bundle's entry is the one that made the device `active`. For an `enroll`,
+that entry holds the request and the key the request carried. A `rotate`
+changes the key and leaves `since_index` where it was (§5.1), so any device
+that has ever rotated carries a bundle whose entry names a key it no longer
+uses. That is the normal case and not a stale bundle. `proofs/nas.bundle`
+proves `nas`'s enrolment at index 1, and its entry carries the key
+`116f00fa…`. Replay gives `2a955fd2…`, the key `nas` rotated to at
+`35-rotate-nas`. A node that required the two to match would drop every peer
+that had ever rotated, and nothing would tell it so. `proofs/cases.json` lists
+under `installs` the key a node installs for each device whose bundle ships.
 
 ## 9. Trust file — `norn.trust`
 
@@ -1125,7 +1155,7 @@ suite is checked only against its own author.
 | `genesis/<NN-case>/` | one single-entry log per way entry 0 can abort, each with its own `manifest.json` and `state.json`; an abort stops replay, so the cases cannot share a log. `cases.json` lists them |
 | `trust-bad/<NN-case>.cbor` | trust files that decode cleanly but MUST be rejected as anchors; the file name says why, `cases.json` lists them |
 | `served/` | the fixture's entries as a real **tlog-tiles directory**: `tile/entries/…` bundles, `tile/<L>/…` hashes, and `checkpoint` — which **is** the signed note (§6), not an unsigned file with a signed sibling |
-| `proofs/<device>.bundle` | one §8.1 proof bundle per active device, each proving the entry that made that device active; `cases.json` gives the origin, the log-key seed and the device list |
+| `proofs/<device>.bundle` | one §8.1 proof bundle per active device, each proving the entry that made that device active; `cases.json` gives the origin, the log-key seed, the device list and, under `installs`, the key a node installs for each device (§8.1 condition 3) |
 | `trust.cbor` · `trust.toml` · `trust.fingerprint` | the trust anchor (§9), authoritative bytes, human rendering, and its fingerprint |
 | `receipt.note` | a submission receipt: the signed note itself (§7) |
 | `policies/<name>.txt` | §9.1's restated grammar, one whole policy per rule. `cases.json` marks each `accept` true or false and says which rule it is about |
@@ -1224,6 +1254,7 @@ this table drifted out of date the moment one was.
 | §6 the anchor digest | `anchors/cases.json` names the bytes and gives the digest, and `checkpoint-<size>.ots` chains from it. Anchoring is **advisory** (D-009), so a reader computing one of the two neighbouring byte ranges — the three-line body, or §7's signed text — never matches a stamp and never reports one, which is why the range is stated in hex rather than in a word both bullets use | no negative: a proof over the wrong digest simply fails to chain, and the failure is indistinguishable from an anchor for another tree. Run 11's `OTSDigestSignedText` variant is caught by the digest comparison alone |
 | §7 note framing, the three splits a file can separate | `served/checkpoint` and `receipt.note`, both read with these rules | `checkpoints-bad/18-signature-name-with-space` (split at the first space or the last), `19-signature-unpadded-base64` (standard base64, padded) and `20-signature-payload-too-long` (the payload is **exactly** 68 or 76 bytes, never a prefix of something longer). Each is the honest checkpoint with one signature line rewritten, so the line is well-formed under the lax reading and malformed under this document's. The other two splits — a blank line inside the text, and a note with no signature lines — are in **What is not vectored** below |
 | §8.1 a bundle's checkpoint is checked per §10 | `proofs/`, whose checkpoints carry the quorum | `proofs-bad/no-quorum` (the log's signature and nobody else's) and `proofs-bad/wrong-origin` (this network's key over another network's origin line) |
+| §8.1 condition 3, the key a node installs | `proofs/cases.json`'s `installs`: for every device, the `wg_pk` replay gives. `nas` rotated after it enrolled, so `proofs/nas.bundle` proves an entry naming a key `nas` no longer uses and `installs` names the other one. A reader that requires the bundle's key to match installs nothing for `nas` (cold gate run 11, D14) | — |
 | §8 proof bundles | `proofs/`, one per active device | `proofs-bad/`, **9 proof refusals**: a wrong entry, a foreign checkpoint, a tampered proof, a checkpoint signed by a key the anchor does not name, one with no witness quorum and one whose checkpoint names another origin — each differing from a valid bundle in exactly one thing |
 | §10 the signature decides before the origin | — | `proofs-bad/foreign-checkpoint` MUST be refused about "no valid signature from a trusted key" and `proofs-bad/wrong-origin` about "is for origin". A reader that checks the origin first reports the wrong one for the first of them |
 | §10 verifier loop, steps 1–4 | `served/` verified end to end, **signature first** | `checkpoints-bad/01-unsigned`, `02-wrong-log-key`, `03-wrong-origin` and **`04-forged-log-signature`** — the last one being a signature of the right shape under the right key id that does not verify. Without it a verifier that never checks the log signature reproduces the whole suite |
@@ -1236,6 +1267,7 @@ this table drifted out of date the moment one was.
 | §10 a reader that does not hold `at` | — | `detect/shorter-with-no-held-branch`: the same served branch as the fork case, read by a node holding the stored head and **not** the entries. It refuses and MUST NOT accuse. Inside §10's own loop the node always holds `at`; this clause is for a monitor handed a checkpoint, or a node restarted from its stored one |
 | §10 a line the reader does not know | `served-extra-witness/`: the honest head plus one more line, from a witness the policy never names and the trust file does not list. It verifies under its own key, counts for nothing, and the head MUST be **accepted** | `07-unnamed-witness-only` cannot pin this: it is refused for want of a quorum either way, so it separates nothing |
 | §8.1 `S_hard` unconfigured | `detect/staleness.json`'s `unconfigured-hard-stays-degraded` and `-still-fresh`, which carry `hard: 0` | every other case carries 3600, so a reader that read 0 as a limit of zero passed while dropping every peer — the outcome the asymmetry exists to prevent |
+| §8.1 the freshness table is read in order | `detect/staleness.json`'s `hard-below-staleness-still-fresh`: `hard` 700, `staleness` 900, `elapsed` 800, where `fresh` and `hard_stale` both hold and only the order decides. `-past-staleness` is the same node at 901, which goes straight to `hard_stale` | every earlier case had `hard` above `staleness`, where the two rows cannot overlap, so a reader testing `hard_stale` first passed the whole suite (cold gate run 11, D1) |
 | §9.1 what a quorum **means** | the `evaluate` tables in `policies/cases.json`: a set of cosigner names and whether they satisfy the policy. `nested-group` is the one that separates a nested group from a flattened one — `outer` is `all` of **one** member, and that member is `any` of two, so `pi` alone satisfies it and a flattening reader needs both | `bad-duplicate-member` (met by one witness), `bad-k-zero` (met by **nobody**, so an uncosigned head passes) and `bad-k-leading-zero`. Parsing alone could not reach any of the three |
 | §9.1 the restated `tlog-policy` grammar | `policies/minimal`, `no-trailing-newline`, `blank-and-whitespace-lines`, `comment-and-indent`, `comment-tab-indented`, `witness-url-fragment`, `nested-group`, `no-log-line` | `bad-vertical-tab`, `bad-carriage-return`, `bad-extra-field`, `bad-trailing-comment`, `bad-duplicate-name`, `bad-forward-reference`, `bad-two-quorums`, `bad-no-quorum`, `bad-empty-group`, `bad-unknown-keyword` and `bad-quorum-undefined`. Run 8 flipped nine readings of this grammar and all nine passed without these; run 10 found the two whitespace negatives were refused for their **field count**, so `bad-vertical-tab` and `bad-carriage-return` now put the stray character between a two-field directive's two fields, where a separator reading parses |
 | §16.2 bech32m | the text form of every request, and `requests/req-minimal-upper` — the same request in the all-uppercase form §16.2 says a reader MUST accept, which is the one *positive* obligation the section carries and the form a QR code produces | `wrong-hrp`, `plain-bech32` (the same bytes under bech32's constant), `mixed-case`, `corrupt-character`. BIP-350's own vectors are in both implementations' unit tests |
