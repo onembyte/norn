@@ -247,7 +247,7 @@ checkpoint, the design is wrong — so that is a gate line, not an aspiration.
 | 2.6b | A running witness cosigns | an **unmodified** `transparency-dev/witness` returns a cosignature over `add-checkpoint`. Needs a witness process, so it belongs to the lab | ⬜ Phase 4 |
 | 2.7 | §6/§8/§10 vectors | a served tile directory and six proof bundles enter the suite; only §6 cosignatures remain, and they need a running witness | ✅ |
 | 2.8 | HTTP fetch + `norn verify` | a log served over plain HTTP verifies from the command line and prints its state | ✅ |
-| 2.9 | The rest of the CLI | subdivided below — `init`, `enroll`, `sign`, `submit`, `status` are five flows, not one checkpoint | ⬜ |
+| 2.9 | The rest of the CLI | subdivided below — `init`, `enroll`, `sign`, `submit`, `status` are five flows, not one checkpoint | ✅ |
 | 2.9a | §16 enrollment requests, normative and vectored | the request format is specified byte-for-byte, the reference implements it, and §12.1's last "no vectors at all" row is gone | ✅ |
 | 2.9b | Signing backends | two unrelated key stores behind one seam; split | ✅ |
 | 2.9b-i | The signer seam + ssh-agent (tiers 1/2) | `entry.Sign` takes a `crypto.Signer`, and `internal/sshagent` signs through a **real OpenSSH `ssh-agent`**, with a fake agent for the hostile cases | ✅ |
