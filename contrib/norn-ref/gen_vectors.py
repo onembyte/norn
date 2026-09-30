@@ -369,9 +369,38 @@ def write_policies(out: pathlib.Path) -> None:
         "section": "9.1", "says": "previously-defined witnesses or groups"}
     policy_rules["bad-unknown-keyword"] = {
         "section": "9.1", "says": "the four directives"}
-    for name in ("bad-vertical-tab", "bad-carriage-return"):
+    # One phrase per character: the set is closed and each of its three
+    # members is named, so each negative can point at its own.
+    for name, says in (("bad-vertical-tab", "`0x0B` (`\\v`)"),
+                       ("bad-form-feed", "`0x0C` (`\\f`)"),
+                       ("bad-carriage-return", "`0x0D` (`\\r`)")):
+        policy_rules[name] = {"section": "9.1", "says": says}
+        policy_rules[name + "-in-url"] = {"section": "9.1", "says": says}
+    policy_rules["nbsp-is-content"] = {
+        "section": "9.1", "says": "every other Unicode whitespace character included (U+00A0"}
+    # Cold gate run 11, D2 and D5, and the declarations that pointed at the
+    # table's opening sentence rather than at the row that states the rule.
+    # A declaration that any case in the directory could satisfy says nothing.
+    for name in ("bad-duplicate-key", "bad-log-key-as-witness"):
         policy_rules[name] = {
-            "section": "9.1", "says": "is an **error**, not a separator and not content"}
+            "section": "9.1", "says": "a verifier key appears **once** in a policy"}
+    policy_rules["two-log-lines"] = {"section": "9.1", "says": "**more than one is allowed**"}
+    policy_rules["bad-empty-group"] = {
+        "section": "9.1", "says": "`group` a name, a threshold and one or more members"}
+    policy_rules["bad-duplicate-name"] = {"section": "9.1", "says": "name is defined **once**"}
+    policy_rules["bad-duplicate-member"] = {"section": "9.1", "says": "**no member twice**"}
+    for name in ("bad-k-zero", "bad-k-leading-zero"):
+        policy_rules[name] = {"section": "9.1", "says": "**canonical decimal** with `1 ≤ k ≤ n`"}
+    policy_rules["bad-uppercase-keyword"] = {"section": "9.1", "says": "are **lowercase**"}
+    policy_rules["blank-and-whitespace-lines"] = {
+        "section": "9.1", "says": "holds only spaces and tabs, is **ignored**"}
+    policy_rules["no-trailing-newline"] = {
+        "section": "9.1", "says": "the last directive need not end in one"}
+    policy_rules["nested-group"] = {
+        "section": "9.1", "says": "counts as **one** member of the outer group"}
+    policy_rules["no-log-line"] = {"section": "9.1", "says": "**not required**"}
+    policy_rules["comment-and-indent"] = {
+        "section": "9.1", "says": "spaces and tabs before the keyword are not part of it"}
     policy_rules["bad-extra-field"] = {
         "section": "9.1", "says": "a line with more is an **error**"}
     for name in ("bad-trailing-comment", "witness-url-fragment"):

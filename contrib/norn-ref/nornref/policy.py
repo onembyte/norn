@@ -6,9 +6,28 @@ never evaluates a policy -- it only has to refuse a `policy` entry whose text
 is not one (SPEC 5.1).
 """
 
+import re
+
 
 class PolicyError(ValueError):
     """The text is not a `c2sp.org/tlog-policy` document."""
+
+
+# SPEC 9.1: the only characters that are errors in a line. The set is closed;
+# every other character, other Unicode whitespace included, is content.
+ERRORS = frozenset("\x0b\x0c\x0d")
+SEPARATORS = re.compile("[ \t]+")
+
+
+def _once(keys: set[str], key: str, number: int) -> None:
+    """A verifier key appears once in a policy, on whatever line (SPEC 9.1).
+
+    Under two names, one cosignature line matches both, and one witness
+    answering once meets a threshold of two.
+    """
+    if key in keys:
+        raise PolicyError(f"line {number}: that key is already in this policy")
+    keys.add(key)
 
 
 def parse(text: str) -> None:
@@ -19,28 +38,39 @@ def parse(text: str) -> None:
     a vertical tab as a separator, a duplicate name, a forward reference and a
     `group` with no members. Four went the tolerant way and two the strict one. SPEC 9.1 now states all six and `policies/`
     vectors them; both implementations answer the same way here.
+
+    Two more after cold gate run 11. D12: this parser refused the 26
+    characters `str.isspace()` knows that can occur in a line, where the Go
+    one refused three of them; SPEC 9.1 now closes the set at those three. D2:
+    a verifier key could appear twice here, which the Go parser refused.
     """
     quorums = 0
     names: set[str] = set()
+    keys: set[str] = set()
     for number, line in enumerate(text.split("\n"), start=1):
-        if any(c not in " \t" for c in line if c.isspace()):
-            raise PolicyError(f"line {number}: whitespace outside space and tab")
+        if any(c in ERRORS for c in line):
+            raise PolicyError(f"line {number}: 0x0B, 0x0C or 0x0D in a line")
         # Ignored: empty or whitespace-only lines, and comments. This parser
         # refused both and the Go one accepted both; SPEC 9.1 now states the
         # tolerant reading and `policies/` vectors it.
         stripped = line.strip(" \t")
         if stripped == "" or stripped.startswith("#"):
             continue
-        fields = stripped.split()
+        # Runs of space and tab, and nothing else: `str.split()` with no
+        # argument splits on every Unicode space, which made U+00A0 a
+        # separator here and content in SPEC 9.1.
+        fields = [f for f in SEPARATORS.split(stripped) if f]
         keyword = fields[0]
         if keyword == "log":
             if not 2 <= len(fields) <= 3:
                 raise PolicyError(f"line {number}: log takes a key and an optional url")
+            _once(keys, fields[1], number)
         elif keyword == "witness":
             if not 3 <= len(fields) <= 4:
                 raise PolicyError(f"line {number}: witness takes a name, a key and an optional url")
             if fields[1] in names:
                 raise PolicyError(f"line {number}: {fields[1]!r} is already defined")
+            _once(keys, fields[2], number)
             names.add(fields[1])
         elif keyword == "group":
             # name, threshold and at least one member.

@@ -216,6 +216,7 @@ func policyText(t *testing.T, name string) string {
 func TestAWhitespaceNegativeIsRefusedForItsWhitespaceAndNothingElse(t *testing.T) {
 	for _, c := range []struct{ name, ch string }{
 		{"bad-vertical-tab", "\v"},
+		{"bad-form-feed", "\f"},
 		{"bad-carriage-return", "\r"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
@@ -234,6 +235,48 @@ func TestAWhitespaceNegativeIsRefusedForItsWhitespaceAndNothingElse(t *testing.T
 				t.Errorf("reading %q as a separator gives a policy this parser refuses "+
 					"anyway (%v), so the vector pins that rule instead and the "+
 					"whitespace rule can be deleted without the suite noticing", c.ch, err)
+			}
+		})
+	}
+}
+
+// Cold-model gate run 11, D12. The test above rules out one lax reading and
+// not the other. Between `quorum` and `pi`, a reader that keeps the character
+// as ordinary CONTENT sees one field, an unknown keyword, and refuses for that
+// -- so with all three characters demoted to content, every vector named after
+// them stayed green. Only a unit test in this package noticed, and a second
+// implementer does not receive it.
+//
+// So each character ships again inside a URL, where the content reading
+// parses. Swapping it for an ordinary letter is that reading exactly; if the
+// swapped text does not parse, something other than the character is being
+// refused, and the vector pins nothing.
+func TestAWhitespaceNegativeIsNotContentEither(t *testing.T) {
+	for _, c := range []struct{ name, ch string }{
+		{"bad-vertical-tab-in-url", "\v"},
+		{"bad-form-feed-in-url", "\f"},
+		{"bad-carriage-return-in-url", "\r"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			text := policyText(t, c.name)
+			if strings.Count(text, c.ch) != 1 {
+				t.Fatalf("%s must carry exactly one %q", c.name, c.ch)
+			}
+			if _, err := Parse(text); err == nil {
+				t.Fatal("the vector must be refused")
+			}
+			asContent := strings.ReplaceAll(text, c.ch, "x")
+			if _, err := Parse(asContent); err != nil {
+				t.Errorf("reading %q as content gives a policy this parser refuses "+
+					"anyway (%v), so the vector does not separate an error from "+
+					"content", c.ch, err)
+			}
+			// And the placement must not be one where a split parses: that
+			// reading belongs to the other test, and a vector answering both
+			// would be answering neither cleanly.
+			if _, err := Parse(strings.ReplaceAll(text, c.ch, " ")); err == nil {
+				t.Errorf("reading %q as a separator parses too; place it in a field "+
+					"a split would break", c.ch)
 			}
 		})
 	}
