@@ -2,6 +2,11 @@
 
 **Date:** 2026-09-30 · **Scope:** commit `7f77554` on `claude/tender-mccarthy-bzllsp`
 (128-entry fixture, 752 Go tests, `make ci` green) · **Method:** read-only.
+**Status updated:** 2026-09-30, for the commits after the audit
+(`37c253d..5b1f915`). Only status changed: the summary's Status column,
+the **Status** lines, a status note under the LOW table and one sentence
+under "Reproductions and probes". Each finding's location, description and
+evidence stay as recorded at `7f77554`.
 
 **How this was produced.** Six auditors, one per area (repository map and
 features; entries and replay; checkpoints, witnesses and trust; enforcement
@@ -34,9 +39,9 @@ divergence.
 |---|---|---|---|
 | SEC-001 | **CRITICAL** | A validly signed entry can be re-applied by adding one junk signature: revoked devices return, policies roll back | **Deferred by maintainer** (documented, reproduction shipped) |
 | SEC-002 | **CRITICAL** | One colluding witness (not *k*) plus the log hides a revocation from chosen nodes, fresh and unalarmed, because gossip never runs while a view is fresh | Open |
-| SEC-003 | **HIGH** (two verifiers: CRITICAL) | One silent proven peer stalls every node's enforcement loop forever: gossip fetch has no timeout and precedes reconcile | **Bounded** (2026-09-30): every peer read and every submission has a deadline and follows no redirect; the structural half — reconcile before peer I/O, a cycle-overrun alarm — is open |
+| SEC-003 | **HIGH** (two verifiers: CRITICAL) | One silent proven peer stalls every node's enforcement loop forever: gossip fetch has no timeout and precedes reconcile | **Bounded** (2026-09-30, `4f7732d`): every read from a peer has a 10 s deadline and follows no redirect, and a submission has a 30 s deadline (it still follows a redirect); the structural half — reconcile before peer I/O, a cycle-overrun alarm — is open |
 | SEC-004 | **HIGH** | Verifier state is not durable: a restarted node accepts a rolled-back checkpoint as `fresh` and reinstalls revoked devices | Open |
-| SEC-005 | MEDIUM | Fork evidence is built and checked under the trust file's key and policy only: not produced for a longer branch or after a log-key rotation; weaker evidence still freezes | (a) **fixed** 2026-09-30 (6.5m-iv): the node swaps the roles and writes evidence on the longer branch, and `detect/fork-on-a-longer-branch` pins the detector; (b) and (c) open |
+| SEC-005 | MEDIUM | Fork evidence is built and checked under the trust file's key and policy only: not produced for a longer branch or after a log-key rotation; weaker evidence still freezes | (a) **fixed** 2026-09-30 (6.5m-iv, `bdb3086`): the node swaps the roles and writes evidence on the longer branch, and `detect/fork-on-a-longer-branch` pins the detector; (b) and (c) open |
 | SEC-006 | MEDIUM | The fork freeze lives under `/run/norn` by default and is lost at reboot | Open |
 | SEC-007 | MEDIUM | Checkpoint gossip runs only when a view is stale; GOSSIP §2/§6, D-016 and PLAN's T1 "software half closed" claim otherwise | Open |
 | SEC-008 | MEDIUM (auditor: HIGH) | No shipped tool can build `revoke`, `rotate` or any governance entry; the runbooks describe commands that do not exist | Open |
@@ -47,7 +52,7 @@ divergence.
 | SEC-013 | MEDIUM | Every poll re-downloads and replays the whole log before reconciling, so the eviction window follows log latency, not T_poll | Open |
 | SEC-014 | MEDIUM | Log-key rotation never retires a key; SPEC §4.3, §9.4 and ENROLLMENT §6/R7 disagree | Open |
 | SEC-015 | MEDIUM | No fuzzing reaches a replay handler; the post-genesis target has been skipping | Open |
-| SEC-016 … SEC-036 | LOW | See the table at the end | Open |
+| SEC-016 … SEC-036 | LOW | See the table at the end | Open, except SEC-020 (addressed), and SEC-021, SEC-027 and SEC-032, each partly addressed (see the status note under that table) |
 
 **What held up.** The cryptographic and byte layers are sound. No auditor
 found a way to have a peer accepted without a valid log signature and a
@@ -65,7 +70,8 @@ enforcement path (SEC-003), and what survives a restart (SEC-004).
 
 **Severity:** CRITICAL (verified: confirmed CRITICAL, both lenses)
 **Found by:** entry-replay · **Status:** deferred by the maintainer on
-2026-09-30; recorded in `THREAT-MODEL.md` A2; reproduction at
+2026-09-30 (decision D-a in `docs/audit/ROADMAP.md`, current choice:
+document only); recorded in `THREAT-MODEL.md` A2; reproduction at
 `docs/audit/repro/replay_junk_signature.py`.
 
 **Location.** `internal/replay/replay.go:109-125` (seen set keyed on
@@ -183,16 +189,28 @@ CRITICAL; rated HIGH here per "do not inflate", with the condition for
 CRITICAL stated below)
 **Found by:** map-features, checkpoint-witness-trust, enforcement-ops,
 deps-tooling-tests (all independently, all reproduced).
-**Status:** the minimal fix landed 2026-09-30: `gossip.Peer` reads through a
-client with a 10 s overall deadline, the same header deadline and no
-redirects (`gossip.FetchTimeout`), and `logclient.Submit` shares `Fetch`'s
-30 s bound. "Forever" is now at most r × 10 s of peer I/O per cycle. The
-regression tests are the silent peer and the trickling peer in
-`internal/gossip`, the silent log in `internal/logclient`, and the audit's
-own probe in `internal/agent`: watchdog mode, one unproven key, three silent
-peers, `Once()` returns and evicts. Reconcile still runs *after* the peer
-I/O, and no cycle-overrun alarm exists; the monitor reads nodes through the
-same bounded client but has no round-level test.
+**Status:** bounded, not fixed. The minimal fix landed 2026-09-30 in
+`4f7732d`: `gossip.Peer` reads through a client with a 10 s overall
+deadline, the same header deadline and no redirects (`gossip.FetchTimeout`),
+and `logclient.Submit` shares `Fetch`'s 30 s bound but sets no
+`CheckRedirect`, so a submission still follows a redirect. "Forever" is now
+bounded, not small: a silent peer costs at most 10 s per ask; a cycle asks
+up to r peers for evidence (`pollEvidence`, at most once per T_g) and, when
+the log fails or the view is stale, up to r for a checkpoint (`askPeers`);
+and a peer that answers each read just inside the deadline costs up to 10 s
+per file `logclient.Verify` fetches from it. The regression tests are the
+silent, trickling and redirecting peers in `internal/gossip`
+(`TestASilentPeerCostsABoundedWaitNotTheCycle`,
+`TestATricklingPeerCostsABoundedWait`,
+`TestAPeerIsNeverFollowedToAnotherAddress`), the silent log in
+`internal/logclient` (`TestSubmitDoesNotWaitForeverOnASilentLog`), and the
+audit's own probe in `internal/agent`
+(`TestASilentPeerDoesNotStallEnforcement`: watchdog mode, one unproven key,
+three silent peers, `Once()` returns and evicts). Open: reconcile still runs
+*after* the peer I/O, no cycle-overrun alarm exists, and no test asserts
+eviction within a documented bound under a slow-loris peer or a slow log;
+the monitor reads nodes through the same bounded client but has no
+round-level test.
 
 **Location.** `internal/gossip/server.go:111` (`http.Get` — `DefaultClient`,
 no `Timeout`, no `ResponseHeaderTimeout`); `internal/agent/fork.go:83-94`
@@ -310,6 +328,15 @@ CLOCK_SKEW message; add restart-rollback and reboot tests.
 severity calibrated MEDIUM because the precondition — ≥k witnesses
 cosigning two histories — is out of the stated threat model)
 **Found by:** checkpoint-witness-trust, enforcement-ops.
+**Status:** (a) fixed 2026-09-30 in `bdb3086` (6.5m-iv): when the served
+branch is the longer one, `agent.writeEvidence` builds with the served head
+as `held` and its stored head as `conflicting` at the stored size, and
+`TestAForkOnTheLongerBranchStillLeavesEvidence` (`internal/agent`) and
+`detect/fork-on-a-longer-branch` hold it. (b) and (c) are open:
+`forkevidence.Check` still takes one log key and one policy, and the agent,
+`pollEvidence` and `verify-evidence` pass the trust file's. Also open from
+the recommended fix: no freeze marker when evidence cannot be built,
+`loadFreeze` runs no `Check`, and both evidence writers use `os.WriteFile`.
 
 **Location.** `internal/agent/fork.go:104-105,184-195`;
 `internal/forkevidence/evidence.go:91-97,126-143,208-211`;
@@ -599,6 +626,36 @@ CI run; re-annotate the gate.
 | SEC-035 | enforcement | Owner mode strips WireGuard preshared keys (`Peer` has no PSK field); overlapping allowed-ips among proven peers are not refused (routing form of the swap attack); `norn status` judges expiry by the wall clock; monitor `status.Alerts` written without synchronisation | `peertable.go:65-70`, `endpoint.go:76-105`, `status.go:59-60`, `monitor.go:132-148` |
 | SEC-036 | deps | CI: no govulncheck, no scheduled run, witness interop never exercised (test skips; PLAN gate ticked), actions pinned by tag, no `permissions:`, pynacl unpinned; `make lint` fails on a host Go < 1.26; `vectors-check` cannot catch a stale extra file in `fork/`; several adversarial tests `t.Skip` when their vector is missing | `.github/workflows/ci.yml`, `Makefile:26,67`, `cmd/norn-genlog/main.go:1319` |
 
+**Status of the LOW findings (2026-09-30, after the documentation
+integrity pass).** All are open except these. SEC-020 is addressed; SEC-021's
+document half is; SEC-027 and SEC-032 are each partly addressed by cold-gate
+work rather than by a fix aimed at the finding:
+
+- **SEC-020**, addressed by the documentation integrity pass: README,
+  PUBLICATION and ENFORCEMENT now say Headscale is planned, observe-only and
+  unwritten, G1 carries its mode, and the comparison row is split by mode.
+- **SEC-021**, document half only: ENFORCEMENT §8 now records what a frozen
+  node does. The behaviour itself — a frozen node stops evicting, and FORK
+  and FROZEN_BY_FORK log at INFO — is open.
+
+- **SEC-027**, in part. A signature line must now be exactly the encoding
+  of its payload (6.5m-ii, `dcdd6a4`: `note.Split` in Go and `note.split`
+  in the Python reference; `checkpoints-bad/24-signature-non-canonical-pad-bits`),
+  and so must a receipt's leaf-hash line (6.5l-v-a, `87a5d32`:
+  `receipt.Check` in Go and `note.check_receipt` in Python). Still open:
+  §6's checkpoint root line (`tlog.ParseCheckpoint`) and verifier-key data
+  (`note.ParseVerifierKey`) are decoded with `StdEncoding` and no
+  round-trip check, so a non-zero padding bit in the root, or a CR inside
+  either, is accepted; and a line under a trusted name and key id whose
+  payload length does not fit that key's algorithm (76 bytes under the
+  log's, 68 under a witness's) is still skipped by `note.Verify` and
+  `cosign.Verify`, not refused.
+- **SEC-032**, in part. Since 6.5m-i (`f83018a`) replay in both
+  implementations refuses, as `decode`, a `policy` entry whose `witness`
+  key does not parse as a cosignature verifier key
+  (`log/129-bad-policy-witness-key-not-a-cosigner`). A `log` line's key in
+  an in-log policy is not checked.
+
 ## Protocol ambiguities surfaced
 
 Collected from all six areas; each is a place where SPEC, GOSSIP,
@@ -662,4 +719,6 @@ reproduction that ships is `docs/audit/repro/replay_junk_signature.py`
 (SEC-001). The probes for SEC-002, SEC-003, SEC-004, SEC-005, SEC-010,
 SEC-011 and SEC-012 are described precisely enough above to be rebuilt as
 regression tests, and `docs/audit/ROADMAP.md` lists them as the first
-deliverable of each fix.
+deliverable of each fix. Since the audit two of them ship as tests:
+SEC-003's as `TestASilentPeerDoesNotStallEnforcement` and SEC-005 (a)'s as
+`TestAForkOnTheLongerBranchStillLeavesEvidence`, both in `internal/agent`.

@@ -1,23 +1,86 @@
 # Norn — Project status (docs/COWORKER-v1.md §36, first assignment)
 
-**Date:** 2026-09-30 · **Commit:** `7f77554` · **Companion documents:**
-`SECURITY_AUDIT.md` (findings, with IDs `SEC-nnn`) and `ROADMAP.md`.
+**Date:** 2026-09-30 · **Commit:** `7f77554` · **Updated:** 2026-09-30 at
+`5b1f915` · **Companion documents:** `SECURITY_AUDIT.md` (findings, with
+IDs `SEC-nnn`) and `ROADMAP.md`.
 
 This is the read-only audit `docs/COWORKER-v1.md` §36 asks for before any
 architectural change. It records what exists, what works, what is
 incomplete, and where the documents and the code disagree. Nothing was
 rewritten to produce it.
 
+## Since the audit (2026-09-30, `37c253d..5b1f915`)
+
+The sections after this one are the audit as written at `7f77554`; a
+statement the later commits made false is corrected in place, and line
+references are still `7f77554`'s (the §4.3 blank line, `SPEC.md:296`
+then, is `SPEC.md:309` at `5b1f915`).
+
+- **SEC-003, the minimal half** (`4f7732d`). Every `gossip.Peer` read —
+  the node's and `norn monitor`'s — has a 10 s deadline
+  (`gossip.FetchTimeout`), the same `ResponseHeaderTimeout` and refuses
+  redirects. `logclient.Submit` now shares `HTTP.Fetch`'s 30 s
+  `logclient.Timeout` and still follows redirects. Tests: a silent, a
+  trickling and a redirecting peer (`internal/gossip`), a silent log on
+  submission (`internal/logclient`), a watchdog cycle with three silent
+  peers that returns and evicts (`internal/agent`). The structural half
+  is open: reconcile still runs after the peer I/O (`askPeers`,
+  `pollEvidence`), so every ask of a silent peer costs a cycle up to
+  10 s first, a peer that answers each read just inside the deadline
+  costs 10 s per file, and nothing alarms on an overrun.
+- **SEC-005 (a)** (`bdb3086`, 6.5m-iv). `agent.writeEvidence` swaps the
+  roles when the served branch is the longer one, so evidence is written
+  there too (`TestAForkOnTheLongerBranchStillLeavesEvidence`,
+  `detect/fork-on-a-longer-branch`). (b) and (c) are open:
+  `forkevidence.Check` still runs under the trust file's log key and
+  policy only, `loadFreeze` runs no `Check`, and a node that cannot build
+  evidence still freezes in memory only.
+- **Two partial effects on LOW findings.** 6.5m-i (`f83018a`): replay
+  refuses, as `decode`, a `policy` entry whose `witness` key does not
+  parse as a cosignature verifier key (SEC-032 for `witness` lines; the
+  `log` line's key is not checked;
+  `log/129-bad-policy-witness-key-not-a-cosigner`). 6.5m-ii (`dcdd6a4`):
+  `note.Split` refuses a signature line that is not exactly its payload's
+  encoding, so non-zero padding bits and a `\r` no longer pass (SEC-027
+  for signature lines;
+  `checkpoints-bad/24-signature-non-canonical-pad-bits`). The rest of
+  SEC-027 stands: the checkpoint's root line is still decoded leniently
+  (`tlog.ParseCheckpoint`), and a line of the other algorithm's length
+  under a listed name and key id is still skipped.
+- **Cold-model gate.** Run 12 (`4348001`): `SPEC INSUFFICIENT`, 553/553
+  checks, 14 defects, one High (`SPEC-DEFECTS-12.md`); 6.5m-i, -ii, -iv
+  and -v (`f83018a`, `dcdd6a4`, `bdb3086`, `afde20f`) closed all but D3.
+  Run 13 (`be385d9`): `SPEC SUFFICIENT WITH GAPS`, 886/886 checks, 8
+  defects, none High (`SPEC-DEFECTS-13.md`). 6.5n-i to -iv are planned;
+  the PLAN gate line stays open. Run 12's D3 and run 13's D1 are one
+  decision, `ROADMAP.md` D-l. Before run 12, 6.5l-v-a, -v-b and -vi
+  (`87a5d32`, `a62ebf6`, `345806a`) closed run 11's D4, D6 and D10 and
+  recorded closed reason codes as D-k.
+- **Documentation integrity pass** (the commit after `5b1f915`). Corrects
+  the §5 rows below for README, PLAN, THREAT-MODEL, ENFORCEMENT, GOSSIP,
+  ENROLLMENT, LAB and PUBLICATION; unticks five PLAN gate lines (14 → 9 of
+  38); records D-060–D-077 in `DECISIONS.md` (D-066 supersedes D-011, D-062
+  supersedes D-017's definition); fixes four false code comments; adds
+  `SECURITY.md`, `CONTRIBUTING.md`, `docs/HANDOFF.md` and
+  `docs/upstream/OFFICIAL_PROJECT_CHECKLIST.md`. The three `SPEC.md` items
+  remain.
+- **Counts.** 774 `Test` functions (752 at the audit), 4 fuzz targets,
+  49 packages. The fixture log is 130 entries, 88 rejecting (128 and 86).
+- **`COWORKER.md`** (`5b1f915`) is the maintainer's revised plan,
+  verbatim; the first version, which this audit cites by section, is
+  `docs/COWORKER-v1.md`, and every citation points there.
+
 ## 1. Repository map
 
-One Go module, `github.com/onembyte/norn` (`go 1.26.0`), 49 packages:
-5 under `cmd/`, 44 under `internal/`. 752 `Test` functions, 4 fuzz
-targets. Beside the Go code: a Python reference implementation
-(`contrib/norn-ref`, written from `SPEC.md` alone, generates most
-vectors), an OpenTimestamps vector generator (`contrib/ots-vector`), and a
-vector suite with three provenances (`testdata/vectors`). Twelve
-cold-model gate reports (`SPEC-DEFECTS-*.md`, `SPEC-DECISIONS-11.md`) and
-a 430 KB `BUILD-LOG.md` sit at the repository root.
+One Go module, `github.com/onembyte/norn` (`go 1.26.0`), 49 packages: 5
+under `cmd/`, 44 under `internal/`. 774 `Test` functions at `5b1f915` (752
+at the audit), 4 fuzz targets. Beside the Go code: a Python reference
+implementation (`contrib/norn-ref`, written from `SPEC.md` alone,
+generates most vectors), an OpenTimestamps vector generator
+(`contrib/ots-vector`), and a vector suite with three provenances
+(`testdata/vectors`). Thirteen cold-model gate reports (twelve
+`SPEC-DEFECTS*.md` and `SPEC-DECISIONS-11.md`) and a 483 KB `BUILD-LOG.md`
+(430 KB at the audit) sit at the repository root.
 
 | Package | Role | Path |
 |---|---|---|
@@ -31,7 +94,7 @@ a 430 KB `BUILD-LOG.md` sit at the repository root.
 | `internal/endpoint`, `fight` | keyless routing/endpoint providers (static, hints file, labels); re-add detection | enforcement |
 | `internal/logclient` | SPEC §10 verifier loop: signature, origin, quorum, every bundle, tree rebuild, stored-head comparison, tiles, replay | **verification** |
 | `internal/replay`, `state`, `entry`, `enrollreq`, `fields`, `cbor`, `cjson`, `bech32m`, `genesis` | SPEC §4–§5, §14, §16 | **verification** |
-| `internal/tlog`, `tlogstore`, `note`, `cosign`, `policy`, `trust`, `proof`, `forkevidence`, `freshness`, `proven` | checkpoints, tiles, notes, cosignatures, tlog-policy, trust file, bundles, evidence, witness-time clock, `proven.json` | **verification** |
+| `internal/tlog`, `tlogstore`, `note`, `cosign`, `policy`, `trust`, `proof`, `receipt`, `forkevidence`, `freshness`, `proven` | checkpoints, tiles, notes, cosignatures, tlog-policy, trust file, bundles, receipts, evidence, witness-time clock, `proven.json` | **verification** |
 | `internal/gossip`, `mirror`, `monitor`, `plainlog` | read-only tunnel HTTP server and peer fetcher; mirror writer; `norn monitor` | node / monitor |
 | `internal/logserver`, `witness`, `ots` | `/add` handler; tlog-witness client; OpenTimestamps (advisory, fenced off the enforcement path) | log / advisory |
 | `internal/keyfile`, `wgkey`, `sshagent`, `sshwire`, `qrterm` | key files, ssh-agent signing, QR output | tooling |
@@ -106,10 +169,12 @@ an upgrade trigger (D-049); privacy declared a non-goal. Where it departs
 - Assumed and **not held by the code**: that entry identity is the
   authorized content (SEC-001); that fewer than *k* colluding witnesses
   cannot split a view (SEC-002: the real bound is 2k−N); that every
-  network fetch terminates (SEC-003; held since 2026-09-30 for peer reads
-  and submissions, with reconcile still after the peer I/O); that the stored head, clock, keys,
-  policy and freeze survive a restart (SEC-004/006); that fork evidence can
-  always be built and checked (SEC-005).
+  network fetch terminates (SEC-003; held since `4f7732d` for peer reads
+  and submissions — log fetches already had a 30 s deadline — but
+  reconcile still runs after the peer I/O); that the stored head, clock, keys, policy and
+  freeze survive a restart (SEC-004/006); that fork evidence can always
+  be built and checked (SEC-005; built on the longer branch too since
+  `bdb3086`, still checked under the trust file's key and policy only).
 
 ## 5. Where the documents and the implementation differ
 
@@ -135,11 +200,11 @@ note exists.
 | GOSSIP §3: `cmd/norn-witness` is a one-command wrapper; PLAN:121/125 layout lists `internal/wg` as the reconciler | empty stub; empty package | no |
 | ENFORCEMENT §4/§9, GOSSIP §6/§9: `reconcile.json`, latency histogram, metrics, `POST /norn/hint` | none exist; the gossip server refuses non-GET | no |
 | README:35 `norn verify` prints "the only set of peers a node would install" | it prints replay status; `nornd` also drops expired devices | no |
-| D-011 (reuse tlog-proof@v1) | SPEC §8.1 is Norn's own format | BUILD-LOG:1212 only; no superseding D-entry |
-| PLAN fixed decisions and SPEC §6/§10 name Tessera and torchwood | neither is a dependency | D-049 covers Tessera; torchwood nowhere |
-| DECISIONS index "D-001…D-025" in PLAN | DECISIONS runs to D-059; Phase 4–6 decisions live only in BUILD-LOG | no |
+| D-011 (reuse tlog-proof@v1) | SPEC §8.1 is Norn's own format | D-066 supersedes it (recorded 2026-09-30) |
+| PLAN fixed decisions and SPEC §6/§10 name Tessera and torchwood | neither is a dependency | D-049 covers Tessera; D-066 covers torchwood for bundles; PLAN's fixed decisions corrected 2026-09-30 |
+| DECISIONS index "D-001…D-025" in PLAN | DECISIONS ran to D-059; Phase 4–6 decisions lived only in BUILD-LOG | D-060–D-077 recorded 2026-09-30; PLAN's index corrected |
 | SPEC §4.3 type table | split by a blank line at `SPEC.md:296`; the last three rows render as text | BUILD-LOG says D9 fixed it |
-| README:11 "49 packages, 752 tests, 14 of 38 gate lines" | correct (re-counted) | — |
+| README:11–12 package, test and gate-line counts | correct at the audit (49, 752, 14 of 38) and at `5b1f915` (49, 774, 14 of 38), re-counted, and 9 of 38 after the documentation pass unticked five; `internal/docclaims` fails when any of the three drifts | — |
 | README demo transcript | correct; reproduces byte for byte | — |
 
 ## 6. Protocol ambiguities
@@ -168,13 +233,17 @@ policy a replayed node uses for evidence (§11.1), payload-length vs
   test empties the fetcher first.
 - A gossip peer that accepts TCP and never answers, a slow-loris peer, a
   slow log: reconcile still runs within a bound, an injected key is still
-  evicted, the monitor round completes (SEC-003). The first three and the
-  eviction exist since 2026-09-30; the monitor-round test does not.
+  evicted, the monitor round completes (SEC-003). Since `4f7732d`: the
+  silent and the trickling peer in `internal/gossip`, a silent log on
+  submission in `internal/logclient`, and a watchdog cycle with three
+  silent peers that still evicts in `internal/agent`. Still absent: the
+  trickling peer and a slow log at the node, and the monitor round.
 - Restart: a new `Agent` on the same RunDir refuses an older cosigned
   head and does not report `fresh`; freeze survives a wipe of `/run`;
   learned policy survives (SEC-004/006).
-- Fork where the conflicting head is longer; fork after a log-key
-  rotation; evidence under a raised policy must not freeze (SEC-005).
+- Fork after a log-key rotation; evidence under a raised policy must not
+  freeze (SEC-005). The fork on the longer branch has a test since
+  `bdb3086` (`TestAForkOnTheLongerBranchStillLeavesEvidence`).
 - Policy with two witness keys sharing a note name (SEC-009).
 - No-side-effect property for every rejected entry; replay determinism
   across N runs and against Python (SEC-010).
@@ -185,9 +254,11 @@ policy a replayed node uses for evidence (§11.1), payload-length vs
   re-run against it (SEC-012/019).
 - `quorum none` after a clock exists → `unknown`; genesis mismatch →
   refuse and keep last-known-good; monitor never attributes rejected
-  entries; note malleability (`\r`, padding bits, wrong-length line under
-  a matching name+id); trust file with extra `anchor` members / `url ""`;
-  in-log `policy` with an unusable key.
+  entries; note malleability (`\r` on a signature line, a line of the
+  other algorithm's length under a matching name+id; non-zero padding bits
+  are vectored since `dcdd6a4`); trust file with extra `anchor` members /
+  `url ""`; in-log `policy` with an unusable `log` key (an unusable
+  `witness` key is vectored since `f83018a`).
 - Bool-as-uint envelope/body vectors, non-text `t`, non-integer `after`;
   request with `labels: {}`; Ed25519 small-order/non-canonical inputs;
   rotate with malformed `device_pk` on an unknown device (step order).
@@ -258,9 +329,14 @@ and OTS off the enforcement path. Concerns:
   binaries).
 - `encoding/base64.StdEncoding` is non-strict (`\r`, `\n`, padding bits);
   §6/§7 exactness needs `.Strict()` plus explicit `\r` rejection (SEC-027).
+  A decode/re-encode round trip now holds the receipt's leaf line
+  (`87a5d32`) and every signature line (`dcdd6a4`) to one spelling; the
+  checkpoint's root line (`tlog.ParseCheckpoint`) is still lenient.
 - `net/http` `DefaultClient` (no timeout, follows redirects incl.
-  https→http) in `gossip.Peer` and `logclient.Submit` (SEC-003; both
-  replaced 2026-09-30).
+  https→http) in `gossip.Peer` and `logclient.Submit` (SEC-003). Both
+  replaced in `4f7732d`: `gossip.Peer` has a 10 s deadline and refuses
+  redirects; `logclient.Submit` has a 30 s deadline and still follows
+  them.
 - The Python oracle's only crypto dependency, `pynacl`, is installed
   unpinned and unhashed in CI; libsodium and Go's `crypto/ed25519`
   disagree on small-order inputs (SEC-023).
@@ -283,7 +359,7 @@ and OTS off the enforcement path. Concerns:
 - Refresh PLAN: the DECISIONS index, the Tessera/torchwood fixed-decisions
   table, the repo layout, the stale 5.7 line about `audit --by`, and the
   ticks at :154, :163, :172, :183, :186, :198 until their conditions hold.
-- Move the twelve cold-model reports into `docs/gates/` and consider
+- Move the thirteen cold-model reports into `docs/gates/` and consider
   splitting `BUILD-LOG.md` by phase; promote its decisions into
   DECISIONS.md.
 - Correct THREAT-MODEL A7, README G1 and the backend claims, and

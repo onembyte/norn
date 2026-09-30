@@ -636,9 +636,10 @@ func (a *Agent) PeerAddresses(port int) []string {
 // log's, including §10's comparison with the head this node already holds. So
 // a lying peer is exactly as dangerous as a lying log, which is to say caught.
 //
-// Peers are asked only when the log could not be used. A node polling every
-// 200 ms that also asked three neighbours each time would put a great deal of
-// traffic on the link it is protecting, to learn nothing.
+// Peers are asked only when the log could not be used or the view is stale
+// (see Once). A node polling every 200 ms that also asked three neighbours each
+// time would put a great deal of traffic on the link it is protecting, to learn
+// nothing. `GOSSIP.md`'s fixed cadence is not implemented (SEC-007, D-c).
 func (a *Agent) askPeers(anchor logclient.Anchor) (*logclient.Result, string) {
 	if a.cfg.Peers == nil {
 		return nil, ""
@@ -673,11 +674,10 @@ func (a *Agent) askPeers(anchor logclient.Anchor) (*logclient.Result, string) {
 // checkClock compares this machine's wall clock against witness time and
 // alarms if they disagree by more than Δclock.
 //
-// This runs on the direct-from-log path only, which today is the only path
-// there is. When gossip arrives (4.5) a checkpoint pulled from a peer must
-// *not* come through here: a peer may legitimately be serving an older head,
-// and its age is the peer's business rather than evidence about this machine's
-// clock.
+// It is meant to run on the direct-from-log path only: a peer may legitimately
+// be serving an older head, and its age is the peer's business rather than
+// evidence about this machine's clock. Today Once calls it on whatever head it
+// adopted, a peer's included (SEC-033, open).
 //
 // The alarm is all that happens. Nothing downstream reads it, by design: a
 // node that changed what it enforced because of its own clock would be doing

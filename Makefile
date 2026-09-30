@@ -34,11 +34,12 @@ PY      ?= contrib/norn-ref/.venv/bin/python
 vectors:
 	PYTHONPATH=contrib/norn-ref $(PY) contrib/norn-ref/gen_vectors.py testdata/vectors
 
-# The suite has two provenances (SPEC 12): the entry, state, trust and receipt vectors
-# come from the Python reference, and the served log and proof bundles come
-# from the Go implementation, because producing a tiled log needs one. Each
-# half is checked against its own generator; neither is checked against itself
-# alone, since upstream libraries validate both.
+# The suite has three provenances (SPEC 12): the entry, state, trust and receipt
+# vectors come from the Python reference, the served log and proof bundles from
+# the Go implementation, because producing a tiled log needs one, and anchors/
+# from python-opentimestamps (contrib/ots-vector, run by hand). The first two
+# are checked here against their own generators; neither is checked against
+# itself alone, since upstream libraries validate both.
 GO_VECTOR_DIRS := served proofs fork checkpoints-bad proofs-bad served-bad served-rotated served-superseded served-twice-cosigned served-extra-witness served-name-collision served-witness-id-collision served-log-id-collision served-unused-witness detect
 
 # Vectors neither of Norn's implementations produces. `anchors` holds a `.ots`

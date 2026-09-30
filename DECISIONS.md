@@ -2,6 +2,18 @@
 
 Format: what · why · rejected. Newest at the bottom. Never delete; supersede.
 
+D-060 to D-077 were written on 2026-09-30, from `BUILD-LOG.md`: after D-059
+(3.5b) the choices were recorded only in the journal, and the first audit
+(`docs/audit/ROADMAP.md`, documentation integrity pass) asked for them here.
+Each names the checkpoint that made the choice and the `SPEC.md` section that
+states it; where the day of a Phase 4 checkpoint is not recorded anywhere, the
+heading gives the checkpoint and the day it was written down. D-077 is a
+correction, not a choice, and says so. Superseded or
+amended in part: D-011 by D-066, D-017 by D-062, D-018 by D-069, D-026 by D-060,
+D-027 by D-070, D-055 by D-077, D-058's open item by D-061. D-020 is confirmed
+and applied by D-067. Decisions that are still the maintainer's — D-a to D-l in
+`docs/audit/ROADMAP.md` — are not recorded here until they are made.
+
 ## D-001 · Name: Norn (2026-09-18)
 The Norns carve the record of what has happened; nothing carved is uncarved — an
 append-only log of fate. GitHub search: no security/networking project uses it
@@ -603,3 +615,339 @@ run. Rejected: a hand-rolled netlink client (untestable here, and the failure
 mode is silent) · UAPI-only support (would drop kernel WireGuard, which is the
 platform the gate measures) · shelling out to `wg` (parsing a human-readable
 format as an authority, with no way to distinguish absent from empty).
+
+## D-060 · Label hints are the device's own words and cannot name a key; the reserved name is open (2026-09-19, 3.3; recorded 2026-09-30)
+Amends D-026. What stands: labels are advisory hints for owner mode, and a
+control plane may override an endpoint, never a key (SPEC §4.0). What changed:
+since D-057 the labels travel inside the device's own request, signed by the
+device, so a signer cannot alter them without destroying that signature
+(SPEC §4.3, §16.1). And 3.3 made "never keys" structural rather than checked:
+`endpoint.Hints` has no key field, so a provider decorates devices the log
+proves and cannot name a peer at all (`internal/endpoint`). A malformed label
+is reported and evicts nothing; the device keeps the routes that did parse
+(`TestAMalformedLabelIsReportedNotFatal`). A proven device no provider places
+is still installed, and reported as unrouted.
+
+**Not settled, and not settled here.** SPEC §4.0 and D-026 reserve `ip`;
+`nornd` reads `allowed_ips`, `endpoint` and `keepalive`
+(`internal/endpoint/endpoint.go`). A device enrolled with only the reserved
+`ip` label is therefore installed with no allowed-ips and reported unrouted —
+fail closed, but not what the spec says (SEC-018). Which name is reserved, and
+the canonical CIDR form, is D-f in `docs/audit/ROADMAP.md`. Rejected: picking
+the name inside a documentation pass.
+
+## D-061 · Witness keys are cosignature keys, and the trust file's two witness lists must agree (4.1a–4.1c; recorded 2026-09-30)
+A witness key is a `c2sp.org/tlog-cosignature` v1 verifier key, algorithm
+`0x04`; the log key is a signed-note key, `0x01`, and MUST NOT be a
+cosignature key (SPEC §7, §9.1). The algorithm byte is part of the key id, so
+one public key under both algorithms is two verifiers. `witnesses` and
+`policy` in `norn.trust` MUST name exactly the same witnesses with the same
+keys (SPEC §9.1; `trust-bad/17`, `18`). A checkpoint is accepted only when
+every line from a witness the policy names verifies and the quorum is met
+(SPEC §10) — the witness-policy check D-058 recorded as still owed. Since
+6.5m-i the key rule reaches a `policy` entry too: every `witness` line's key
+MUST parse as a cosignature key, else `decode` (SPEC §5.1;
+`log/129-bad-policy-witness-key-not-a-cosigner`).
+
+Why: 4.1a found Norn encoding witness keys as `0x01`, so a trust file naming a
+real witness was refused and a cosigned checkpoint did not parse. 4.4 then had
+an unmodified `transparency-dev/witness` cosign a Norn checkpoint
+(`internal/interop`; the test skips unless `make witness` has built the
+witness, and CI does not build it). The two lists are not redundant:
+`witnesses` says where a witness is, `policy` says whether it counts, and a
+file where they differ configures a quorum its operator did not mean.
+Rejected: one key type for both roles · treating the two lists as independent.
+
+## D-062 · `quorum_time` is the newest instant the policy is satisfied, not the k-th newest timestamp (4.2a, 4.2c; recorded 2026-09-30)
+Supersedes D-017's definition and keeps its principle. `T` is the newest
+instant such that the witnesses whose cosignature timestamp is at or after it
+satisfy the policy (SPEC §5.3; `freshness.QuorumTime`). For a flat
+`group home k …` that is the k-th newest timestamp; for nested groups it is
+the only definition there is. Only a verifying line from a witness the policy
+names contributes, and a witness counts once. Under `quorum none` there is no
+`T`, and freshness is `unknown`, not fresh (SPEC §5.3, §8.1). The wall clock
+still decides nothing: `CLOCK_SKEW` compares `wall − quorum_time` with the
+monotonic age the node has measured since adoption, on a direct-from-log
+fetch only, and raises an alarm and nothing else (`GOSSIP.md` §5). That is
+the rule. Today `agent.Once` runs `checkClock` on whatever head it adopted, a
+peer's included, and the alarm is a log line (SEC-033, open).
+
+Why: in 4.2a, with `group inner 2 pi vps`, `group top 1 inner friend` and
+signatures at pi=500, vps=400, friend=100, "the 1st newest" says 500 and the
+policy is first satisfied at 400 — a node reading it naively believes a head
+is a hundred seconds fresher than any quorum vouched for. In 4.2c,
+`|wall − quorum_time|` reported a clock fault on a correct machine whenever
+the log went quiet. Rejected: "k-th newest" as the rule · a `quorum none`
+clock that is always fresh · the skew test `GOSSIP.md` first gave. Open: which
+policy computes `T` for the first head after a `policy` entry is D-l.
+
+## D-063 · `staleness` is the network's, `S_hard` is the node's, and the freshness table is read top to bottom (4.2b, 4.2d, 6.5l-ii; recorded 2026-09-30)
+A view's age is monotonic time since the node learned its quorum time (A11).
+`S` is `params.staleness` from the replayed log, so a network agrees on when a
+view is too old. `S_hard` is node-local and opt-in: zero means off, and
+`nornd -hard-stale` refuses a value below §4.5's default of 600 s
+(`MinHardStale` in `cmd/nornd/config.go`). The state is the first row of
+SPEC §8.1's table, read top to bottom, whose condition holds — `unknown`,
+`fresh` (`elapsed ≤ S`), `hard_stale` (`S_hard` set and `elapsed > S_hard`),
+`degraded` — so a node never drops its peers while the network calls its view
+fresh. `hard_stale` is enforced as an empty desired set, through the same
+reconciler: owner mode replaces the table with nothing, watchdog evicts every
+peer, observe writes nothing (4.2d).
+
+Why: crossing `S_hard` drops every peer, so it is a local choice for the same
+reason the witness policy is not a `params` key (D-034). 6.5l-ii found
+`fresh` and `hard_stale` both true when `S_hard < elapsed ≤ S`, a region the
+fixture's own `29-params` puts a node with `S_hard = 700` in; both
+implementations already tested `fresh` first, and §8.1 now says so. Rejected:
+`S_hard` as a `params` key · a default `S_hard` · `hard_stale` winning the
+overlap.
+
+## D-064 · §10 compares with the stored head from the node's own tree, where both branches reach, before the size rule (4.5c, 4.6b, 6.5i-i; recorded 2026-09-30)
+A node holding a checkpoint recomputes the served branch's root at
+`min(cp.size, stored.size)` from the entries it fetched, and compares it with
+its own branch's root at that size — never with a consistency proof somebody
+supplied — and does so before it refuses a smaller head. A mismatch is a fork
+(§11); a smaller head that agrees is refused without an accusation (SPEC §10;
+`logclient.Verify`; `detect/`). It rests on full replication (D-004): a node
+holds every entry and tile it verified (4.5a). It holds them within one
+process only: the stored head is not durable, so a restarted node has nothing
+to compare with (SEC-004, `docs/audit/ROADMAP.md` task 2).
+
+Why: 4.5c found nothing compared a fetched checkpoint with the one held, so
+serving a node its own log as it stood earlier — correctly signed, cosigned
+and replayable — made a device revoked since active again; once peers are a
+source, anyone in the mesh can do that. 4.6b found a fork onto a shorter
+branch filed as a rollback, with no evidence, and 6.5i-i (cold gate run 8, D1)
+found §10's prose could not reach FORK there while `detect/` demanded it.
+Rejected: a supplied proof from the party being checked · the size rule first.
+
+## D-065 · Expiry is judged at the checkpoint's time `T`, and not at all without one (4.8, 6.5m-v; recorded 2026-09-30)
+A device is expired exactly when `expires != 0 && expires <= T`, with `T` the
+quorum time of the checkpoint the state was replayed from — never the node's
+wall clock. With no `T` (no quorum time yet, or `quorum none`) expiry is not
+judged: the devices replay gives stay admitted, and the view reports
+`unknown`, never `fresh` (SPEC §5.3, §8.1 condition 4; `proven.IsProven`,
+`proven.EvaluationTime`).
+
+Why: 4.8 found `proven.FromResult` and `Agent.desired` judging expiry on the
+wall clock, so a fast clock evicted a device early and a slow one kept an
+expired one, silently — the failure A11 exists to prevent. Falling back to the
+wall clock where there is no `T` would be the one place A11 leaked. 6.5m-v
+(cold gate run 12, D11) wrote the no-clock case into §8.1. Rejected: the wall
+clock as a fallback · dropping every peer the moment the roots publish
+`quorum none`. Open: whether `nornd` may enforce under `quorum none` (D-j) and
+which policy computes `T` (D-l).
+
+## D-066 · Proof bundles are Norn's own format; receipts stay signed notes (2026-09-20, 6.5e-iii; recorded 2026-09-30)
+Supersedes D-011 for bundles. A bundle is SPEC §8.1's closed six-key map in
+deterministic CBOR (`v`, `device`, `index`, `entry`, `proof`, `checkpoint`),
+unsigned — its authority is the checkpoint inside it — bounded by
+`MAX_BUNDLE_BYTES`, and checked by §10 plus an RFC 6962 inclusion proof. It is
+not `c2sp.org/tlog-proof@v1`, and v1 claims no byte compatibility with it;
+the reference list at the head of `SPEC.md` names that document for
+comparison only. torchwood is not a dependency: `internal/proof` checks
+inclusion with `golang.org/x/mod/sumdb/tlog`.
+Receipts are still signed notes, as D-011 decided (SPEC §7); D-074 says how
+one is read.
+
+Why: 2.7 gave §8 its first concrete bytes and said compatibility had not been
+checked. 6.5e-iii found §8.1 still saying "Reconcile before freezing v1" in a
+spec marked frozen, and decided rather than deferred: naming a specification
+the bytes were never checked against is the unverified claim this project
+refuses. A later version may adopt `tlog-proof` outright. Rejected: claiming
+compatibility untested · an open reconciliation item in a frozen spec.
+
+## D-067 · D-020 stands, applied: keys accumulate, a policy replaces, and `overlap` binds the log (2026-09-20, 6.5g-ii-a, 6.5g-ii-b)
+Asked of the maintainer at 6.5g-ii — does v1 apply in-log rotation or only
+record it — and answered on 2026-09-20: apply it. A checkpoint MUST be signed
+by `norn.trust.log_key` or by a `pk` in `log_keys` of a state the node has
+already accepted, and the node keeps the trust file's key alongside what it
+learned. A `policy` entry replaces `norn.trust.policy` for every checkpoint
+accepted after replaying it. `overlap` is an obligation on the log to keep
+signing with the superseded key, not a rule for a verifier. The roots may
+lower the policy, to `quorum none` included (SPEC §9.4). `served-rotated/`
+and `served-superseded/` each have two correct answers, decided by what the
+reader has replayed; `TestTheAgentFollowsALogKeyRotation` is where the node
+follows one.
+
+Why: rotation is not circular — reaching a state that names a key needs a
+checkpoint accepted under a key held before, and a `log_key` entry needs the
+root quorum, so a stolen log key cannot name its own successor. A raised
+quorum must bind the nodes already watching, or it protects only those that
+were not. Rejected: (b), recording rotation without acting on it, which
+reversed D-020 and left §4.5's "supersedes" false. Open: learned log keys
+accumulate and §9.4 gives none a retirement — that, and ENROLLMENT R7, is D-d;
+which policy computes `T` on the first head after a `policy` entry is D-l.
+
+## D-068 · Fork evidence is checked under the reader's own policy, and its roles swap on the longer branch (2026-09-21, 6.5h-vi-c; 2026-09-30, 6.5m-iv)
+Evidence is SPEC §11.1's closed seven-key map, checkable offline by somebody
+holding the trust file. A reader verifies both checkpoints under **its own**
+policy — the trust file's, or one it has replayed — and never under the
+`policy` the file carries, which is informational and MUST parse (6.5h-vi-c;
+`forkevidence.Check` takes `readerPolicy`). `held` is the branch whose entries
+the accuser holds; when the served branch is the longer one the roles swap:
+the served head is `held`, the stored head is `conflicting`, and `size` is the
+stored size (6.5m-iv; SPEC §11 rule 1, §11.1). `agent.writeEvidence` builds it
+that way (`internal/agent/fork.go`), and
+`TestAForkOnTheLongerBranchStillLeavesEvidence` and
+`detect/fork-on-a-longer-branch` hold it. That fixed SEC-005 (a).
+
+Why: an accuser who chooses the quorum rule can write `quorum none` and have
+two uncosigned heads accepted as proof, and under §11 rule 4 that freezes a
+network until an operator acts. Written to the letter, a node meeting a fork
+on the longer branch — the natural shape of a growing log — wrote no evidence,
+froze in memory only, and a restart unfroze it. Rejected: verifying under the
+carried policy · writing nothing when the accuser's branch is the shorter one.
+Open: which of the two policies a replayed node uses (D-e); `Check` with the
+learned log keys and the current policy (SEC-005 (b), (c)); a freeze that
+survives a reboot (SEC-006).
+
+## D-069 · The restated policy grammar is closed, tolerates comments, and reserves `none` (2026-09-21, 6.5i-vi-a, 6.5k-iii; 2026-09-30, 6.5l-iii, 6.5m-i)
+Amends D-018. The rules are SPEC §9.1's table. Fields are separated by ASCII
+space and tab only; `0x0B`, `0x0C` and `0x0D` are an error anywhere in a line,
+and a comment or blank line is tested for them before it is ignored; every
+other character, other Unicode whitespace included, is content. A `#` starts a
+comment only as a line's first character other than space or tab. Each
+directive takes exactly its fields. `witness` and `group` names share one
+namespace, are defined once and used only after they are defined, on the
+`quorum` line too; `none` is reserved. A verifier key appears once in a
+policy, on whatever line. A trailing run of separators is not a field. For a
+`policy` entry, §5.1 adds that every `witness` key MUST parse as a
+cosignature key (D-061).
+
+Why: a `policy` entry's text is replayed, so a line one parser accepts and
+another refuses is a `decode` on one node and a new quorum on the other. The
+two parsers here disagreed on 23 whitespace characters and on the key rule
+across directives (6.5l-iii) and on where the `quorum` line is resolved
+(6.5m-i), and both let a witness be named `none` and then read `quorum none`
+as no quorum. What amends D-018: comments went the tolerant way at 6.5i-vi-a,
+on consequence rather than on knowledge of upstream, and §9.1 states the cost —
+if `c2sp.org/tlog-policy` has no comments, a Norn policy carrying one is text
+other tooling refuses. Since 6.5l-v-b the fixture's live policy begins with a
+comment (D-075). Rejected: leaving these readings to an upstream document a
+reader holding only `SPEC.md` does not have.
+
+## D-070 · Shortest form means every argument, and map keys are strictly increasing (2026-09-21, 6.5k-ii)
+Refines D-027. RFC 8949 §4.2.1's preferred serialization applies to every head
+argument — an integer's value and the length header of a byte string, text
+string, array or map — and a map's keys are strictly increasing in §4.1's
+order, one comparison that also forbids a duplicate key (SPEC §4.0;
+`log/75-bad-cbor-nonshortest-length`, `log/74-bad-duplicate-map-key`).
+
+Why: `entry_hash` is over the bytes as received, so a second legal encoding of
+one governance entry is a second leaf that also replays — a way around
+`dup-entry` by the route §4.1's consume-the-whole-input rule closes. A reader
+holding the rule for integers only, or "sorted" as non-decreasing plus
+last-key-wins, passed the suite before this. Rejected: shortest form for
+integers alone · two separate rules for order and duplicates. Not closed by
+this: an old entry with one junk signature appended is a different byte
+string whose original signatures still count (SEC-001), and entry identity is
+D-a.
+
+## D-071 · A signature line counts by name and key id, a key id is recomputed in lowercase, and a line has one spelling (2026-09-21, 6.5h-vi-c, 6.5k-iv-c; 2026-09-30, 6.5l-iv-a, 6.5l-iv-b, 6.5m-ii)
+A log or cosignature line counts for a listed key only when both its key name
+and its key id match that key (SPEC §10). A line under a listed name with
+another id, or under an unlisted name with a listed id, is a stranger's line:
+ignored, neither counted nor refused (`served-name-collision/`,
+`served-witness-id-collision/`, `served-log-id-collision/` MUST be accepted).
+Refusal is per line: a witness with one verifying line and one that does not
+verify is refused, not counted. The policy names a witness when it carries a
+`witness` directive for it, whether or not a `group` or the `quorum` uses it
+(`served-unused-witness/`). A reader MUST recompute a verifier key's id from
+its name, algorithm byte and key, and compare it as lowercase text (SPEC §7;
+`trust-bad/37`, `39`, `40`). A signature line is exactly its payload's
+encoding: padded standard base64 with zero padding bits
+(`checkpoints-bad/24`).
+
+Why: matching on the name alone gives anyone a veto over a head; matching on
+the id alone lets four bytes the line's writer chose speak for a witness.
+`golang.org/x/mod/sumdb/note` accepts an upper-case id and non-zero padding
+bits; Norn does not, so one key and one line each have one spelling and one
+cosignature cannot count twice. Rejected: the canonical implementation's
+leniency on either point.
+
+## D-072 · Every comparison with an origin is byte for byte (2026-09-30, 6.5l-iv-c)
+A string that extends an origin, one it extends, and one that differs from it
+only in case are all other origins (SPEC §2). That holds on the checkpoint
+(§10; `checkpoints-bad/21`–`23`), on the log key's note name and on the
+derivation from `net`, which is compared as text by encoding `net`, never by
+decoding `origin` (§9.1; `trust-bad/41`–`45`), and on the receipt (§7;
+`receipts-bad/origin-*`). Why: a prefix match, a case-folded match and a
+decode-and-compare each let a different origin through, and standard base32
+decoders fold case and ignore the two padding bits a 26-character string
+carries. Rejected: any comparison but `==`. `trust.NetFromOrigin` stays lax,
+because it parses what an operator types into `norn enroll` and is not on the
+verification path. §12.1 admits that §8.1's and §11.1's own origin checks are
+pinned only by an unrelated origin.
+
+## D-073 · A key an entry adds counts for nothing on the entry that adds it (2026-09-30, 6.5l-iv-d)
+Signatures resolve against the state before the entry (SPEC §4.2). A
+`root_add` cannot count the root it admits towards its own quorum, and a
+`rotate` carrying a new `device_pk` needs the device's current key, the
+incoming one counting in addition and never instead
+(`log/126-bad-root_add-signed-by-the-added-key`,
+`log/127-bad-rotate-signed-by-the-incoming-key-only`). Why: resolving against
+the state after the entry admits a root quorum that bootstrapped itself, and
+on `rotate` lets whoever holds a fresh key take a device over —
+`rotate_needs_signer` defaults to `false` (§4.5). Rejected: the after-state
+reading.
+
+## D-074 · A receipt is read by rule (2026-09-30, 6.5l-v-a)
+Whoever holds a receipt and relies on it MUST refuse it unless its text is
+exactly four lines: `norn/receipt/v1`; `norn.trust.origin` byte for byte; the
+padded, zero-padding-bit `b64` of exactly 32 bytes; and the deadline in
+canonical decimal — no leading zero, no sign — that fits in 64 bits. The note
+verifies by §10's rule for a log signature: every line whose name and key id
+match a trusted log key verifies, and at least one is present (SPEC §7;
+`receipts-bad/`, fourteen files). None of it needs the entry or a clock.
+
+Why: §7 gave the receipt's shape and nothing a holder must refuse. Go
+accepted a leading zero, a non-zero padding bit and a carriage return; Python
+accepted a leading zero, a plus sign and a non-zero padding bit, and returned
+on the first line that verified. A promise with three spellings cannot be compared or held against
+the log (A2). Rejected: the canonical `x/mod` `Open`, which verifies one line
+per name and opens `receipts-bad/two-log-signatures`.
+
+## D-075 · A length in bytes counts UTF-8 as encoded, with no normalisation (2026-09-30, 6.5l-v-b)
+Every byte cap on text — map keys, `name`, `reason`, `text`, label values,
+`device_id`, §9.1's two names — counts the UTF-8 encoding as received, never
+code points, UTF-16 units or grapheme clusters, and no Unicode normalisation
+comes first (SPEC §4.0). Seven caps ship as pairs: a value at exactly the cap
+in characters of every UTF-8 width, and the same value one byte over with the
+same character count.
+
+Why: every over-long vector was ASCII, so a reader counting characters passed
+the suite, and a 300-byte Cyrillic `reason` is `decode` on one node and a
+revocation on the other. The policy pair is padded with a §9.1 comment, so the
+live `state.policy` now begins with one; BUILD-LOG 6.5l-v-b records that as a
+choice the maintainer can reverse. Rejected: counting characters ·
+normalising first · padding the policy inside a witness URL. Admitted in
+§12.1: no `log/` entry carries a label at or past 256 bytes, so a separate
+entry-path label check is pinned by nothing.
+
+## D-076 · A refusal's reason is not normative outside §5.2, and `about` is a hint (2026-09-30, 6.5l-vi)
+In a `cases.json`, `says` is a placement contract — a phrase that appears
+verbatim in the named section — and `about` is what a refusal is about in the
+reference implementation's words, a hint and not text a conforming reader has
+to produce. Only §5.2's reason codes are normative (D-012). The suite binds
+accept or refuse, and the rule each file is named for; the order a reader
+checks in decides only which refusal it reports (SPEC §10, §11.1, §12;
+`TestSaysIsAPlacementKeyAndAboutIsAHint`).
+
+Why: run 11 rebuilt an error vocabulary from `cases.json` to pass, and found
+three catches resting on a string match and on nothing in the document. This
+is the current choice, not the closing of the question: closed reason-code
+lists for §7, §8.1, §9.1, §11.1 and §16 would make check order observable and
+let two nodes triage a freeze in the same words, and that is D-k, the
+maintainer's.
+
+## D-077 · D-055's boot-time signer is not built; only `genesis` and `enroll` can be made (recorded 2026-09-30)
+A correction to D-055's premise, not a new decision. D-055 chose an
+unencrypted OpenSSH key file because `nornd` signs `rotate` and self-`revoke`
+at boot. No such code exists: `nornd` signs nothing; `norn init` builds
+`genesis`; `norn enroll` and `norn sign` build and sign `enroll` only
+(`cmd/norn/sign.go` refuses any other type); there is no `norn revoke`,
+`rotate`, `migrate` or governance builder (SEC-008, `docs/audit/ROADMAP.md`
+task 5). The format D-055 chose stands: `norn init` and `norn enroll` write
+it, and they and `norn sign` read it. What is missing is its consumer at boot, and a
+builder for every entry type but those two.
