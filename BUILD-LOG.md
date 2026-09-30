@@ -526,7 +526,11 @@ them, and then run the gate.
 | 6.5l-iv-c | The state *before* this entry | D8: a `root_add` signed by `root_thr − 1` roots plus the incoming key is a quorum that bootstraps itself, and no entry is signed by a key it adds | ✅ |
 | 6.5l-v | Bytes, not characters | D6 (every over-long vector is ASCII, so `name`/`reason`/`text`/label caps do not separate byte counting from character counting) and D4 (the receipt `deadline` has no canonical-decimal rule while §6's size line does) | ✅ |
 | 6.5l-vi-a | `says` is a semantic hint, and says so | D10's contract half: §12 states what the field is, and §12.1 names the three orderings a `says` match is the only pin for | ✅ |
-| 6.5l-vi-b | Reason codes beyond replay | whether to extend §5.2's closed vocabulary to §10 and §11.1, which is the only thing that makes an ordering between two refusals observable | ⛔ **DECISION NEEDED** (see below) |
+| 6.5l-vi-b | Reason codes beyond replay | **D-061**: closed vocabularies for §10 and §11.1. Subdivided below | ⬜ |
+| 6.5l-vi-b-i | §10's refusal vocabulary, specified | every refusal path in the verifier loop enumerated and named, in §5.2's style, with the precedence the procedure already gives | ⬜ |
+| 6.5l-vi-b-ii | §10's codes, implemented and vectored | the Go verifier emits them; `checkpoints-bad/`, `proofs-bad/` and `served-bad/` name codes; signature-before-origin becomes vectored | ⬜ |
+| 6.5l-vi-b-iii | §11.1's refusal vocabulary, specified | the evidence checker's steps named the same way, with their order | ⬜ |
+| 6.5l-vi-b-iv | §11.1's codes, implemented and vectored | `fork/` names codes; the two step orderings become vectored; §12.1's admission is withdrawn | ⬜ |
 | 6.5l-vii | Cold-model gate run 12 | a *fresh* agent on a *new* copy; the target remains `SPEC SUFFICIENT` | ⬜ |
 | 6.6 | Phase 6 gate audit | what is true, and what needs two people | ⬜ |
 
@@ -1770,52 +1774,13 @@ answers were (1) `hard_stale` wins, (2) `fresh` wins and require `S_hard > S`,
 
 ---
 
-## OPEN DECISION — 6.5l-vi-b: reason codes beyond replay
+## DECISION TAKEN — 6.5l-vi-b: reason codes for §10 and §11.1 (2026-09-30)
 
-**Written 2026-09-26. The loop is stopped on this.**
-
-§5.2 gives **replay** a closed list of sixteen reason codes. No other refusing
-layer has one — not the trust file, the policy parser, the note or checkpoint
-parser, the bundle or evidence checker, the request decoder, or the CBOR
-profile. 6.5l-vi-a settled what `cases.json`'s `says` field *is* (a semantic
-hint) and recorded the consequence: **three real rules are pinned only by a
-`says` match**, which is to say by a JSON file rather than by `SPEC.md`.
-
-Those three are §10's **signature-decides-before-origin** and §11.1's two step
-orderings. An ordering between two refusals is observable only if the two
-refusals are *distinguishable*. In replay they are, because §5.2 gives them
-different codes. Outside replay both readings simply refuse, so a black-box run
-cannot tell them apart and no vector can be built that does.
-
-**This is a spec-surface decision, which is why it is yours.**
-
-1. **Extend §5.2's pattern to §10 and §11.1.** Two new closed vocabularies —
-   the verifier's refusals and the evidence checker's — in §5.2's style, with
-   `cases.json` naming codes instead of substrings. The three orderings become
-   observable, and an operator comparing two nodes' alarms gets a word that
-   means the same thing on both. §11 rule 4 makes one class of refusal
-   permanent until a human installs a new trust file, so triage across nodes is
-   a real scenario rather than a hypothetical. **Cost:** new normative surface
-   on a frozen v1, a vocabulary every second implementation must now emit, and
-   a pass over the generators and harnesses.
-2. **Leave it as recorded.** The admission in §12.1 stands, the three orderings
-   stay unvectored, and the document is honest about it. **Cost:** three rules
-   the document states and nothing can check, in a suite whose whole claim is
-   that a rule stated is a rule reachable.
-3. **Codes for §11.1 only.** The evidence checker is where a refusal is
-   permanent and where an operator most needs a shared word; §10's ordering is
-   defence in depth by comparison. Half the surface, two of the three
-   orderings.
-
-**My recommendation: 1**, and not on the strength of the three orderings —
-those are small. On the strength of the operator story §12.1 already gestures
-at: two nodes that refuse the same checkpoint for different reasons, with no
-shared vocabulary to say so, and a fork refusal that is permanent until someone
-intervenes. §5.2 exists because that argument was accepted once already, for
-replay. Nothing about it is weaker one layer up.
-
-If **2**, no further work — 6.5l-vi-b is ticked as decided-and-declined and the
-gate report should carry the admission verbatim.
+Asked 2026-09-26, answered 2026-09-30: **option 1**, recorded as **D-061**. The
+verifier (§10) and the fork-evidence checker (§11.1) each get a closed
+vocabulary in §5.2's style, and `cases.json` names codes instead of substrings.
+The question as it was put, and the two rejected options, are in `DECISIONS.md`
+under D-061.
 
 ---
 

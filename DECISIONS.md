@@ -637,3 +637,28 @@ Consequence: `cmd/nornd`'s floor on `hard_stale` stays, but only as a typo
 guard. It is no longer a claim that `S_hard` must exceed the network's
 `staleness`; that configuration is legitimate and is the point.
 
+## D-061 · Closed reason codes for §10 and §11.1 (2026-09-30)
+The verifier's refusals (§10) and the fork-evidence checker's refusals (§11.1)
+each get a closed, normative vocabulary in §5.2's style, and the suite's
+`cases.json` names those codes where it now names `says` substrings.
+
+**Why.** An ordering between two refusals is observable only if the two are
+distinguishable. §5.2 makes them so for replay, and that is the only reason
+§5.1's step order can be vectored at all. Outside replay every refusal was the
+same event to a black-box run, so three rules the document states — §10's
+signature-decides-before-origin, and §11.1's two step orderings — were pinned
+only by a phrase in a JSON file (cold gate run 11, D10). The deeper argument is
+the operator's: two nodes that refuse the same checkpoint for different reasons
+have no shared word to say so, and §11 rule 4 makes one class of refusal
+permanent until a human installs a new trust file. §5.2 exists because that
+argument was accepted once, for replay; nothing about it is weaker one layer up.
+
+**Rejected.** *§11.1 only* — half the surface, but leaves §10's ordering
+unvectored and the verifier's alarms without a shared vocabulary. *Leave it as
+recorded* — honest, but three stated rules that nothing can check, in a suite
+whose claim is that a rule stated is a rule reachable.
+
+**Cost, accepted.** New normative surface on a frozen v1, which every second
+implementation must now emit. The codes are part of the contract from here on;
+`says` stays, as a semantic hint, for the suite's own discipline.
+
