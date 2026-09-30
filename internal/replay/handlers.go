@@ -7,6 +7,7 @@ import (
 	"github.com/onembyte/norn/internal/enrollreq"
 	"github.com/onembyte/norn/internal/entry"
 	"github.com/onembyte/norn/internal/fields"
+	"github.com/onembyte/norn/internal/note"
 	"github.com/onembyte/norn/internal/policy"
 	"github.com/onembyte/norn/internal/state"
 )
@@ -344,8 +345,20 @@ func hPolicy(_ *replayer, st *state.State, env *entry.Envelope, _ uint64) error 
 	// in-log policy turns out to govern. Without this the fixture published
 	// the canonical-JSON torture string as the network's policy for six
 	// phases, and §4.5 read literally made this network unverifiable.
-	if _, err := policy.Parse(text); err != nil {
+	rules, err := policy.Parse(text)
+	if err != nil {
 		return rejectWith(ReasonDecode)
+	}
+	// §5.1: every `witness` line's key is a cosignature verifier key, as a
+	// trust file's must be. The grammar compares keys as text and never
+	// parses one, so a policy naming a note key -- or nonsense -- replayed
+	// into the state, matched no cosignature line, and left the network with
+	// a quorum nobody could meet (cold gate run 12, D10).
+	for _, w := range rules.Witnesses {
+		v, err := note.ParseVerifierKey(w.Key)
+		if err != nil || !v.IsCosigner() {
+			return rejectWith(ReasonDecode)
+		}
 	}
 	st.Policy = text
 	return nil

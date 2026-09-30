@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from . import cbor, enrollreq, entry, fields, keys, policy
+from . import cbor, enrollreq, entry, fields, keys, note, policy
 from .state import DEFAULT_PARAMS, PARAM_KEYS, State
 
 REASONS = (
@@ -321,6 +321,17 @@ def _h_policy(state: State, env: dict[str, Any], index: int) -> None:
         policy.parse(text)
     except policy.PolicyError:
         raise Reject("decode")
+    # SPEC 5.1: every witness line's key is a cosignature verifier key, as a
+    # trust file's must be (trust.py). The grammar never parses a key, so a
+    # policy naming a note key replayed into the state and left a quorum
+    # nobody could meet (cold gate run 12, D10).
+    for key in policy.witness_keys(text):
+        try:
+            parsed = note.parse_vkey(key)
+        except note.NoteError:
+            raise Reject("decode")
+        if parsed.alg != note.ALG_COSIGNATURE:
+            raise Reject("decode")
     state.policy = text
 
 

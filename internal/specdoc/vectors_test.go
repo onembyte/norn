@@ -832,6 +832,9 @@ func TestEveryVectoredRuleIsStatedWhereItLives(t *testing.T) {
 		// many characters as a positive at the cap, so only the unit refuses it.
 		{"4.0", "**A length in bytes counts the UTF-8 encoding, never characters.**",
 			"log/bad-revoke-reason-too-long, bad-text-too-long and bad-policy-text-too-long"},
+		// Run 12, D10: the grammar never parses a key; §5.1 asks the question.
+		{"5.1", "**every `witness` line's key MUST parse as a cosignature verifier key**",
+			"log/bad-policy-witness-key-not-a-cosigner"},
 	} {
 		t.Run(c.vector, func(t *testing.T) {
 			section, ok := doc.Section(c.section)

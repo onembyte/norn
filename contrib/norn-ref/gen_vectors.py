@@ -519,13 +519,26 @@ def write_policies(out: pathlib.Path) -> None:
         "section": "9.1", "says": "counts as **one** member of the outer group"}
     policy_rules["no-log-line"] = {"section": "9.1", "says": "**not required**"}
     policy_rules["comment-and-indent"] = {
-        "section": "9.1", "says": "spaces and tabs before the keyword are not part of it"}
+        "section": "9.1", "says": "spaces and tabs before the keyword"}
     policy_rules["bad-extra-field"] = {
         "section": "9.1", "says": "a line with more is an **error**"}
     for name in ("bad-trailing-comment", "witness-url-fragment"):
         policy_rules[name] = {"section": "9.1", "says": "an ordinary character"}
     policy_rules["comment-tab-indented"] = {
         "section": "9.1", "says": "first character other than ASCII space or tab"}
+    # Cold gate run 12, D1, D10 and D14.
+    for name in ("bad-carriage-return-in-comment", "bad-form-feed-in-blank-line"):
+        policy_rules[name] = {
+            "section": "9.1", "says": "tested for the three error characters below **before** it is ignored"}
+    policy_rules["bad-quorum-before-definition"] = {
+        "section": "9.1", "says": "on a `group` line and on the `quorum` line alike"}
+    policy_rules["bad-witness-named-none"] = {"section": "9.1", "says": "`none` is reserved"}
+    policy_rules["bad-group-named-like-witness"] = {
+        "section": "9.1", "says": "a `group` may not take a `witness`'s name"}
+    policy_rules["trailing-separator"] = {
+        "section": "9.1", "says": "and after the last field, are not part of any field"}
+    policy_rules["bad-trailing-comment-no-space"] = {
+        "section": "9.1", "says": "`quorum pi#note` names `pi#note`, which nothing defines"}
     write(out / "policies" / "cases.json", canonjson.dumps({
         "rules": policy_rules,
         "comment": "SPEC 9.1's restated `tlog-policy` grammar, one whole policy "

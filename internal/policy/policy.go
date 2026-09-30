@@ -123,6 +123,12 @@ func Parse(text string) (*Policy, error) {
 			if p.names[name] {
 				return nil, policyErrorf("%s: %q is already defined", where, name)
 			}
+			// §9.1: `none` is reserved, so `quorum none` can only ever mean no
+			// quorum. Both parsers here let a witness take the name and then
+			// read `quorum none` as nobody (cold gate run 12, D10).
+			if name == NoQuorum {
+				return nil, policyErrorf("%s: %q is reserved", where, name)
+			}
 			if seenKeys[fields[2]] {
 				return nil, policyErrorf("%s: that key is already in this policy", where)
 			}
@@ -141,6 +147,9 @@ func Parse(text string) (*Policy, error) {
 			name, keyword, members := fields[1], fields[2], fields[3:]
 			if p.names[name] {
 				return nil, policyErrorf("%s: %q is already defined", where, name)
+			}
+			if name == NoQuorum {
+				return nil, policyErrorf("%s: %q is reserved", where, name)
 			}
 			seen := map[string]bool{}
 			for _, member := range members {
@@ -167,6 +176,12 @@ func Parse(text string) (*Policy, error) {
 			}
 			quorumLines++
 			p.quorum = fields[1]
+			// Defined before use, on this line as on a `group` line. This
+			// parser resolved the quorum after the whole file and the Python
+			// one at the line, and no vector could tell (cold gate run 12, D10).
+			if p.quorum != NoQuorum && !p.names[p.quorum] {
+				return nil, policyErrorf("%s: the quorum names %q, which is not defined yet", where, p.quorum)
+			}
 
 		default:
 			return nil, policyErrorf("%s: %q is not a policy keyword", where, fields[0])

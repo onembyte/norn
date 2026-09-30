@@ -1051,6 +1051,19 @@ def log() -> list[LogItem]:
             policy_text().replace("group home 2 ", "group home 3 "), over=True)}, roots3),
         "decode")
 
+    # Cold gate run 12, D10. §9.1 compares keys as text and never parses one,
+    # so a `policy` entry naming a note key (algorithm 0x01) where a
+    # cosignature key belongs parsed, replayed into the state, matched no
+    # cosignature line, and left a quorum nobody could meet. §5.1 now asks the
+    # question the grammar does not: the text is `policy_text()` with `pi`'s
+    # key replaced by a note key under the same name, valid under the grammar,
+    # signed by the same three roots, so only the key rule can refuse it.
+    not_a_cosigner = policy_text().replace(
+        witness_vkey("pi"), note.vkey(f"norn-witness/pi", KEYS["logkey2"].public))
+    assert not_a_cosigner != policy_text()
+    b.add(f"{b.index}-bad-policy-witness-key-not-a-cosigner",
+          b.build("policy", {"text": not_a_cosigner}, roots3), "decode")
+
     return b.items
 
 
@@ -1326,6 +1339,41 @@ def policy_grammar() -> list[tuple[str, str, bool, str]]:
          f"{log}\nwitness pi {witness_vkey('pi')} https://example/w x\nquorum pi\n",
          True, "U+00A0 is not in the closed set, so it is content: a reader that "
          "refuses it, or splits on it, refuses a policy this document allows"),
+        # Cold gate run 12, D1. The comment row said a comment line is ignored
+        # "in its entirety" and the separator row said the three characters
+        # are an error "anywhere in a line"; a reader that ignored the line
+        # first passed every vector, because all six error-character cases put
+        # the character in a directive. Both parsers here test first.
+        ("bad-carriage-return-in-comment", f"{log}\n# note\r\n{pi}\nquorum pi\n",
+         False, "a comment line is tested for the three error characters before it "
+         "is ignored: a reader that skips comments first accepts a policy with a "
+         "0x0D in one"),
+        ("bad-form-feed-in-blank-line", f"{log}\n\f\n{pi}\nquorum pi\n",
+         False, "a blank line is tested for the three error characters before it is "
+         "ignored: a line holding only 0x0C is not blank"),
+        # Cold gate run 12, D10. "Previously defined" was said of group members
+        # only; the Go parser resolved the quorum after the whole file and this
+        # one at the line, and no vector could tell.
+        ("bad-quorum-before-definition", f"{log}\nquorum pi\n{pi}\n",
+         False, "a name is used only after it is defined, on the quorum line as on a "
+         "group line: a reader that resolves the quorum at the end accepts this"),
+        ("bad-witness-named-none", f"{log}\nwitness none {witness_vkey('pi')}\nquorum none\n",
+         False, "`none` is reserved: both parsers here let a witness take the name "
+         "and then read `quorum none` as no quorum at all"),
+        ("bad-group-named-like-witness",
+         f"{log}\n{pi}\n{vps}\ngroup pi any pi vps\nquorum pi\n",
+         False, "one namespace: a group may not take a witness's name, or `quorum pi` "
+         "means two things"),
+        ("trailing-separator", f"{log}\n{pi} \nquorum pi\t\n", True,
+         "a run of spaces and tabs after the last field is not a field: a reader "
+         "for which it is an empty field refuses this"),
+        # Cold gate run 12, D14: the one composite of two caught readings that
+        # passed the suite. `bad-trailing-comment` puts a space before the
+        # `#`, so a reader that strips from `#` and then refuses the trailing
+        # separator refuses it for the wrong rule; this one has no space.
+        ("bad-trailing-comment-no-space", f"{log}\n{pi}\nquorum pi#note\n", False,
+         "`#` after a field is an ordinary character, so `pi#note` is one name "
+         "nothing defines; a reader that strips from `#` reads `quorum pi` and accepts"),
     ]
 
 

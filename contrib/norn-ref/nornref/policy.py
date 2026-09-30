@@ -70,6 +70,11 @@ def parse(text: str) -> None:
                 raise PolicyError(f"line {number}: witness takes a name, a key and an optional url")
             if fields[1] in names:
                 raise PolicyError(f"line {number}: {fields[1]!r} is already defined")
+            # SPEC 9.1: `none` is reserved, so `quorum none` can only ever mean
+            # no quorum. Both parsers here let a witness take the name and
+            # then read `quorum none` as nobody (cold gate run 12, D10).
+            if fields[1] == "none":
+                raise PolicyError(f"line {number}: 'none' is reserved")
             _once(keys, fields[2], number)
             names.add(fields[1])
         elif keyword == "group":
@@ -78,6 +83,8 @@ def parse(text: str) -> None:
                 raise PolicyError(f"line {number}: group takes a name, a threshold and members")
             if fields[1] in names:
                 raise PolicyError(f"line {number}: {fields[1]!r} is already defined")
+            if fields[1] == "none":
+                raise PolicyError(f"line {number}: 'none' is reserved")
             threshold, members = fields[2], fields[3:]
             for member in members:
                 # Previously defined only: a forward reference could describe a
@@ -109,3 +116,19 @@ def parse(text: str) -> None:
             raise PolicyError(f"line {number}: {keyword!r} is not a policy keyword")
     if quorums != 1:
         raise PolicyError(f"a policy has exactly one quorum line, found {quorums}")
+
+
+def witness_keys(text: str) -> list[str]:
+    """The `vkey` text of every `witness` line, for the check the grammar does not make.
+
+    SPEC 9.1 compares keys as text and never parses one; SPEC 5.1 requires
+    each of a `policy` entry's witness keys to be a cosignature verifier key,
+    which is the replay handler's question, asked here on text `parse` has
+    already accepted.
+    """
+    out = []
+    for line in text.split("\n"):
+        fields = [f for f in SEPARATORS.split(line.strip(" \t")) if f]
+        if fields and fields[0] == "witness":
+            out.append(fields[2])
+    return out

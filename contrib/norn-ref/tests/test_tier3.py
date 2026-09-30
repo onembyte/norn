@@ -155,11 +155,20 @@ class D29_PolicyHasOneHome(unittest.TestCase):
         self.assertEqual(state.rejected[-1], {"index": n, "reason": "decode"})
 
     def test_policy_entries_still_work(self):
-        text = "log x\nwitness pi y\nquorum pi\n"
+        from nornref import fixture
+        text = f"log x\nwitness pi {fixture.witness_vkey('pi')}\nquorum pi\n"
         raw = build("policy", {"text": text}, ROOTS3, after=49)
         state, n = state_with([raw])
         self.assertEqual([r for r in state.rejected if r["index"] == n], [])
         self.assertEqual(state.policy, text)
+
+    def test_a_policy_naming_a_key_no_cosignature_can_match_is_decode(self):
+        # SPEC 5.1 (cold gate run 12, D10): the grammar accepts `witness pi y`,
+        # and a witness whose key is not a cosignature verifier key is a
+        # quorum nobody can meet.
+        raw = build("policy", {"text": "log x\nwitness pi y\nquorum pi\n"}, ROOTS3, after=49)
+        state, n = state_with([raw])
+        self.assertEqual(state.rejected[-1], {"index": n, "reason": "decode"})
 
 
 class CanonicalJsonEscaping(unittest.TestCase):
