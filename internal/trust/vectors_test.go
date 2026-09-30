@@ -51,6 +51,8 @@ func TestTheLogKeyNegativesDoNotAlsoBreakTheCorrespondenceRule(t *testing.T) {
 		"11-log-key-name-mismatch",
 		"13-origin-only",
 		"16-log-key-is-a-cosignature-key",
+		// Cold gate run 11, D3: the fourth, and the one 6.5k-v-a missed.
+		"37-log-key-id-mismatch",
 	} {
 		t.Run(name, func(t *testing.T) {
 			doc := trustBad(t, name)

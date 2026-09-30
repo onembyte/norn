@@ -88,6 +88,32 @@ class TrustNegativesAreIsolated(unittest.TestCase):
         with self.assertRaises(trust.TrustError):
             trust.validate(case)
 
+    def test_the_key_id_cases_are_wrong_only_in_the_id(self):
+        """Cold gate run 11, D3/D9: `37` kept the honest id in its policy, so
+        the log-line correspondence refused it and the id check was deletable.
+        Restore the honest key and each case must BE the anchor."""
+        honest_doc = fixture.trust_file()
+        honest = cbor.encode(honest_doc)
+        # By suffix, so the numeric prefix can move as cases are inserted.
+        wants = {"-log-key-id-mismatch": lambda d: d["log_key"],
+                 "-witness-key-id-mismatch": lambda d: d["witnesses"][0]["key"],
+                 "-log-key-id-upper-case": lambda d: d["log_key"]}
+        for suffix, key_of in wants.items():
+            found = [(n, d) for n, d in fixture.trust_rejections()
+                     if n.endswith(suffix) and n[:-len(suffix)].isdigit()]
+            self.assertEqual(len(found), 1, f"exactly one case must end in {suffix}")
+            name, doc = found[0]
+            with self.subTest(case=name):
+                damaged, good = key_of(doc), key_of(honest_doc)
+                self.assertNotEqual(damaged, good)
+                raw = cbor.encode(doc)
+                self.assertEqual(raw.count(damaged.encode()), 2,
+                                 "the damaged key belongs in its member AND the policy")
+                self.assertEqual(raw.replace(damaged.encode(), good.encode()), honest,
+                                 "something other than the id is wrong with it")
+                with self.assertRaises(trust.TrustError):
+                    trust.parse(raw)
+
 
 class GenesisInvariants(unittest.TestCase):
     def test_the_missing_body_invariants_are_covered(self):

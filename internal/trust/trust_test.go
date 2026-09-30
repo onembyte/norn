@@ -1,12 +1,16 @@
 package trust
 
 import (
+	"bytes"
+	"encoding/base64"
 	"encoding/hex"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/onembyte/norn/internal/note"
 )
 
 // Written from SPEC.md §9. The shipped anchor is the oracle for the happy
@@ -405,9 +409,73 @@ func TestTheOptionalTrustMembersAreOptional(t *testing.T) {
 // is what makes a note key and a cosignature key over the same public key two
 // different verifiers (§9.1). Nothing forced a reader to check it: every
 // shipped key had a correct id, so `vkey-no-id-check` passed.
+//
+// Cold-model gate run 11, D3 and D9. That test only asked whether `37` was
+// refused, and it was -- by the wrong rule. Its policy kept the honest id, so
+// §9.1's `log`-line correspondence refused it first and `TrustNoKeyIDCheck`
+// passed all 622 checks. The witness half had no case at all. So this asks the
+// question that makes a refusal attributable: put the honest key back, and is
+// the file then byte-identical to `trust.cbor`? If it is, the id is the only
+// thing wrong with it, and only the id check can refuse it.
 func TestAVerifierKeyWhoseIdIsWrongIsRefused(t *testing.T) {
-	doc := parseBad(t, isolated(t, "log-key-id-mismatch"))
-	_ = doc
+	honestRaw, err := os.ReadFile(filepath.Join(vectorRoot(), "trust.cbor"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	good := loadGood(t)
+	for _, c := range []struct {
+		suffix string
+		honest func(*Trust) string
+		// sameNumber: the declared id is the recomputed one in another case,
+		// so only a text comparison refuses it (§7, "Lowercase, and only
+		// lowercase").
+		sameNumber bool
+	}{
+		{"log-key-id-mismatch", func(d *Trust) string { return d.LogKey }, false},
+		{"witness-key-id-mismatch", func(d *Trust) string { return d.Witnesses[0].Key }, false},
+		{"log-key-id-upper-case", func(d *Trust) string { return d.LogKey }, true},
+	} {
+		t.Run(c.suffix, func(t *testing.T) {
+			name := isolated(t, c.suffix)
+			raw, err := os.ReadFile(filepath.Join(vectorRoot(), "trust-bad", name+".cbor"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			doc := parseBad(t, name)
+			honest, damaged := c.honest(good), c.honest(doc)
+			if honest == damaged {
+				t.Fatalf("%s carries the honest key; it is not about the id", name)
+			}
+			// Everything but the id is the honest key's: name, algorithm, key.
+			hp, dp := strings.SplitN(honest, "+", 3), strings.SplitN(damaged, "+", 3)
+			if len(dp) != 3 || hp[0] != dp[0] || hp[2] != dp[2] {
+				t.Fatalf("%s changes more than the id: %q against %q", name, damaged, honest)
+			}
+			data, err := base64.StdEncoding.DecodeString(dp[2])
+			if err != nil || len(data) != 33 {
+				t.Fatalf("%s: the key data does not decode to alg and key", name)
+			}
+			got := hex.EncodeToString(note.KeyIDFor(dp[0], data[1:], data[0]))
+			if got == dp[1] {
+				t.Fatalf("%s declares %s, which IS the recomputed id", name, dp[1])
+			}
+			if c.sameNumber != strings.EqualFold(got, dp[1]) {
+				t.Fatalf("%s declares %s against the recomputed %s: sameNumber is %v",
+					name, dp[1], got, c.sameNumber)
+			}
+			// The damaged string is in its member AND in the policy line, so
+			// every correspondence rule agrees -- and nothing else differs.
+			if n := strings.Count(string(raw), damaged); n != 2 {
+				t.Errorf("%s carries the damaged key %d time(s); it belongs in its "+
+					"member and in the policy, or a correspondence rule refuses the "+
+					"file first", name, n)
+			}
+			if !bytes.Equal(bytes.ReplaceAll(raw, []byte(damaged), []byte(honest)), honestRaw) {
+				t.Errorf("%s with the honest key restored is not trust.cbor, so something "+
+					"other than the id is wrong with it", name)
+			}
+		})
+	}
 }
 
 // Cold-model gate run 9, defects D8 and D16. §9.1 states `MAX_TRUST_BYTES`

@@ -1281,7 +1281,15 @@ def trust_rejections() -> list[tuple[str, dict[str, Any]]]:
         # and a cosignature key over the same public key two different
         # verifiers. Every shipped key had a correct id, so a reader that never
         # checked one passed the suite.
-        ("37-log-key-id-mismatch", damaged(log_key=_vkey_with_wrong_id())),
+        #
+        # Cold gate run 11, D3. The damaged key was left out of the POLICY, so
+        # its `log` line still carried the honest id and §9.1's "it MUST be
+        # `norn.trust.log_key`" refused the file first -- the key-id rule was
+        # deletable with the suite green, exactly as `11`, `13` and `16` were
+        # before 6.5k-v-a. The policy carries the same damaged key now.
+        ("37-log-key-id-mismatch",
+         damaged(log_key=_with_wrong_id(log_vkey()),
+                 policy=_policy_with(log_key=_with_wrong_id(log_vkey())))),
         # Cold gate run 9, D8. §9.1 states MAX_TRUST_BYTES and nothing in the
         # suite was ever close, so a reader with no cap -- or a cap of a
         # million -- passed everything. Padded with *valid* `log_urls`, whose
@@ -1291,34 +1299,61 @@ def trust_rejections() -> list[tuple[str, dict[str, Any]]]:
             f"https://mirror{i}.norn.example/testnet" for i in range(2000)])),
         ("30-duplicate-witness-name-only", damaged(
             witnesses=base["witnesses"] + [dict(base["witnesses"][0])])),
+        # Cold gate run 11, D9: the witness half had no vector at all. `pi`'s
+        # key with one hex digit of its id changed, in `witnesses` AND in the
+        # policy's `witness pi` line, so names and keys correspond exactly and
+        # only the id check can refuse it.
+        ("39-witness-key-id-mismatch", damaged(
+            witnesses=[dict(base["witnesses"][0], key=_with_wrong_id(witness_vkey("pi")))]
+                      + base["witnesses"][1:],
+            policy=_policy_with(pi_key=_with_wrong_id(witness_vkey("pi"))))),
+        # The id is the right number spelled in upper case. A reader that
+        # decodes the hex and compares integers -- as golang.org/x/mod's note
+        # package does -- accepts it; §7 compares text, because §9.1 compares
+        # keys as text and one key needs one spelling. Carried into the
+        # policy too, so the correspondence rule agrees.
+        ("40-log-key-id-upper-case",
+         damaged(log_key=_with_upper_id(log_vkey()),
+                 policy=_policy_with(log_key=_with_upper_id(log_vkey())))),
     ]
 
 
-def _vkey_with_wrong_id() -> str:
-    """The log's verifier key with one hex digit of its key id flipped.
+def _with_wrong_id(vkey: str) -> str:
+    """A verifier key with the first hex digit of its key id changed.
 
-    Everything else about it is correct: the name is the origin, the algorithm
-    is a note key, the public key is the one the log signs with. Only the id
-    disagrees, so only the id check can refuse it.
+    Everything else about it is correct: the name, the algorithm and the public
+    key are the honest ones. Only the id disagrees, so only the id check can
+    refuse it -- provided the policy carries the same string, which is the
+    caller's job (cold gate run 11, D3).
     """
-    name, key_id, data = log_vkey().split("+", 2)
+    name, key_id, data = vkey.split("+", 2)
     flipped = ("1" if key_id[0] != "1" else "2") + key_id[1:]
     return "+".join([name, flipped, data])
 
 
+def _with_upper_id(vkey: str) -> str:
+    """A verifier key whose id is the correct one, spelled in upper case."""
+    name, key_id, data = vkey.split("+", 2)
+    if key_id.upper() == key_id:
+        raise SystemExit(f"{key_id} has no letters; upper case changes nothing")
+    return "+".join([name, key_id.upper(), data])
+
+
 def _policy_with(**subs: str) -> str:
-    """`policy_text()` with a `witness` renamed or the `log` key replaced.
+    """`policy_text()` with a `witness` renamed, `pi`'s key or the `log` key replaced.
 
     A trust negative about one member must leave the policy/witness
     correspondence intact, or that rule decides instead -- the defect 6.5h-vi-b
     found in `07` and `08` and run 8 found again in `15`.
     """
-    rename, log_key = subs.get("rename"), subs.get("log_key")
+    rename, log_key, pi_key = subs.get("rename"), subs.get("log_key"), subs.get("pi_key")
     lines = []
     for line in policy_text().split("\n"):
         fields = line.split(" ")
         if log_key and fields[0] == "log":
             fields[1] = log_key
+        if pi_key and fields[0] == "witness" and fields[1] == "pi":
+            fields[2] = pi_key
         if rename and fields[0] == "witness" and fields[1] == "pi":
             fields[1] = rename
         if rename and fields[0] == "group":

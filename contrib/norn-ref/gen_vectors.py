@@ -222,7 +222,7 @@ def write_trust_rejections(out: pathlib.Path) -> None:
     for name, doc in fixture.trust_rejections():
         write(out / "trust-bad" / f"{name}.cbor", trust.encode(doc))
         cases.append(name)
-    # Every damaged anchor names the §9.1 row that states its rule (run 10).
+    # Every damaged anchor names the section that states its rule (run 10; §7 since run 11).
     closed = {"section": "9.1", "says": "Unknown keys MUST cause rejection"}
     version = {"section": "9.1", "says": "| `version` | uint | `1` |"}
     net = {"section": "9.1", "says": "| `net` | 16 bytes |"}
@@ -241,6 +241,11 @@ def write_trust_rejections(out: pathlib.Path) -> None:
     anchor = {"section": "9.1", "says": "All three members are required"}
     mode = {"section": "9.1", "says": "`mode` MUST be"}
     size = {"section": "9.1", "says": "MAX_TRUST_BYTES"}
+    # Cold gate run 11, D3/D9: the id check is §7's rule, and "MUST parse as
+    # one" in §9.1 only points at it. Both key-id cases declare where it lives.
+    keyid = {"section": "7", "says": "MUST recompute `key_id` from the name"}
+    lower = {"section": "7", "says": "**Lowercase, and only lowercase.**"}
+    wuniq = {"section": "9.1", "says": "and unique within the file"}
     trust_rules = {
         "01-unknown-key": closed, "02-wrong-version": version, "03-short-net": net,
         "04-origin-mismatch": origin, "05-short-genesis-hash": ghash,
@@ -255,15 +260,16 @@ def write_trust_rejections(out: pathlib.Path) -> None:
         "22-missing-genesis-hash": ghash, "23-missing-log-key": logkey,
         "24-missing-log-urls": urls, "25-missing-witnesses": witnesses,
         "26-name-too-long": name, "27-name-empty": name, "28-empty-log-urls": urls,
-        "29-no-witnesses-only": witnesses, "30-duplicate-witness-name-only": wname,
+        "29-no-witnesses-only": witnesses, "30-duplicate-witness-name-only": wuniq,
         "31-witness-open-schema": closed, "32-witness-name-too-long": wname,
         "33-log-url-empty-string": urls, "34-anchor-missing-member": anchor,
         "35-anchor-unknown-mode": mode, "36-policy-log-key-mismatch": polkey,
-        "37-log-key-id-mismatch": logkey, "38-oversize": size,
+        "37-log-key-id-mismatch": keyid, "38-oversize": size,
+        "39-witness-key-id-mismatch": keyid, "40-log-key-id-upper-case": lower,
     }
     for name_, _ in fixture.trust_rejections():
         if name_ not in trust_rules:
-            raise SystemExit(f"trust case {name_} names no §9.1 rule")
+            raise SystemExit(f"trust case {name_} declares no section for its rule")
     write(out / "trust-bad" / "cases.json", canonjson.dumps({
         "rules": trust_rules,
         "comment": "every file here MUST be refused as a trust anchor -- by the "
