@@ -760,6 +760,17 @@ func TestEveryBareVectorNameInTheCoverageTableResolves(t *testing.T) {
 	if len(reasons) < 10 {
 		t.Fatalf("found %d reason codes; §5.2's table is not being read", len(reasons))
 	}
+	// §10.1's refusal codes (D-061) are codes too, not vector names. Its table
+	// puts a step number first, so §5.2's pattern does not see them.
+	var verifier int
+	for _, m := range regexp.MustCompile("(?m)^\\| *[0-9]+ *\\| *`([a-z-]+)` *\\|").
+		FindAllStringSubmatch(specText(t), -1) {
+		reasons[m[1]] = true
+		verifier++
+	}
+	if verifier < 12 {
+		t.Fatalf("found %d verifier refusal codes; §10.1's table is not being read", verifier)
+	}
 
 	bare := regexp.MustCompile(`^[a-z][a-z0-9]*(?:-[a-z0-9]+)+$`)
 	for _, m := range reTicked.FindAllStringSubmatch(coverage(t), -1) {

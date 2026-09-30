@@ -1082,6 +1082,57 @@ loop every T_g or on demand:
   store cp; hand proven to the enforcer                  # part 5
 ```
 
+### 10.1 Refusal codes (closed list; part of the vectors)
+
+§5.2 gives replay a closed vocabulary, and that is what makes §5.1's order
+observable: two refusals with different codes can be told apart, so the step
+that decides between them can be tested. Everything above had no vocabulary,
+so a verifier that checked the origin before the signature, or a bundle's
+quorum before its inclusion proof, refused exactly the same files as one that
+did not and no vector could see the difference (D-061, cold gate run 11 D10).
+This is the verifier's list, and it is a **closed list**: an implementation reports one of
+these codes and no other, and the first step whose check fails decides which.
+
+**The verifier loop**, in the order the checks run:
+
+| step | code | the refusal |
+|---|---|---|
+| 1 | `unserved` | the checkpoint is not served. The same code for any file a later step needs and cannot fetch — an entry bundle (step 8), a hash tile (step 11) — reported at that step |
+| 2 | `note` | the checkpoint is not a well-formed signed note (§7): no blank separator line, a signature line that does not frame, a payload that is not padded base64 of **exactly** 68 or 76 bytes, an unterminated block, or **no signature line at all**. Framing comes first because there is nothing to verify until the lines are found |
+| 3 | `log-signature` | no line whose name and key id match a trusted log key (§9.4) verifies, or one that matches does not. **The signature decides before the origin**: a checkpoint signed by a key this anchor does not trust is refused as `log-signature`, whatever origin it names |
+| 4 | `checkpoint` | the signed text is not a `tlog-checkpoint` body (§6): not exactly three lines, a size that is not canonical decimal, a root that is not 32 bytes of standard padded base64 |
+| 5 | `origin` | the body's origin line is not **equal** to `norn.trust.origin` — not a prefix of it, not a case variant of it |
+| 6 | `cosignature` | a cosignature line whose name **and** key id match a listed witness does not verify |
+| 7 | `quorum` | the verifying lines from listed witnesses do not satisfy the policy |
+| 8 | `entries` | the entry bundles the checkpoint's size implies do not frame (§6's big-endian uint16 length prefixes), or do not add up to that size |
+| 9 | `head` | the tree rebuilt from the served entries does not hash to the signed root |
+| 10 | `fork` | the served branch and this node's branch disagree where both can speak (§10, §11). The checkpoint is not accepted **and** §11 applies: this is the one code that is also an accusation |
+| 10 | `rollback` | the served size is below the stored one and the branches agree where both speak — refused, **not** accused (§11.1). `fork` is decided first, which is why the two share a step |
+| 11 | `tiles` | a served hash tile disagrees with the rebuilt tree |
+
+**Why the head comes before the fork.** Step 10 compares the root the served
+branch has at `at`, *recomputed from the served entries*. If those entries do
+not even hash to the checkpoint they were served with, the comparison is
+between this node's history and a pile of bytes nobody signed — and a
+disagreement there would raise a fork against a log that did not sign two
+histories, only served a broken one. Step 9 rules that out first. The pseudocode
+above lists fetching the entries after the fork block for readability; the
+check that uses them cannot run before they are fetched and found consistent.
+
+**A bundle** (§8.1) is checked with the loop's codes for its checkpoint and
+three of its own, in this order:
+
+| step | code | the refusal |
+|---|---|---|
+| 1 | `bundle` | the bundle does not decode as §8.1's closed map, carries an unknown key, or an unsupported version |
+| 2 | — | the checkpoint, as loop steps 2–7: `note`, `log-signature`, `checkpoint`, `origin`, `cosignature`, `quorum` |
+| 3 | `inclusion` | the index is outside the tree, or the inclusion proof does not chain the entry's leaf hash to the signed root |
+| 4 | `binding` | the entry is not about the device the bundle names (§8.1's device↔entry binding) |
+
+A `says` string in `cases.json` stays a semantic hint (§12). Where a case names
+a code, the code is the contract.
+
+
 ## 11. Fork handling
 
 A node that observes two valid, policy-satisfying checkpoints for the same origin
@@ -1350,11 +1401,17 @@ admits its holes, so:
   (four, §7), so a text carrying a blank line has the wrong line count under
   **both** readings and is refused either way. Separating them needs a note
   whose text is valid with a blank line in it, which this protocol has none of.
-- **A note with no signature lines.** §7 requires at least one, and so does
-  §10 — "at least one such line MUST be present" — and §10's check is reached
-  first, so a checkpoint with an empty signature block is refused before the
-  framing rule applies. No artifact tells a reader that enforces both from one
-  that enforces only the second.
+- **A note with no signature lines — until §10.1's codes are vectored.** §7
+  requires at least one, and so does §10 — "at least one such line MUST be
+  present". This entry used to say §10's check is reached first; it is the other
+  way round. §10.1 checks the note's **framing** (`note`) before its signature
+  (`log-signature`), because there is nothing to verify until the lines are
+  found, and that is the order this implementation has always run them in.
+  Without codes both readings refuse the same file and no artifact separates
+  them. With §10.1's codes a reader that drops the framing rule answers
+  `log-signature` where this document says `note`, so the separation becomes a
+  vector — `checkpoints-bad/01-unsigned` — as soon as 6.5l-vi-b-ii ships the
+  codes, and this entry comes out of the list then.
 - **§10's "the root the SERVED branch has at `at` … recomputed from the
   entries, **never from a supplied proof**".** No shipped file supplies one: a
   `detect/` pair serves both branches with their own tiles, so a reader takes

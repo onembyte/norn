@@ -1749,3 +1749,113 @@ func TestTheFreshnessTableIsInTheOrderItIsEvaluated(t *testing.T) {
 			"section that contradicts itself", order, want)
 	}
 }
+
+// --- D-061: closed refusal codes for §10 --------------------------------
+//
+// §5.2 gives replay a closed vocabulary, and that is the only reason §5.1's
+// step order can be vectored: two refusals are distinguishable. Outside replay
+// every refusal was the same event to a black-box run, so §10's
+// signature-before-origin and §11.1's step orderings were pinned only by a
+// `says` phrase (cold gate run 11, D10). D-061 gives the verifier the same
+// kind of list. This is the specification half; the implementation and the
+// vectors that make each ordering observable come next (6.5l-vi-b-ii).
+
+// verifierCodes is the vocabulary D-061 asks for, in the order §10.1 must
+// give it: the verifier loop's twelve, then the bundle check's three.
+var verifierCodes = []string{
+	"unserved", "note", "log-signature", "checkpoint", "origin", "cosignature",
+	"quorum", "entries", "head", "fork", "rollback", "tiles",
+	"bundle", "inclusion", "binding",
+}
+
+func TestTheVerifierHasAClosedListOfRefusalCodes(t *testing.T) {
+	doc := load(t)
+	section, ok := doc.Section("10.1")
+	if !ok {
+		t.Fatal("§10.1 is missing: D-061 gives the verifier a closed list of refusal " +
+			"codes in §5.2's style, and there is nowhere that says what they are")
+	}
+	if !strings.Contains(section.Body, "closed list") {
+		t.Error("§10.1 does not say its list is closed. An open list is a vocabulary " +
+			"two implementations extend differently")
+	}
+
+	// Every code is in the table, once, in the stated order.
+	var order []string
+	seen := map[string]int{}
+	for _, line := range strings.Split(section.Body, "\n") {
+		m := regexp.MustCompile("^\\| *[0-9]+ *\\| *`([a-z-]+)` *\\|").FindStringSubmatch(line)
+		if m == nil {
+			continue
+		}
+		seen[m[1]]++
+		if seen[m[1]] == 1 {
+			order = append(order, m[1])
+		}
+	}
+	for _, code := range verifierCodes {
+		if seen[code] == 0 {
+			t.Errorf("§10.1 does not define `%s`", code)
+		}
+	}
+	for code := range seen {
+		var known bool
+		for _, c := range verifierCodes {
+			known = known || c == code
+		}
+		if !known {
+			t.Errorf("§10.1 defines `%s`, which D-061's list does not have", code)
+		}
+	}
+
+	// The loop's codes appear in precedence order. `unserved` recurs at every
+	// step that fetches a file, so it is placed by its first use.
+	loop := verifierCodes[:12]
+	var got []string
+	for _, c := range order {
+		for _, l := range loop {
+			if c == l {
+				got = append(got, c)
+			}
+		}
+	}
+	if strings.Join(got, ",") != strings.Join(loop, ",") {
+		t.Errorf("§10.1 lists the loop's codes as %v; the precedence is %v", got, loop)
+	}
+}
+
+// None of the new codes may collide with §5.2's: a reason code has to mean
+// one thing wherever an operator reads it.
+func TestTheVerifierCodesDoNotCollideWithReplays(t *testing.T) {
+	doc := load(t)
+	replay, ok := doc.Section("5.2")
+	if !ok {
+		t.Fatal("§5.2 is missing")
+	}
+	for _, code := range verifierCodes {
+		if strings.Contains(replay.Body, "| `"+code+"` |") {
+			t.Errorf("`%s` is both a replay reason code (§5.2) and a verifier refusal "+
+				"(§10.1); one word, two meanings", code)
+		}
+	}
+}
+
+// §10.1 says a note's framing is checked before its signature, so §12.1's
+// admission that a note with no signature lines is refused "by §10 before §7's
+// framing is reached" had the order backwards. The codes make the difference
+// observable, so the sentence has to agree with the table.
+func TestTheNoSignatureLinesAdmissionAgreesWithTheOrder(t *testing.T) {
+	doc := load(t)
+	section, ok := doc.Section("12.1")
+	if !ok {
+		t.Fatal("§12.1 is missing")
+	}
+	// Collapse line breaks first: the sentence is wrapped in the source, and a
+	// check for a phrase that spans a wrap passes against text that says it.
+	flat := strings.Join(strings.Fields(section.Body), " ")
+	if strings.Contains(flat, "and §10's check is reached first") {
+		t.Error("§12.1 still says §10's signature check is reached before §7's " +
+			"framing for a note with no signature lines; §10.1's order is `note` " +
+			"then `log-signature`")
+	}
+}
