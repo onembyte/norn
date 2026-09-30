@@ -98,6 +98,7 @@ fix.
 | D-h | Ed25519 verification semantics and key validity (SEC-023); empty `labels` (SEC-022) | RFC 8032 cofactorless with canonical A/R, or ZIP-215; `labels: {}` is `decode` or preserved | Python/Go agreement; vectors |
 | D-i | Privacy model vs COWORKER §13 | record the "public log, opaque origin, readable labels" choice and the alternatives rejected | DECISIONS |
 | D-j | Whether `nornd` may enforce under `quorum none` / 1-of-1 (GOSSIP §3) | refuse, require an override flag, or document | SEC-033 |
+| D-l | Which policy computes a checkpoint's `T` (cold gate run 12, D3; `BUILD-LOG.md` "Decision needed — 6.5m-iii") | (i) the policy the head was accepted under — what the suite pins and the code does, `T` depends on history for one poll after a policy change; (ii) the policy in force after replay — `T` a function of the head alone, changes `proofs/cases.json`, `proven/` and both verifiers | who is admitted at an expiry boundary after a policy change |
 | D-k | Closed reason codes for every refusing layer (cold gate run 11, D10) | (i) lists in §5.2's style for §7, §8.1, §9.1, §11.1 and §16, with `cases.json` naming codes — makes check order observable and lets two nodes triage a §11 rule-4 freeze together; (ii) `about` as a non-normative hint (current choice, 6.5l-vi) | cross-implementation triage of a permanent refusal |
 
 ## Documentation integrity pass (no decision needed)
