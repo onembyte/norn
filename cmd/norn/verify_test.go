@@ -842,3 +842,121 @@ func witnessKeyID(t *testing.T, name string) string {
 	t.Fatalf("the policy publishes no key for %s", name)
 	return ""
 }
+
+// --- Cold-model gate run 11, defect D9 ----------------------------------
+//
+// `served-name-collision/` pins §10's "name AND key id" from one side: a
+// listed name under a foreign id is ignored. Run 11 said the other side -- an
+// unlisted name carrying a listed id -- was safe to match on the id alone once
+// ids are recomputed. It is not. Recomputing binds a verifier key's id; the id
+// on a signature line is four bytes chosen by whoever wrote the line (§7). A
+// reader matching on the id alone tries the line under the listed party's
+// key, fails, and refuses a head everybody else accepts. Once for a witness's
+// cosignature line (§10 step 3), once for the log's own line (step 1).
+
+func TestALineWithAListedKeyIDAndAForeignNameIsIgnored(t *testing.T) {
+	for _, dir := range []string{"served-witness-id-collision", "served-log-id-collision"} {
+		t.Run(dir, func(t *testing.T) {
+			path := filepath.Join(vectors(), dir)
+			raw, err := os.ReadFile(filepath.Join(path, "cases.json"))
+			if err != nil {
+				t.Fatalf("§10's id half is reached by no vector: %v", err)
+			}
+			var doc struct {
+				Owner    string `json:"owner"`
+				Role     string `json:"role"`
+				Stranger string `json:"stranger"`
+			}
+			if err := json.Unmarshal(raw, &doc); err != nil {
+				t.Fatal(err)
+			}
+			signed, err := os.ReadFile(filepath.Join(path, "checkpoint"))
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			var ownerID string
+			switch doc.Role {
+			case "witness":
+				ownerID = witnessKeyID(t, doc.Owner)
+			case "log":
+				ownerID = logKeyID(t)
+			default:
+				t.Fatalf("role %q", doc.Role)
+			}
+
+			// The shape: exactly one line carries the owner's id under a name
+			// that is not the owner's. Without that the case is either an
+			// honest head or `served-extra-witness` again.
+			var borrowed []string
+			for _, line := range strings.Split(strings.TrimRight(string(signed), "\n"), "\n") {
+				rest, ok := strings.CutPrefix(line, note.SigPrefix)
+				if !ok {
+					continue
+				}
+				name, blob, _ := strings.Cut(rest, " ")
+				payload, err := base64.StdEncoding.DecodeString(blob)
+				if err != nil || len(payload) < 4 {
+					t.Fatalf("a signature line is not base64: %q", line)
+				}
+				if string(payload[:4]) == ownerID && name != doc.Owner {
+					if name != doc.Stranger {
+						t.Fatalf("the borrowed id is under %q, and cases.json says %q",
+							name, doc.Stranger)
+					}
+					borrowed = append(borrowed, line)
+				}
+			}
+			if len(borrowed) != 1 {
+				t.Fatalf("%d lines carry %s's key id under another name; the case needs one",
+					len(borrowed), doc.Owner)
+			}
+
+			// The separation: read that line as the owner's -- which is what an
+			// id-only reader does -- and the head must be refused. If it were
+			// accepted, the line would verify under the owner's key and the
+			// vector would tell the two readings apart about nothing.
+			asOwner := strings.Replace(string(signed),
+				note.SigPrefix+doc.Stranger+" ", note.SigPrefix+doc.Owner+" ", 1)
+			tmp := filepath.Join(t.TempDir(), "checkpoint")
+			if err := os.WriteFile(tmp, []byte(asOwner), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			bin := nornBinary(t)
+			if out, err := exec.Command(bin, "verify",
+				"-trust", filepath.Join(vectors(), "trust.cbor"),
+				"-log", servedWithCheckpoint(t, tmp)).CombinedOutput(); err == nil {
+				t.Fatalf("read as %s's own line, the borrowed line is accepted, so an "+
+					"id-only reader accepts this head too:\n%s", doc.Owner, out)
+			}
+
+			// And as shipped, it names nobody and MUST be accepted.
+			out, err := exec.Command(bin, "verify",
+				"-trust", filepath.Join(vectors(), "trust.cbor"),
+				"-log", servedWithCheckpoint(t, filepath.Join(path, "checkpoint"))).CombinedOutput()
+			if err != nil {
+				t.Fatalf("refused a checkpoint over a line whose name is not %s's and whose "+
+					"key id is; §10 matches on name AND key id, so that line names "+
+					"nobody and is ignored:\n%s", doc.Owner, out)
+			}
+		})
+	}
+}
+
+// logKeyID is the 4-byte key id of the trust file's log key.
+func logKeyID(t *testing.T) string {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(vectors(), "trust.cbor"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, err := trust.Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v, err := note.ParseVerifierKey(doc.LogKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(v.ID())
+}

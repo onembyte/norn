@@ -1,0 +1,7 @@
+{
+  "comment": "the served head with one MORE cosignature line, under a name the policy does not list, carrying the key id of the LISTED witness norn-witness/pi and its genuine timestamp; the signature verifies under no key. SPEC 10: a line names a listed witness when its name AND key id both match -- so this line names nobody and is ignored. This head MUST be accepted. A reader matching on the key id alone verifies the line under norn-witness/pi's key, fails, and refuses a head everybody else accepts: a veto anyone can cast. Serve it in place of served/checkpoint over the same tiles",
+  "owner": "norn-witness/pi",
+  "role": "witness",
+  "serve_over": "served",
+  "stranger": "norn-witness/stranger"
+}

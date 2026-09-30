@@ -298,6 +298,9 @@ func run(root string) error {
 	if err := writeNameCollisionHead(root, signed, signers); err != nil {
 		return err
 	}
+	if err := writeIDCollisionHeads(root, origin, signed, signers); err != nil {
+		return err
+	}
 	if err := writeTwiceCosignedHead(root, signed, signers); err != nil {
 		return err
 	}
@@ -489,6 +492,103 @@ func writeNameCollisionHead(root, signed string, signers []cosignpkg.Signer) err
 		return err
 	}
 	return os.WriteFile(filepath.Join(dir, "cases.json"), append(blob, '\n'), 0o644)
+}
+
+// writeIDCollisionHeads ships the other half of §10's "name AND key id".
+//
+// Cold gate run 11, D9. `served-name-collision/` pins the name half from one
+// side: a listed name under a foreign id is ignored. Nothing pinned it from
+// the other, and run 11 called that half "individually safe" once ids are
+// recomputed. It is not. Recomputing binds a verifier KEY's id; the id on a
+// signature LINE is four bytes chosen by whoever wrote the line. So a line
+// under a name nobody lists, carrying a listed party's id, names nobody and
+// is ignored -- and a reader that matches on the id alone tries to verify it
+// under that party's key, fails, and refuses a head everybody else accepts.
+// That is the same veto `served-name-collision/` closes, cast the other way.
+//
+// Two directories, one per rule, because the log's own line (§10 step 1) and
+// a witness's (step 3) are matched by different code in any implementation
+// that has not unified them, and one file carrying both lines would let each
+// mutation hide behind the other.
+//
+// Each line is the listed party's own line with its last signature byte
+// flipped and its name replaced: the id is theirs, the witness's timestamp is
+// its genuine one, and the signature verifies under nothing.
+func writeIDCollisionHeads(root, origin, signed string, signers []cosignpkg.Signer) error {
+	if len(signers) == 0 {
+		return fmt.Errorf("no witnesses to borrow an id from")
+	}
+	for _, c := range []struct {
+		dir, owner, stranger, role, comment string
+	}{
+		{"served-witness-id-collision", signers[0].Name, "norn-witness/stranger", "witness",
+			"the served head with one MORE cosignature line, under a name the policy " +
+				"does not list, carrying the key id of the LISTED witness %s and its " +
+				"genuine timestamp; the signature verifies under no key. SPEC 10: a line " +
+				"names a listed witness when its name AND key id both match -- so this " +
+				"line names nobody and is ignored. This head MUST be accepted. A reader " +
+				"matching on the key id alone verifies the line under %s's key, fails, " +
+				"and refuses a head everybody else accepts: a veto anyone can cast. " +
+				"Serve it in place of served/checkpoint over the same tiles"},
+		{"served-log-id-collision", origin, "norn/stranger", "log",
+			"the served head with one MORE signature line, under a name that is not " +
+				"the log's, carrying the key id of the log's key %s; the signature " +
+				"verifies under no key. SPEC 10 step 1: a line is the log's when its " +
+				"name AND key id match norn.trust.log_key -- so this line is a " +
+				"stranger's and is ignored. This head MUST be accepted. A reader " +
+				"matching on the key id alone verifies it under %s's key, fails, and " +
+				"refuses the head. Serve it in place of served/checkpoint over the same " +
+				"tiles"},
+	} {
+		line, err := borrowedIDLine(signed, c.owner, c.stranger)
+		if err != nil {
+			return err
+		}
+		dir := filepath.Join(root, c.dir)
+		if err := os.RemoveAll(dir); err != nil {
+			return err
+		}
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(filepath.Join(dir, "checkpoint"),
+			[]byte(signed+line+"\n"), 0o644); err != nil {
+			return err
+		}
+		meta := map[string]any{
+			"serve_over": "served",
+			"owner":      c.owner,
+			"role":       c.role,
+			"stranger":   c.stranger,
+			"comment":    fmt.Sprintf(c.comment, c.owner, c.owner),
+		}
+		blob, err := json.MarshalIndent(meta, "", "  ")
+		if err != nil {
+			return err
+		}
+		if err := os.WriteFile(filepath.Join(dir, "cases.json"), append(blob, '\n'), 0o644); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// borrowedIDLine is `owner`'s signature line from `signed`, renamed to
+// `stranger`, with its last byte flipped so it verifies under no key.
+func borrowedIDLine(signed, owner, stranger string) (string, error) {
+	for _, line := range strings.Split(strings.TrimRight(signed, "\n"), "\n") {
+		blob, ok := strings.CutPrefix(line, note.SigPrefix+owner+" ")
+		if !ok {
+			continue
+		}
+		payload, err := base64.StdEncoding.DecodeString(blob)
+		if err != nil {
+			return "", err
+		}
+		payload[len(payload)-1] ^= 0x01
+		return note.SignatureLine(stranger, payload), nil
+	}
+	return "", fmt.Errorf("no signature line for %q", owner)
 }
 
 // writeTwiceCosignedHead ships §5.3's tie-break: one witness, two verifying

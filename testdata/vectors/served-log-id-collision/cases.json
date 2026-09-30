@@ -1,0 +1,7 @@
+{
+  "comment": "the served head with one MORE signature line, under a name that is not the log's, carrying the key id of the log's key norn/nzxxe3rnorsxg5domv2c2mbqge; the signature verifies under no key. SPEC 10 step 1: a line is the log's when its name AND key id match norn.trust.log_key -- so this line is a stranger's and is ignored. This head MUST be accepted. A reader matching on the key id alone verifies it under norn/nzxxe3rnorsxg5domv2c2mbqge's key, fails, and refuses the head. Serve it in place of served/checkpoint over the same tiles",
+  "owner": "norn/nzxxe3rnorsxg5domv2c2mbqge",
+  "role": "log",
+  "serve_over": "served",
+  "stranger": "norn/stranger"
+}
