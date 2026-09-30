@@ -18,7 +18,9 @@ safe. First, the minimal change: a dedicated `http.Client` for
 `gossip.Peer` and the monitor with `Timeout`, `ResponseHeaderTimeout`, a
 byte budget and `CheckRedirect` returning an error, plus a timeout on
 `logclient.Submit`. That turns "forever" into "bounded" and needs no
-design decision. Then the structural change: reconcile against the last
+design decision. **Done 2026-09-30** (`gossip.FetchTimeout`, no redirects,
+`logclient.Timeout`; silent-peer, trickling-peer, silent-log and
+watchdog-with-silent-peers tests). Then the structural change: reconcile against the last
 good state *before* any peer or evidence I/O, or move verification and
 gossip onto their own goroutine that publishes a verified result to a
 reconciler ticking on T_poll; add a cycle-overrun alarm and the latency

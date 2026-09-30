@@ -106,7 +106,8 @@ an upgrade trigger (D-049); privacy declared a non-goal. Where it departs
 - Assumed and **not held by the code**: that entry identity is the
   authorized content (SEC-001); that fewer than *k* colluding witnesses
   cannot split a view (SEC-002: the real bound is 2k−N); that every
-  network fetch terminates (SEC-003); that the stored head, clock, keys,
+  network fetch terminates (SEC-003; held since 2026-09-30 for peer reads
+  and submissions, with reconcile still after the peer I/O); that the stored head, clock, keys,
   policy and freeze survive a restart (SEC-004/006); that fork evidence can
   always be built and checked (SEC-005).
 
@@ -167,7 +168,8 @@ policy a replayed node uses for evidence (§11.1), payload-length vs
   test empties the fetcher first.
 - A gossip peer that accepts TCP and never answers, a slow-loris peer, a
   slow log: reconcile still runs within a bound, an injected key is still
-  evicted, the monitor round completes (SEC-003).
+  evicted, the monitor round completes (SEC-003). The first three and the
+  eviction exist since 2026-09-30; the monitor-round test does not.
 - Restart: a new `Agent` on the same RunDir refuses an older cosigned
   head and does not report `fresh`; freeze survives a wipe of `/run`;
   learned policy survives (SEC-004/006).
@@ -257,7 +259,8 @@ and OTS off the enforcement path. Concerns:
 - `encoding/base64.StdEncoding` is non-strict (`\r`, `\n`, padding bits);
   §6/§7 exactness needs `.Strict()` plus explicit `\r` rejection (SEC-027).
 - `net/http` `DefaultClient` (no timeout, follows redirects incl.
-  https→http) in `gossip.Peer` and `logclient.Submit` (SEC-003).
+  https→http) in `gossip.Peer` and `logclient.Submit` (SEC-003; both
+  replaced 2026-09-30).
 - The Python oracle's only crypto dependency, `pynacl`, is installed
   unpinned and unhashed in CI; libsodium and Go's `crypto/ed25519`
   disagree on small-order inputs (SEC-023).

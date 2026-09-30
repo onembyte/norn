@@ -34,7 +34,7 @@ divergence.
 |---|---|---|---|
 | SEC-001 | **CRITICAL** | A validly signed entry can be re-applied by adding one junk signature: revoked devices return, policies roll back | **Deferred by maintainer** (documented, reproduction shipped) |
 | SEC-002 | **CRITICAL** | One colluding witness (not *k*) plus the log hides a revocation from chosen nodes, fresh and unalarmed, because gossip never runs while a view is fresh | Open |
-| SEC-003 | **HIGH** (two verifiers: CRITICAL) | One silent proven peer stalls every node's enforcement loop forever: gossip fetch has no timeout and precedes reconcile | Open |
+| SEC-003 | **HIGH** (two verifiers: CRITICAL) | One silent proven peer stalls every node's enforcement loop forever: gossip fetch has no timeout and precedes reconcile | **Bounded** (2026-09-30): every peer read and every submission has a deadline and follows no redirect; the structural half — reconcile before peer I/O, a cycle-overrun alarm — is open |
 | SEC-004 | **HIGH** | Verifier state is not durable: a restarted node accepts a rolled-back checkpoint as `fresh` and reinstalls revoked devices | Open |
 | SEC-005 | MEDIUM | Fork evidence is built and checked under the trust file's key and policy only: not produced for a longer branch or after a log-key rotation; weaker evidence still freezes | Open |
 | SEC-006 | MEDIUM | The fork freeze lives under `/run/norn` by default and is lost at reboot | Open |
@@ -183,6 +183,16 @@ CRITICAL; rated HIGH here per "do not inflate", with the condition for
 CRITICAL stated below)
 **Found by:** map-features, checkpoint-witness-trust, enforcement-ops,
 deps-tooling-tests (all independently, all reproduced).
+**Status:** the minimal fix landed 2026-09-30: `gossip.Peer` reads through a
+client with a 10 s overall deadline, the same header deadline and no
+redirects (`gossip.FetchTimeout`), and `logclient.Submit` shares `Fetch`'s
+30 s bound. "Forever" is now at most r × 10 s of peer I/O per cycle. The
+regression tests are the silent peer and the trickling peer in
+`internal/gossip`, the silent log in `internal/logclient`, and the audit's
+own probe in `internal/agent`: watchdog mode, one unproven key, three silent
+peers, `Once()` returns and evicts. Reconcile still runs *after* the peer
+I/O, and no cycle-overrun alarm exists; the monitor reads nodes through the
+same bounded client but has no round-level test.
 
 **Location.** `internal/gossip/server.go:111` (`http.Get` — `DefaultClient`,
 no `Timeout`, no `ResponseHeaderTimeout`); `internal/agent/fork.go:83-94`

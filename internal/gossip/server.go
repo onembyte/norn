@@ -1,6 +1,7 @@
 package gossip
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -10,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Prefix is where a node's gossip endpoints live (`GOSSIP.md` part 6).
@@ -105,10 +107,55 @@ func noListing(next http.Handler) http.Handler {
 // source, not a trust model.
 type Peer string
 
+// Timeout bounds one read from a peer, start to finish.
+//
+// A proven peer can be silent: accept the TCP handshake and never write, or
+// trickle a header a byte at a time. This was the one client in the tree with
+// no deadline, and it runs on the enforcement path, before reconcile -- so the
+// first silent peer `Choose` drew held `Once()` forever, on every node that
+// drew it, with no eviction and no alarm, because every alarm is raised inside
+// the stuck cycle (SEC-003). A peer is a neighbour inside the tunnel, so ten
+// seconds is generous; a cycle asks at most r of them, and a deadline turns
+// "forever" into "at most r × the timeout".
+var timeout = 10 * time.Second
+
+// FetchTimeout is the bound every read from a peer gets.
+func FetchTimeout() time.Duration { return timeout }
+
+// SetTimeout changes the bound, for a test that cannot wait ten seconds. The
+// header deadline follows it, so the two never disagree.
+func SetTimeout(d time.Duration) {
+	timeout = d
+	transport.ResponseHeaderTimeout = d
+}
+
+// transport is the default one with a header deadline: `Timeout` alone still
+// lets a peer that never sends its status line hold the connection open
+// until the whole budget is spent, which is the slow-loris in one line.
+var transport = func() *http.Transport {
+	t := http.DefaultTransport.(*http.Transport).Clone()
+	t.ResponseHeaderTimeout = timeout
+	return t
+}()
+
+// client is what every read from a peer goes through. A peer serves bytes at
+// the documented paths (`GOSSIP.md` part 6) or it does not; it is never
+// followed to another address, so a compromised peer cannot send this node's
+// reads somewhere it did not choose.
+func client() *http.Client {
+	return &http.Client{
+		Timeout:   timeout,
+		Transport: transport,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return errors.New("a peer does not redirect")
+		},
+	}
+}
+
 // Fetch implements logclient.Fetcher.
 func (p Peer) Fetch(path string) ([]byte, error) {
 	base := strings.TrimSuffix(string(p), "/")
-	resp, err := http.Get(base + Prefix + strings.TrimPrefix(path, "/"))
+	resp, err := client().Get(base + Prefix + strings.TrimPrefix(path, "/"))
 	if err != nil {
 		return nil, err
 	}

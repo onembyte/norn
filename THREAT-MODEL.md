@@ -99,10 +99,10 @@ Capabilities: a valid WG key + device key, a copy of the log, position inside th
 | Goal | Norn |
 |---|---|
 | Forge gossip | **Impossible**: gossiped checkpoints carry log + witness signatures. |
-| Withhold gossip / lie about what it saw | Can only *withhold*; peers have other peers. DoS at most. |
+| Withhold gossip / lie about what it saw | Can only *withhold*; peers have other peers. A peer that accepts a connection and never answers costs a node at most one bounded read (10 s) per ask, and a cycle asks at most r peers (SEC-003). DoS at most. |
 | Enroll another device | **Impossible** without a signer key. |
 | Attack other nodes through the tunnel | Out of scope — segmentation/ACL is the control plane's job (see A1, v2). |
-| Stay connected after compromise is noticed | **Bounded**: `Revoke` takes effect within T_c + T_g + T_poll (G4). |
+| Stay connected after compromise is noticed | **Bounded**: `Revoke` takes effect within T_c + T_g + T_poll (G4), plus at most r × 10 s if the compromised node is also silent to the peers that ask it (SEC-003). |
 
 ### A7 — Malicious enrollee
 Capabilities: submits an enrollment request.

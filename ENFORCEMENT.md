@@ -76,7 +76,7 @@ Someone else (NetBird, innernet, a human) owns the table; `nornd` polices it.
   `MISSING_PEER` and nothing else: installing it is the table owner's job, not
   Norn's (G4 non-goal), and the difference between "reported" and "installed"
   is the whole distinction between watchdog and owner mode.
-- Window: ≤ `T_poll` + reconfigure latency. A handshake and a few packets can
+- Window: ≤ `T_poll` + reconfigure latency, plus at most r × 10 s of bounded peer reads when proven peers are silent (SEC-003). A handshake and a few packets can
   complete inside it. Measured in the Phase 3 gate; documented in every README.
 - **Fight detection.** If the same key is evicted `N` times within `W` (default 3
   in 60 s) the control-plane daemon is re-adding it: alarm `CONTROL_PLANE_FIGHT`
