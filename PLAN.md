@@ -203,7 +203,7 @@ Freeze `SPEC.md`, publish vectors, README with threat model and comparison table
 blog post, WireGuard mailing list + r/WireGuard + HN, request review from a
 transparency-dev / Sigsum person — sequence and review targets in `PUBLICATION.md`.
 **PASS when:**
-- [ ] Cold-model gate repeated on frozen spec: independent verifier passes all vectors. Runs 5–12 each passed every check and none returned `SPEC SUFFICIENT` outright; run 12 (2026-09-30): `SPEC INSUFFICIENT`, 553/553, 33 of 128 variants survive, 14 defects (`SPEC-DEFECTS-12.md`), closed in 6.5m.
+- [ ] Cold-model gate repeated on frozen spec: independent verifier passes all vectors. Runs 5–12 each passed every check and none returned `SPEC SUFFICIENT` outright; run 12 (2026-09-30): `SPEC INSUFFICIENT`, 553/553, 33 of 128 variants survive, 14 defects (`SPEC-DEFECTS-12.md`), closed in 6.5m; run 13 (2026-09-30): `SPEC SUFFICIENT WITH GAPS`, 886/886, 25 of 185 survive, 0 of 12,720 composites pass, 8 defects and none High (`SPEC-DEFECTS-13.md`), closed in 6.5n.
 - [ ] One person outside this homelab runs the lab and files an issue.
 - [ ] Comparison table (Tailnet Lock / Nebula / NetBird / Norn) reviewed by someone who has run at least two of them.
 
