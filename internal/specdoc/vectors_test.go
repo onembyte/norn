@@ -796,6 +796,13 @@ func TestEveryVectoredRuleIsStatedWhereItLives(t *testing.T) {
 			"checkpoints-bad/16-two-log-signatures"},
 		{"8.1", "`device` is the `device_id` the `entry` names",
 			"proofs-bad/device-not-in-entry"},
+		// Cold gate run 11, D1: the freshness table's rows overlap, and only
+		// their order says which one wins.
+		{"8.1", "**first row, read top to bottom, whose condition holds**",
+			"detect/staleness.json hard-below-staleness-still-fresh"},
+		// D14: condition 3's "that wg_pk" had no antecedent, and one reading
+		// drops every peer that has rotated.
+		{"8.1", "**the `wg_pk` replay gives**", "proofs/cases.json installs"},
 	} {
 		t.Run(c.vector, func(t *testing.T) {
 			section, ok := doc.Section(c.section)
@@ -1439,7 +1446,7 @@ func TestConditionThreeSaysWhichKeyItMeans(t *testing.T) {
 		t.Fatal("§8.1 is missing")
 	}
 	for _, c := range []struct{ needle, why string }{
-		{"the `wg_pk` the node will install",
+		{"the `wg_pk` replay gives",
 			"condition 3's `that wg_pk` has no antecedent in its own sentence"},
 		{"what the bundle's own entry proves",
 			"a reader needs to be told that the bundle proves enrolment at an " +
@@ -1484,24 +1491,32 @@ func TestThePolicyGrammarStatesTheRulesItArguesFrom(t *testing.T) {
 	if !ok {
 		t.Fatal("§9.1 is missing")
 	}
-	// The `log lines` row argues from two rules. Both have to be rules.
+	// The `log lines` row used to argue from two rules the table never stated.
+	// Reconciled with a parallel session: key uniqueness is a rule, the log
+	// COUNT is not -- upstream allows several `log` lines with distinct keys,
+	// and §9.1 promises not to redefine that grammar.
 	for _, c := range []struct{ needle, why string }{
-		{"a `vkey` is used **once**",
-			"the `log lines` row leans on key uniqueness and the table never " +
-				"stated it — the reference parser did not enforce it, so one key " +
-				"under two names parsed there and was an error in Go"},
-		{"at most one `log` line",
-			"the same row asserts it as a consequence, and it is not one: two " +
-				"`log` lines may carry two different keys, and until run 11 " +
-				"neither implementation enforced it"},
-		{"and every other byte is content",
-			"§9.1 names `\\r`, `\\v`, `\\f` after an em dash, which reads as " +
+		{"a verifier key appears **once** in a policy",
+			"the `log lines` row leans on key uniqueness; the reference parser did " +
+				"not enforce it, so one key under two names parsed there and was an " +
+				"error in Go"},
+		{"**more than one is allowed**",
+			"`c2sp.org/tlog-policy` rules out only log lines with the SAME key. An " +
+				"at-most-one rule shipped briefly here (6.5l-iii) and redefined the " +
+				"grammar §9.1 says it restates verbatim"},
+		{"**That set is closed**",
+			"§9.1 named `\\r`, `\\v`, `\\f` after an em dash, which reads as " +
 				"examples; the reference used Unicode `isspace` and refused a " +
 				"non-breaking space that Go accepted"},
 	} {
 		if !strings.Contains(section.Body, c.needle) {
 			t.Errorf("§9.1 does not say %q — %s", c.needle, c.why)
 		}
+	}
+	// And the rule that was wrong must not come back.
+	if strings.Contains(section.Body, "at most one `log` line") {
+		t.Error("§9.1 again limits the grammar to at most one `log` line; that " +
+			"limit belongs to the trust file's correspondence rule, not the grammar")
 	}
 }
 
@@ -1514,7 +1529,7 @@ func TestTheEmptyGroupCaseIsCreditedToTheRuleThatRefusesIt(t *testing.T) {
 	if !ok {
 		t.Fatal("§12.1 is missing")
 	}
-	if !strings.Contains(section.Body, "**refused by the field count row**") {
+	if !strings.Contains(section.Body, "refused by the **field count**") {
 		t.Error("§12.1 lists `bad-empty-group` under the restated grammar as if it " +
 			"exercised the `group` members rule. It does not: the line has three " +
 			"fields, so the field-count row fires first and the members rule is " +
@@ -1703,5 +1718,34 @@ func TestTheOrderingsPinnedOnlyByASaysMatchAreNamed(t *testing.T) {
 			"Outside replay there is no reason code, so two refusals are the same " +
 			"event to a black-box run — and an ordering between them cannot be " +
 			"seen at all")
+	}
+}
+
+// The guard above checks that §8.1 *says* `hard_stale` is tested first. It
+// passed while the table beneath said the opposite: 6.5l-ii-b wrote "the
+// states are tested in the order given" and "`hard_stale` is tested before
+// `fresh`" and left the table listing `fresh` first, so the section
+// contradicted itself and every phrase check was green. Reconciling a
+// parallel session's work surfaced it. A rule about an order is checked
+// against the order.
+func TestTheFreshnessTableIsInTheOrderItIsEvaluated(t *testing.T) {
+	doc := load(t)
+	section, ok := doc.Section("8.1")
+	if !ok {
+		t.Fatal("§8.1 is missing")
+	}
+	var order []string
+	for _, line := range strings.Split(section.Body, "\n") {
+		for _, state := range []string{"unknown", "hard_stale", "fresh", "degraded"} {
+			if strings.HasPrefix(line, "| `"+state+"` |") {
+				order = append(order, state)
+			}
+		}
+	}
+	want := []string{"unknown", "hard_stale", "fresh", "degraded"}
+	if strings.Join(order, ",") != strings.Join(want, ",") {
+		t.Errorf("§8.1's freshness table lists %v; D-060 evaluates it top to bottom "+
+			"as %v. A table read in order and a sentence saying otherwise is a "+
+			"section that contradicts itself", order, want)
 	}
 }

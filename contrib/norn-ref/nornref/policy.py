@@ -13,6 +13,23 @@ class PolicyError(ValueError):
     """The text is not a `c2sp.org/tlog-policy` document."""
 
 
+# SPEC 9.1: the only characters that are errors in a line. The set is closed;
+# every other character, other Unicode whitespace included, is content.
+ERRORS = frozenset("\x0b\x0c\x0d")
+SEPARATORS = re.compile("[ \t]+")
+
+
+def _once(keys: set[str], key: str, number: int) -> None:
+    """A verifier key appears once in a policy, on whatever line (SPEC 9.1).
+
+    Under two names, one cosignature line matches both, and one witness
+    answering once meets a threshold of two.
+    """
+    if key in keys:
+        raise PolicyError(f"line {number}: that key is already in this policy")
+    keys.add(key)
+
+
 def parse(text: str) -> None:
     """Refuse anything that is not a `c2sp.org/tlog-policy` document.
 
@@ -21,22 +38,18 @@ def parse(text: str) -> None:
     a vertical tab as a separator, a duplicate name, a forward reference and a
     `group` with no members. Four went the tolerant way and two the strict one. SPEC 9.1 now states all six and `policies/`
     vectors them; both implementations answer the same way here.
+
+    Two more after cold gate run 11. D12: this parser refused the 26
+    characters `str.isspace()` knows that can occur in a line, where the Go
+    one refused three of them; SPEC 9.1 now closes the set at those three. D2:
+    a verifier key could appear twice here, which the Go parser refused.
     """
     quorums = 0
-    logs = 0
     names: set[str] = set()
     keys: set[str] = set()
     for number, line in enumerate(text.split("\n"), start=1):
-        # SPEC 9.1's ban is a CLOSED set of three bytes, and every other byte
-        # is content. This used `str.isspace()`, which is Unicode-aware, so a
-        # non-breaking space was an error here and ordinary content in Go --
-        # a policy the two implementations disagreed about, which is a `policy`
-        # entry that is `decode` for one node and applied by the other (cold
-        # gate run 11, D12).
-        for ch in line:
-            if ch in "\v\f\r":
-                raise PolicyError(
-                    f"line {number}: {ch!r} is not a separator and not content")
+        if any(c in ERRORS for c in line):
+            raise PolicyError(f"line {number}: 0x0B, 0x0C or 0x0D in a line")
         # Ignored: empty or whitespace-only lines, and comments. This parser
         # refused both and the Go one accepted both; SPEC 9.1 now states the
         # tolerant reading and `policies/` vectors it.
@@ -44,21 +57,20 @@ def parse(text: str) -> None:
         if stripped == "" or stripped.startswith("#"):
             continue
         # Runs of space and tab, and nothing else: `str.split()` with no
-        # argument splits on every Unicode space, which would make a
-        # non-breaking space a separator now that it is no longer refused.
-        fields = re.split(r"[ \t]+", stripped)
+        # argument splits on every Unicode space, which made U+00A0 a
+        # separator here and content in SPEC 9.1.
+        fields = [f for f in SEPARATORS.split(stripped) if f]
         keyword = fields[0]
         if keyword == "log":
             if not 2 <= len(fields) <= 3:
                 raise PolicyError(f"line {number}: log takes a key and an optional url")
-            logs += 1
-            _claim_key(keys, fields[1], number)
+            _once(keys, fields[1], number)
         elif keyword == "witness":
             if not 3 <= len(fields) <= 4:
                 raise PolicyError(f"line {number}: witness takes a name, a key and an optional url")
             if fields[1] in names:
                 raise PolicyError(f"line {number}: {fields[1]!r} is already defined")
-            _claim_key(keys, fields[2], number)
+            _once(keys, fields[2], number)
             names.add(fields[1])
         elif keyword == "group":
             # name, threshold and at least one member.
@@ -97,20 +109,3 @@ def parse(text: str) -> None:
             raise PolicyError(f"line {number}: {keyword!r} is not a policy keyword")
     if quorums != 1:
         raise PolicyError(f"a policy has exactly one quorum line, found {quorums}")
-    # SPEC 9.1's `log count` row. Its `log lines` row argued this followed from
-    # key uniqueness -- it does not, because two `log` lines may carry two
-    # different keys, and until run 11 (D2) neither implementation enforced it.
-    if logs > 1:
-        raise PolicyError(f"a policy carries at most one log line, found {logs}")
-
-
-def _claim_key(keys: set[str], vkey: str, number: int) -> None:
-    """A `vkey` is used once in a policy (SPEC 9.1's `keys` row).
-
-    The same key under two names makes `group home 2 a b` satisfiable by one
-    witness answering once -- the failure the `group` members row exists to
-    prevent, stated there for members and missing for keys until run 11 (D2).
-    """
-    if vkey in keys:
-        raise PolicyError(f"line {number}: that key is already in this policy")
-    keys.add(vkey)

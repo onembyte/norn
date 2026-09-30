@@ -7,7 +7,8 @@ second one cannot be written". Both premises are rules and neither was written
 down anywhere else -- so, measured before the fix:
 
     same key under two names   Go refuses   · this parser accepted
-    two `log` lines            Go accepts   · this parser accepted   (nobody)
+    two `log` lines            Go accepts   · this parser accepted   (both right:
+                                                                upstream allows it)
     U+00A0 inside a URL        Go accepts   · this parser refused
 
 The last is D12: §9.1 names \\r, \\v, \\f after an em dash, which reads as
@@ -45,14 +46,19 @@ class KeysAreUsedOnce(unittest.TestCase):
             policy.parse(f"log {KEY}\nwitness a {KEY}\nquorum a\n")
 
 
-class AtMostOneLogLine(unittest.TestCase):
-    def test_one_log_line_parses(self):
-        policy.parse(f"log {LOG_A}\nwitness w {KEY}\nquorum w\n")
+class LogLinesFollowTheUpstreamGrammar(unittest.TestCase):
+    """D2, corrected. `c2sp.org/tlog-policy` rules out only "multiple log lines
+    with the same public key"; several with distinct keys are grammatical, and
+    §9.1 promises not to redefine that grammar. An at-most-one rule shipped
+    briefly (6.5l-iii) and was a redefinition. A trust file still cannot carry
+    a second one -- that is the correspondence rule's job, not the grammar's."""
 
-    def test_two_log_lines_are_refused(self):
-        """Two different keys, so the uniqueness rule cannot catch this one."""
+    def test_two_log_lines_with_distinct_keys_parse(self):
+        policy.parse(f"log {LOG_A}\nlog {LOG_B}\nwitness w {KEY}\nquorum w\n")
+
+    def test_two_log_lines_with_the_same_key_are_refused(self):
         with self.assertRaises(policy.PolicyError):
-            policy.parse(f"log {LOG_A}\nlog {LOG_B}\nwitness w {KEY}\nquorum w\n")
+            policy.parse(f"log {LOG_A}\nlog {LOG_A}\nwitness w {KEY}\nquorum w\n")
 
 
 class TheWhitespaceBanIsThreeBytes(unittest.TestCase):

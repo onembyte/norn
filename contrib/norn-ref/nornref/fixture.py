@@ -1080,34 +1080,61 @@ def policy_grammar() -> list[tuple[str, str, bool, str]]:
         ("bad-trailing-comment", f"{log}\n{pi}\nquorum pi # note\n", False,
          "`#` after a directive's fields is an ordinary character, so this is a "
          "`quorum` line with two names; a reader that strips from `#` accepts it"),
-        # Cold gate run 11, D2 and D12. §9.1's `log lines` row argued from two
-        # rules the table never stated: key uniqueness (which the reference
-        # parser did not enforce, so one key under two names parsed there and
-        # was an error in Go) and at-most-one-`log` (which NEITHER enforced).
-        # D12 is the third: the whitespace ban reads as examples, and the
-        # reference used Unicode `isspace`, refusing a non-breaking space Go
-        # accepted.
-        ("bad-duplicate-key",
-         f"{log}\nwitness a {witness_vkey('pi')}\nwitness b {witness_vkey('pi')}\n"
-         "group home 2 a b\nquorum home\n", False,
-         "one key under two names: `2 of a b` is then met by one witness "
-         "answering once, which is the `group` members rule one level down"),
-        ("bad-two-log-lines",
-         f"{log}\nlog {note.vkey(ORIGIN, KEYS['logkey2'].public)} {LOG_URLS[0]}\n{pi}\nquorum pi\n", False,
-         "two `log` lines carrying two DIFFERENT keys, so key uniqueness cannot "
-         "catch it -- at most one is its own rule"),
-        ("bad-form-feed", f"{log}\n{pi}\nquorum\fpi\n", False,
-         "the third of §9.1's three banned bytes; `bad-vertical-tab` and "
-         "`bad-carriage-return` cover the other two"),
-        ("witness-url-nbsp",
-         f"{log}\nwitness pi {witness_vkey('pi')} https://example/\u00a0w\nquorum pi\n",
-         True, "the ban is a CLOSED set of three bytes and every other byte is "
-         "content: a reader using a Unicode whitespace definition refuses this "
-         "policy, which §9.1 allows"),
         ("witness-url-fragment",
          f"{log}\nwitness pi {witness_vkey('pi')} https://example/w#tag\nquorum pi\n",
          True, "a `#` inside a field is content: a reader for which `#` is illegal "
          "anywhere refuses a URL with a fragment in it"),
+        # Cold gate run 11, D2. §9.1's `log lines` row argued from "no key may
+        # appear twice in one policy", a rule the table never stated, and
+        # nothing here repeated a key. The Go parser refused a repeat and this
+        # one did not, so a `policy` entry listing one key under two names was
+        # `decode` on one side and replayed on the other.
+        ("bad-duplicate-key",
+         f"{log}\n{pi}\nwitness vps {witness_vkey('pi')}\nquorum pi\n", False,
+         "a verifier key appears once: under two names, one cosignature line "
+         "would count as two witnesses"),
+        ("bad-log-key-as-witness",
+         f"{log}\nwitness pi {log_vkey()}\nquorum pi\n", False,
+         "the same rule across directives: the log's key on a `witness` line "
+         "is the key twice"),
+        # The other half of the same row: the grammar permits more than one
+        # `log` line. A trust file cannot carry two (each must be `log_key`,
+        # and the key rule refuses a repeat), but a `policy` entry has no such
+        # correspondence, and a policy naming a log's old and new key is
+        # exactly what a rotation looks like from outside.
+        ("two-log-lines",
+         f"{log}\nlog {note.vkey(ORIGIN, KEYS['logkey2'].public)}\n{pi}\nquorum pi\n",
+         True, "the grammar permits more than one `log` line; only a trust file's "
+         "correspondence rule limits it to one"),
+        # Cold gate run 11, D12. "Any other whitespace character" was not a
+        # set. This parser refused all of str.isspace() that can occur in a
+        # line -- 26 characters -- and the Go one refused three of them, so the
+        # two disagreed on 23 and no vector could tell. The set is
+        # closed now: 0x0B, 0x0C, 0x0D. `bad-form-feed` is the third, placed
+        # like the other two where a separator reading would parse.
+        ("bad-form-feed", f"{log}\n{pi}\nquorum\fpi\n",
+         False, "0x0C is one of the three characters that are errors"),
+        # Each of the three twice, because one placement pins only one lax
+        # reading. Between `quorum` and `pi`, a reader that SPLITS on the
+        # character gets `quorum pi` and accepts; one that keeps it as CONTENT
+        # gets a single field, an unknown keyword, and refuses anyway -- so
+        # those three vectors let the content reading through. Inside a URL
+        # it is the other way round: content parses, and a split makes five
+        # fields, which the field count refuses. Only the error reading
+        # refuses all six for the rule they are named after.
+        ("bad-vertical-tab-in-url",
+         f"{log}\nwitness pi {witness_vkey('pi')} https://example/w\vx\nquorum pi\n",
+         False, "0x0B is an error, not content: kept as content, this URL parses"),
+        ("bad-form-feed-in-url",
+         f"{log}\nwitness pi {witness_vkey('pi')} https://example/w\fx\nquorum pi\n",
+         False, "0x0C is an error, not content: kept as content, this URL parses"),
+        ("bad-carriage-return-in-url",
+         f"{log}\nwitness pi {witness_vkey('pi')} https://example/w\rx\nquorum pi\n",
+         False, "0x0D is an error, not content: kept as content, this URL parses"),
+        ("nbsp-is-content",
+         f"{log}\nwitness pi {witness_vkey('pi')} https://example/w x\nquorum pi\n",
+         True, "U+00A0 is not in the closed set, so it is content: a reader that "
+         "refuses it, or splits on it, refuses a policy this document allows"),
     ]
 
 

@@ -307,3 +307,25 @@ func TestTheGossipStateMachineAgreesWithD060(t *testing.T) {
 			"straight to hard-stale")
 	}
 }
+
+// A parallel session reached the opposite answer on D1 and its paragraph
+// auto-merged into GOSSIP.md right under the D-060 one, textually clean and
+// saying "such a node stays `fresh` up to `S`". Two phrase checks above were
+// both green with the contradiction on the page. This one looks for the
+// losing reading itself.
+func TestTheGossipStateMachineDoesNotAlsoStateTheRejectedOrder(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "GOSSIP.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, rejected := range []string{
+		"stays `fresh` up to `S`",
+		"never drops peers\nwhile the network calls its view fresh",
+		"It never drops peers",
+	} {
+		if strings.Contains(string(raw), rejected) {
+			t.Errorf("GOSSIP.md states the fresh-first reading D-060 rejected (%q). "+
+				"A document that gives both orders gives neither", rejected)
+		}
+	}
+}

@@ -232,10 +232,28 @@ func run(root string) error {
 		}
 	}
 
+	// Cold gate run 11, D14. §8.1's condition 3 read "active with that wg_pk",
+	// with no antecedent for "that". Each bundle proves the entry that made
+	// its device active, and `rotate` leaves `since_index` alone, so for a
+	// device that has rotated the bundle's entry carries a key the device no
+	// longer uses. Read strictly, that condition drops every rotated peer. No
+	// file joined a bundle to the key a node installs, so both readings
+	// passed. This does: the replayed key, beside the bundle that proves the
+	// device, and for `nas` the two differ.
+	installs := make(map[string]string, len(ids))
+	for _, id := range ids {
+		installs[id] = st.Devices[id].WgPk
+	}
+
 	meta := map[string]any{
 		"comment": "the served log and its proof bundles, produced by the Go " +
-			"implementation and validated by upstream libraries; see SPEC 12",
-		"origin": origin,
+			"implementation and validated by upstream libraries; see SPEC 12. " +
+			"`installs` is the wg_pk, in hex, that a node installs for each device " +
+			"once its bundle checks out: the key replay gives (SPEC 8.1 condition 3), " +
+			"which is not always the key in the bundle's entry. `nas` rotated after " +
+			"it enrolled, so its bundle proves the enrol and names the old key",
+		"installs": installs,
+		"origin":   origin,
 		// Named rather than repeated: the seed lives in keys.json, and a
 		// second copy here is a second thing to keep in step.
 		"log_key": "keys.json ed25519.logkey — the key trust.cbor names",

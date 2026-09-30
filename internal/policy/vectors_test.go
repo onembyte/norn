@@ -216,6 +216,7 @@ func policyText(t *testing.T, name string) string {
 func TestAWhitespaceNegativeIsRefusedForItsWhitespaceAndNothingElse(t *testing.T) {
 	for _, c := range []struct{ name, ch string }{
 		{"bad-vertical-tab", "\v"},
+		{"bad-form-feed", "\f"},
 		{"bad-carriage-return", "\r"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
@@ -234,6 +235,48 @@ func TestAWhitespaceNegativeIsRefusedForItsWhitespaceAndNothingElse(t *testing.T
 				t.Errorf("reading %q as a separator gives a policy this parser refuses "+
 					"anyway (%v), so the vector pins that rule instead and the "+
 					"whitespace rule can be deleted without the suite noticing", c.ch, err)
+			}
+		})
+	}
+}
+
+// Cold-model gate run 11, D12. The test above rules out one lax reading and
+// not the other. Between `quorum` and `pi`, a reader that keeps the character
+// as ordinary CONTENT sees one field, an unknown keyword, and refuses for that
+// -- so with all three characters demoted to content, every vector named after
+// them stayed green. Only a unit test in this package noticed, and a second
+// implementer does not receive it.
+//
+// So each character ships again inside a URL, where the content reading
+// parses. Swapping it for an ordinary letter is that reading exactly; if the
+// swapped text does not parse, something other than the character is being
+// refused, and the vector pins nothing.
+func TestAWhitespaceNegativeIsNotContentEither(t *testing.T) {
+	for _, c := range []struct{ name, ch string }{
+		{"bad-vertical-tab-in-url", "\v"},
+		{"bad-form-feed-in-url", "\f"},
+		{"bad-carriage-return-in-url", "\r"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			text := policyText(t, c.name)
+			if strings.Count(text, c.ch) != 1 {
+				t.Fatalf("%s must carry exactly one %q", c.name, c.ch)
+			}
+			if _, err := Parse(text); err == nil {
+				t.Fatal("the vector must be refused")
+			}
+			asContent := strings.ReplaceAll(text, c.ch, "x")
+			if _, err := Parse(asContent); err != nil {
+				t.Errorf("reading %q as content gives a policy this parser refuses "+
+					"anyway (%v), so the vector does not separate an error from "+
+					"content", c.ch, err)
+			}
+			// And the placement must not be one where a split parses: that
+			// reading belongs to the other test, and a vector answering both
+			// would be answering neither cleanly.
+			if _, err := Parse(strings.ReplaceAll(text, c.ch, " ")); err == nil {
+				t.Errorf("reading %q as a separator parses too; place it in a field "+
+					"a split would break", c.ch)
 			}
 		})
 	}
@@ -342,21 +385,28 @@ func TestAKeyIsUsedOnceInAPolicy(t *testing.T) {
 	}
 }
 
-func TestAPolicyCarriesAtMostOneLogLine(t *testing.T) {
+// D2, corrected. `c2sp.org/tlog-policy` says only that "multiple log lines
+// with the same public key are not allowed" -- so several `log` lines with
+// distinct keys are grammatical, and §9.1 promises the policy is that grammar
+// "verbatim … not redefined here". An at-most-one rule shipped briefly in
+// this repository (6.5l-iii) and was a redefinition; a parallel session got it
+// right, and the two were reconciled. A Norn trust file still cannot carry a
+// second `log` line -- the correspondence rule requires a present one to name
+// `norn.trust.log_key` -- but that is the trust file's rule, not the grammar's.
+func TestLogLinesFollowTheUpstreamGrammar(t *testing.T) {
 	const a = "norn/x+bea4a666+AV6v97lmGyW99eHglI8syFAU2uY+/HuHHq0VYz9Rmio1"
 	const b = "norn/y+11111111+AV6v97lmGyW99eHglI8syFAU2uY+/HuHHq0VYz9Rmio2"
 	const key = "norn-witness/pi+051d1c51+BHeagefoK0s3F5shdMl1Ahsd1ZCE9MC5F5gvM3cLTnZa"
-	if _, err := Parse("log " + a + "\nwitness w " + key + "\nquorum w\n"); err != nil {
-		t.Fatalf("one log line must parse: %v", err)
-	}
-	// Two different keys, so the uniqueness rule cannot catch this one. §9.1
-	// asserts at most one; until now neither implementation enforced it, so
-	// the assertion was true of no parser.
+
 	two := "log " + a + "\nlog " + b + "\nwitness w " + key + "\nquorum w\n"
-	if _, err := Parse(two); err == nil {
-		t.Error("two `log` lines were accepted; §9.1 says a policy carries at " +
-			"most one, and a reader takes the log key from `norn.trust.log_key` " +
-			"rather than guessing which line meant it")
+	if _, err := Parse(two); err != nil {
+		t.Errorf("two `log` lines with distinct keys were refused (%v); upstream "+
+			"allows them and §9.1 says the grammar is not redefined here", err)
+	}
+	same := "log " + a + "\nlog " + a + "\nwitness w " + key + "\nquorum w\n"
+	if _, err := Parse(same); err == nil {
+		t.Error("two `log` lines with the SAME key were accepted; that is the one " +
+			"thing upstream rules out")
 	}
 }
 

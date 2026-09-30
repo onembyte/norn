@@ -1,6 +1,6 @@
 {
   "checkpoint_quorum_time": 1760003607,
-  "comment": "the served log and its proof bundles, produced by the Go implementation and validated by upstream libraries; see SPEC 12",
+  "comment": "the served log and its proof bundles, produced by the Go implementation and validated by upstream libraries; see SPEC 12. `installs` is the wg_pk, in hex, that a node installs for each device once its bundle checks out: the key replay gives (SPEC 8.1 condition 3), which is not always the key in the bundle's entry. `nas` rotated after it enrolled, so its bundle proves the enrol and names the old key",
   "devices": [
     "astral",
     "contractor",
@@ -9,6 +9,14 @@
     "pi-cam",
     "printer"
   ],
+  "installs": {
+    "astral": "2b59972f5875abb51ad9bb2d4713758133a7218ea839d467e0d2bea84a1cdf04",
+    "contractor": "67b3806f03a45ce98939e8708a6d220ec9c5c7a349d1600a1e929d9ee171115e",
+    "labelcap": "77de1dd1391289357e38f872d554271c96573cfb7c44914f769e760c03298e75",
+    "nas": "2a955fd268cf9d55ba383ba35237a3f626b5141ac92089ccb915e17b86bde82f",
+    "pi-cam": "651e98a37d3bf5b9e92b1ea36ba28b04587e80f4106bea1f0358a35ea7ee936c",
+    "printer": "3d7ea55db82bc49b0465dadf35a457ff85ef5956e0cae9ca4bd34ef3c87e701f"
+  },
   "log_key": "keys.json ed25519.logkey — the key trust.cbor names",
   "origin": "norn/nzxxe3rnorsxg5domv2c2mbqge",
   "size": 127
