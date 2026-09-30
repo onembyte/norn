@@ -25,7 +25,7 @@ func TestEveryForkNegativeIsRefused(t *testing.T) {
 		t.Fatalf("the fork negatives are missing: %v", err)
 	}
 	var doc struct {
-		Cases []struct{ Name, Says string } `json:"cases"`
+		Cases []struct{ Name, About string } `json:"cases"`
 	}
 	if err := json.Unmarshal(raw, &doc); err != nil {
 		t.Fatal(err)
@@ -47,8 +47,8 @@ func TestEveryForkNegativeIsRefused(t *testing.T) {
 			// accusation a third party should act on.
 			evidence, err := Parse(body)
 			if err != nil {
-				if !strings.Contains(err.Error(), c.Says) {
-					t.Errorf("refused for the wrong reason.\n  got:  %v\n  want: %s", err, c.Says)
+				if !strings.Contains(err.Error(), c.About) {
+					t.Errorf("refused for the wrong reason.\n  got:  %v\n  want: %s", err, c.About)
 				}
 				return
 			}
@@ -57,8 +57,8 @@ func TestEveryForkNegativeIsRefused(t *testing.T) {
 				t.Fatal("accepted evidence that proves no fork; a reader would act on a " +
 					"false accusation")
 			}
-			if !strings.Contains(err.Error(), c.Says) {
-				t.Errorf("refused for the wrong reason.\n  got:  %v\n  want: %s", err, c.Says)
+			if !strings.Contains(err.Error(), c.About) {
+				t.Errorf("refused for the wrong reason.\n  got:  %v\n  want: %s", err, c.About)
 			}
 		})
 	}

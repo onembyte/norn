@@ -825,15 +825,15 @@ func writeDetectCases(root, origin string, key ed25519.PrivateKey, entries [][]b
 	meta := map[string]any{
 		"cases": []map[string]string{
 			{"name": "accept-grown", "stored": "earlier.checkpoint", "serve": "../served",
-				"outcome": "accept", "says": "a head that grows on the one this node holds"},
+				"outcome": "accept", "about": "a head that grows on the one this node holds"},
 			{"name": "refuse-shrunk", "stored": "current.checkpoint", "serve": "honest-earlier",
-				"outcome": "refuse", "says": "a log does not shrink"},
+				"outcome": "refuse", "about": "a log does not shrink"},
 			{"name": "fork-at-the-same-size", "stored": "earlier.checkpoint",
 				"serve": "fork-same-size", "outcome": "fork",
-				"says": "two roots at one size"},
+				"about": "two roots at one size"},
 			{"name": "fork-on-a-shorter-branch", "stored": "current.checkpoint",
 				"serve": "fork-shorter", "outcome": "fork",
-				"says": "shorter and divergent is a fork, not a rollback"},
+				"about": "shorter and divergent is a fork, not a rollback"},
 			// Cold gate run 9, D10. §10 says a node that does not hold `at`
 			// MUST NOT accuse -- and inside §10's own loop it always holds
 			// `at`, because it stores a checkpoint only after replaying to it.
@@ -843,7 +843,7 @@ func writeDetectCases(root, origin string, key ed25519.PrivateKey, entries [][]b
 			// from a rollback, so it refuses and says so.
 			{"name": "shorter-with-no-held-branch", "stored": "current.checkpoint",
 				"serve": "fork-shorter", "outcome": "refuse", "held": "none",
-				"says": "a log does not shrink"},
+				"about": "a log does not shrink"},
 		},
 		"comment": "pairs, not single artifacts. `stored` is the checkpoint this reader " +
 			"already holds, over the entries in `../served`; `serve` is the log it is " +
@@ -1051,15 +1051,15 @@ func writeBadProofs(root, origin string, key ed25519.PrivateKey, entries [][]byt
 		"origin":  origin,
 		"rules":   bundleRules,
 		"cases": []map[string]string{
-			{"name": "open-schema", "says": "unknown field"},
-			{"name": "wrong-version", "says": "unsupported version"},
-			{"name": "device-not-in-entry", "says": "carries an entry about"},
-			{"name": "no-quorum", "says": "no quorum cosigned"},
-			{"name": "wrong-origin", "says": "is for origin"},
-			{"name": "wrong-entry", "says": "inclusion proof"},
-			{"name": "foreign-checkpoint", "says": "no valid signature from a trusted key"},
-			{"name": "tampered-proof", "says": "inclusion proof"},
-			{"name": "wrong-log-key", "says": "no valid signature from a trusted key"},
+			{"name": "open-schema", "about": "unknown field"},
+			{"name": "wrong-version", "about": "unsupported version"},
+			{"name": "device-not-in-entry", "about": "carries an entry about"},
+			{"name": "no-quorum", "about": "no quorum cosigned"},
+			{"name": "wrong-origin", "about": "is for origin"},
+			{"name": "wrong-entry", "about": "inclusion proof"},
+			{"name": "foreign-checkpoint", "about": "no valid signature from a trusted key"},
+			{"name": "tampered-proof", "about": "inclusion proof"},
+			{"name": "wrong-log-key", "about": "no valid signature from a trusted key"},
 		},
 		"comment": "bundles that MUST be refused under the log key above. Each differs " +
 			"from a valid bundle in exactly one thing, so a verifier that skips one " +
@@ -1168,22 +1168,22 @@ func writeBadServed(root, served string, size int64) error {
 		"cases": []map[string]any{
 			{"name": "tampered-entry-bundle", "path": bundlePath,
 				"file": "tampered-entry-bundle.bin",
-				"says": "one byte of one entry changed: the bundle still frames, and the " +
+				"about": "one byte of one entry changed: the bundle still frames, and the " +
 					"tree it builds is not the one the checkpoint is signed over"},
 			{"name": "missing-entry-bundle", "path": bundlePath, "remove": true,
-				"says": "a log that will not serve its entries cannot be replayed, and a " +
+				"about": "a log that will not serve its entries cannot be replayed, and a " +
 					"verifier must refuse rather than report what it has"},
 			{"name": "consistent-tampered-log", "files": []map[string]string{
 				{"path": bundlePath, "file": "consistent-entry-bundle.bin"},
 				{"path": tilePath, "file": "consistent-hash-tile.bin"},
 			},
-				"says": "the entries and the hash tile are tampered *together*, so the " +
+				"about": "the entries and the hash tile are tampered *together*, so the " +
 					"served log agrees with itself and disagrees with the head the " +
 					"checkpoint is signed over: only rebuilding the tree and comparing " +
 					"that head can refuse it"},
 			{"name": "tampered-hash-tile", "path": tilePath,
 				"file": "tampered-hash-tile.bin",
-				"says": "one byte of one leaf hash changed: the entries and the signed " +
+				"about": "one byte of one leaf hash changed: the entries and the signed " +
 					"head are untouched, so a verifier that reaches the head without " +
 					"opening `tile/0/...` sees nothing wrong, and serves the corrupt " +
 					"tile onward to peers asking it for proofs"},
@@ -1716,26 +1716,26 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 			"bad-size-mismatch":            {"section": "11.1", "says": "`conflicting`'s size equals `size`"},
 		},
 		"cases": []map[string]string{
-			{"name": "bad-oversize", "says": "exceeds"},
-			{"name": "bad-open-schema", "says": "unknown field"},
-			{"name": "bad-wrong-version", "says": "version"},
-			{"name": "bad-size-above-held", "says": "can only speak for what it holds"},
+			{"name": "bad-oversize", "about": "exceeds"},
+			{"name": "bad-open-schema", "about": "unknown field"},
+			{"name": "bad-wrong-version", "about": "version"},
+			{"name": "bad-size-above-held", "about": "can only speak for what it holds"},
 			{"name": "bad-policy-says-quorum-none",
-				"says": "no quorum cosigned it"},
+				"about": "no quorum cosigned it"},
 			{"name": "bad-policy-unparseable",
-				"says": "not a `tlog-policy`"},
+				"about": "not a `tlog-policy`"},
 			{"name": "bad-proof-at-same-size",
-				"says": "requires none"},
+				"about": "requires none"},
 			{"name": "bad-consistent",
-				"says": "nothing here is a fork"},
+				"about": "nothing here is a fork"},
 			{"name": "bad-other-origin",
-				"says": "the held checkpoint"},
+				"about": "the held checkpoint"},
 			{"name": "bad-forged-proof",
-				"says": "does not chain"},
+				"about": "does not chain"},
 			{"name": "bad-unverifiable-conflicting",
-				"says": "the conflicting checkpoint"},
+				"about": "the conflicting checkpoint"},
 			{"name": "bad-size-mismatch",
-				"says": "claims a disagreement"},
+				"about": "claims a disagreement"},
 		},
 		"comment": "evidence that MUST NOT be acted on, checked against trust.cbor. " +
 			"bad-consistent is a log and its own earlier self -- every signature valid, " +

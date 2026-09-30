@@ -948,8 +948,8 @@ func TestEveryDetectVectorReachesItsOutcome(t *testing.T) {
 	}
 	var doc struct {
 		Cases []struct {
-			Name, Stored, Serve, Outcome, Says string
-			Held                               string `json:"held"`
+			Name, Stored, Serve, Outcome, About string
+			Held                                string `json:"held"`
 		} `json:"cases"`
 	}
 	if err := json.Unmarshal(raw, &doc); err != nil {
@@ -1001,8 +1001,8 @@ func TestEveryDetectVectorReachesItsOutcome(t *testing.T) {
 					t.Error("called this a fork; it is an older view of the same log, " +
 						"and an accusation that cannot be proved must not be made")
 				}
-				if !strings.Contains(err.Error(), c.Says) {
-					t.Errorf("refused for the wrong reason.\n  got:  %v\n  want: %s", err, c.Says)
+				if !strings.Contains(err.Error(), c.About) {
+					t.Errorf("refused for the wrong reason.\n  got:  %v\n  want: %s", err, c.About)
 				}
 			default:
 				t.Fatalf("unknown outcome %q", c.Outcome)

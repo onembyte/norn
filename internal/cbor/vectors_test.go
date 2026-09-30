@@ -24,8 +24,8 @@ func TestHostileInputIsRefusedByTheProfile(t *testing.T) {
 	}
 	var doc struct {
 		Cases []struct {
-			Name, Says string
-			Accepted   bool `json:"accepted"`
+			Name, About string
+			Accepted    bool `json:"accepted"`
 		} `json:"cases"`
 	}
 	if err := json.Unmarshal(raw, &doc); err != nil {
@@ -64,8 +64,8 @@ func TestHostileInputIsRefusedByTheProfile(t *testing.T) {
 			if err == nil {
 				t.Fatalf("accepted hostile input, decoding to %T", value)
 			}
-			if !strings.Contains(err.Error(), c.Says) {
-				t.Errorf("refused for the wrong reason.\n  got:  %v\n  want: %s", err, c.Says)
+			if !strings.Contains(err.Error(), c.About) {
+				t.Errorf("refused for the wrong reason.\n  got:  %v\n  want: %s", err, c.About)
 			}
 		})
 	}
@@ -193,8 +193,8 @@ func TestEveryForbiddenProfileItemHasADecoderCase(t *testing.T) {
 	}
 	var doc struct {
 		Cases []struct {
-			Name, Says string
-			Accepted   bool `json:"accepted"`
+			Name, About string
+			Accepted    bool `json:"accepted"`
 		} `json:"cases"`
 	}
 	if err := json.Unmarshal(raw, &doc); err != nil {

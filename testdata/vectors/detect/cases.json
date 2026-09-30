@@ -1,38 +1,38 @@
 {
   "cases": [
     {
+      "about": "a head that grows on the one this node holds",
       "name": "accept-grown",
       "outcome": "accept",
-      "says": "a head that grows on the one this node holds",
       "serve": "../served",
       "stored": "earlier.checkpoint"
     },
     {
+      "about": "a log does not shrink",
       "name": "refuse-shrunk",
       "outcome": "refuse",
-      "says": "a log does not shrink",
       "serve": "honest-earlier",
       "stored": "current.checkpoint"
     },
     {
+      "about": "two roots at one size",
       "name": "fork-at-the-same-size",
       "outcome": "fork",
-      "says": "two roots at one size",
       "serve": "fork-same-size",
       "stored": "earlier.checkpoint"
     },
     {
+      "about": "shorter and divergent is a fork, not a rollback",
       "name": "fork-on-a-shorter-branch",
       "outcome": "fork",
-      "says": "shorter and divergent is a fork, not a rollback",
       "serve": "fork-shorter",
       "stored": "current.checkpoint"
     },
     {
+      "about": "a log does not shrink",
       "held": "none",
       "name": "shorter-with-no-held-branch",
       "outcome": "refuse",
-      "says": "a log does not shrink",
       "serve": "fork-shorter",
       "stored": "current.checkpoint"
     }

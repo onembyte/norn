@@ -607,7 +607,7 @@ def write_requests(out: pathlib.Path) -> None:
             # is what bounds the limit from below.
             hostile.append({"name": name, "accepted": True})
         else:
-            hostile.append({"name": name, "says": says})
+            hostile.append({"name": name, "about": says})
     hostile_rules = {
         "bare-null": {"section": "4.0", "says": "an OPTIONAL field is *absent*, never `null`"},
         "bare-undefined": {"section": "4.0", "says": "Floats, tags, `undefined`, indefinite-length items"},

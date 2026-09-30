@@ -1060,8 +1060,9 @@ Two consequences worth stating rather than discovering:
 ```
 loop every T_g or on demand:
   cp := fetch checkpoint (log_urls, then peers)         # part 6
-  # The SIGNATURE decides first. A checkpoint signed by a key this anchor does
-  # not trust is refused for that, whatever origin it names:
+  # The SIGNATURE decides first, in this document's order, which decides only
+  # which refusal is reported (§12). A checkpoint signed by a key this anchor
+  # does not trust is refused for that, whatever origin it names:
   # `checkpoints-bad/10-wrong-body-origin` is about a checkpoint this
   # network's own key signed under this network's name, and until the
   # signature has been checked there is no reason to believe any field in
@@ -1170,7 +1171,9 @@ Deterministic CBOR per §4.0, a closed map of exactly these seven keys:
 | `proof` | array of bytes (32 each) | **RFC 6962 §2.1.2** consistency proof chaining (`size`, `held_root`) to `held`'s own head, in that document's node order — the algorithm is not restated here and a reader implementing their own ordering will reject sound evidence. **Empty when `size` equals `held`'s size**, where the two signatures say it alone |
 | `policy` | text | the `tlog-policy` the **accuser** was verifying under, so a reader can see which witnesses were meant to prevent this. **Informational.** It MUST parse as `c2sp.org/tlog-policy` — a closed schema with a stated grammar is part of the format — and a reader MUST NOT verify anything under it. The reader uses **its own** policy: the trust file's, or one it has replayed (§9.4). Verifying under the carried field hands the accuser the quorum rule, and an accuser writing `quorum none` then gets two uncosigned checkpoints accepted as proof of equivocation — which, by §11 rule 4, takes the network down until an operator installs a new trust file. This implementation did exactly that until cold-model gate run 7 |
 
-A reader MUST, in this order:
+A reader MUST perform all four checks. They are listed in the order the
+reference implementation performs them, and that order decides only which
+refusal a reader reports (§12), never whether it refuses:
 
 1. verify **both** checkpoints per §10 — this network's origin, this network's
    log key, and a satisfied witness quorum **under the reader's own policy,
@@ -1244,16 +1247,33 @@ suite is checked only against its own author.
 | `receipt.json` | `{comment, origin, leaf_hash, deadline, text_sha256}`, where `text_sha256` is `SHA-256` of the **signed text** — through the newline ending the last text line, excluding the blank separator and the signature lines |
 | `receipts-bad/<name>.note` | receipts that MUST be refused (§7), each read exactly as `receipt.note` is: under `trust.cbor`'s `log_key` and `origin`, with no entry in hand and no clock. `cases.json` lists them, and its `rules` map names the §7 phrase each one breaks |
 | `checkpoints-bad/<NN-case>.checkpoint` | checkpoints that MUST be refused, each served in place of `served/checkpoint` over the honest tiles. `cases.json` lists them, and its `signature_blind_accepts` names the ones a verifier that never calls Ed25519 accepts. That set is **computed** from the shipped files, not asserted |
-| `entries-hostile/<name>.cbor` | input that is not an entry and never could be, for §4.0's three resource limits — the entry size, the nesting depth and the map-key cap. `cases.json` says what each refusal must be about, and marks the cases that sit exactly **at** a limit and MUST be accepted |
+| `entries-hostile/<name>.cbor` | input that is not an entry and never could be, for §4.0's three resource limits — the entry size, the nesting depth and the map-key cap. `cases.json` gives each refusal's `about`, and marks the cases that sit exactly **at** a limit and MUST be accepted |
 | `proven/cases.json` | the devices admitted at four evaluation times (§5.3), including the boundary where `expires` equals `T` |
 | `fork/` | `evidence.cbor` and the `conflicting.checkpoint` it is about (§11.1), plus `bad-consistent` and `bad-other-origin`, which MUST be refused. `cases.json` lists them |
 | `anchors/` | OpenTimestamps proofs written by `python-opentimestamps`: `checkpoint-<size>.ots`, `sample.ots` over an arbitrary digest, and a calendar's reply. **`cases.json` states each proof's digest in hex and names the bytes that produce it** — for the checkpoint proof, `served/checkpoint` through the newline that terminates the blank separator line, which is the §6 range and *not* the three-line body. Without it a reader has to parse the OpenTimestamps container, a format this document does not describe, before it can tell which of three byte ranges was stamped |
-| `proofs-bad/<name>.bundle` | bundles that MUST be refused (§8.1); `cases.json` gives the log key to check them under and what each refusal must be about |
+| `proofs-bad/<name>.bundle` | bundles that MUST be refused (§8.1); `cases.json` gives the log key to check them under and each refusal's `about` |
 | `detect/` | the stored-checkpoint sequences §10 needs, each branch with its own tiles, plus `staleness.json` for §8.1's condition 4 |
 | `served-rotated/` | the served head signed by a published `log_key` (§9.4), with `cases.json` giving the key, its `since_index` and its `overlap`. Serve it over `served/`'s tiles |
 | `served-superseded/` | the served head cosigned by two of three witnesses, for §9.4's policy half. Serve it over `served/`'s tiles |
 | `served-bad/` | §6's refusals for a served log, which is a directory rather than a file: each case names the path to replace or delete over an honest copy of `served/` |
 | `SHA256SUMS` | every file above, for a reader who has the suite and not its generators |
+
+**Two keys recur in the `cases.json` files, and they bind different things.**
+A `rules` map, where a directory has one, gives each negative a `section` and a
+`says`: `says` is a phrase that appears **verbatim** in that section of this
+document, so a negative cannot exist without the rule it is about being written
+where a reader will look, and a test fails when the phrase moves. A case list's
+**`about`** is what the refusal is about, in the reference implementation's own
+words: a hint a second implementer maps to their own vocabulary by hand, and
+**not text a conforming reader has to produce**. Outside §5.2, whose reason
+codes are normative and shipped as `.reason` files, **a refusal's reason is not
+normative**: the suite binds accept or refuse, and the rule each negative is
+named for. Where a file breaks more than one rule — `proofs-bad/foreign-checkpoint`
+is signed under another log's name *and* names another origin — which rule a
+reader reports is decided by the order it checks in, and that order is the
+reader's own (§10, §11.1). Cold gate run 11 rebuilt its error vocabulary from
+these strings to make the suite pass, and three of its catches rested on a
+string match alone; the strings were never the contract, and now say so.
 
 ### 12.1 Coverage — what is and is not vectored
 
@@ -1367,6 +1387,15 @@ admits its holes, so:
   entry-layer copy of a request rule; this one does not, and that is a choice.
 - **`quorum none` accepting an uncosigned head.** It needs a second trust
   anchor, and one is not shipped.
+- **The order of checks in §10 and §11.1.** Every negative in `checkpoints-bad/`,
+  `proofs-bad/` and `fork/` is refused whichever order a reader checks in, so
+  accept-or-refuse cannot see the order, and a refusal's reason is not
+  normative outside §5.2. `proofs-bad/foreign-checkpoint`, `fork/bad-size-above-held`
+  and `fork/bad-unverifiable-conflicting` break more than one rule each, and
+  their `about` is the reference's order, not a reader's obligation (cold
+  gate run 11, D10). A closed reason-code list for each refusing layer, in
+  §5.2's style, would make the order observable; that is a protocol decision
+  this version does not take.
 - **Two other origin comparisons, against anything but an unrelated
   origin.** §8.1 checks a bundle's checkpoint "per §10", and §11.1 checks
   both checkpoints in fork evidence. Each compares with `norn.trust.origin`

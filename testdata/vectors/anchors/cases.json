@@ -1,16 +1,16 @@
 {
   "cases": [
     {
+      "about": "SPEC 6: the stamped value is SHA-256 of the note's leading bytes through the blank separator line -- the three body lines PLUS the blank line, four 0x0A in all. Not the three-line body, and not SPEC 7's signed text, which stops one 0x0A earlier. Those are three different byte ranges",
       "digest": "4624d9d29d74c3154743b73feb2e6bccf78c1bd6170cde0a3bab61edec47ce45",
       "name": "checkpoint-129.ots",
       "over": "served/checkpoint",
-      "range": "through the newline that terminates the blank separator line",
-      "says": "SPEC 6: the stamped value is SHA-256 of the note's leading bytes through the blank separator line -- the three body lines PLUS the blank line, four 0x0A in all. Not the three-line body, and not SPEC 7's signed text, which stops one 0x0A earlier. Those are three different byte ranges"
+      "range": "through the newline that terminates the blank separator line"
     },
     {
+      "about": "a proof over an arbitrary digest, deliberately unrelated to this fixture: it exercises the parser against bytes neither Norn implementation wrote. Nothing in the suite produces this digest -- the file states it",
       "digest": "73485da7e80f34fabbc00be1d96a1eb993106825d9d19469cbc20914c4ba3696",
-      "name": "sample.ots",
-      "says": "a proof over an arbitrary digest, deliberately unrelated to this fixture: it exercises the parser against bytes neither Norn implementation wrote. Nothing in the suite produces this digest -- the file states it"
+      "name": "sample.ots"
     }
   ],
   "comment": "OpenTimestamps proofs, written by `python-opentimestamps`. Anchoring is advisory (D-009), so a reader that computes the wrong byte range never matches a stamp and never says so -- which is why the digest is stated here rather than left to be derived. `calendar-response.bin` is what POST <calendar>/digest returns for the checkpoint digest above: a bare timestamp tree with no file header"

@@ -539,14 +539,15 @@ func TestTheVerifierProcedureComparesRootsBeforeApplyingTheSizeRule(t *testing.T
 }
 
 // §12.1 says `served/` is verified "signature first", and
-// `proofs-bad/cases.json` requires `foreign-checkpoint` to be refused about a
-// missing trusted signature rather than about its origin. §10 checked the
-// origin first, which contradicts both.
+// `proofs-bad/cases.json`'s `about` for `foreign-checkpoint` is a missing
+// trusted signature, not its origin. §10 checked the origin first, which
+// contradicted both. The order is this document's own and decides only which
+// refusal is reported (§12); this pins the document against itself.
 func TestTheVerifierProcedureChecksTheSignatureBeforeTheOrigin(t *testing.T) {
 	block := verifierProcedure(t)
 	mustOrder(t, block, "verify log signature", "cp.origin == norn.trust.origin",
 		"A checkpoint signed by a key this anchor does not trust must be refused for "+
-			"that, whatever origin it names -- `proofs-bad/foreign-checkpoint` says so, "+
+			"that, whatever origin it names -- `proofs-bad/foreign-checkpoint` is about that, "+
 			"and §12.1 calls the loop `signature first`.")
 }
 
@@ -1456,6 +1457,92 @@ func TestTheEncodingProfileNamesEveryArtifactItGoverns(t *testing.T) {
 			t.Errorf("§4.0's opening sentence does not name %q, so a reader scopes "+
 				"their decoder to three artifacts and has to come back for two more",
 				needle)
+		}
+	}
+}
+
+// Cold-model gate run 11, defect D10. The suite scored refusals against
+// strings that appear nowhere in the document, under the same key -- `says` --
+// that the `rules` maps use for a phrase that MUST appear there. A second
+// implementer rebuilt an error vocabulary from `cases.json` to pass. Now a
+// case's hint is `about`, `says` is reserved for placement, §12 defines both,
+// and every refusing case in the directories that score on a hint carries one.
+func TestSaysIsAPlacementKeyAndAboutIsAHint(t *testing.T) {
+	doc := load(t)
+	section, ok := doc.Section("12")
+	if !ok {
+		t.Fatal("no §12")
+	}
+	for _, phrase := range []string{
+		"**`about`** is what the refusal is about",
+		"**not text a conforming reader has to produce**",
+		"**a refusal's reason is not\nnormative**",
+	} {
+		if !strings.Contains(section.Body, phrase) {
+			t.Errorf("§12 no longer says %q, which is what makes `about` a hint and not a contract", phrase)
+		}
+	}
+
+	root := vectorRoot(t)
+	files, err := filepath.Glob(filepath.Join(root, "*", "cases.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) == 0 {
+		t.Fatal("no cases.json under the vector root")
+	}
+	scoredOnAHint := map[string]bool{
+		"entries-hostile": true, "proofs-bad": true, "fork": true, "served-bad": true,
+	}
+	for _, file := range files {
+		dir := filepath.Base(filepath.Dir(file))
+		raw, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var top map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &top); err != nil {
+			t.Fatalf("%s: %v", file, err)
+		}
+		for key, value := range top {
+			if key == "rules" {
+				// The one place `says` belongs: beside a `section`.
+				var rules map[string]map[string]any
+				if err := json.Unmarshal(value, &rules); err != nil {
+					t.Fatalf("%s: `rules` is not a map of maps: %v", file, err)
+				}
+				for name, rule := range rules {
+					if _, ok := rule["says"]; !ok {
+						t.Errorf("%s/rules/%s has no `says`", dir, name)
+					}
+					if _, ok := rule["about"]; ok {
+						t.Errorf("%s/rules/%s carries `about`; a rule cites the document, a case hints", dir, name)
+					}
+				}
+				continue
+			}
+			if strings.Contains(string(value), `"says"`) {
+				t.Errorf("%s/%s carries a `says`; outside `rules` the hint is `about`, "+
+					"so nobody reads it as text their reader has to produce", dir, key)
+			}
+		}
+		if !scoredOnAHint[dir] {
+			continue
+		}
+		var doc struct {
+			Cases []map[string]any `json:"cases"`
+		}
+		if err := json.Unmarshal(raw, &doc); err != nil {
+			t.Fatalf("%s: %v", file, err)
+		}
+		for _, c := range doc.Cases {
+			if accepted, _ := c["accepted"].(bool); accepted {
+				continue
+			}
+			about, _ := c["about"].(string)
+			if strings.TrimSpace(about) == "" {
+				t.Errorf("%s/%v has no `about`; a refusal with no hint is scored against nothing", dir, c["name"])
+			}
 		}
 	}
 }

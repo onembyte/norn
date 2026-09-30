@@ -1,40 +1,40 @@
 {
   "cases": [
     {
-      "name": "open-schema",
-      "says": "unknown field"
+      "about": "unknown field",
+      "name": "open-schema"
     },
     {
-      "name": "wrong-version",
-      "says": "unsupported version"
+      "about": "unsupported version",
+      "name": "wrong-version"
     },
     {
-      "name": "device-not-in-entry",
-      "says": "carries an entry about"
+      "about": "carries an entry about",
+      "name": "device-not-in-entry"
     },
     {
-      "name": "no-quorum",
-      "says": "no quorum cosigned"
+      "about": "no quorum cosigned",
+      "name": "no-quorum"
     },
     {
-      "name": "wrong-origin",
-      "says": "is for origin"
+      "about": "is for origin",
+      "name": "wrong-origin"
     },
     {
-      "name": "wrong-entry",
-      "says": "inclusion proof"
+      "about": "inclusion proof",
+      "name": "wrong-entry"
     },
     {
-      "name": "foreign-checkpoint",
-      "says": "no valid signature from a trusted key"
+      "about": "no valid signature from a trusted key",
+      "name": "foreign-checkpoint"
     },
     {
-      "name": "tampered-proof",
-      "says": "inclusion proof"
+      "about": "inclusion proof",
+      "name": "tampered-proof"
     },
     {
-      "name": "wrong-log-key",
-      "says": "no valid signature from a trusted key"
+      "about": "no valid signature from a trusted key",
+      "name": "wrong-log-key"
     }
   ],
   "comment": "bundles that MUST be refused under the log key above. Each differs from a valid bundle in exactly one thing, so a verifier that skips one check accepts exactly one of them",

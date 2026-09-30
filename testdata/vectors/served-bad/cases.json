@@ -1,18 +1,19 @@
 {
   "cases": [
     {
+      "about": "one byte of one entry changed: the bundle still frames, and the tree it builds is not the one the checkpoint is signed over",
       "file": "tampered-entry-bundle.bin",
       "name": "tampered-entry-bundle",
-      "path": "tile/entries/000.p/129",
-      "says": "one byte of one entry changed: the bundle still frames, and the tree it builds is not the one the checkpoint is signed over"
+      "path": "tile/entries/000.p/129"
     },
     {
+      "about": "a log that will not serve its entries cannot be replayed, and a verifier must refuse rather than report what it has",
       "name": "missing-entry-bundle",
       "path": "tile/entries/000.p/129",
-      "remove": true,
-      "says": "a log that will not serve its entries cannot be replayed, and a verifier must refuse rather than report what it has"
+      "remove": true
     },
     {
+      "about": "the entries and the hash tile are tampered *together*, so the served log agrees with itself and disagrees with the head the checkpoint is signed over: only rebuilding the tree and comparing that head can refuse it",
       "files": [
         {
           "file": "consistent-entry-bundle.bin",
@@ -23,14 +24,13 @@
           "path": "tile/0/000.p/129"
         }
       ],
-      "name": "consistent-tampered-log",
-      "says": "the entries and the hash tile are tampered *together*, so the served log agrees with itself and disagrees with the head the checkpoint is signed over: only rebuilding the tree and comparing that head can refuse it"
+      "name": "consistent-tampered-log"
     },
     {
+      "about": "one byte of one leaf hash changed: the entries and the signed head are untouched, so a verifier that reaches the head without opening `tile/0/...` sees nothing wrong, and serves the corrupt tile onward to peers asking it for proofs",
       "file": "tampered-hash-tile.bin",
       "name": "tampered-hash-tile",
-      "path": "tile/0/000.p/129",
-      "says": "one byte of one leaf hash changed: the entries and the signed head are untouched, so a verifier that reaches the head without opening `tile/0/...` sees nothing wrong, and serves the corrupt tile onward to peers asking it for proofs"
+      "path": "tile/0/000.p/129"
     }
   ],
   "comment": "a served log is a directory, so each case names the path to replace with `file`, the paths to replace with `files`, or the path to delete with `remove`, over an otherwise honest copy of `served/`. Every one MUST be refused",

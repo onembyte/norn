@@ -35,7 +35,7 @@ func TestTheAnchorsDeclareTheDigestTheyStamp(t *testing.T) {
 			Name   string `json:"name"`
 			Over   string `json:"over"`
 			Digest string `json:"digest"`
-			Says   string `json:"says"`
+			About  string `json:"about"`
 		} `json:"cases"`
 	}
 	if err := json.Unmarshal(raw, &doc); err != nil {
@@ -88,7 +88,7 @@ func TestTheAnchorsDeclareTheDigestTheyStamp(t *testing.T) {
 				t.Errorf("the shipped proof does not chain from the digest the "+
 					"manifest declares: %v", err)
 			}
-			if c.Says == "" {
+			if c.About == "" {
 				t.Error("the case says nothing about which bytes it covers, which is " +
 					"the one thing a reader needs and cannot derive")
 			}

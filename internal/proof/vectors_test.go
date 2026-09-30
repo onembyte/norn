@@ -102,8 +102,8 @@ func TestEveryProofNegativeIsRefused(t *testing.T) {
 		t.Fatalf("the proof negatives are missing: %v", err)
 	}
 	var doc struct {
-		LogKey string                        `json:"log_key"`
-		Cases  []struct{ Name, Says string } `json:"cases"`
+		LogKey string                         `json:"log_key"`
+		Cases  []struct{ Name, About string } `json:"cases"`
 	}
 	if err := json.Unmarshal(raw, &doc); err != nil {
 		t.Fatal(err)
@@ -120,8 +120,8 @@ func TestEveryProofNegativeIsRefused(t *testing.T) {
 			}
 			bundle, err := Decode(body)
 			if err != nil {
-				if !strings.Contains(err.Error(), c.Says) {
-					t.Errorf("refused for the wrong reason.\n  got:  %v\n  want: %s", err, c.Says)
+				if !strings.Contains(err.Error(), c.About) {
+					t.Errorf("refused for the wrong reason.\n  got:  %v\n  want: %s", err, c.About)
 				}
 				return
 			}
@@ -129,8 +129,8 @@ func TestEveryProofNegativeIsRefused(t *testing.T) {
 			if err == nil {
 				t.Fatal("accepted a bundle that proves nothing about this log")
 			}
-			if !strings.Contains(err.Error(), c.Says) {
-				t.Errorf("refused for the wrong reason.\n  got:  %v\n  want: %s", err, c.Says)
+			if !strings.Contains(err.Error(), c.About) {
+				t.Errorf("refused for the wrong reason.\n  got:  %v\n  want: %s", err, c.About)
 			}
 		})
 	}

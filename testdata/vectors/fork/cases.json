@@ -1,52 +1,52 @@
 {
   "cases": [
     {
-      "name": "bad-oversize",
-      "says": "exceeds"
+      "about": "exceeds",
+      "name": "bad-oversize"
     },
     {
-      "name": "bad-open-schema",
-      "says": "unknown field"
+      "about": "unknown field",
+      "name": "bad-open-schema"
     },
     {
-      "name": "bad-wrong-version",
-      "says": "version"
+      "about": "version",
+      "name": "bad-wrong-version"
     },
     {
-      "name": "bad-size-above-held",
-      "says": "can only speak for what it holds"
+      "about": "can only speak for what it holds",
+      "name": "bad-size-above-held"
     },
     {
-      "name": "bad-policy-says-quorum-none",
-      "says": "no quorum cosigned it"
+      "about": "no quorum cosigned it",
+      "name": "bad-policy-says-quorum-none"
     },
     {
-      "name": "bad-policy-unparseable",
-      "says": "not a `tlog-policy`"
+      "about": "not a `tlog-policy`",
+      "name": "bad-policy-unparseable"
     },
     {
-      "name": "bad-proof-at-same-size",
-      "says": "requires none"
+      "about": "requires none",
+      "name": "bad-proof-at-same-size"
     },
     {
-      "name": "bad-consistent",
-      "says": "nothing here is a fork"
+      "about": "nothing here is a fork",
+      "name": "bad-consistent"
     },
     {
-      "name": "bad-other-origin",
-      "says": "the held checkpoint"
+      "about": "the held checkpoint",
+      "name": "bad-other-origin"
     },
     {
-      "name": "bad-forged-proof",
-      "says": "does not chain"
+      "about": "does not chain",
+      "name": "bad-forged-proof"
     },
     {
-      "name": "bad-unverifiable-conflicting",
-      "says": "the conflicting checkpoint"
+      "about": "the conflicting checkpoint",
+      "name": "bad-unverifiable-conflicting"
     },
     {
-      "name": "bad-size-mismatch",
-      "says": "claims a disagreement"
+      "about": "claims a disagreement",
+      "name": "bad-size-mismatch"
     }
   ],
   "comment": "evidence that MUST NOT be acted on, checked against trust.cbor. bad-consistent is a log and its own earlier self -- every signature valid, both heads cosigned, the roots agreeing. bad-other-origin is a real fork of another network, which this anchor has no business accepting. `says` is what the refusal must be about. `policy-not-the-readers.cbor` is not listed here: it carries a policy the reader does not share and MUST still prove the fork, because the field is informational and the reader's own policy decides",

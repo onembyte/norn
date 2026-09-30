@@ -128,7 +128,7 @@ def main() -> int:
                 "over": "served/checkpoint",
                 "range": "through the newline that terminates the blank separator line",
                 "digest": hashlib.sha256(body.encode()).hexdigest(),
-                "says": "SPEC 6: the stamped value is SHA-256 of the note's leading "
+                "about": "SPEC 6: the stamped value is SHA-256 of the note's leading "
                         "bytes through the blank separator line -- the three body "
                         "lines PLUS the blank line, four 0x0A in all. Not the "
                         "three-line body, and not SPEC 7's signed text, which stops "
@@ -137,7 +137,7 @@ def main() -> int:
             {
                 "name": "sample.ots",
                 "digest": hashlib.sha256(b"norn checkpoint at size 90").hexdigest(),
-                "says": "a proof over an arbitrary digest, deliberately unrelated to "
+                "about": "a proof over an arbitrary digest, deliberately unrelated to "
                         "this fixture: it exercises the parser against bytes neither "
                         "Norn implementation wrote. Nothing in the suite produces "
                         "this digest -- the file states it",
