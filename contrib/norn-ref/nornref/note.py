@@ -108,6 +108,11 @@ def split(signed: str) -> tuple[str, list[tuple[str, bytes]]]:
             raw = base64.b64decode(blob, validate=True)
         except (ValueError, base64.binascii.Error) as exc:
             raise NoteError("signature is not base64") from exc
+        # Exactly its encoding (SPEC 7): `validate=True` checks the alphabet
+        # and not the padding bits, so one payload had two spellings (cold
+        # gate run 12, D8).
+        if base64.b64encode(raw).decode("ascii") != blob:
+            raise NoteError("the signature line is not the encoding of its payload")
         if len(raw) != 68:
             raise NoteError("signature must be 4-byte key id plus 64-byte signature")
         signatures.append((name, raw))

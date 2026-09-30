@@ -1039,3 +1039,98 @@ func logKeyID(t *testing.T) string {
 	}
 	return string(v.ID())
 }
+
+// --- Cold-model gate run 12, defect D2 ----------------------------------
+//
+// §10 said "a witness the policy names" and never said what naming is. Every
+// shipped witness sat in `group home`, so a reader holding only the witnesses
+// a quorum reaches to their lines passed the suite. The policy names a
+// witness when it carries a `witness` directive for it, used or not.
+func TestABadLineFromAListedButUnusedWitnessRefusesTheHead(t *testing.T) {
+	dir := filepath.Join(vectors(), "served-unused-witness")
+	raw, err := os.ReadFile(filepath.Join(dir, "cases.json"))
+	if err != nil {
+		t.Fatalf("§10 does not say what naming a witness means and no vector reaches it: %v", err)
+	}
+	var doc struct {
+		ServeOver string `json:"serve_over"`
+		Trust     string `json:"trust"`
+		Stranger  string `json:"stranger"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	trustFile := filepath.Join(vectors(), doc.Trust)
+	anchorRaw, err := os.ReadFile(trustFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	anchor, err := trust.Parse(anchorRaw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rules, err := policy.Parse(anchor.Policy)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The shape: the policy lists the stranger and uses it nowhere; the head
+	// carries one line under its name with its genuine key id and a
+	// signature that does not verify -- nothing else is wrong with it.
+	var listed string
+	for _, w := range rules.Witnesses {
+		if v, err := note.ParseVerifierKey(w.Key); err == nil && v.Name == doc.Stranger {
+			listed = w.Key
+		}
+	}
+	if listed == "" {
+		t.Fatalf("the policy does not list %s", doc.Stranger)
+	}
+	var everyoneElse []string
+	for _, w := range rules.Witnesses {
+		if w.Key != listed {
+			everyoneElse = append(everyoneElse, w.Name)
+		}
+	}
+	if !rules.Satisfied(everyoneElse) {
+		t.Fatal("the quorum needs the stranger, so the line's absence, not its presence, would refuse")
+	}
+	signed, err := os.ReadFile(filepath.Join(dir, "checkpoint"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, sigs, err := note.Split(string(signed))
+	if err != nil {
+		t.Fatal(err)
+	}
+	v, _ := note.ParseVerifierKey(listed)
+	var strangerLines int
+	for _, sig := range sigs {
+		if sig.Name != doc.Stranger {
+			continue
+		}
+		strangerLines++
+		if !bytes.Equal(sig.KeyID, v.ID()) {
+			t.Fatal("the line's key id is not the stranger's, so it names nobody and is ignored")
+		}
+	}
+	if strangerLines != 1 {
+		t.Fatalf("%d lines from %s; the case carries exactly one", strangerLines, doc.Stranger)
+	}
+	if _, err := cosign.Verify(string(signed), []string{listed}); err == nil {
+		t.Fatal("the stranger's line verifies, so nothing here is bad")
+	}
+
+	// Then the verdicts, through the binary.
+	log := servedWithCheckpoint(t, filepath.Join(dir, "checkpoint"))
+	out, err := exec.Command(nornBinary(t), "verify", "-trust", trustFile, "-log", log).CombinedOutput()
+	if err == nil {
+		t.Fatalf("accepted a head carrying a listed witness's bad line; §10 holds every "+
+			"listed witness to its lines, used or not:\n%s", out)
+	}
+	honest := servedWithCheckpoint(t, filepath.Join(vectors(), doc.ServeOver, "checkpoint"))
+	out, err = exec.Command(nornBinary(t), "verify", "-trust", trustFile, "-log", honest).CombinedOutput()
+	if err != nil {
+		t.Fatalf("the honest head was refused under the same trust file, so the file and not the line refuses:\n%s", out)
+	}
+}

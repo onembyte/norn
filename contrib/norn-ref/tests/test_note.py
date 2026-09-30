@@ -104,5 +104,29 @@ class Receipt(unittest.TestCase):
         self.assertTrue(body.endswith("\n"))
 
 
+
+
+class SignatureLineEncoding(unittest.TestCase):
+    """SPEC 7 (cold gate run 12, D8): a signature line is exactly its payload's encoding."""
+
+    def test_a_non_zero_padding_bit_is_refused(self):
+        key = keys.Ed25519.from_name("logkey")
+        signed = note.sign("norn/testnet\n1\nAAAA\n", "norn/testnet", key)
+        text, block = signed.split("\n\n", 1)
+        line = block.rstrip("\n")
+        prefix, blob = line.rsplit(" ", 1)
+        data = blob.rstrip("=")
+        alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+        self.assertLess(len(data), len(blob), "a 68-byte payload is padded")
+        flipped = data[:-1] + alphabet[alphabet.index(data[-1]) | 1] + blob[len(data):]
+        self.assertNotEqual(flipped, blob)
+        # The same bytes to a lenient decoder...
+        self.assertEqual(base64.b64decode(flipped), base64.b64decode(blob))
+        # ...and not this encoding.
+        with self.assertRaises(note.NoteError):
+            note.split(text + "\n\n" + prefix + " " + flipped + "\n")
+        note.split(signed)  # the control
+
+
 if __name__ == "__main__":
     unittest.main()

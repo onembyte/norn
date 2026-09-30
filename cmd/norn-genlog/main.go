@@ -301,6 +301,9 @@ func run(root string) error {
 	if err := writeIDCollisionHeads(root, origin, signed, signers); err != nil {
 		return err
 	}
+	if err := writeUnusedWitnessHead(root, signed); err != nil {
+		return err
+	}
 	if err := writeTwiceCosignedHead(root, signed, signers); err != nil {
 		return err
 	}
@@ -589,6 +592,69 @@ func borrowedIDLine(signed, owner, stranger string) (string, error) {
 		return note.SignatureLine(stranger, payload), nil
 	}
 	return "", fmt.Errorf("no signature line for %q", owner)
+}
+
+// writeUnusedWitnessHead ships §10's definition of "a witness the policy
+// names".
+//
+// Cold gate run 12, D2. Every shipped witness sat in `group home`, so a reader
+// holding the lines of a listed-but-unused witness to nothing passed the
+// suite. The policy names a witness when it carries a `witness` directive for
+// it, whether or not any `group` or the `quorum` line uses it: this head is
+// the served one plus one line under `norn-witness/stranger` -- its genuine
+// key id, its genuine timestamp, and a signature that does not verify -- read
+// under `trust-good/unused-witness.cbor`, whose policy lists `stranger` and
+// uses it nowhere. It MUST be refused; the honest head under the same file
+// MUST be accepted.
+func writeUnusedWitnessHead(root, signed string) error {
+	stranger, err := seedKey(root, "stranger")
+	if err != nil {
+		return err
+	}
+	const name = "norn-witness/stranger"
+	head, err := cosignpkg.Append([]cosignpkg.Signer{{Name: name, Key: stranger}},
+		cosignpkg.At(time.Unix(CosignedAt+int64(6*CosignSpread), 0)))(signed)
+	if err != nil {
+		return err
+	}
+	head, err = forgeLastSignature(head, name)
+	if err != nil {
+		return err
+	}
+	dir := filepath.Join(root, "served-unused-witness")
+	if err := os.RemoveAll(dir); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(dir, "checkpoint"), []byte(head), 0o644); err != nil {
+		return err
+	}
+	meta := map[string]any{
+		"serve_over": "served",
+		"trust":      "trust-good/unused-witness.cbor",
+		"stranger":   name,
+		"cases":      []string{"checkpoint"},
+		"rules": map[string]map[string]string{
+			"checkpoint": {"section": "10", "says": "whether or not any `group` or the `quorum` line uses it"},
+		},
+		"comment": "the served head with one MORE cosignature line, from `stranger`: its " +
+			"genuine key id and timestamp, and a signature that does not verify. Read " +
+			"it under `trust`, not trust.cbor: that file's policy carries a `witness " +
+			"stranger` directive that no `group` or `quorum` uses. SPEC 10: the policy " +
+			"NAMES a witness when it carries a directive for it, so this line is a " +
+			"listed witness's and MUST verify -- this head MUST be refused. A reader " +
+			"that holds only the witnesses a quorum reaches to their lines accepts " +
+			"it. served/checkpoint under the same file MUST be accepted: the file is " +
+			"sound and the line is what refuses. Serve it in place of " +
+			"served/checkpoint over the same tiles",
+	}
+	blob, err := json.MarshalIndent(meta, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, "cases.json"), append(blob, '\n'), 0o644)
 }
 
 // writeTwiceCosignedHead ships §5.3's tie-break: one witness, two verifying
@@ -2395,7 +2461,33 @@ func buildBadCheckpoints(root, origin string, key ed25519.PrivateKey,
 		"two cosignature lines, both naming witnesses the policy lists, one of which does not verify: " +
 			"the quorum is met only by a verifier that does not check them", forgedCosig})
 
+	// Cold gate run 12, D8. §7 said "standard base64 with padding" and
+	// separated only the unpadded spelling (`19`); a decoder that ignores
+	// the padding bits reads the honest payload from this line and one head
+	// had two byte forms, which is the hazard the "exactly that length"
+	// paragraph exists for.
+	out = append(out, badCheckpoint{"24-signature-non-canonical-pad-bits",
+		"the log's signature line with a non-zero padding bit in its last data " +
+			"character: a decoder that ignores padding bits reads the honest 68 bytes, " +
+			"and this line is not their encoding",
+		rewriteLastSignature(logSignatureLast(allThree, origin), flipPadBit)})
+
 	return out, nil
+}
+
+// flipPadBit sets the lowest padding bit of a padded base64 payload: the same
+// bytes to a lenient decoder, and not the payload's encoding.
+func flipPadBit(line string) string {
+	const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+	rest := strings.TrimPrefix(line, note.SigPrefix)
+	name, blob, _ := strings.Cut(rest, " ")
+	data := strings.TrimRight(blob, "=")
+	if len(data) == len(blob) || len(data) == 0 {
+		return line // unpadded: no padding bits to flip
+	}
+	last := strings.IndexByte(alphabet, data[len(data)-1])
+	flipped := alphabet[last|0x01]
+	return note.SigPrefix + name + " " + data[:len(data)-1] + string(flipped) + blob[len(data):]
 }
 
 func writeBadCheckpoints(root, origin string, key ed25519.PrivateKey,
@@ -2453,29 +2545,30 @@ func writeBadCheckpoints(root, origin string, key ed25519.PrivateKey,
 	// which is how §7's terminating newline, §6's canonical size line and
 	// §10's every-line rule all reached a gate unstated.
 	rules := map[string]map[string]string{
-		"01-unsigned":                       {"section": "10", "says": "verify log signature"},
-		"02-wrong-log-key":                  {"section": "10", "says": "norn.trust.log_key"},
-		"03-wrong-origin":                   {"section": "10", "says": "whatever origin it names"},
-		"04-forged-log-signature":           {"section": "10", "says": "MUST\n  # verify"},
-		"05-one-cosignature-short":          {"section": "10", "says": "the quorum must be satisfied"},
-		"06-no-cosignatures":                {"section": "10", "says": "the quorum must be satisfied"},
-		"07-unnamed-witness-only":           {"section": "10", "says": "is IGNORED, not refused"},
-		"08-forged-cosignature":             {"section": "10", "says": "must verify"},
-		"09-extension-line":                 {"section": "6", "says": "exactly three lines"},
-		"10-wrong-body-origin":              {"section": "10", "says": "which log this is about"},
-		"11-forged-cosignature-with-quorum": {"section": "10", "says": "per line, not per witness"},
-		"12-second-line-from-one-witness":   {"section": "10", "says": "per line, not per witness"},
-		"13-ascii-dash-signature":           {"section": "7", "says": "signature line per signer"},
-		"14-unterminated-signature-block":   {"section": "7", "says": "including the last, ends in one"},
-		"15-size-leading-zero":              {"section": "6", "says": "no leading zeroes"},
-		"17-root-wrong-length":              {"section": "6", "says": "32 bytes once decoded"},
-		"18-signature-name-with-space":      {"section": "7", "says": "contains no space"},
-		"19-signature-unpadded-base64":      {"section": "7", "says": "standard base64 **with padding**"},
-		"20-signature-payload-too-long":     {"section": "7", "says": "The decoded payload is **exactly** that length"},
-		"16-two-log-signatures":             {"section": "10", "says": "Every signature line whose name and key id match"},
-		"21-origin-with-a-suffix":           {"section": "10", "says": "neither an extension of it nor a truncation"},
-		"22-origin-in-upper-case":           {"section": "10", "says": "case is not folded"},
-		"23-origin-truncated":               {"section": "10", "says": "neither an extension of it nor a truncation"},
+		"01-unsigned":                         {"section": "10", "says": "verify log signature"},
+		"02-wrong-log-key":                    {"section": "10", "says": "norn.trust.log_key"},
+		"03-wrong-origin":                     {"section": "10", "says": "whatever origin it names"},
+		"04-forged-log-signature":             {"section": "10", "says": "MUST\n  # verify"},
+		"05-one-cosignature-short":            {"section": "10", "says": "the quorum must be satisfied"},
+		"06-no-cosignatures":                  {"section": "10", "says": "the quorum must be satisfied"},
+		"07-unnamed-witness-only":             {"section": "10", "says": "is IGNORED, not refused"},
+		"08-forged-cosignature":               {"section": "10", "says": "must verify"},
+		"09-extension-line":                   {"section": "6", "says": "exactly three lines"},
+		"10-wrong-body-origin":                {"section": "10", "says": "which log this is about"},
+		"11-forged-cosignature-with-quorum":   {"section": "10", "says": "per line, not per witness"},
+		"12-second-line-from-one-witness":     {"section": "10", "says": "per line, not per witness"},
+		"13-ascii-dash-signature":             {"section": "7", "says": "signature line per signer"},
+		"14-unterminated-signature-block":     {"section": "7", "says": "including the last, ends in one"},
+		"15-size-leading-zero":                {"section": "6", "says": "no leading zeroes"},
+		"17-root-wrong-length":                {"section": "6", "says": "32 bytes once decoded"},
+		"18-signature-name-with-space":        {"section": "7", "says": "contains no space"},
+		"19-signature-unpadded-base64":        {"section": "7", "says": "standard base64 **with padding**"},
+		"20-signature-payload-too-long":       {"section": "7", "says": "The decoded payload is **exactly** that length"},
+		"16-two-log-signatures":               {"section": "10", "says": "Every signature line whose name and key id match"},
+		"21-origin-with-a-suffix":             {"section": "10", "says": "neither an extension of it nor a truncation"},
+		"22-origin-in-upper-case":             {"section": "10", "says": "case is not folded"},
+		"23-origin-truncated":                 {"section": "10", "says": "neither an extension of it nor a truncation"},
+		"24-signature-non-canonical-pad-bits": {"section": "7", "says": "with zero padding bits"},
 	}
 	for name := range reasons {
 		if _, ok := rules[name]; !ok {

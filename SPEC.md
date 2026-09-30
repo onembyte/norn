@@ -672,8 +672,11 @@ spec's rules produce.
   after it is the payload — split at the *last* one instead and a line carrying
   two spaces parses as a signature from a name nobody lists, which §10 ignores
   rather than refuses. The payload is **standard base64 **with padding****
-  (RFC 4648 §4, the `+/` alphabet, `=` to a multiple of four); unpadded base64
-  decodes to the same bytes and is not this encoding. **What
+  (RFC 4648 §4, the `+/` alphabet, `=` to a multiple of four) **with zero padding bits**,
+  and the line is **exactly** its payload's encoding: unpadded base64, and a
+  line whose padding bits are not zero, decode to the same bytes and are not
+  this encoding. The canonical signed-note implementation accepts the second;
+  Norn does not, for the reason the length paragraph below gives. **What
   follows the key id depends on the algorithm the key was published under**,
   and this document uses two:
   - **algorithm `0x01`**, a plain Ed25519 note signature (the log's, and a
@@ -1091,6 +1094,12 @@ loop every T_g or on demand:
       # and cannot tell `==` from any of those; `21`-`23` can.
   verify witness policy: every cosignature LINE naming a witness the policy
       names must verify, and the quorum must be satisfied  # refuse otherwise
+      # The policy NAMES a witness when it carries a `witness` directive for
+      # it, whether or not any `group` or the `quorum` line uses it: a listed
+      # witness's bad line refuses the head even where its cosignature was
+      # not needed. `served-unused-witness/` is that head, read under a trust
+      # file whose policy lists a witness nothing uses, and it MUST be refused;
+      # the honest head under the same file MUST be accepted.
       # A line NAMES a witness the policy lists when its **name and key id**
       # both match that witness's verifier key -- the same test the log's own
       # line gets above. §7 makes the id bind the name, the algorithm and
@@ -1241,7 +1250,7 @@ suite is checked only against its own author.
 | `receipt.note` | a submission receipt: the signed note itself (§7) |
 | `policies/<name>.txt` | §9.1's restated grammar, one whole policy per rule. `cases.json` marks each `accept` true or false and says which rule it is about |
 | `log-empty/` | a log with **no entries**: `manifest.json` and the zero state §5.1 says it replays to. Not a `bad-genesis` abort — there is nothing to reject |
-| `trust-good/<name>.cbor` | trust files §9.1 **permits**: the members it marks optional or leaves open, and its two 64-byte names exactly at the cap. `cases.json` lists them |
+| `trust-good/<name>.cbor` | trust files §9.1 **permits**: the members it marks optional or leaves open, its two 64-byte names exactly at the cap, and a witness no `group` or `quorum` uses. `cases.json` lists them |
 | `requests/<name>.cbor` · `.txt` · `.json` | enrollment requests (§16): the request bytes, its bech32m text form, and a mirror `{request, preimage_sha256, text, size}`. `cases.json` lists them, each with a `form` — `canonical` for §16.2's lowercase form, or `uppercase` for the same request in the form §16.2 says a reader MUST also accept, which names the canonical case it duplicates |
 | `requests-bad/<name>.txt` | requests that MUST be refused — by the text layer, the CBOR profile, a field rule or signature verification. `cases.json` gives each case's reason |
 | `receipt.json` | `{comment, origin, leaf_hash, deadline, text_sha256}`, where `text_sha256` is `SHA-256` of the **signed text** — through the newline ending the last text line, excluding the blank separator and the signature lines |
@@ -1255,6 +1264,7 @@ suite is checked only against its own author.
 | `detect/` | the stored-checkpoint sequences §10 needs, each branch with its own tiles, plus `staleness.json` for §8.1's condition 4 |
 | `served-rotated/` | the served head signed by a published `log_key` (§9.4), with `cases.json` giving the key, its `since_index` and its `overlap`. Serve it over `served/`'s tiles |
 | `served-superseded/` | the served head cosigned by two of three witnesses, for §9.4's policy half. Serve it over `served/`'s tiles |
+| `served-unused-witness/` | the served head plus a bad line from a witness the policy lists and no `group` or `quorum` uses, read under the trust file `cases.json` names (`trust-good/unused-witness.cbor`). It MUST be refused (§10); the honest head under that file MUST be accepted. Serve it over `served/`'s tiles |
 | `served-bad/` | §6's refusals for a served log, which is a directory rather than a file: each case names the path to replace or delete over an honest copy of `served/` |
 | `SHA256SUMS` | every file above, for a reader who has the suite and not its generators |
 
@@ -1353,7 +1363,7 @@ this table drifted out of date the moment one was.
 | §11.1 the carried `policy` decides nothing | `fork/policy-not-the-readers.cbor`: sound evidence whose `policy` requires a witness that cosigned nothing — it MUST still prove the fork, because the reader verifies under its own | `fork/bad-policy-says-quorum-none`: two checkpoints no quorum cosigned, and a carried policy saying none is needed. A reader that trusts the field concludes a fork any stranger can write, and §11 rule 4 makes it permanent. `fork/bad-policy-unparseable` is the format half |
 | §6 tiles and bundles | `served/`, read back to reproduce `state.json`; a forged head is `checkpoints-bad/04-forged-log-signature` and a fourth body line is `checkpoints-bad/09-extension-line` | `served-bad/`: an entry bundle with one byte changed, one the log will not serve at all, `tampered-hash-tile` — one byte inside one leaf hash, which leaves the entries and the signed head honest, so only the hash-tile rule can refuse it — and `consistent-tampered-log`, where the bundle and the level-0 tile are changed **together**. That last one is the only file that reaches the rebuild-and-compare rule: the other two tamper cases change a leaf hash as a side effect, so the tile rule refuses them first and a reader that never compares the rebuilt head with the checkpoint passed everything (cold gate run 10, D11). `checkpoints-bad/17-root-wrong-length` is the root line's own negative |
 | §6 the anchor digest | `anchors/cases.json` names the bytes and gives the digest, and `checkpoint-<size>.ots` chains from it. Anchoring is **advisory** (D-009), so a reader computing one of the two neighbouring byte ranges — the three-line body, or §7's signed text — never matches a stamp and never reports one, which is why the range is stated in hex rather than in a word both bullets use | no negative: a proof over the wrong digest simply fails to chain, and the failure is indistinguishable from an anchor for another tree. Run 11's `OTSDigestSignedText` variant is caught by the digest comparison alone |
-| §7 note framing, the three splits a file can separate | `served/checkpoint` and `receipt.note`, both read with these rules | `checkpoints-bad/18-signature-name-with-space` (split at the first space or the last), `19-signature-unpadded-base64` (standard base64, padded) and `20-signature-payload-too-long` (the payload is **exactly** 68 or 76 bytes, never a prefix of something longer). Each is the honest checkpoint with one signature line rewritten, so the line is well-formed under the lax reading and malformed under this document's. The other two splits — a blank line inside the text, and a note with no signature lines — are in **What is not vectored** below |
+| §7 note framing, the three splits a file can separate | `served/checkpoint` and `receipt.note`, both read with these rules | `checkpoints-bad/18-signature-name-with-space` (split at the first space or the last), `19-signature-unpadded-base64` (standard base64, padded) `20-signature-payload-too-long` (the payload is **exactly** 68 or 76 bytes, never a prefix of something longer) and `24-signature-non-canonical-pad-bits` (a non-zero padding bit, which a lenient decoder ignores; this implementation accepted it until run 12, D8). Each is the honest checkpoint with one signature line rewritten, so the line is well-formed under the lax reading and malformed under this document's. The other two splits — a blank line inside the text, and a note with no signature lines — are in **What is not vectored** below |
 | §8.1 a bundle's checkpoint is checked per §10 | `proofs/`, whose checkpoints carry the quorum | `proofs-bad/no-quorum` (the log's signature and nobody else's) and `proofs-bad/wrong-origin` (this network's key over another network's origin line) |
 | §8.1 condition 3, the key a node installs | `proofs/cases.json`'s `installs`: for every device, the `wg_pk` replay gives. `nas` rotated after it enrolled, so `proofs/nas.bundle` proves an entry naming a key `nas` no longer uses and `installs` names the other one. A reader that requires the bundle's key to match installs nothing for `nas` (cold gate run 11, D14) | — |
 | §8 proof bundles | `proofs/`, one per active device | `proofs-bad/`, **9 proof refusals**: a wrong entry, a foreign checkpoint, a tampered proof, a checkpoint signed by a key the anchor does not name, one with no witness quorum and one whose checkpoint names another origin — each differing from a valid bundle in exactly one thing |
@@ -1361,7 +1371,7 @@ this table drifted out of date the moment one was.
 | §10 verifier loop, steps 1–4 | `served/` verified end to end, **signature first** | `checkpoints-bad/01-unsigned`, `02-wrong-log-key`, `03-wrong-origin` and **`04-forged-log-signature`** — the last one being a signature of the right shape under the right key id that does not verify. Without it a verifier that never checks the log signature reproduces the whole suite |
 | §10 step 3, the witness quorum | `served/checkpoint`, cosigned by all three witnesses | `checkpoints-bad/05-one-cosignature-short`, `06-no-cosignatures`, `07-unnamed-witness-only` and **`08-forged-cosignature`**, which carries two lines naming witnesses the policy lists, one of which does not verify: the quorum is met by counting and refused by checking. `quorum none` accepting an uncosigned head needs a second anchor and is **not vectored** |
 | §10 step 1, **which** lines are the log's | `served-log-id-collision/`: one more line under a name that is not the log's, carrying the log key's id and a signature that verifies under nothing. It MUST be accepted; a reader matching the log's line on the id alone refuses it (cold gate run 11, D9) | `checkpoints-bad/16-two-log-signatures`, where the name *and* id are the log's and one signature is forged |
-| §10 step 3, **which** lines count as a listed witness's | `served-extra-witness/` (an unlisted **name**), `served-name-collision/` (a listed name under an unlisted **key id**) and `served-witness-id-collision/` (a listed key id under an unlisted **name**) — all three MUST be accepted. The second separates matching on the name alone from matching on both; the third separates matching on the id alone. Run 10's `V236_CosigNoKeyIDMatch` passed 236/236 without the second, and run 11 called the id-only reading "individually safe" once ids are recomputed: it is not, because the id on a line is four bytes its writer chose (§7) | the negatives are `checkpoints-bad/08-forged-cosignature`, `11-forged-cosignature-with-quorum` and `12-second-line-from-one-witness`, where the line's name *and* id are the policy's and the signature is not |
+| §10 step 3, **which** lines count as a listed witness's | `served-extra-witness/` (an unlisted **name**), `served-name-collision/` (a listed name under an unlisted **key id**) and `served-witness-id-collision/` (a listed key id under an unlisted **name**) — all three MUST be accepted. And `served-unused-witness/`, the other edge of "names": a bad line from a witness the policy lists and no `group` or `quorum` uses, under `trust-good/unused-witness.cbor`, which MUST be refused — a reader holding only the witnesses a quorum reaches to their lines accepts it (run 12, D2). The second separates matching on the name alone from matching on both; the third separates matching on the id alone. Run 10's `V236_CosigNoKeyIDMatch` passed 236/236 without the second, and run 11 called the id-only reading "individually safe" once ids are recomputed: it is not, because the id on a line is four bytes its writer chose (§7) | the negatives are `checkpoints-bad/08-forged-cosignature`, `11-forged-cosignature-with-quorum` and `12-second-line-from-one-witness`, where the line's name *and* id are the policy's and the signature is not |
 | §16 enrollment requests | `requests/`, **6 request cases** including a 64-byte `device_id`, non-ASCII labels, a label value at the 256-byte cap and an uppercase text form | `requests-bad/`, **25 request refusals** across all four layers, including **`forged-signature`** (structurally perfect, signed by another key) and `oversize-label-key` (§4.0's map-key cap) |
 | §11.1 fork evidence | `fork/evidence.cbor` and `fork/conflicting.checkpoint`: a second branch of this same network, diverging at entry 40, signed by the same log key and cosigned by the same witnesses. Checking it needs only `trust.cbor` | one per reader step: `fork/bad-other-origin` and `fork/bad-unverifiable-conflicting` (step 1, each half), `fork/bad-size-mismatch` (step 2), `fork/bad-forged-proof` (step 3 — both checkpoints verify and the sizes agree, so nothing but the proof can refuse it), and `fork/bad-consistent` (step 4: a log and its own earlier self) |
 | §16.1's `expires > ts`, at the entry layer | every `enroll` | `bad-enroll-request-expires-at-ts`: an entry whose embedded request breaks §16.1. The only other vector for the rule is a *request*, and an `enroll` decodes its request under §16.1 too |
@@ -1387,6 +1397,10 @@ admits its holes, so:
   entry-layer copy of a request rule; this one does not, and that is a choice.
 - **`quorum none` accepting an uncosigned head.** It needs a second trust
   anchor, and one is not shipped.
+- **A verifier key's base64 data with non-zero padding bits.** §7's
+  signature lines are held to their exact encoding (`24`); the key data inside
+  a `vkey` string is decoded by the same rule in this implementation and no
+  `trust-bad/` file carries the other spelling.
 - **The order of checks in §10 and §11.1.** Every negative in `checkpoints-bad/`,
   `proofs-bad/` and `fork/` is refused whichever order a reader checks in, so
   accept-or-refuse cannot see the order, and a refusal's reason is not

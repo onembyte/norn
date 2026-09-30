@@ -527,3 +527,41 @@ func TestTheTrustSizeCapAndTheOptionalAnchorAreVectored(t *testing.T) {
 // maxTrustBytesForTest mirrors §9.1's stated cap, so the test fails if the
 // vector stops being oversize rather than silently passing.
 const maxTrustBytesForTest = MaxTrustBytes
+
+// Cold-model gate run 12, defect D2. A `witness` directive that no `group` or
+// `quorum` uses is legal, and §10 still holds that witness to its lines. This
+// is the anchor `served-unused-witness/` is read under; it MUST be accepted.
+func TestAWitnessNoQuorumUsesIsLegal(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join(vectorRoot(), "trust-good", "unused-witness.cbor"))
+	if err != nil {
+		t.Fatalf("no positive vector: %v", err)
+	}
+	doc, err := Parse(raw)
+	if err != nil {
+		t.Fatalf("refused at parse a file §9.1 permits: %v", err)
+	}
+	if err := doc.Validate(); err != nil {
+		t.Fatalf("refused a file §9.1 permits: %v", err)
+	}
+	var stranger *Witness
+	for i := range doc.Witnesses {
+		if doc.Witnesses[i].Name == "stranger" {
+			stranger = &doc.Witnesses[i]
+		}
+	}
+	if stranger == nil {
+		t.Fatal("the file lists no witness called stranger")
+	}
+	// Listed, and used by no group: the shape the case exists for.
+	for _, line := range strings.Split(doc.Policy, "\n") {
+		if strings.HasPrefix(line, "group ") && strings.Contains(" "+line+" ", " stranger ") {
+			t.Fatalf("a group uses stranger (%q), so the policy does not leave it unused", line)
+		}
+		if strings.HasPrefix(line, "quorum ") && strings.TrimSpace(line) == "quorum stranger" {
+			t.Fatal("the quorum names stranger, so the policy does not leave it unused")
+		}
+	}
+	if v, err := note.ParseVerifierKey(stranger.Key); err != nil || !v.IsCosigner() {
+		t.Fatalf("stranger's key is not a cosignature verifier key: %v", err)
+	}
+}

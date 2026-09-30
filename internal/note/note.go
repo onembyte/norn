@@ -170,6 +170,12 @@ func Split(signed string) (string, []Signature, error) {
 		if err != nil {
 			return "", nil, noteErrorf("signature is not base64")
 		}
+		// Exactly its encoding (§7). StdEncoding ignores non-zero padding
+		// bits and skips a CR, so one payload had two spellings -- the same
+		// hole the receipt's leaf line had (cold gate run 12, D8).
+		if base64.StdEncoding.EncodeToString(raw) != blob {
+			return "", nil, noteErrorf("the signature line is not the encoding of its payload")
+		}
 		// A note signature is 4 + 64. A cosignature is 4 + 8 + 64: the
 		// extra eight are the timestamp (`c2sp.org/tlog-cosignature`). Both
 		// appear on a cosigned checkpoint, and a parser that knew only the

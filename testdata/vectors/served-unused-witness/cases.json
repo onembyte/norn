@@ -1,0 +1,15 @@
+{
+  "cases": [
+    "checkpoint"
+  ],
+  "comment": "the served head with one MORE cosignature line, from `stranger`: its genuine key id and timestamp, and a signature that does not verify. Read it under `trust`, not trust.cbor: that file's policy carries a `witness stranger` directive that no `group` or `quorum` uses. SPEC 10: the policy NAMES a witness when it carries a directive for it, so this line is a listed witness's and MUST verify -- this head MUST be refused. A reader that holds only the witnesses a quorum reaches to their lines accepts it. served/checkpoint under the same file MUST be accepted: the file is sound and the line is what refuses. Serve it in place of served/checkpoint over the same tiles",
+  "rules": {
+    "checkpoint": {
+      "says": "whether or not any `group` or the `quorum` line uses it",
+      "section": "10"
+    }
+  },
+  "serve_over": "served",
+  "stranger": "norn-witness/stranger",
+  "trust": "trust-good/unused-witness.cbor"
+}

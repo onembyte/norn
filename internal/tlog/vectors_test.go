@@ -1,7 +1,9 @@
 package tlog
 
 import (
+	"bytes"
 	"crypto/ed25519"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"os"
@@ -116,5 +118,52 @@ func TestTheProfileLimitIsWhatABundleCanCarry(t *testing.T) {
 		t.Errorf("a decoder accepts entries up to %d bytes but a bundle can frame only %d: "+
 			"an entry between the two is valid and unservable",
 			cbor.MaxEntryBytes, MaxBundleEntryBytes)
+	}
+}
+
+// Cold-model gate run 12, defect D8. `24` is the log's own line with one
+// padding bit set: a decoder that ignores padding bits reads the honest 68
+// bytes, so the head verified and had two byte forms. The claim is that the
+// line decodes leniently to exactly the honest payload, and that §7's framing
+// refuses it before any signature is checked.
+func TestThePadBitCheckpointDecodesToTheHonestSignature(t *testing.T) {
+	honest := read(t, "served", "checkpoint")
+	padded := read(t, "checkpoints-bad", "24-signature-non-canonical-pad-bits.checkpoint")
+	origin := originOf(honest)
+
+	_, honestSigs, err := note.Split(honest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := signatureBy(honestSigs, origin)
+	if want == nil {
+		t.Fatal("the served checkpoint carries no line from the log")
+	}
+	var lenient []byte
+	var lines int
+	for _, line := range strings.Split(strings.TrimRight(padded, "\n"), "\n") {
+		blob, ok := strings.CutPrefix(line, note.SigPrefix+origin+" ")
+		if !ok {
+			continue
+		}
+		lines++
+		raw, err := base64.StdEncoding.DecodeString(blob)
+		if err != nil {
+			t.Fatalf("a lenient decoder refuses the line, so the case is not about padding bits: %v", err)
+		}
+		if base64.StdEncoding.EncodeToString(raw) == blob {
+			t.Fatal("the line is its payload's own encoding; nothing is non-canonical")
+		}
+		lenient = raw
+	}
+	if lines != 1 {
+		t.Fatalf("%d lines from the log; the case rewrites exactly one", lines)
+	}
+	if !bytes.Equal(lenient, append(append([]byte{}, want.KeyID...), want.Sig...)) {
+		t.Fatal("leniently decoded, the line is not the honest payload, so refusing it proves nothing about padding bits")
+	}
+	if _, _, err := note.Split(padded); err == nil ||
+		!strings.Contains(err.Error(), "not the encoding of its payload") {
+		t.Errorf("§7 holds a line to its exact encoding; got %v", err)
 	}
 }

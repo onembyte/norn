@@ -1706,7 +1706,34 @@ def trust_acceptances() -> list[tuple[str, dict[str, Any]]]:
             base, witnesses=[dict(base["witnesses"][0], name=at_the_cap(64))]
             + base["witnesses"][1:],
             policy=_policy_with(rename=at_the_cap(64)))),
+        # Cold gate run 12, D2. A `witness` directive no `group` or `quorum`
+        # uses is legal, and §10 says a bad line from that witness refuses the
+        # head all the same: the policy NAMES a witness when it carries a
+        # directive for it. `served-unused-witness/` is that head, verified
+        # under this file.
+        ("unused-witness", dict(
+            base, witnesses=base["witnesses"] + [{
+                "name": "stranger", "key": _stranger_vkey(),
+                "url": "https://stranger.example/w"}],
+            policy=_policy_with_unused_witness())),
     ]
+
+
+def _stranger_vkey() -> str:
+    """The fixture's `stranger` key as a cosignature verifier key.
+
+    The Go generator derives the same string from the same seed for the line
+    `served-unused-witness/checkpoint` carries.
+    """
+    return note.vkey("norn-witness/stranger", KEYS["stranger"].public, note.ALG_COSIGNATURE)
+
+
+def _policy_with_unused_witness() -> str:
+    """`policy_text()` plus a `witness stranger` line that no group or quorum uses."""
+    lines = policy_text().rstrip("\n").split("\n")
+    at = next(i for i, line in enumerate(lines) if line.startswith("group "))
+    lines.insert(at, f"witness stranger {_stranger_vkey()} https://stranger.example/w")
+    return "\n".join(lines) + "\n"
 
 
 def _policy_with_pi_note_key() -> str:

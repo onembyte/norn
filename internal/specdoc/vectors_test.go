@@ -910,6 +910,11 @@ func TestTheSignatureBlindSetIsComputedNotAsserted(t *testing.T) {
 			if err != nil || (len(raw) != 68 && len(raw) != 76) {
 				return "", nil
 			}
+			// Framing, not signing: a line that is not its payload's own
+			// encoding is malformed to a reader that never calls Ed25519.
+			if base64.StdEncoding.EncodeToString(raw) != blob {
+				return "", nil
+			}
 			who = append(who, rules.Label(name))
 		}
 		return body + "\n", who
@@ -1014,7 +1019,7 @@ func TestEveryNegativeDeclaresTheSectionThatStatesItsRule(t *testing.T) {
 	for _, dir := range []string{
 		"checkpoints-bad", "proofs-bad", "served-bad", "fork",
 		"entries-hostile", "policies", "genesis", "trust-bad",
-		"receipts-bad",
+		"receipts-bad", "served-unused-witness",
 	} {
 		t.Run(dir, func(t *testing.T) {
 			var manifest struct {
