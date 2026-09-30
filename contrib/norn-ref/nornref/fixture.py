@@ -295,7 +295,7 @@ def _raw_enroll_body(fields: dict[str, Any], signer: str) -> dict[str, Any]:
 
 
 def log() -> list[LogItem]:
-    """A 49-entry log: valid entries interleaved with one per reason code."""
+    """The replay fixture: valid entries interleaved with the negatives."""
     b = _Builder()
     b.add(f"{b.index}-genesis", genesis())
 
@@ -849,6 +849,28 @@ def log() -> list[LogItem]:
     }, "halfsigned")
     b.add(f"{b.index}-bad-enroll-request-expires-at-ts", b.build(
         "enroll", expired, both), "decode")
+
+    # Cold gate run 11, D8. §4.2 resolves every signature in the state
+    # BEFORE its entry, and no entry was ever signed by a key it adds, so a
+    # reader resolving against the state after reproduced the manifest.
+    # Two roots of the three `root_thr` requires, and a third signature,
+    # declaring `root`, by the key the body adds. That reader counts three
+    # and admits a root quorum that bootstrapped itself. `stranger` has never
+    # held a role in any state here, so no reading that remembers old roots
+    # can count it either; `root4` could not stand in, having been one.
+    b.add(f"{b.index}-bad-root_add-signed-by-the-added-key", b.build(
+        "root_add", {"pk": KEYS["stranger"].public},
+        [("root1", "root"), ("root2", "root"), ("stranger", "root")]), "threshold")
+    # The same reading on `rotate`, where it is worse. §5.2 counts the
+    # device's CURRENT `device_pk` and, as proof of possession, the incoming
+    # one. Signed by the incoming key alone (and both signers, which
+    # `rotate_needs_signer` requires), a reader resolving the device key in
+    # the state after the entry sees the current key's signature -- and hands
+    # the device to whoever holds the new key.
+    b.add(f"{b.index}-bad-rotate-signed-by-the-incoming-key-only", b.build(
+        "rotate", {"device_id": "printer", "wg_pk": WG["printer"],
+                   "device_pk": KEYS["printer-id2"].public},
+        [("printer-id2", "device")] + both), "no-device-sig")
 
     return b.items
 

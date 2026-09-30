@@ -306,6 +306,28 @@ func TestSpecLogSizeIsCurrent(t *testing.T) {
 			t.Errorf("SPEC.md quotes %s, but the fixture has %d entries", m[0], len(manifest.Entries))
 		}
 	}
+
+	// The vectors README states the size twice, and only SHA256SUMS -- which
+	// `make vectors-sums` rewrites -- ever looked at it (cold gate run 11
+	// review, D8).
+	readme, err := os.ReadFile(filepath.Join(vectorRoot(t), "README.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, re := range []*regexp.Regexp{
+		regexp.MustCompile(`the (\d+)-entry replay fixture`),
+		regexp.MustCompile(`those (\d+) entries`),
+	} {
+		m := re.FindSubmatch(readme)
+		if m == nil {
+			t.Errorf("the vectors README no longer says %q", re)
+			continue
+		}
+		if string(m[1]) != fmt.Sprint(len(manifest.Entries)) {
+			t.Errorf("the vectors README says %s, and the fixture has %d entries",
+				m[0], len(manifest.Entries))
+		}
+	}
 }
 
 // The suite has two provenances (§12): the reference implementation writes
@@ -801,6 +823,10 @@ func TestEveryVectoredRuleIsStatedWhereItLives(t *testing.T) {
 		// D14: condition 3's "that wg_pk" had no antecedent, and one reading
 		// drops every peer that has rotated.
 		{"8.1", "**the `wg_pk` replay gives**", "proofs/cases.json installs"},
+		// D8: a key an entry adds does not authorise that entry. `log/` has no
+		// `rules` map, so its negatives are placed here.
+		{"4.2", "**A key an entry adds counts for nothing on the entry that adds it**",
+			"log/bad-root_add-signed-by-the-added-key and bad-rotate-signed-by-the-incoming-key-only"},
 	} {
 		t.Run(c.vector, func(t *testing.T) {
 			section, ok := doc.Section(c.section)
