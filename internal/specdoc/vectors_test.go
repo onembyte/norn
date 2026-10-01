@@ -17,6 +17,7 @@ import (
 	"github.com/onembyte/norn/internal/forkevidence"
 	"github.com/onembyte/norn/internal/policy"
 	"github.com/onembyte/norn/internal/proof"
+	"github.com/onembyte/norn/internal/refusal"
 	"github.com/onembyte/norn/internal/tlog"
 	"github.com/onembyte/norn/internal/trust"
 )
@@ -1761,11 +1762,40 @@ func TestTheFreshnessTableIsInTheOrderItIsEvaluated(t *testing.T) {
 // vectors that make each ordering observable come next (6.5l-vi-b-ii).
 
 // verifierCodes is the vocabulary D-061 asks for, in the order §10.1 must
-// give it: the verifier loop's twelve, then the bundle check's three.
-var verifierCodes = []string{
-	"unserved", "note", "log-signature", "checkpoint", "origin", "cosignature",
-	"quorum", "entries", "head", "fork", "rollback", "tiles",
-	"bundle", "inclusion", "binding",
+// give it: the verifier loop's twelve, then the bundle check's three. It is
+// read from `internal/refusal` rather than spelled out again here, so the
+// code has one list and these tests hold the document to it.
+var verifierCodes = func() []string {
+	var out []string
+	for _, c := range refusal.All() {
+		out = append(out, string(c))
+	}
+	return out
+}()
+
+// The package and the table are one list: the same fifteen codes, in the same
+// order, the loop's table first and the bundle's second. The test above checks
+// the loop's precedence; this one also pins where the bundle's three sit, so a
+// reorder on either side -- a code moved in the package, a row moved in the
+// document -- is a failure here and not a quiet disagreement between a
+// verifier and the specification it cites.
+func TestTheRefusalPackageIsSection10_1(t *testing.T) {
+	doc := load(t)
+	section, ok := doc.Section("10.1")
+	if !ok {
+		t.Fatal("§10.1 is missing")
+	}
+	var table []string
+	seen := map[string]bool{}
+	for _, m := range regexp.MustCompile("(?m)^\\| *[0-9]+ *\\| *`([a-z-]+)` *\\|").FindAllStringSubmatch(section.Body, -1) {
+		if !seen[m[1]] {
+			seen[m[1]] = true
+			table = append(table, m[1])
+		}
+	}
+	if got, want := strings.Join(table, " "), strings.Join(verifierCodes, " "); got != want {
+		t.Errorf("§10.1's tables list\n  %s\nand internal/refusal lists\n  %s", got, want)
+	}
 }
 
 func TestTheVerifierHasAClosedListOfRefusalCodes(t *testing.T) {
