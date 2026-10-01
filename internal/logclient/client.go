@@ -51,11 +51,7 @@ func refuse(code refusal.Code, format string, args ...any) error {
 // cosign make their own checks and attach their own codes. A cause that
 // arrives uncoded was the anchor's fault, and stays uncoded.
 func carry(cause error, format string, args ...any) error {
-	err := logErrorf(format, args...)
-	if code, ok := refusal.CodeOf(cause); ok {
-		return refusal.Wrap(code, err)
-	}
-	return err
+	return refusal.Carry(cause, logErrorf(format, args...))
 }
 
 // checkpointRefusal says, per code, what tlog.Verify found wrong.

@@ -124,3 +124,30 @@ func TestKnownMatchesTheList(t *testing.T) {
 		}
 	}
 }
+
+// A layer that restates a lower layer's refusal in its own words keeps the
+// lower layer's reason: the words change, the code does not. A cause with no
+// code -- a configuration fault -- gives none.
+func TestCarryKeepsTheCausesCodeAndNothingElse(t *testing.T) {
+	cause := Wrap(LogSignature, errors.New("no valid signature from a trusted key"))
+	restated := errors.New("proof bundle error: checkpoint: no valid signature from a trusted key")
+
+	err := Carry(cause, restated)
+	if code, _ := CodeOf(err); code != LogSignature {
+		t.Errorf("CodeOf = %q, want the cause's %q", code, LogSignature)
+	}
+	if err.Error() != restated.Error() {
+		t.Errorf("the message is %q; the restatement is the caller's to choose", err.Error())
+	}
+	if !errors.Is(err, restated) {
+		t.Error("the restated error is no longer on the chain")
+	}
+
+	plain := Carry(errors.New("witness key: malformed"), restated)
+	if code, ok := CodeOf(plain); ok {
+		t.Errorf("an uncoded cause gave the restatement the code %q", code)
+	}
+	if plain != restated {
+		t.Error("with nothing to carry, the restatement should come back as it is")
+	}
+}

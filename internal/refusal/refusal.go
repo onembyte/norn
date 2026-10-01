@@ -99,3 +99,14 @@ func CodeOf(err error) (Code, bool) {
 	}
 	return "", false
 }
+
+// Carry gives err the code cause carries, if it carries one. It is for a layer
+// that restates a lower layer's refusal in its own words: the words change,
+// the reason does not. A cause without a code -- a fault in the caller's
+// configuration rather than in the input -- leaves err as it is.
+func Carry(cause, err error) error {
+	if code, ok := CodeOf(cause); ok {
+		return Wrap(code, err)
+	}
+	return err
+}

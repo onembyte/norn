@@ -20,6 +20,7 @@ import (
 	"github.com/onembyte/norn/internal/entry"
 	"github.com/onembyte/norn/internal/note"
 	"github.com/onembyte/norn/internal/policy"
+	"github.com/onembyte/norn/internal/refusal"
 	"github.com/onembyte/norn/internal/tlog"
 )
 
@@ -31,6 +32,13 @@ var ErrProof = errors.New("proof bundle error")
 
 func proofErrorf(format string, args ...any) error {
 	return fmt.Errorf("%w: %s", ErrProof, fmt.Sprintf(format, args...))
+}
+
+// refuse is a bundle error carrying the §10.1 code of the step that refused
+// (D-061). What is wrong with the reader's anchor goes through proofErrorf
+// alone: §10.1's codes describe the bundle, not the configuration.
+func refuse(code refusal.Code, format string, args ...any) error {
+	return refusal.Wrap(code, proofErrorf(format, args...))
 }
 
 // Bundle is one device's evidence (§8.1).
@@ -63,11 +71,22 @@ func (b *Bundle) Encode() ([]byte, error) {
 	})
 }
 
-// Decode parses a bundle, enforcing its closed schema.
+// Decode parses a bundle, enforcing its closed schema. It is §10.1's bundle
+// step 1, so whatever it refuses is `bundle`.
 func Decode(raw []byte) (*Bundle, error) {
+	b, err := decode(raw)
+	if err != nil {
+		return nil, refusal.Wrap(refusal.Bundle, err)
+	}
+	return b, nil
+}
+
+func decode(raw []byte) (*Bundle, error) {
 	value, err := cbor.DecodeWithin(raw, MaxBundleBytes)
 	if err != nil {
-		return nil, err
+		// Both on the chain: ErrProof like every other refusal here, and the
+		// decoder's own error, which is what Decode returned before it had one.
+		return nil, fmt.Errorf("%w: not a bundle: %w", ErrProof, err)
 	}
 	m, ok := value.(map[string]any)
 	if !ok {
@@ -117,12 +136,6 @@ func Decode(raw []byte) (*Bundle, error) {
 	return b, nil
 }
 
-// Check verifies the bundle against the given log verifier keys: the
-// checkpoint's signature, then that this entry really is at this index in a
-// tree with that root.
-//
-// It deliberately does NOT consult any log. A bundle that only checks out
-// while its log is reachable is not evidence.
 // subjectOf is the `device_id` an entry is about: an `enroll` names it inside
 // the request it carries verbatim, the other device types in their body.
 //
@@ -181,13 +194,20 @@ type Anchor struct {
 // not be believed about alone. Until cold gate run 7, §8.1 asked for the log
 // signature and nothing else, and two variants that skipped the quorum and the
 // origin passed every vector.
+//
+// It deliberately does NOT consult any log. A bundle that only checks out
+// while its log is reachable is not evidence.
+//
+// The order is §10.1's second table, and a refusal carries the code of the
+// step that made it: the checkpoint, with the loop's codes from `note` to
+// `quorum`; then `inclusion`; then `binding`.
 func (b *Bundle) Check(anchor Anchor) error {
 	cp, err := tlog.Verify(b.Checkpoint, []string{anchor.LogKey})
 	if err != nil {
-		return proofErrorf("checkpoint: %v", err)
+		return refusal.Carry(err, proofErrorf("checkpoint: %v", err))
 	}
 	if cp.Origin != anchor.Origin {
-		return proofErrorf("the checkpoint is for origin %q, and this anchor is for %q",
+		return refuse(refusal.Origin, "the checkpoint is for origin %q, and this anchor is for %q",
 			cp.Origin, anchor.Origin)
 	}
 	rules, err := policy.Parse(anchor.Policy)
@@ -196,31 +216,33 @@ func (b *Bundle) Check(anchor Anchor) error {
 	}
 	cosignatures, err := cosign.Verify(b.Checkpoint, rules.Keys())
 	if err != nil {
-		return proofErrorf("checkpoint: %v", err)
+		return refusal.Carry(err, proofErrorf("checkpoint: %v", err))
 	}
 	names := make([]string, 0, len(cosignatures))
 	for _, c := range cosignatures {
 		names = append(names, rules.Label(c.Name))
 	}
 	if !rules.Satisfied(names) {
-		return proofErrorf("no quorum cosigned the bundle's checkpoint (quorum %q, "+
+		return refuse(refusal.Quorum, "no quorum cosigned the bundle's checkpoint (quorum %q, "+
 			"cosigned by %v)", rules.Quorum(), names)
 	}
 	if b.Index < 0 || b.Index >= cp.Size {
-		return proofErrorf("index %d is outside a log of %d entries", b.Index, cp.Size)
+		return refuse(refusal.Inclusion, "index %d is outside a log of %d entries", b.Index, cp.Size)
 	}
 	leaf := tlog.LeafHash(b.Entry)
 	if err := upstream.CheckRecord(b.Proof, cp.Size, cp.Root, b.Index, leaf); err != nil {
-		return proofErrorf("inclusion proof: %v", err)
+		return refuse(refusal.Inclusion, "inclusion proof: %v", err)
 	}
 	// ...and the entry the proof is about really is this device's. The proof
-	// binds the entry to the log; only this binds the label to the entry.
+	// binds the entry to the log; only this binds the label to the entry. An
+	// entry that names no device -- or does not decode, which a log may still
+	// contain -- is about no device, so not about this one.
 	subject, err := subjectOf(b.Entry)
 	if err != nil {
-		return err
+		return refusal.Wrap(refusal.Binding, err)
 	}
 	if subject != b.Device {
-		return proofErrorf("this bundle says it proves %q and carries an entry about %q",
+		return refuse(refusal.Binding, "this bundle says it proves %q and carries an entry about %q",
 			b.Device, subject)
 	}
 	return nil
