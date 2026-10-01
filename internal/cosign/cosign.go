@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/onembyte/norn/internal/note"
+	"github.com/onembyte/norn/internal/refusal"
 )
 
 // Header is the first line of the signed message.
@@ -54,12 +55,12 @@ func Message(at time.Time, body string) []byte {
 // carry cosignatures from witnesses this node has never heard of, and that is
 // somebody else's business. What matters is which of *this* network's
 // witnesses have vouched for it.
+//
+// A refusal carries §10.1's code: `cosignature` for a listed witness's line
+// that does not verify, `note` for a note that does not frame. A witness key
+// that does not parse, or is a plain note key, is the policy's mistake rather
+// than the checkpoint's, so it is reported first and carries no code.
 func Verify(signed string, witnessKeys []string) ([]Cosignature, error) {
-	body, sigs, err := note.Split(signed)
-	if err != nil {
-		return nil, cosignErrorf("%v", err)
-	}
-
 	trusted := make([]note.Verifier, 0, len(witnessKeys))
 	for _, raw := range witnessKeys {
 		v, err := note.ParseVerifierKey(raw)
@@ -73,6 +74,11 @@ func Verify(signed string, witnessKeys []string) ([]Cosignature, error) {
 		trusted = append(trusted, v)
 	}
 
+	body, sigs, err := note.Split(signed)
+	if err != nil {
+		return nil, refusal.Wrap(refusal.Note, cosignErrorf("%v", err))
+	}
+
 	var out []Cosignature
 	for _, sig := range sigs {
 		if !sig.IsCosignature() {
@@ -84,7 +90,8 @@ func Verify(signed string, witnessKeys []string) ([]Cosignature, error) {
 			}
 			at := time.Unix(int64(binary.BigEndian.Uint64(sig.Sig[:8])), 0)
 			if !ed25519.Verify(v.Public, Message(at, body), sig.Sig[8:]) {
-				return nil, cosignErrorf("%s signed a cosignature that does not verify", v.Name)
+				return nil, refusal.Wrap(refusal.Cosignature,
+					cosignErrorf("%s signed a cosignature that does not verify", v.Name))
 			}
 			out = append(out, Cosignature{Name: v.Name, Public: v.Public, Time: at})
 			break

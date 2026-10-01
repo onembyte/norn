@@ -18,6 +18,7 @@ import (
 
 	"github.com/onembyte/norn/internal/cosign"
 	"github.com/onembyte/norn/internal/note"
+	"github.com/onembyte/norn/internal/refusal"
 	"github.com/onembyte/norn/internal/replay"
 	"github.com/onembyte/norn/internal/state"
 	"github.com/onembyte/norn/internal/tlog"
@@ -181,18 +182,23 @@ func TestVerifyChecksTheHeadAgainstTheEntries(t *testing.T) {
 	// A log operator who serves a checkpoint that does not describe the
 	// entries it also serves must be caught -- that is the whole point of the
 	// tree head being in the checkpoint.
-	cpPath := filepath.Join(dir, "checkpoint")
-	raw, err := os.ReadFile(cpPath)
-	if err != nil {
-		t.Fatal(err)
+	//
+	// The head is signed and cosigned over the wrong root, as that operator
+	// would. This test used to edit the root line of the honest head instead,
+	// which made it a *signature* refusal two steps before the one it is
+	// named for, and it passed because it asked only for an error. With
+	// §10.1's codes it can ask which step refused.
+	lines := strings.SplitAfter(bodyOf(t, dir), "\n")
+	lines[2] = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\n"
+	write(t, filepath.Join(dir, "checkpoint"),
+		signAndCosign(t, strings.Join(lines, ""), "norn/test", logKey(t)))
+
+	_, err := Verify(Dir(dir), anchor)
+	if err == nil {
+		t.Fatal("a checkpoint whose root does not match the entries must be refused")
 	}
-	lines := bytes.Split(raw, []byte("\n"))
-	lines[2] = []byte("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")
-	if err := os.WriteFile(cpPath, bytes.Join(lines, []byte("\n")), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := Verify(Dir(dir), anchor); err == nil {
-		t.Error("a checkpoint whose root does not match the entries must be refused")
+	if code, _ := refusal.CodeOf(err); code != refusal.Head {
+		t.Errorf("refused as %q, not for its head: %v", code, err)
 	}
 }
 

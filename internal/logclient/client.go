@@ -25,6 +25,7 @@ import (
 	"github.com/onembyte/norn/internal/freshness"
 	"github.com/onembyte/norn/internal/note"
 	"github.com/onembyte/norn/internal/policy"
+	"github.com/onembyte/norn/internal/refusal"
 	"github.com/onembyte/norn/internal/replay"
 	"github.com/onembyte/norn/internal/state"
 	"github.com/onembyte/norn/internal/tlog"
@@ -36,6 +37,33 @@ var ErrLog = errors.New("log error")
 
 func logErrorf(format string, args ...any) error {
 	return fmt.Errorf("%w: %s", ErrLog, fmt.Sprintf(format, args...))
+}
+
+// refuse is a log error carrying the §10.1 code of the step that refused
+// (D-061). Every refusal of what a log served goes through here or through
+// carry; what is wrong with the anchor goes through logErrorf alone, because
+// it is the caller's configuration and §10.1's codes describe the log.
+func refuse(code refusal.Code, format string, args ...any) error {
+	return refusal.Wrap(code, logErrorf(format, args...))
+}
+
+// carry is a log error for a refusal a lower layer already named: tlog and
+// cosign make their own checks and attach their own codes. A cause that
+// arrives uncoded was the anchor's fault, and stays uncoded.
+func carry(cause error, format string, args ...any) error {
+	err := logErrorf(format, args...)
+	if code, ok := refusal.CodeOf(cause); ok {
+		return refusal.Wrap(code, err)
+	}
+	return err
+}
+
+// checkpointRefusal says, per code, what tlog.Verify found wrong.
+var checkpointRefusal = map[refusal.Code]string{
+	refusal.Note:         "the checkpoint is not a well-formed signed note",
+	refusal.LogSignature: "the checkpoint is not signed by a key this anchor trusts",
+	refusal.Checkpoint:   "the signed text is not a checkpoint",
+	"":                   "the anchor's log keys are unusable",
 }
 
 // Fetcher returns the bytes at a log-relative path, or an error.
@@ -143,15 +171,15 @@ func Verify(f Fetcher, anchor Anchor) (*Result, error) {
 	}
 	raw, err := f.Fetch("checkpoint")
 	if err != nil {
-		return nil, logErrorf("fetching the checkpoint: %v", err)
+		return nil, refuse(refusal.Unserved, "fetching the checkpoint: %v", err)
 	}
 	cp, err := tlog.Verify(string(raw), anchor.LogKeys)
 	if err != nil {
-		return nil, logErrorf("the checkpoint is not signed by a key this anchor "+
-			"trusts: %v", err)
+		code, _ := refusal.CodeOf(err)
+		return nil, carry(err, "%s: %v", checkpointRefusal[code], err)
 	}
 	if anchor.Origin != "" && cp.Origin != anchor.Origin {
-		return nil, logErrorf("the checkpoint is for origin %q, and this anchor is for %q",
+		return nil, refuse(refusal.Origin, "the checkpoint is for origin %q, and this anchor is for %q",
 			cp.Origin, anchor.Origin)
 	}
 
@@ -174,11 +202,11 @@ func Verify(f Fetcher, anchor Anchor) (*Result, error) {
 		return nil, logErrorf("building the tree: %v", err)
 	}
 	if tree.Size() != cp.Size {
-		return nil, logErrorf("checkpoint claims %d entries, %d were served",
+		return nil, refuse(refusal.Entries, "checkpoint claims %d entries, %d were served",
 			cp.Size, tree.Size())
 	}
 	if tree.Head() != cp.Root {
-		return nil, logErrorf("the served entries do not hash to the advertised head")
+		return nil, refuse(refusal.Head, "the served entries do not hash to the advertised head")
 	}
 
 	// §10: a log only grows, and it contains everything it used to contain.
@@ -200,30 +228,32 @@ func Verify(f Fetcher, anchor Anchor) (*Result, error) {
 		State: replay.Replay(anchor.Anchor, entries), Served: entries}, nil
 }
 
-// fetchEntries reads entry bundles until it has `size` entries.
+// fetchEntries reads the entry bundles a checkpoint of `size` implies.
+//
+// The size fixes how many bundles there are and how many entries each one
+// holds: every bundle but the last holds tlog.TileWidth, and the last holds
+// the rest. A bundle holding any other number is refused here, as §10.1's
+// `entries`. Counting across bundles instead -- reading on until `size`
+// entries have arrived -- sends a verifier after a bundle the size never
+// implied when one comes up short, and it refuses `unserved` for a log that
+// served every file it was asked for.
 func fetchEntries(f Fetcher, size int64) ([][]byte, error) {
 	var out [][]byte
 	for index := int64(0); int64(len(out)) < size; index++ {
-		remaining := size - int64(len(out))
-		width := tlog.TileWidth
-		if remaining < int64(width) {
-			width = int(remaining)
-		}
+		width := int(min(size-int64(len(out)), int64(tlog.TileWidth)))
 		raw, err := fetchBundle(f, index, width)
 		if err != nil {
 			return nil, err
 		}
 		entries, err := tlog.DecodeBundle(raw)
 		if err != nil {
-			return nil, err
+			return nil, refuse(refusal.Entries, "entry bundle %d does not frame: %v", index, err)
 		}
-		if len(entries) == 0 {
-			return nil, logErrorf("entry bundle %d is empty", index)
+		if len(entries) != width {
+			return nil, refuse(refusal.Entries, "entry bundle %d holds %d entries; a checkpoint "+
+				"of %d implies %d", index, len(entries), size, width)
 		}
 		out = append(out, entries...)
-	}
-	if int64(len(out)) != size {
-		return nil, logErrorf("served %d entries, the checkpoint claims %d", len(out), size)
 	}
 	return out, nil
 }
@@ -236,7 +266,7 @@ func fetchBundle(f Fetcher, index int64, width int) ([]byte, error) {
 	}
 	raw, err := f.Fetch(tlog.EntryBundlePath(index, width))
 	if err != nil {
-		return nil, logErrorf("fetching entry bundle %d: %v", index, err)
+		return nil, refuse(refusal.Unserved, "fetching entry bundle %d: %v", index, err)
 	}
 	return raw, nil
 }
@@ -251,11 +281,11 @@ func checkTiles(f Fetcher, tree *tlog.Tree) error {
 	for _, tile := range tiles {
 		served, err := f.Fetch(tile.Path())
 		if err != nil {
-			return logErrorf("the log does not serve %s, which tlog-tiles requires: %v",
+			return refuse(refusal.Unserved, "the log does not serve %s, which tlog-tiles requires: %v",
 				tile.Path(), err)
 		}
 		if !bytes.Equal(served, tile.Data) {
-			return logErrorf("the hash tile at %s is not what the entries imply; "+
+			return refuse(refusal.Tiles, "the hash tile at %s is not what the entries imply; "+
 				"this log is broken for anyone fetching proofs from it", tile.Path())
 		}
 	}
@@ -275,14 +305,14 @@ func checkQuorum(anchor Anchor, signed string) ([]cosign.Cosignature, *time.Time
 
 	cosignatures, err := cosign.Verify(signed, rules.Keys())
 	if err != nil {
-		return nil, nil, logErrorf("%v", err)
+		return nil, nil, carry(err, "%v", err)
 	}
 	names := make([]string, 0, len(cosignatures))
 	for _, c := range cosignatures {
 		names = append(names, rules.Label(c.Name))
 	}
 	if !rules.Satisfied(names) {
-		return nil, nil, logErrorf("the checkpoint does not satisfy the witness policy: "+
+		return nil, nil, refuse(refusal.Quorum, "the checkpoint does not satisfy the witness policy: "+
 			"quorum %q, cosigned by %v", rules.Quorum(), names)
 	}
 
@@ -334,7 +364,7 @@ func checkAgainstStored(stored *tlog.Checkpoint, cp tlog.Checkpoint, tree *tlog.
 			// from a rollback. Refusing as a rollback is the safe half of the
 			// answer, and saying so is better than claiming a fork it has not
 			// proved.
-			return logErrorf("this checkpoint has %d entries and this node already "+
+			return refuse(refusal.Rollback, "this checkpoint has %d entries and this node already "+
 				"holds %d; a log does not shrink, and replaying an earlier view "+
 				"would undo every revocation since", cp.Size, stored.Size)
 		}
@@ -343,11 +373,11 @@ func checkAgainstStored(stored *tlog.Checkpoint, cp tlog.Checkpoint, tree *tlog.
 		}
 	}
 	if served != mine {
-		return &ForkError{Stored: *stored, Conflicting: cp, Tree: tree,
-			At: at, Signed: signed, HeldRoot: mine, Held: held}
+		return refusal.Wrap(refusal.Fork, &ForkError{Stored: *stored, Conflicting: cp, Tree: tree,
+			At: at, Signed: signed, HeldRoot: mine, Held: held})
 	}
 	if cp.Size < stored.Size {
-		return logErrorf("this checkpoint has %d entries and this node already holds "+
+		return refuse(refusal.Rollback, "this checkpoint has %d entries and this node already holds "+
 			"%d; a log does not shrink, and replaying an earlier view would undo "+
 			"every revocation since", cp.Size, stored.Size)
 	}
