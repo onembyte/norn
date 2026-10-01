@@ -4,6 +4,7 @@ import (
 	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -382,4 +383,48 @@ func onlyFile(t *testing.T, root string) string {
 		t.Fatalf("nothing served under %s: %v", root, err)
 	}
 	return found
+}
+
+// --- 6.5l-vi-b-ii-d: checkpoints-bad/ names its codes -------------------
+//
+// The suite's own harness: each file served in place of served/checkpoint,
+// over the honest tiles, under trust.cbor -- exactly as cases.json tells a
+// second implementer to serve it -- and refused with the code cases.json
+// names. Before codes this could only ask "refused?", and two orderings were
+// invisible: a reader that compares origins before checking the signature
+// refuses 03-wrong-origin too, as `origin`; a reader that looks for a trusted
+// signature before framing the note refuses 01-unsigned too, as
+// `log-signature`.
+
+func TestEveryBadCheckpointIsRefusedWithItsCode(t *testing.T) {
+	var manifest struct {
+		Cases []string                `json:"cases"`
+		Codes map[string]refusal.Code `json:"codes"`
+	}
+	raw := readFile(t, filepath.Join(vectorRoot(), "checkpoints-bad", "cases.json"))
+	if err := json.Unmarshal([]byte(raw), &manifest); err != nil {
+		t.Fatal(err)
+	}
+	if len(manifest.Codes) != len(manifest.Cases) {
+		t.Fatalf("%d cases and %d codes: every case names the §10.1 code it is refused with",
+			len(manifest.Cases), len(manifest.Codes))
+	}
+	anchor := shippedLogAnchor(t)
+	honest := filepath.Join(vectorRoot(), "served")
+	for _, name := range manifest.Cases {
+		t.Run(name, func(t *testing.T) {
+			want, ok := manifest.Codes[name]
+			if !ok || !refusal.Known(want) {
+				t.Fatalf("names %q, which is not a §10.1 code", want)
+			}
+			checkpoint := readFile(t, filepath.Join(vectorRoot(), "checkpoints-bad", name+".checkpoint"))
+			_, err := Verify(Dir(servedWith(t, honest, checkpoint)), anchor)
+			if err == nil {
+				t.Fatal("accepted")
+			}
+			if got, _ := refusal.CodeOf(err); got != want {
+				t.Errorf("refused as %q, and cases.json says %q: %v", got, want, err)
+			}
+		})
+	}
 }

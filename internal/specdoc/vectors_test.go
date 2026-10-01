@@ -1870,22 +1870,93 @@ func TestTheVerifierCodesDoNotCollideWithReplays(t *testing.T) {
 	}
 }
 
-// §10.1 says a note's framing is checked before its signature, so §12.1's
-// admission that a note with no signature lines is refused "by §10 before §7's
-// framing is reached" had the order backwards. The codes make the difference
-// observable, so the sentence has to agree with the table.
-func TestTheNoSignatureLinesAdmissionAgreesWithTheOrder(t *testing.T) {
+// §12.1 admitted that a note with no signature lines was a rule no file could
+// isolate, and said the admission would leave once §10.1's codes were
+// vectored. They are: 01-unsigned names `note`, and a reader that looks for a
+// trusted signature before framing the note answers `log-signature` -- so the
+// file isolates the rule, and the admission goes. §7 carried the same
+// admission, with the order backwards; that sentence goes too.
+func TestTheNoSignatureLinesAdmissionHasLeftTheList(t *testing.T) {
 	doc := load(t)
+	var manifest struct {
+		Codes map[string]string `json:"codes"`
+	}
+	readJSON(t, filepath.Join(vectorRoot(t), "checkpoints-bad", "cases.json"), &manifest)
+	// The admission said it would leave once the separation was a vector, and
+	// it is one exactly when 01-unsigned names `note`.
+	if manifest.Codes["01-unsigned"] != "note" {
+		t.Fatalf("checkpoints-bad/01-unsigned names %q; §10.1 frames the note before "+
+			"looking for a signature, so it is `note`", manifest.Codes["01-unsigned"])
+	}
 	section, ok := doc.Section("12.1")
 	if !ok {
 		t.Fatal("§12.1 is missing")
 	}
-	// Collapse line breaks first: the sentence is wrapped in the source, and a
-	// check for a phrase that spans a wrap passes against text that says it.
-	flat := strings.Join(strings.Fields(section.Body), " ")
-	if strings.Contains(flat, "and §10's check is reached first") {
-		t.Error("§12.1 still says §10's signature check is reached before §7's " +
-			"framing for a note with no signature lines; §10.1's order is `note` " +
-			"then `log-signature`")
+	// Collapse line breaks first: a phrase that spans a wrap in the source
+	// passes a plain Contains against the text that says it.
+	if flat := strings.Join(strings.Fields(section.Body), " "); strings.Contains(flat,
+		"A note with no signature lines") {
+		t.Error("§12.1 still lists a note with no signature lines as a rule no file " +
+			"isolates; 01-unsigned's code isolates it")
+	}
+	seven, ok := doc.Section("7")
+	if !ok {
+		t.Fatal("§7 is missing")
+	}
+	flat := strings.Join(strings.Fields(seven.Body), " ")
+	for _, stale := range []string{"refuses such a checkpoint first",
+		"lists this rule as one no file can isolate"} {
+		if strings.Contains(flat, stale) {
+			t.Errorf("§7 still says %q: §10.1 frames the note first, and 01-unsigned "+
+				"is the file that isolates the rule", stale)
+		}
+	}
+}
+
+// A negative's `rules` entry says which rule refuses it, and its code says
+// which step does. They have to be the same rule. Before codes nothing could
+// compare them, and two cases cited a rule a later step states: 01-unsigned
+// cited §10's "verify log signature" and is refused by §7's framing, and
+// 03-wrong-origin cited the origin comparison and is refused by the signature
+// -- it is signed under another origin's name. A citation that names a step
+// the case never reaches tells a reader the wrong rule is under test.
+func TestEveryBadCheckpointCitesTheRuleOfItsCode(t *testing.T) {
+	var manifest struct {
+		Codes map[string]string `json:"codes"`
+		Rules map[string]struct {
+			Section string `json:"section"`
+			Says    string `json:"says"`
+		} `json:"rules"`
+	}
+	readJSON(t, filepath.Join(vectorRoot(t), "checkpoints-bad", "cases.json"), &manifest)
+	if len(manifest.Codes) == 0 {
+		t.Fatal("checkpoints-bad/cases.json names no codes")
+	}
+	// §10.1's steps 2 to 7, by the section that states each one's rule.
+	sectionOf := map[string]string{"note": "7", "log-signature": "10", "checkpoint": "6",
+		"origin": "10", "cosignature": "10", "quorum": "10"}
+	originRule := func(says string) bool {
+		return strings.Contains(says, "cp.origin == norn.trust.origin") ||
+			strings.Contains(says, "which log this is about")
+	}
+	for name, code := range manifest.Codes {
+		rule, ok := manifest.Rules[name]
+		if !ok {
+			t.Errorf("%s has a code and no rule", name)
+			continue
+		}
+		want, ok := sectionOf[code]
+		if !ok {
+			t.Errorf("%s names %q, which no checkpoint can be refused with", name, code)
+			continue
+		}
+		if rule.Section != want {
+			t.Errorf("%s is refused as `%s`, whose rule §%s states, and cites §%s",
+				name, code, want, rule.Section)
+		}
+		if originRule(rule.Says) != (code == "origin") {
+			t.Errorf("%s is refused as `%s` and cites %q: only an `origin` refusal is "+
+				"about the origin comparison", name, code, rule.Says)
+		}
 	}
 }

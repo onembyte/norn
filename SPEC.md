@@ -658,9 +658,11 @@ spec's rules produce.
   body — is keyed on something an attacker chooses. A line whose payload is the
   wrong length is a malformed note, not a line to skip.
 - A note carries **at least one signature line**. A block with none is a
-  malformed note rather than an unsigned one; in practice §10's "at least one
-  such line MUST be present" refuses such a checkpoint first, which is why
-  §12.1 lists this rule as one no file can isolate.
+  malformed note rather than an unsigned one, and §10.1 refuses it as `note` —
+  the framing — before any signature is looked for: there is nothing to verify
+  until the lines are found. `checkpoints-bad/01-unsigned` is that file. A
+  reader that goes looking for a trusted signature first refuses it too, as
+  `log-signature`, which is how the suite tells the two orders apart.
 - `key_id` = `SHA-256(name ‖ 0x0A ‖ alg ‖ pk)[0:4]`, with `alg` the algorithm
   byte above. The algorithm is part of the id, so the same public key published
   under `0x01` and `0x04` is two different verifiers — §9.1 turns that into a
@@ -1017,9 +1019,14 @@ Two consequences worth stating rather than discovering:
 loop every T_g or on demand:
   cp := fetch checkpoint (log_urls, then peers)         # part 6
   # The SIGNATURE decides first. A checkpoint signed by a key this anchor does
-  # not trust is refused for that, whatever origin it names: `wrong-origin` is
-  # about a checkpoint this network's own key signed, and until the signature
-  # has been checked there is no reason to believe any field in the note.
+  # not trust is refused for that, whatever origin it names, and until the
+  # signature has been checked there is no reason to believe any field in the
+  # note. Two vectors share the words "wrong origin" and sit on either side of
+  # this line: `checkpoints-bad/03-wrong-origin` is signed under ANOTHER
+  # origin's name, so it is `log-signature` (§10.1); `proofs-bad/wrong-origin`
+  # and `checkpoints-bad/10-wrong-body-origin` are signed by this network's own
+  # key under its own name and name another log in the body, so they are
+  # `origin`.
   # Signed by norn.trust.log_key, or by a key a state this node already
   # accepted names (§9.4). Never by a key learned from this checkpoint.
   # Every signature line whose name and key id match a trusted log key MUST
@@ -1401,17 +1408,6 @@ admits its holes, so:
   (four, §7), so a text carrying a blank line has the wrong line count under
   **both** readings and is refused either way. Separating them needs a note
   whose text is valid with a blank line in it, which this protocol has none of.
-- **A note with no signature lines — until §10.1's codes are vectored.** §7
-  requires at least one, and so does §10 — "at least one such line MUST be
-  present". This entry used to say §10's check is reached first; it is the other
-  way round. §10.1 checks the note's **framing** (`note`) before its signature
-  (`log-signature`), because there is nothing to verify until the lines are
-  found, and that is the order this implementation has always run them in.
-  Without codes both readings refuse the same file and no artifact separates
-  them. With §10.1's codes a reader that drops the framing rule answers
-  `log-signature` where this document says `note`, so the separation becomes a
-  vector — `checkpoints-bad/01-unsigned` — as soon as 6.5l-vi-b-ii ships the
-  codes, and this entry comes out of the list then.
 - **§10's "the root the SERVED branch has at `at` … recomputed from the
   entries, **never from a supplied proof**".** No shipped file supplies one: a
   `detect/` pair serves both branches with their own tiles, so a reader takes

@@ -30,6 +30,7 @@ import (
 	"github.com/onembyte/norn/internal/forkevidence"
 	"github.com/onembyte/norn/internal/note"
 	"github.com/onembyte/norn/internal/proof"
+	"github.com/onembyte/norn/internal/refusal"
 	"github.com/onembyte/norn/internal/replay"
 	"github.com/onembyte/norn/internal/state"
 	"github.com/onembyte/norn/internal/tlog"
@@ -2366,9 +2367,14 @@ func writeBadCheckpoints(root, origin string, key ed25519.PrivateKey,
 	// which is how §7's terminating newline, §6's canonical size line and
 	// §10's every-line rule all reached a gate unstated.
 	rules := map[string]map[string]string{
-		"01-unsigned":                       {"section": "10", "says": "verify log signature"},
+		// 6.5l-vi-b-ii-d: these two cited a rule a later step states. 01 has
+		// no signature line, so §7's framing refuses it before any signature
+		// is looked for; 03 is signed under another origin's name, so the
+		// signature refuses it before its origin is read. `codes` below made
+		// the disagreement visible, and specdoc now holds the two together.
+		"01-unsigned":                       {"section": "7", "says": "carries **at least one signature line**"},
 		"02-wrong-log-key":                  {"section": "10", "says": "norn.trust.log_key"},
-		"03-wrong-origin":                   {"section": "10", "says": "cp.origin == norn.trust.origin"},
+		"03-wrong-origin":                   {"section": "10", "says": "whatever origin it names"},
 		"04-forged-log-signature":           {"section": "10", "says": "MUST\n  # verify"},
 		"05-one-cosignature-short":          {"section": "10", "says": "the quorum must be satisfied"},
 		"06-no-cosignatures":                {"section": "10", "says": "the quorum must be satisfied"},
@@ -2395,16 +2401,55 @@ func writeBadCheckpoints(root, origin string, key ed25519.PrivateKey,
 				"say which section states the rule that refuses it", name)
 		}
 	}
+	// D-061, §10.1: the code each file is refused with, in the order the
+	// verifier checks. Without it a reader that runs two checks in the other
+	// order refuses every file here too, and the suite cannot tell: 01 is
+	// `note` and not `log-signature`, 03 is `log-signature` and not `origin`.
+	codes := map[string]refusal.Code{
+		"01-unsigned":                       refusal.Note,
+		"02-wrong-log-key":                  refusal.LogSignature,
+		"03-wrong-origin":                   refusal.LogSignature,
+		"04-forged-log-signature":           refusal.LogSignature,
+		"05-one-cosignature-short":          refusal.Quorum,
+		"06-no-cosignatures":                refusal.Quorum,
+		"07-unnamed-witness-only":           refusal.Quorum,
+		"08-forged-cosignature":             refusal.Cosignature,
+		"09-extension-line":                 refusal.Checkpoint,
+		"10-wrong-body-origin":              refusal.Origin,
+		"11-forged-cosignature-with-quorum": refusal.Cosignature,
+		"12-second-line-from-one-witness":   refusal.Cosignature,
+		"13-ascii-dash-signature":           refusal.Note,
+		"14-unterminated-signature-block":   refusal.Note,
+		"15-size-leading-zero":              refusal.Checkpoint,
+		"16-two-log-signatures":             refusal.LogSignature,
+		"17-root-wrong-length":              refusal.Checkpoint,
+		"18-signature-name-with-space":      refusal.Note,
+		"19-signature-unpadded-base64":      refusal.Note,
+		"20-signature-payload-too-long":     refusal.Note,
+		"21-origin-with-a-suffix":           refusal.Origin,
+		"22-origin-case-changed":            refusal.Origin,
+	}
+	for name := range reasons {
+		if code, ok := codes[name]; !ok || !refusal.Known(code) {
+			return fmt.Errorf("checkpoint case %q names no §10.1 code: every negative "+
+				"must say which step refuses it", name)
+		}
+	}
+	if len(codes) != len(reasons) {
+		return fmt.Errorf("%d codes for %d checkpoint cases", len(codes), len(reasons))
+	}
 
 	manifest := map[string]any{
 		"cases":                   names,
 		"reasons":                 reasons,
 		"rules":                   rules,
 		"signature_blind_accepts": blind,
+		"codes":                   codes,
 		"comment": "each file is served in place of served/checkpoint, over the honest tiles, " +
-			"under trust.cbor; every one MUST be refused. `signature_blind_accepts` lists " +
-			"the ones whose only defect is a signature that does not verify: a reader that " +
-			"never calls Ed25519 accepts exactly those, and nothing else here",
+			"under trust.cbor; every one MUST be refused, with the SPEC §10.1 code `codes` " +
+			"names for it. `signature_blind_accepts` lists the ones whose only defect is a " +
+			"signature that does not verify: a reader that never calls Ed25519 accepts " +
+			"exactly those, and nothing else here",
 	}
 	raw, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {

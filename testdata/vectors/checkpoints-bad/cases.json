@@ -23,7 +23,31 @@
     "22-origin-case-changed",
     "08-forged-cosignature"
   ],
-  "comment": "each file is served in place of served/checkpoint, over the honest tiles, under trust.cbor; every one MUST be refused. `signature_blind_accepts` lists the ones whose only defect is a signature that does not verify: a reader that never calls Ed25519 accepts exactly those, and nothing else here",
+  "codes": {
+    "01-unsigned": "note",
+    "02-wrong-log-key": "log-signature",
+    "03-wrong-origin": "log-signature",
+    "04-forged-log-signature": "log-signature",
+    "05-one-cosignature-short": "quorum",
+    "06-no-cosignatures": "quorum",
+    "07-unnamed-witness-only": "quorum",
+    "08-forged-cosignature": "cosignature",
+    "09-extension-line": "checkpoint",
+    "10-wrong-body-origin": "origin",
+    "11-forged-cosignature-with-quorum": "cosignature",
+    "12-second-line-from-one-witness": "cosignature",
+    "13-ascii-dash-signature": "note",
+    "14-unterminated-signature-block": "note",
+    "15-size-leading-zero": "checkpoint",
+    "16-two-log-signatures": "log-signature",
+    "17-root-wrong-length": "checkpoint",
+    "18-signature-name-with-space": "note",
+    "19-signature-unpadded-base64": "note",
+    "20-signature-payload-too-long": "note",
+    "21-origin-with-a-suffix": "origin",
+    "22-origin-case-changed": "origin"
+  },
+  "comment": "each file is served in place of served/checkpoint, over the honest tiles, under trust.cbor; every one MUST be refused, with the SPEC §10.1 code `codes` names for it. `signature_blind_accepts` lists the ones whose only defect is a signature that does not verify: a reader that never calls Ed25519 accepts exactly those, and nothing else here",
   "reasons": {
     "01-unsigned": "the checkpoint body with no signature line at all: nothing vouches for this tree",
     "02-wrong-log-key": "signed under the log's own name by a key the anchor does not pin",
@@ -50,15 +74,15 @@
   },
   "rules": {
     "01-unsigned": {
-      "says": "verify log signature",
-      "section": "10"
+      "says": "carries **at least one signature line**",
+      "section": "7"
     },
     "02-wrong-log-key": {
       "says": "norn.trust.log_key",
       "section": "10"
     },
     "03-wrong-origin": {
-      "says": "cp.origin == norn.trust.origin",
+      "says": "whatever origin it names",
       "section": "10"
     },
     "04-forged-log-signature": {
