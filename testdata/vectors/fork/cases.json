@@ -2,11 +2,11 @@
   "cases": [
     {
       "name": "bad-oversize",
-      "says": "exceeds"
+      "says": "oversize"
     },
     {
       "name": "bad-open-schema",
-      "says": "unknown field"
+      "says": "schema"
     },
     {
       "name": "bad-wrong-version",
@@ -14,39 +14,39 @@
     },
     {
       "name": "bad-size-above-held",
-      "says": "can only speak for what it holds"
+      "says": "size"
     },
     {
       "name": "bad-policy-says-quorum-none",
-      "says": "no quorum cosigned it"
+      "says": "held"
     },
     {
       "name": "bad-policy-unparseable",
-      "says": "not a `tlog-policy`"
+      "says": "policy"
     },
     {
       "name": "bad-proof-at-same-size",
-      "says": "requires none"
+      "says": "proof"
     },
     {
       "name": "bad-consistent",
-      "says": "nothing here is a fork"
+      "says": "consistent"
     },
     {
       "name": "bad-other-origin",
-      "says": "the held checkpoint"
+      "says": "held"
     },
     {
       "name": "bad-forged-proof",
-      "says": "does not chain"
+      "says": "proof"
     },
     {
       "name": "bad-unverifiable-conflicting",
-      "says": "the conflicting checkpoint"
+      "says": "conflicting"
     },
     {
       "name": "bad-size-mismatch",
-      "says": "claims a disagreement"
+      "says": "size"
     }
   ],
   "comment": "evidence that MUST NOT be acted on, checked against trust.cbor. bad-consistent is a log and its own earlier self -- every signature valid, both heads cosigned, the roots agreeing. bad-other-origin is a real fork of another network, which this anchor has no business accepting. `says` is what the refusal must be about. `policy-not-the-readers.cbor` is not listed here: it carries a policy the reader does not share and MUST still prove the fork, because the field is informational and the reader's own policy decides",

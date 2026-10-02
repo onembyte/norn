@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
+	"github.com/onembyte/norn/internal/evrefusal"
 	"github.com/onembyte/norn/internal/policy"
 )
 
@@ -47,8 +47,9 @@ func TestEveryForkNegativeIsRefused(t *testing.T) {
 			// accusation a third party should act on.
 			evidence, err := Parse(body)
 			if err != nil {
-				if !strings.Contains(err.Error(), c.Says) {
-					t.Errorf("refused for the wrong reason.\n  got:  %v\n  want: %s", err, c.Says)
+				if got, ok := evrefusal.CodeOf(err); !ok || string(got) != c.Says {
+					t.Errorf("refused for the wrong code.\n  got:  %v (%s)\n  want: %s",
+						err, got, c.Says)
 				}
 				return
 			}
@@ -57,8 +58,9 @@ func TestEveryForkNegativeIsRefused(t *testing.T) {
 				t.Fatal("accepted evidence that proves no fork; a reader would act on a " +
 					"false accusation")
 			}
-			if !strings.Contains(err.Error(), c.Says) {
-				t.Errorf("refused for the wrong reason.\n  got:  %v\n  want: %s", err, c.Says)
+			if got, ok := evrefusal.CodeOf(err); !ok || string(got) != c.Says {
+				t.Errorf("refused for the wrong code.\n  got:  %v (%s)\n  want: %s",
+					err, got, c.Says)
 			}
 		})
 	}
