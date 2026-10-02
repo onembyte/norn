@@ -54,7 +54,7 @@ directory that was never created.
 | `make vectors-check` | ✅ | regenerates the vectors from both implementations and diffs them |
 | `make ref-test` | ✅ | the Python reference implementation's own unit tests |
 | `make witness` | ✅ | runs an unmodified `transparency-dev/witness` against a Norn checkpoint |
-| `contrib/verify-py/` | ⬜ | the cold-model *verifier* built from the frozen spec alone — the 6.5l-vii fresh-agent run returned `SPEC SUFFICIENT`; the persistent directory is not created yet |
+| `contrib/verify-py/` | ⬜ | the cold-model *verifier* built from the frozen spec alone — checkpoint 6.5 |
 | `lab/` | ⬜ | containers, a patched Headscale, NetBird; the whole of Phase 3 |
 | `demo/` | ⬜ | the six recorded attack demos |
 | `make demos` | ⬜ | needs `lab/`; every measured number in this plan comes from it |
@@ -85,10 +85,8 @@ precondition does not.
 **Gate A — the spec can be handed to a stranger.**
 Frozen `SPEC.md` ✅ · vectors that stand alone ✅ · an honest `README.md` ✅ ·
 a second implementation of the *verifier*, built from the spec alone, passing
-every vector — the 6.5l-vii cold-model exercise returned `SPEC SUFFICIENT`, but
-a persistent `contrib/verify-py/` directory is still missing ⬜. Until that
-directory exists, the public claim "the spec is sufficient" rests on a session
-transcript, not a file a reviewer can run.
+every vector ⬜ (6.5). Until the last one, the claim "the spec is sufficient"
+is untested and must not be made in public.
 
 **Gate B — the numbers are measured, not estimated.**
 Every gate line in Phases 3, 4 and 5 of `PLAN.md`. Watchdog window p99, revoke
