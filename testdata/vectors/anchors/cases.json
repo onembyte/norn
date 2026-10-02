@@ -1,8 +1,8 @@
 {
   "cases": [
     {
-      "digest": "f7c8bc09ff38fa786ec56311c943413d8dfbc155425b7e089f42fe824cfe1287",
-      "name": "checkpoint-135.ots",
+      "digest": "ba7d26432c2b9640cab2f738ea095f9680e6f66f9f13e945941d30c64d636527",
+      "name": "checkpoint-138.ots",
       "over": "served/checkpoint",
       "range": "through the newline that terminates the blank separator line",
       "says": "SPEC 6: the stamped value is SHA-256 of the note's leading bytes through the blank separator line -- the three body lines PLUS the blank line, four 0x0A in all. Not the three-line body, and not SPEC 7's signed text, which stops one 0x0A earlier. Those are three different byte ranges"

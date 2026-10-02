@@ -40,6 +40,11 @@ ESCAPE_TORTURE = (
     'bs\b tab\t lf\n ff\f cr\r '
     'vt\x0b nul\x00 unit\x1f del\x7f '
     'ntilde-\u00f1 cjk-\u65e5\u672c emoji-\U0001f511 rtl-\u05d0\n'
+    # Cold gate run 12, D19: §14.2 writes these verbatim, and Go's
+    # encoding/json escapes them even with SetEscapeHTML(false). No vector
+    # held either character, so a reader on a default JSON library produced
+    # different state.json bytes and nothing could say so.
+    'ls-\u2028 ps-\u2029 '
     'quorum home\n'
 )
 
@@ -790,11 +795,13 @@ def log() -> list[LogItem]:
     # free-form human text, where 256 bytes is about 85 CJK characters, so a
     # revocation written in any non-Latin script is `decode` for one reader and
     # accepted by the other -- and the two then disagree about whether the
-    # device is revoked at all. 129 two-byte characters is 258 bytes and 129
-    # characters: over the cap one way and well under it the other. §12.1
-    # records the same fix for the map-key cap in run 9.
+    # device is revoked at all. 128 two-byte characters and one ASCII byte is
+    # 257 bytes and 129 characters: over the cap one way and well under it
+    # the other. §12.1 records the same fix for the map-key cap in run 9.
+    # Cold gate run 12, D16: this was 258 bytes, so a cap of 257 refused it
+    # too -- the boundary was never pinned. 257 is one byte past it.
     b.add(f"{b.index}-bad-revoke-reason-too-long", b.build(
-        "revoke", {"device_id": "nas", "reason": "é" * 129}, roots3), "decode")
+        "revoke", {"device_id": "nas", "reason": "é" * 128 + "a"}, roots3), "decode")
 
     # §4.3 deliberately does NOT constrain the embedded request's `ts` against
     # the entry's: the device is headless and its clock is advisory (§4.1).
@@ -928,6 +935,23 @@ def log() -> list[LogItem]:
     # `threshold`.
     b.add(f"{b.index}-bad-rotate-needs-signer-unsigned", b.build(
         "rotate", {"device_id": "printer", "wg_pk": WG["rogue"]}, []), "no-device-sig")
+
+    # Cold gate run 12, D16. Every byte cap was pinned only from above, and
+    # two bytes above at that, so a reader whose cap was one too high or one
+    # too low passed. At the cap: a 4096-byte `text` is accepted, and a
+    # 256-byte `reason` passes the body check and reaches the next one --
+    # `ghost` was never enrolled, so `unknown-device`, where a reader whose
+    # cap is one byte too strict says `decode`.
+    b.add(f"{b.index}-note-text-at-the-cap", b.build(
+        "note", {"text": "é" * 2048}, [("signer1", "signer")]))
+    b.add(f"{b.index}-bad-revoke-reason-at-the-cap", b.build(
+        "revoke", {"device_id": "ghost", "reason": "é" * 128}, roots3), "unknown-device")
+    # §4.0 allows a boolean in one place, `params.rotate_needs_signer`, and
+    # §4.3 types it as one. Only "a bool where a uint belongs" was vectored;
+    # the reverse -- the flag given as 1 -- was accepted by a reader that
+    # treats any truthy value as on.
+    b.add(f"{b.index}-bad-params-flag-as-uint", b.build(
+        "params", {"rotate_needs_signer": 1}, roots3), "decode")
 
     return b.items
 
@@ -1802,10 +1826,11 @@ def field_negatives() -> list[tuple[str, bytes]]:
     ok = {"v": 1, "ts": T0 + 9000, "net": NET, "device_id": "probe",
           "device_pk": KEYS["spare"].public, "wg_pk": WG["rogue"]}
 
-    # Run 11, D6: multi-byte, so 4098 bytes and 2049 characters -- over the
-    # 4096-byte cap and far under it counted in runes.
+    # Run 11, D6: multi-byte, so 4097 bytes and 2049 characters -- over the
+    # 4096-byte cap and far under it counted in runes. Cold gate run 12, D16:
+    # it was 4098, so a cap of 4097 refused it too; 4097 is one byte past.
     long_note = entry.new("note", NET, ts=T0 + 9000, after=62,
-                          body={"text": "é" * 2049})
+                          body={"text": "é" * 2048 + "a"})
     _signed(long_note, [("signer1", "signer")])
 
     bad_sig = entry.new("note", NET, ts=T0 + 9000, after=62, body={"text": "short sig"})
