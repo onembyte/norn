@@ -3,7 +3,6 @@ package proof
 import (
 	"encoding/hex"
 	"encoding/json"
-	"github.com/onembyte/norn/internal/trust"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -11,8 +10,14 @@ import (
 	"strings"
 	"testing"
 
+	upstream "golang.org/x/mod/sumdb/tlog"
+
 	"github.com/onembyte/norn/internal/cbor"
 	"github.com/onembyte/norn/internal/entry"
+	"github.com/onembyte/norn/internal/note"
+	"github.com/onembyte/norn/internal/refusal"
+	"github.com/onembyte/norn/internal/tlog"
+	"github.com/onembyte/norn/internal/trust"
 )
 
 // Cold-model gate run 5, defect G12. §8.1 said the bundle format carries
@@ -106,6 +111,10 @@ func TestEveryProofNegativeIsRefused(t *testing.T) {
 	var doc struct {
 		LogKey string                        `json:"log_key"`
 		Cases  []struct{ Name, Says string } `json:"cases"`
+		// 6.5l-vi-b-ii-e: the §10.1 code each bundle is refused with. `says`
+		// is a semantic hint (§12); where a case names a code, the code is the
+		// contract.
+		Codes map[string]refusal.Code `json:"codes"`
 	}
 	if err := json.Unmarshal(raw, &doc); err != nil {
 		t.Fatal(err)
@@ -113,27 +122,112 @@ func TestEveryProofNegativeIsRefused(t *testing.T) {
 	if len(doc.Cases) < 4 {
 		t.Fatalf("%d proof negatives; §12.1 names four", len(doc.Cases))
 	}
+	if len(doc.Codes) != len(doc.Cases) {
+		t.Fatalf("%d cases and %d codes: every case names the §10.1 code it is refused with",
+			len(doc.Cases), len(doc.Codes))
+	}
 
 	for _, c := range doc.Cases {
 		t.Run(c.Name, func(t *testing.T) {
+			want, ok := doc.Codes[c.Name]
+			if !ok || !refusal.Known(want) {
+				t.Fatalf("names %q, which is not a §10.1 code", want)
+			}
 			body, err := os.ReadFile(filepath.Join(dir, c.Name+".bundle"))
 			if err != nil {
 				t.Fatal(err)
 			}
 			bundle, err := Decode(body)
-			if err != nil {
-				if !strings.Contains(err.Error(), c.Says) {
-					t.Errorf("refused for the wrong reason.\n  got:  %v\n  want: %s", err, c.Says)
-				}
-				return
+			if err == nil {
+				err = bundle.Check(shippedAnchor(t))
 			}
-			err = bundle.Check(shippedAnchor(t))
 			if err == nil {
 				t.Fatal("accepted a bundle that proves nothing about this log")
+			}
+			if got, _ := refusal.CodeOf(err); got != want {
+				t.Errorf("refused as %q, and cases.json says %q: %v", got, want, err)
 			}
 			if !strings.Contains(err.Error(), c.Says) {
 				t.Errorf("refused for the wrong reason.\n  got:  %v\n  want: %s", err, c.Says)
 			}
+		})
+	}
+}
+
+// §10.1's bundle table is an order, and an order is a vector only where some
+// file fails two steps and is coded with the earlier one: a reader that runs
+// the two the other way round refuses that file too, with the later code.
+// Each property below is computed from the shipped bytes, not read from a
+// description of them.
+func TestTheBundleOrderHasItsVectors(t *testing.T) {
+	dir := filepath.Join("..", "..", "testdata", "vectors", "proofs-bad")
+	var doc struct {
+		Codes map[string]refusal.Code `json:"codes"`
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, "cases.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	anchor := shippedAnchor(t)
+	load := func(name string) *Bundle {
+		body, err := os.ReadFile(filepath.Join(dir, name+".bundle"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, err := Decode(body)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		return b
+	}
+	// The body's origin, read without trusting the note: what a reader that
+	// compared origins before checking the signature would compare.
+	bodyOrigin := func(b *Bundle) string {
+		origin, _, _ := strings.Cut(b.Checkpoint, "\n")
+		return origin
+	}
+	// Whether the inclusion proof chains to the root the bundle's own
+	// checkpoint states -- what an inclusion-first reader would check.
+	chains := func(b *Bundle) bool {
+		body, _, err := note.Split(b.Checkpoint)
+		if err != nil {
+			return false
+		}
+		cp, err := tlog.ParseCheckpoint(body)
+		if err != nil {
+			return false
+		}
+		return b.Index >= 0 && b.Index < cp.Size &&
+			upstream.CheckRecord(b.Proof, cp.Size, cp.Root, b.Index, tlog.LeafHash(b.Entry)) == nil
+	}
+	aboutItsDevice := func(b *Bundle) bool {
+		subject, err := subjectOf(b.Entry)
+		return err == nil && subject == b.Device
+	}
+	for _, order := range []struct {
+		name    string
+		earlier refusal.Code
+		later   func(*Bundle) bool // true when the later step ALSO fails
+	}{
+		{"log-signature before origin", refusal.LogSignature,
+			func(b *Bundle) bool { return bodyOrigin(b) != anchor.Origin }},
+		{"quorum before inclusion", refusal.Quorum,
+			func(b *Bundle) bool { return !chains(b) }},
+		{"inclusion before binding", refusal.Inclusion,
+			func(b *Bundle) bool { return !aboutItsDevice(b) }},
+	} {
+		t.Run(order.name, func(t *testing.T) {
+			for name, code := range doc.Codes {
+				if code == order.earlier && order.later(load(name)) {
+					return
+				}
+			}
+			t.Errorf("no proofs-bad bundle is coded %q while also failing the later "+
+				"step, so a reader that runs them the other way round passes every file",
+				order.earlier)
 		})
 	}
 }

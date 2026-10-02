@@ -1920,6 +1920,59 @@ func TestTheNoSignatureLinesAdmissionHasLeftTheList(t *testing.T) {
 // 03-wrong-origin cited the origin comparison and is refused by the signature
 // -- it is signed under another origin's name. A citation that names a step
 // the case never reaches tells a reader the wrong rule is under test.
+// The same question for the other two manifests that carry codes, where the
+// sections do not separate the steps -- §6 states both the head comparison
+// and the tile rule, §8.1 every step of a bundle -- so the citation itself is
+// held to its code. served-bad/ cited §6's tile sentence for a tampered entry
+// bundle, which §10.1 refuses at the head, and for a missing one, which is
+// `unserved`; the vectors README said the tile rule caught the tamper cases
+// "first", which is the order §10.1 does not have.
+func TestEveryServedAndBundleNegativeCitesTheRuleOfItsCode(t *testing.T) {
+	for dir, citeFor := range map[string]map[string][]string{
+		"served-bad": {
+			"head":     {"that comparison is what binds the entries to the head"},
+			"tiles":    {"checking them is not optional"},
+			"unserved": {"any file a later step needs and cannot fetch"},
+		},
+		"proofs-bad": {
+			"bundle":        {"a closed map of exactly these six keys", "`v` | uint | `1`"},
+			"log-signature": {"this network's log key"},
+			"origin":        {"this network's origin"},
+			"quorum":        {"a satisfied witness quorum"},
+			"inclusion":     {"reach that checkpoint's root at `index`"},
+			"binding":       {"`device` is the `device_id` the `entry` names"},
+		},
+	} {
+		t.Run(dir, func(t *testing.T) {
+			var manifest struct {
+				Codes map[string]string `json:"codes"`
+				Rules map[string]struct {
+					Says string `json:"says"`
+				} `json:"rules"`
+			}
+			readJSON(t, filepath.Join(vectorRoot(t), dir, "cases.json"), &manifest)
+			if len(manifest.Codes) == 0 {
+				t.Fatalf("%s/cases.json names no codes", dir)
+			}
+			for name, code := range manifest.Codes {
+				allowed, ok := citeFor[code]
+				if !ok {
+					t.Errorf("%s is coded %q, which nothing in %s can be refused with", name, code, dir)
+					continue
+				}
+				var cites bool
+				for _, phrase := range allowed {
+					cites = cites || manifest.Rules[name].Says == phrase
+				}
+				if !cites {
+					t.Errorf("%s is refused as `%s` and cites %q; the rule of that step is %q",
+						name, code, manifest.Rules[name].Says, allowed)
+				}
+			}
+		})
+	}
+}
+
 func TestEveryBadCheckpointCitesTheRuleOfItsCode(t *testing.T) {
 	var manifest struct {
 		Codes map[string]string `json:"codes"`

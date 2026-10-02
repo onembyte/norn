@@ -17,6 +17,10 @@
       "says": "no quorum cosigned"
     },
     {
+      "name": "no-quorum-tampered-proof",
+      "says": "no quorum cosigned"
+    },
+    {
       "name": "wrong-origin",
       "says": "is for origin"
     },
@@ -37,7 +41,19 @@
       "says": "no valid signature from a trusted key"
     }
   ],
-  "comment": "bundles that MUST be refused under the log key above. Each differs from a valid bundle in exactly one thing, so a verifier that skips one check accepts exactly one of them",
+  "codes": {
+    "device-not-in-entry": "binding",
+    "foreign-checkpoint": "log-signature",
+    "no-quorum": "quorum",
+    "no-quorum-tampered-proof": "quorum",
+    "open-schema": "bundle",
+    "tampered-proof": "inclusion",
+    "wrong-entry": "inclusion",
+    "wrong-log-key": "log-signature",
+    "wrong-origin": "origin",
+    "wrong-version": "bundle"
+  },
+  "comment": "bundles that MUST be refused under the log key above, with the SPEC §10.1 code `codes` names for each. Each differs from a valid bundle in exactly one thing, so a verifier that skips one check accepts exactly one of them -- except no-quorum-tampered-proof, which differs in two so that §10.1's order decides: it is `quorum`, and a reader that checks the inclusion proof first says `inclusion`",
   "log_key": "norn/nzxxe3rnorsxg5domv2c2mbqge+bea4a666+AV6v97lmGyW99eHglI8syFAU2uY+/HuHHq0VYz9Rmio1",
   "origin": "norn/nzxxe3rnorsxg5domv2c2mbqge",
   "rules": {
@@ -50,6 +66,10 @@
       "section": "8.1"
     },
     "no-quorum": {
+      "says": "a satisfied witness quorum",
+      "section": "8.1"
+    },
+    "no-quorum-tampered-proof": {
       "says": "a satisfied witness quorum",
       "section": "8.1"
     },

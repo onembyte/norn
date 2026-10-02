@@ -786,8 +786,10 @@ func seedKeyForPublic(root string, public []byte) (ed25519.PrivateKey, error) {
 	return nil, fmt.Errorf("keys.json holds no private key for the published %s", want)
 }
 
-// writeBadProofs ships §8's four refusals. Each differs from a valid bundle in
-// exactly one thing, so a verifier that skips one check accepts one file.
+// writeBadProofs ships §8's refusals of a bundle. Each differs from a valid
+// bundle in exactly one thing, so a verifier that skips one check accepts one
+// file -- except the one built to differ in two, which exists to pin §10.1's
+// order between them.
 func writeBadProofs(root, origin string, key ed25519.PrivateKey, entries [][]byte,
 	signed string, signers []cosignpkg.Signer, device string, index int64,
 	inclusion upstream.RecordProof) error {
@@ -883,6 +885,19 @@ func writeBadProofs(root, origin string, key ed25519.PrivateKey, entries [][]byt
 		return err
 	}
 
+	// 6.5l-vi-b-ii-e. Two faults: nobody cosigned, and the inclusion path is
+	// tampered. §10.1 checks the checkpoint before the proof, so this is
+	// `quorum`; a reader that checks the proof first refuses it as
+	// `inclusion`. D-061 names exactly this pair -- "a bundle's quorum before
+	// its inclusion proof" -- as an ordering no file could show.
+	noQuorumTampered, err := proof.Build(device, index, entries[index], tampered, uncosigned)
+	if err != nil {
+		return err
+	}
+	if err := write("no-quorum-tampered-proof", noQuorumTampered); err != nil {
+		return err
+	}
+
 	otherOrigin := "norn/elsewhere"
 	body := mustBody(signed)
 	wrongBody := otherOrigin + body[strings.Index(body, "\n"):]
@@ -935,41 +950,97 @@ func writeBadProofs(root, origin string, key ed25519.PrivateKey, entries [][]byt
 
 	// Every negative names the section that states its rule (run 10).
 	bundleRules := map[string]map[string]string{
-		"open-schema":         {"section": "8.1", "says": "a closed map of exactly these six keys"},
-		"wrong-version":       {"section": "8.1", "says": "`v` | uint | `1`"},
-		"device-not-in-entry": {"section": "8.1", "says": "`device` is the `device_id` the `entry` names"},
-		"no-quorum":           {"section": "8.1", "says": "a satisfied witness quorum"},
-		"wrong-origin":        {"section": "8.1", "says": "this network's origin"},
-		"wrong-entry":         {"section": "8.1", "says": "reach that checkpoint's root at `index`"},
-		"foreign-checkpoint":  {"section": "8.1", "says": "this network's log key"},
-		"tampered-proof":      {"section": "8.1", "says": "reach that checkpoint's root at `index`"},
-		"wrong-log-key":       {"section": "8.1", "says": "this network's log key"},
+		"open-schema":              {"section": "8.1", "says": "a closed map of exactly these six keys"},
+		"wrong-version":            {"section": "8.1", "says": "`v` | uint | `1`"},
+		"device-not-in-entry":      {"section": "8.1", "says": "`device` is the `device_id` the `entry` names"},
+		"no-quorum":                {"section": "8.1", "says": "a satisfied witness quorum"},
+		"no-quorum-tampered-proof": {"section": "8.1", "says": "a satisfied witness quorum"},
+		"wrong-origin":             {"section": "8.1", "says": "this network's origin"},
+		"wrong-entry":              {"section": "8.1", "says": "reach that checkpoint's root at `index`"},
+		"foreign-checkpoint":       {"section": "8.1", "says": "this network's log key"},
+		"tampered-proof":           {"section": "8.1", "says": "reach that checkpoint's root at `index`"},
+		"wrong-log-key":            {"section": "8.1", "says": "this network's log key"},
+	}
+
+	// D-061: the §10.1 code each is refused with, in the bundle table's
+	// order. Three files fail two steps and are coded with the earlier:
+	// foreign-checkpoint (signed under another origin's name: the
+	// signature, then the origin), wrong-entry (the inclusion proof, then
+	// the binding -- the entry is another one's), and
+	// no-quorum-tampered-proof (the quorum, then the inclusion proof).
+	bundleCodes := map[string]refusal.Code{
+		"open-schema":              refusal.Bundle,
+		"wrong-version":            refusal.Bundle,
+		"device-not-in-entry":      refusal.Binding,
+		"no-quorum":                refusal.Quorum,
+		"no-quorum-tampered-proof": refusal.Quorum,
+		"wrong-origin":             refusal.Origin,
+		"wrong-entry":              refusal.Inclusion,
+		"foreign-checkpoint":       refusal.LogSignature,
+		"tampered-proof":           refusal.Inclusion,
+		"wrong-log-key":            refusal.LogSignature,
+	}
+	bundleCases := []map[string]string{
+		{"name": "open-schema", "says": "unknown field"},
+		{"name": "wrong-version", "says": "unsupported version"},
+		{"name": "device-not-in-entry", "says": "carries an entry about"},
+		{"name": "no-quorum", "says": "no quorum cosigned"},
+		{"name": "no-quorum-tampered-proof", "says": "no quorum cosigned"},
+		{"name": "wrong-origin", "says": "is for origin"},
+		{"name": "wrong-entry", "says": "inclusion proof"},
+		{"name": "foreign-checkpoint", "says": "no valid signature from a trusted key"},
+		{"name": "tampered-proof", "says": "inclusion proof"},
+		{"name": "wrong-log-key", "says": "no valid signature from a trusted key"},
+	}
+	if err := checkCodes("proofs-bad", namesOf(bundleCases), bundleCodes); err != nil {
+		return err
 	}
 
 	meta := map[string]any{
 		"log_key": note.VerifierKey(origin, key.Public().(ed25519.PublicKey)),
 		"origin":  origin,
 		"rules":   bundleRules,
-		"cases": []map[string]string{
-			{"name": "open-schema", "says": "unknown field"},
-			{"name": "wrong-version", "says": "unsupported version"},
-			{"name": "device-not-in-entry", "says": "carries an entry about"},
-			{"name": "no-quorum", "says": "no quorum cosigned"},
-			{"name": "wrong-origin", "says": "is for origin"},
-			{"name": "wrong-entry", "says": "inclusion proof"},
-			{"name": "foreign-checkpoint", "says": "no valid signature from a trusted key"},
-			{"name": "tampered-proof", "says": "inclusion proof"},
-			{"name": "wrong-log-key", "says": "no valid signature from a trusted key"},
-		},
-		"comment": "bundles that MUST be refused under the log key above. Each differs " +
-			"from a valid bundle in exactly one thing, so a verifier that skips one " +
-			"check accepts exactly one of them",
+		"cases":   bundleCases,
+		"codes":   bundleCodes,
+		"comment": "bundles that MUST be refused under the log key above, with the SPEC " +
+			"§10.1 code `codes` names for each. Each differs from a valid bundle in " +
+			"exactly one thing, so a verifier that skips one check accepts exactly one " +
+			"of them -- except no-quorum-tampered-proof, which differs in two so that " +
+			"§10.1's order decides: it is `quorum`, and a reader that checks the " +
+			"inclusion proof first says `inclusion`",
 	}
 	blob, err := json.MarshalIndent(meta, "", "  ")
 	if err != nil {
 		return err
 	}
 	return os.WriteFile(filepath.Join(dir, "cases.json"), append(blob, '\n'), 0o644)
+}
+
+// checkCodes refuses to write a manifest whose cases and codes disagree:
+// every case names a code on §10.1's list (D-061), and no code names a case
+// that is not there. A negative without a code can only say "refused", which
+// a verifier that runs its checks in the wrong order also says.
+func checkCodes(dir string, names []string, codes map[string]refusal.Code) error {
+	for _, name := range names {
+		if code, ok := codes[name]; !ok || !refusal.Known(code) {
+			return fmt.Errorf("%s: case %q names no §10.1 code; every negative must "+
+				"say which step refuses it", dir, name)
+		}
+	}
+	if len(codes) != len(names) {
+		return fmt.Errorf("%s: %d codes for %d cases", dir, len(codes), len(names))
+	}
+	return nil
+}
+
+// namesOf lists each case's `name`, in order, so a manifest's codes are
+// checked against its own cases rather than against a second list of them.
+func namesOf[V any](cases []map[string]V) []string {
+	out := make([]string, 0, len(cases))
+	for _, c := range cases {
+		out = append(out, fmt.Sprint(c["name"]))
+	}
+	return out
 }
 
 // leafHashTile turns an entry bundle into the level-0 tile it implies: each
@@ -989,8 +1060,9 @@ func leafHashTile(bundle []byte) []byte {
 	return out
 }
 
-// writeBadServed ships §6's two refusals. A served log is a directory rather
-// than a file, so the case says which path to replace or remove.
+// writeBadServed ships §6's refusals of a served log. A served log is a
+// directory rather than a file, so the case says which path to replace or
+// remove.
 func writeBadServed(root, served string, size int64) error {
 	dir := filepath.Join(root, "served-bad")
 	if err := os.RemoveAll(dir); err != nil {
@@ -1032,11 +1104,14 @@ func writeBadServed(root, served string, size int64) error {
 		return err
 	}
 
-	// Cold-model gate run 10, defect D11. Both tamper cases above are refused
-	// by the *tile* rule: changing a byte of an entry changes its leaf hash,
-	// so the served tile disagrees and a reader never has to compare the
-	// rebuilt head with the checkpoint at all. `V154_NoRebuild` passed all 236
-	// checks on exactly that. Here the tile is recomputed over the tampered
+	// Cold-model gate run 10, defect D11. Both tamper cases above CAN be
+	// refused by the tile rule alone: changing a byte of an entry changes its
+	// leaf hash, so the served tile disagrees and a reader never has to
+	// compare the rebuilt head with the checkpoint at all. `V154_NoRebuild`
+	// passed all 236 checks on exactly that. (§10.1 checks the head first, so
+	// `tampered-entry-bundle` is `head` -- and a tiles-first or tiles-only
+	// reader answers `tiles`, which is what makes it the head-before-tiles
+	// vector now that cases carry codes.) Here the tile is recomputed over the tampered
 	// entries, so the served directory agrees with itself -- and the tree it
 	// describes is not the one the checkpoint is signed over. Only "compares
 	// its head with the signed checkpoint" can see it.
@@ -1058,40 +1133,58 @@ func writeBadServed(root, served string, size int64) error {
 		return err
 	}
 
+	// D-061: the §10.1 code each is refused with. The head is checked before
+	// the tiles, so the tampered bundle -- whose tiles disagree as well -- is
+	// `head`.
+	servedCodes := map[string]refusal.Code{
+		"tampered-entry-bundle":   refusal.Head,
+		"missing-entry-bundle":    refusal.Unserved,
+		"consistent-tampered-log": refusal.Head,
+		"tampered-hash-tile":      refusal.Tiles,
+	}
+	servedCases := []map[string]any{
+		{"name": "tampered-entry-bundle", "path": bundlePath,
+			"file": "tampered-entry-bundle.bin",
+			"says": "one byte of one entry changed: the bundle still frames, and the " +
+				"tree it builds is not the one the checkpoint is signed over"},
+		{"name": "missing-entry-bundle", "path": bundlePath, "remove": true,
+			"says": "a log that will not serve its entries cannot be replayed, and a " +
+				"verifier must refuse rather than report what it has"},
+		{"name": "consistent-tampered-log", "files": []map[string]string{
+			{"path": bundlePath, "file": "consistent-entry-bundle.bin"},
+			{"path": tilePath, "file": "consistent-hash-tile.bin"},
+		},
+			"says": "the entries and the hash tile are tampered *together*, so the " +
+				"served log agrees with itself and disagrees with the head the " +
+				"checkpoint is signed over: only rebuilding the tree and comparing " +
+				"that head can refuse it"},
+		{"name": "tampered-hash-tile", "path": tilePath,
+			"file": "tampered-hash-tile.bin",
+			"says": "one byte of one leaf hash changed: the entries and the signed " +
+				"head are untouched, so a verifier that reaches the head without " +
+				"opening `tile/0/...` sees nothing wrong, and serves the corrupt " +
+				"tile onward to peers asking it for proofs"},
+	}
+	if err := checkCodes("served-bad", namesOf(servedCases), servedCodes); err != nil {
+		return err
+	}
+
 	meta := map[string]any{
 		"rules": map[string]map[string]string{
-			"tampered-entry-bundle":   {"section": "6", "says": "The served `tile/<L>/"},
-			"missing-entry-bundle":    {"section": "6", "says": "The served `tile/<L>/"},
+			// 6.5l-vi-b-ii-e: both cited §6's tile sentence. The tampered
+			// bundle is refused by the head comparison before any tile is
+			// opened, and a missing bundle by §10.1's `unserved`.
+			"tampered-entry-bundle":   {"section": "6", "says": "that comparison is what binds the entries to the head"},
+			"missing-entry-bundle":    {"section": "10.1", "says": "any file a later step needs and cannot fetch"},
 			"tampered-hash-tile":      {"section": "6", "says": "checking them is not optional"},
 			"consistent-tampered-log": {"section": "6", "says": "that comparison is what binds the entries to the head"},
 		},
-		"cases": []map[string]any{
-			{"name": "tampered-entry-bundle", "path": bundlePath,
-				"file": "tampered-entry-bundle.bin",
-				"says": "one byte of one entry changed: the bundle still frames, and the " +
-					"tree it builds is not the one the checkpoint is signed over"},
-			{"name": "missing-entry-bundle", "path": bundlePath, "remove": true,
-				"says": "a log that will not serve its entries cannot be replayed, and a " +
-					"verifier must refuse rather than report what it has"},
-			{"name": "consistent-tampered-log", "files": []map[string]string{
-				{"path": bundlePath, "file": "consistent-entry-bundle.bin"},
-				{"path": tilePath, "file": "consistent-hash-tile.bin"},
-			},
-				"says": "the entries and the hash tile are tampered *together*, so the " +
-					"served log agrees with itself and disagrees with the head the " +
-					"checkpoint is signed over: only rebuilding the tree and comparing " +
-					"that head can refuse it"},
-			{"name": "tampered-hash-tile", "path": tilePath,
-				"file": "tampered-hash-tile.bin",
-				"says": "one byte of one leaf hash changed: the entries and the signed " +
-					"head are untouched, so a verifier that reaches the head without " +
-					"opening `tile/0/...` sees nothing wrong, and serves the corrupt " +
-					"tile onward to peers asking it for proofs"},
-		},
+		"cases": servedCases,
+		"codes": servedCodes,
 		"comment": "a served log is a directory, so each case names the path to replace " +
 			"with `file`, the paths to replace with `files`, or the path to delete " +
 			"with `remove`, over an otherwise honest copy of `served/`. Every one " +
-			"MUST be refused",
+			"MUST be refused, with the SPEC §10.1 code `codes` names for it",
 	}
 	blob, err := json.MarshalIndent(meta, "", "  ")
 	if err != nil {
@@ -2429,14 +2522,8 @@ func writeBadCheckpoints(root, origin string, key ed25519.PrivateKey,
 		"21-origin-with-a-suffix":           refusal.Origin,
 		"22-origin-case-changed":            refusal.Origin,
 	}
-	for name := range reasons {
-		if code, ok := codes[name]; !ok || !refusal.Known(code) {
-			return fmt.Errorf("checkpoint case %q names no §10.1 code: every negative "+
-				"must say which step refuses it", name)
-		}
-	}
-	if len(codes) != len(reasons) {
-		return fmt.Errorf("%d codes for %d checkpoint cases", len(codes), len(reasons))
+	if err := checkCodes("checkpoints-bad", names, codes); err != nil {
+		return err
 	}
 
 	manifest := map[string]any{

@@ -428,3 +428,112 @@ func TestEveryBadCheckpointIsRefusedWithItsCode(t *testing.T) {
 		})
 	}
 }
+
+// --- 6.5l-vi-b-ii-e: served-bad/ names its codes ------------------------
+//
+// A served log is a directory, so each case replaces or removes paths in an
+// honest copy of served/ (cases.json says which), and the result is refused
+// with the code `codes` names.
+
+type servedNegative struct {
+	Name   string
+	Path   string
+	File   string
+	Remove bool
+	Files  []struct{ Path, File string } `json:"files"`
+}
+
+func servedNegatives(t *testing.T) ([]servedNegative, map[string]refusal.Code) {
+	t.Helper()
+	var manifest struct {
+		Cases []servedNegative        `json:"cases"`
+		Codes map[string]refusal.Code `json:"codes"`
+	}
+	raw := readFile(t, filepath.Join(vectorRoot(), "served-bad", "cases.json"))
+	if err := json.Unmarshal([]byte(raw), &manifest); err != nil {
+		t.Fatal(err)
+	}
+	return manifest.Cases, manifest.Codes
+}
+
+// apply builds the served directory a case describes.
+func (c servedNegative) apply(t *testing.T) string {
+	t.Helper()
+	honest := filepath.Join(vectorRoot(), "served")
+	dir := servedWith(t, honest, readFile(t, filepath.Join(honest, "checkpoint")))
+	replace := func(path, file string) {
+		at := filepath.Join(dir, filepath.FromSlash(path))
+		if _, err := os.Stat(at); err != nil {
+			t.Fatalf("the case replaces %s, which the honest log does not serve", path)
+		}
+		write(t, at, readFile(t, filepath.Join(vectorRoot(), "served-bad", file)))
+	}
+	switch {
+	case c.Remove:
+		remove(t, filepath.Join(dir, filepath.FromSlash(c.Path)))
+	case len(c.Files) > 0:
+		for _, f := range c.Files {
+			replace(f.Path, f.File)
+		}
+	default:
+		replace(c.Path, c.File)
+	}
+	return dir
+}
+
+func TestEveryServedNegativeIsRefusedWithItsCode(t *testing.T) {
+	cases, codes := servedNegatives(t)
+	if len(codes) != len(cases) {
+		t.Fatalf("%d cases and %d codes: every case names the §10.1 code it is refused with",
+			len(cases), len(codes))
+	}
+	anchor := shippedLogAnchor(t)
+	for _, c := range cases {
+		t.Run(c.Name, func(t *testing.T) {
+			want, ok := codes[c.Name]
+			if !ok || !refusal.Known(want) {
+				t.Fatalf("names %q, which is not a §10.1 code", want)
+			}
+			_, err := Verify(Dir(c.apply(t)), anchor)
+			if err == nil {
+				t.Fatal("accepted")
+			}
+			if got, _ := refusal.CodeOf(err); got != want {
+				t.Errorf("refused as %q, and cases.json says %q: %v", got, want, err)
+			}
+		})
+	}
+}
+
+// §10.1 checks the head before the tiles. The ordering is a vector only if
+// some served log fails BOTH -- its entries do not hash to the signed head,
+// and its served tiles disagree with the tree those entries build -- and is
+// coded `head`: a reader that checks tiles first refuses that same log as
+// `tiles`, and one that never rebuilds the tree has nothing else to say.
+func TestTheHeadBeforeTilesOrderHasAVector(t *testing.T) {
+	cases, codes := servedNegatives(t)
+	for _, c := range cases {
+		if codes[c.Name] != refusal.Head || c.Remove {
+			continue
+		}
+		dir := c.apply(t)
+		cp := checkpointIn(t, dir, "checkpoint", shippedLogAnchor(t))
+		entries, err := fetchEntries(Dir(dir), cp.Size)
+		if err != nil {
+			t.Fatalf("%s: %v", c.Name, err)
+		}
+		tree, err := tlog.Build(entries)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if tree.Head() == cp.Root {
+			t.Errorf("%s is coded `head` and its entries hash to the signed root", c.Name)
+			continue
+		}
+		if checkTiles(Dir(dir), tree) != nil {
+			return // the tiles disagree too: a tiles-first reader says `tiles` here
+		}
+	}
+	t.Error("no served-bad case is coded `head` while its tiles also disagree, so a " +
+		"reader that checks tiles before the head passes every file here")
+}
