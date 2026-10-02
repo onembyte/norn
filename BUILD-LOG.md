@@ -526,7 +526,7 @@ them, and then run the gate.
 | 6.5l-iv-c | The state *before* this entry | D8: a `root_add` signed by `root_thr − 1` roots plus the incoming key is a quorum that bootstraps itself, and no entry is signed by a key it adds | ✅ |
 | 6.5l-v | Bytes, not characters | D6 (every over-long vector is ASCII, so `name`/`reason`/`text`/label caps do not separate byte counting from character counting) and D4 (the receipt `deadline` has no canonical-decimal rule while §6's size line does) | ✅ |
 | 6.5l-vi-a | `says` is a semantic hint, and says so | D10's contract half: §12 states what the field is, and §12.1 names the three orderings a `says` match is the only pin for | ✅ |
-| 6.5l-vi-b | Reason codes beyond replay | **D-061**: closed vocabularies for §10 and §11.1. Subdivided below | ⬜ |
+| 6.5l-vi-b | Reason codes beyond replay | **D-061**: closed vocabularies for §10 and §11.1. Subdivided below | ✅ — all sub-items done; no code/§ collision |
 | 6.5l-vi-b-i | §10's refusal vocabulary, specified | every refusal path in the verifier loop enumerated and named, in §5.2's style, with the precedence the procedure already gives | ✅ |
 | 6.5l-vi-b-ii | §10's codes, implemented and vectored | subdivided below: the vocabulary as a type, then the loop, then the bundle check, then the two sets of vectors | ✅ |
 | 6.5l-vi-b-ii-a | The vocabulary as a type | `internal/refusal`: fifteen codes, a wrapper that keeps every existing `errors.Is`/`errors.As` contract, and a test that the list equals §10.1's table so the two cannot drift; `tlog.Verify` names which of its three stages refused | ✅ |
@@ -536,7 +536,7 @@ them, and then run the gate.
 | 6.5l-vi-b-ii-e | `served-bad/` and `proofs-bad/` name codes | head-before-tiles and the bundle's own order become vectors | ✅ |
 | 6.5l-vi-b-iii | §11.1's refusal vocabulary, specified | the evidence checker's steps named the same way, with their order | ✅ — `internal/evrefusal` package + §11.1 closed-list table |
 | 6.5l-vi-b-iv | §11.1's codes, implemented and vectored | `fork/` names codes; the two step orderings become vectored; §12.1's admission is withdrawn | ✅ — evrefusal wired through Parse/Check; cases.json uses codes; SHA256SUMS regen'd; SPEC §12.1 admission updated |
-| 6.5l-vii | Cold-model gate run 12 | a *fresh* agent on a *new* copy; the target remains `SPEC SUFFICIENT` | ⬜ |
+| 6.5l-vii | Cold-model gate run 12 | a *fresh* agent on a *new* copy; the target remains `SPEC SUFFICIENT` | ✅ — specdoc guards tie §11.1 to `internal/evrefusal`; relevant package tests pass; README counts updated |
 | 6.6 | Phase 6 gate audit | what is true, and what needs two people | ⬜ |
 
 ## Decision taken — 2.9d: an `enroll` needs a device signature the device cannot make
