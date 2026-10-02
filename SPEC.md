@@ -1391,15 +1391,12 @@ this table drifted out of date the moment one was.
 **What is not vectored.** A suite that looks complete is worse than one that
 admits its holes, so:
 
-- **Three orderings that are pinned only by a `says` match**, and therefore by
-  a JSON file rather than by this document: §10's rule that the **signature
-  decides before the origin** (`proofs-bad/foreign-checkpoint`), and §11.1's two
-  step orderings (`fork/bad-size-mismatch` and `fork/bad-other-origin` against
-  their neighbours). Outside replay there is no reason code, so both readings
-  refuse and a black-box run sees one event either way; the ordering is visible
-  only in the words. §5.2 is the artefact that would fix this — a closed
-  vocabulary makes an ordering observable — and extending it to the verifier and
-  evidence layers is not done (cold gate run 11, D10).
+- **One ordering still pinned only by a `says` match**, and therefore by a
+  JSON file rather than by this document: §10's rule that the **signature
+  decides before the origin** (`proofs-bad/foreign-checkpoint`). The verifier and
+  evidence layers now have closed refusal codes (§10.1, §11.1) that make every
+  ordering observable. §11.1's orderings are vectored by `fork/bad-size-mismatch`
+  (`size` before `proof`) and `fork/bad-other-origin` (`held` before `conflicting`).
 - **`quorum none` accepting an uncosigned head.** It needs a second trust
   anchor, and one is not shipped.
 - **§4.3's "a key contributes at most once".** `sigs` is sorted by `kid` with
