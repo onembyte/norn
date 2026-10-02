@@ -15,4 +15,8 @@ PYTHONPATH=/tmp/ots:$(pwd)/contrib/ots-vector/stub python3 contrib/ots-vector/ge
 
 The stub exists because `python-opentimestamps` imports `python-bitcoinlib` for
 code paths its serializer never touches; installing that tree to obtain a few
-hundred bytes is not a trade worth making.
+hundred bytes is not a trade worth making. Later upstream versions also import
+`pycryptodomex` at load time, for a Keccak-256 operation no Norn proof uses, so
+the stub carries a `Cryptodome.Hash.keccak` that raises if it is ever called.
+Upstream `3af4643` regenerates `sample.ots` byte for byte, which is the check
+that a newer serializer still writes the same proofs.

@@ -876,6 +876,59 @@ def log() -> list[LogItem]:
         "root_add", {"pk": KEYS["root4"].public},
         [("root1", "root"), ("root2", "root"), ("root4", "root")]), "threshold")
 
+    # Cold gate run 12, D1. §4.0: `sigs` has no repeated `kid`, and an array
+    # that repeats one is `decode`; §4.3: a key counts at most once. No entry
+    # ever repeated a kid, so neither rule was checked -- and a reader lax
+    # about both lets one root meet a three-root quorum alone. One root's
+    # signature element, three times, on a `signer_add` for a stranger.
+    repeated = b.build("signer_add", {"pk": KEYS["stranger"].public}, [("root1", "root")])
+    repeated["sigs"] = repeated["sigs"] * 3
+    b.add(f"{b.index}-bad-repeated-kid", repeated, "decode")
+
+    # Cold gate run 12, D6. §5.1 step 3 checks the envelope "per §4.1", and
+    # §4.1 gives every member a type -- which step 3 did not say it checks.
+    # Each entry below is signed over its wrong-typed member, so a reader that
+    # defers the type check does not fail on a signature: it reaches a later
+    # step and answers differently, or accepts.
+    def wrong_type(kind: str, body: Any, signers: list[tuple[str, str]],
+                   **members: Any) -> dict[str, Any]:
+        env = entry.new(kind, NET, ts=T0 + b.index * 60, after=b.index, body=body)
+        env.update(members)
+        return _signed(env, signers)
+
+    # Under-signed too: a reader that checks the body's type at step 8 says
+    # `threshold` (step 7) for a body that is not a map at all.
+    b.add(f"{b.index}-bad-body-not-a-map",
+          wrong_type("signer_add", 5, [("root1", "root")]), "decode")
+    # A reader that checks `t` at step 4 says `unknown-type`.
+    b.add(f"{b.index}-bad-t-not-text",
+          wrong_type("note", {"text": "t is a number"}, [("signer1", "signer")], t=7), "decode")
+    # A reader that only compares `after` with the index accepts these two.
+    b.add(f"{b.index}-bad-after-not-a-uint",
+          wrong_type("note", {"text": "after is text"}, [("signer1", "signer")], after="0"),
+          "decode")
+    b.add(f"{b.index}-bad-ts-not-a-uint",
+          wrong_type("note", {"text": "ts is text"}, [("signer1", "signer")], ts=str(T0)),
+          "decode")
+
+    # Cold gate run 12, D9. §5.1's type rules run their checks "in the order
+    # written", and nothing exercised the order inside `revoke`, nor where
+    # `rotate`'s device signature sits between "currently active" and the
+    # signer threshold. Each entry fails two checks; the earlier decides.
+    # `ghost` was never enrolled and nobody signed: `unknown-device`, not
+    # `threshold`.
+    b.add(f"{b.index}-bad-revoke-unknown-unsigned", b.build(
+        "revoke", {"device_id": "ghost", "reason": "never enrolled"}, []), "unknown-device")
+    # `laptop` is revoked and the rotation is unsigned: `not-active`, not
+    # `no-device-sig`.
+    b.add(f"{b.index}-bad-rotate-revoked-unsigned", b.build(
+        "rotate", {"device_id": "laptop", "wg_pk": WG["rogue"]}, []), "not-active")
+    # `printer` is active, `rotate_needs_signer` is on, and nobody signed:
+    # the device signature is checked first -- `no-device-sig`, not
+    # `threshold`.
+    b.add(f"{b.index}-bad-rotate-needs-signer-unsigned", b.build(
+        "rotate", {"device_id": "printer", "wg_pk": WG["rogue"]}, []), "no-device-sig")
+
     return b.items
 
 

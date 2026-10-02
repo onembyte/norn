@@ -82,7 +82,17 @@ def _check_envelope(env: Any, net: bytes) -> None:
         raise Reject("decode")
     if env["v"] != entry.VERSION or env["net"] != net:
         raise Reject("decode")
-    if not isinstance(env["ts"], int) or not isinstance(env["body"], dict):
+    # Every member has the type §4.1 gives it, and that is step 3's check
+    # (`decode`). `t` was never type-checked here -- a number went straight to
+    # the membership test below and came out `unknown-type` -- and `after`
+    # was compared with the index without a check, so a text `after` raised
+    # instead of rejecting (cold gate run 12, D6). `type(...) is int`, not
+    # isinstance: a bool is an int in Python and is not a uint.
+    if not isinstance(env["t"], str):
+        raise Reject("decode")
+    if type(env["ts"]) is not int or not isinstance(env["body"], dict):
+        raise Reject("decode")
+    if "after" in env and type(env["after"]) is not int:
         raise Reject("decode")
     if not isinstance(env["sigs"], list):
         raise Reject("decode")

@@ -3,12 +3,12 @@
     {
       "file": "tampered-entry-bundle.bin",
       "name": "tampered-entry-bundle",
-      "path": "tile/entries/000.p/127",
+      "path": "tile/entries/000.p/135",
       "says": "one byte of one entry changed: the bundle still frames, and the tree it builds is not the one the checkpoint is signed over"
     },
     {
       "name": "missing-entry-bundle",
-      "path": "tile/entries/000.p/127",
+      "path": "tile/entries/000.p/135",
       "remove": true,
       "says": "a log that will not serve its entries cannot be replayed, and a verifier must refuse rather than report what it has"
     },
@@ -16,11 +16,11 @@
       "files": [
         {
           "file": "consistent-entry-bundle.bin",
-          "path": "tile/entries/000.p/127"
+          "path": "tile/entries/000.p/135"
         },
         {
           "file": "consistent-hash-tile.bin",
-          "path": "tile/0/000.p/127"
+          "path": "tile/0/000.p/135"
         }
       ],
       "name": "consistent-tampered-log",
@@ -29,7 +29,7 @@
     {
       "file": "tampered-hash-tile.bin",
       "name": "tampered-hash-tile",
-      "path": "tile/0/000.p/127",
+      "path": "tile/0/000.p/135",
       "says": "one byte of one leaf hash changed: the entries and the signed head are untouched, so a verifier that reaches the head without opening `tile/0/...` sees nothing wrong, and serves the corrupt tile onward to peers asking it for proofs"
     }
   ],

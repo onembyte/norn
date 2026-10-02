@@ -413,8 +413,12 @@ unusable has nothing to verify later entries against.
 1. `entry_hash` already seen → reject (`dup-entry`). Every entry that reaches
    this step is added to the seen set, **whether or not it is later rejected**.
 2. Decode per §4.0 → on failure reject (`decode`).
-3. Envelope check per §4.1: exactly the permitted keys, `v` = 1, `net` =
-   `anchor.net`, well-formed `sigs` → on failure reject (`decode`).
+3. Envelope check per §4.1: exactly the permitted keys, **every member of the
+   type §4.1 gives it** (`t` text, `ts` and `after` uint, `body` a map), `v` = 1,
+   `net` = `anchor.net`, well-formed `sigs` → on failure reject (`decode`). The
+   types are this step's, not a later one's: a numeric `t` is `decode`, not
+   `unknown-type`, and a non-map `body` is `decode` even on an under-signed
+   governance entry, which step 7 would otherwise refuse as `threshold`.
 4. `t` not in §4.3 → reject (`unknown-type`).
 5. `t` = `genesis` → reject (`dup-genesis`).
 6. `after` present and > index → reject (`after`).
@@ -584,7 +588,7 @@ devices on a number nobody signed.
 - Layout, tiles, entry bundles, and `checkpoint` exactly per `tlog-tiles`. Tile height 8 (width 256), as torchwood requires.
 - A checkpoint body is exactly three lines (`c2sp.org/tlog-checkpoint`): the origin, the tree size in decimal with **no leading zeroes**, and the root as **standard base64 with padding, 32 bytes once decoded** — any other decoded length is an error, and so is base64 the line's own length does not account for. `0124` and `124` are the same number and two spellings of one head. The length bound is not decoration: a reader that skips it and also skips the rebuild below accepts a head that is not a SHA-256 root at all, and the two rules are the only ones that look at that line (cold gate run 10, D11).
 - Leaf hash = `H(0x00 ‖ entry_bytes)` (RFC 6962 §2.1). An entry bundle is each entry's length as a **big-endian** uint16 followed by that many bytes, repeated — the framing `c2sp.org/tlog-tiles` defines, and the reason §4.0's `MAX_ENTRY_BYTES` is 65535 rather than 65536. A partial bundle holds **exactly** the number of entries its path declares.
-- **The paths, restated.** `c2sp.org/tlog-tiles` defines them and this document does not vary them — but it restates them here for the same reason §7 restates the note framing and §9.1 the policy grammar: a verifier cannot be written without them, and a reader holding this document and the vectors has no other copy. A hash tile at level `L` covering index group `N` is `tile/<L>/<N>`, and an entry bundle is `tile/entries/<N>`, where `<N>` is the tile's index written in **three-digit groups, most significant first, joined by `/`** — `0`, `1000` and `1234567` are `000`, `x001/000` and `x001/x234/567`, with every group but the last prefixed `x`. A tile that is not yet full is **partial**: its path gains `.p/<W>`, where `<W>` is how many of the 256 entries it holds. So a log of 127 entries serves its only hash tile at `tile/0/000.p/127` and its only bundle at `tile/entries/000.p/127` — both of which this suite ships, and every concrete path written here is one a reader can open. When a tile fills, the `.p/<W>` suffix goes away and the path is the bare group; the next tile starts again at width 1. Tile height is 8, so width is 256 and level `L` covers 256^(L+1) leaves.
+- **The paths, restated.** `c2sp.org/tlog-tiles` defines them and this document does not vary them — but it restates them here for the same reason §7 restates the note framing and §9.1 the policy grammar: a verifier cannot be written without them, and a reader holding this document and the vectors has no other copy. A hash tile at level `L` covering index group `N` is `tile/<L>/<N>`, and an entry bundle is `tile/entries/<N>`, where `<N>` is the tile's index written in **three-digit groups, most significant first, joined by `/`** — `0`, `1000` and `1234567` are `000`, `x001/000` and `x001/x234/567`, with every group but the last prefixed `x`. A tile that is not yet full is **partial**: its path gains `.p/<W>`, where `<W>` is how many of the 256 entries it holds. So a log of 135 entries serves its only hash tile at `tile/0/000.p/135` and its only bundle at `tile/entries/000.p/135` — both of which this suite ships, and every concrete path written here is one a reader can open. When a tile fills, the `.p/<W>` suffix goes away and the path is the bare group; the next tile starts again at width 1. Tile height is 8, so width is 256 and level `L` covers 256^(L+1) leaves.
 - A verifier rebuilds the tree from the **entry bundles** and compares its head with the signed checkpoint; that comparison is what binds the entries to the head. The served `tile/<L>/…` hashes MUST also agree with the tree it rebuilt. They are not needed to reach the head, and checking them is not optional: a node serves the tiles it fetched onward to its peers (`GOSSIP.md`), so a node that accepted tiles it never checked would pass on a lie it had the means to catch.
 - The checkpoint is a `tlog-checkpoint` note: `origin` line = §2 `origin`, size, root; **no extension lines**. Signed by the log key; cosigned by witnesses per `tlog-cosignature` v1.
 - The log MUST issue a new checkpoint after every append and at least every `checkpoint_interval`.
@@ -1261,7 +1265,7 @@ naming that rule is how the generators and the placement guards check it.
 | `keys.json` | every test key: Ed25519 `{seed, public, kid}` by name, X25519 public keys by name, and `net` |
 | `entries/NN-<type>.cbor` | one valid entry per type, canonical bytes |
 | `entries/NN-<type>.json` | mirror: `{entry, entry_hash, leaf_hash, preimage_sha256, size}` where `size` is the byte length of the `.cbor`. The `entry` object mirrors the **CBOR**, so an optional field absent from the entry is absent here too — unlike `state.json`, where §5.3's schema fields are always emitted |
-| `log/NN-<name>.cbor` | the replay fixture, **127 entries** in order. The file names are labels, not the order: **read the sequence from `manifest.json`**, never by globbing and sorting |
+| `log/NN-<name>.cbor` | the replay fixture, **135 entries** in order. The file names are labels, not the order: **read the sequence from `manifest.json`**, never by globbing and sorting |
 | `log/NN-<name>.reason` | beside each entry that must be rejected: its §5.2 reason code |
 | `log/manifest.json` | `{"anchor": {"net", "genesis_hash"}, "entries": [{"index", "name", "reason"}]}` — the replay input and expected outcome; `reason` is `""` for an accepted entry |
 | `state.json` | canonical replay output for `log/` (§5.3) |
@@ -1335,7 +1339,7 @@ this table drifted out of date the moment one was.
 | §5.3 genesis `params` is **overlaid** | `state.json`'s `checkpoint_interval`, which the genesis body does not set and the §4.5 default supplies | a reader that *replaces* the defaults instead loses the key entirely |
 | §4.3 the request's `ts` is unconstrained | `enroll-request-from-the-future`: an accepted `enroll` whose embedded request is dated ten days after the entry carrying it | the check a reader is most likely to add unasked |
 | §4.4 `after` is a floor | `after-below-index` | `bad-after` |
-| §5 replay, 15 of the 16 reason codes | the log | **85 rejecting entries** |
+| §5 replay, 15 of the 16 reason codes | the log | **93 rejecting entries** |
 | §4.2 signatures resolve against the state **before** this entry | the whole log, every governance entry | `log/126-bad-root_add-counts-its-own-key`: `root_thr` is 3, two valid root signatures, and a third by the key in its own body. Under §4.2 that is two of three and the entry is `threshold`; under the other reading it is a root quorum that **bootstraps itself**. No other entry is signed by a key it adds, so `ResolveKeysAfterEntry` passed all 622 checks. §9.4 makes the same ordering argument for log keys — a stolen log key cannot name its own successor — and the root-key version was stated once and exercised by nothing (cold gate run 11, D8) |
 | §5 `bad-genesis` | — | `genesis/`; it cannot appear in the log, since it aborts replay |
 | §5.1 genesis | the log's entry 0 | **19 abort paths** in `genesis/`, one single-entry log each. Two of them are step 7's two halves: `18-bootstrap-sigs-wrong-role` varies the **role string** a signature declares, `19-bootstrap-sigs-from-signers` varies the **key set** it resolves against — signed only by keys the body lists under `signers`, each line declaring `root`. Step 6 requires the two sets disjoint, so a reader that bootstrap-resolves against `signers` too admits a network this one aborts on (cold gate run 10, D15) |
@@ -1399,7 +1403,12 @@ admits its holes, so:
   so one key cannot appear twice in one entry and the de-duplication in
   signature counting never fires. Confirmed by deleting it: every check stays
   green. It is written down because a reader who counts signatures without it
-  is relying on a rule two sections away, and that is worth saying once.
+  is relying on a rule two sections away, and that is worth saying once —
+  and that rule **is** vectored: `log/127-bad-repeated-kid` carries one root's
+  signature element three times and is `decode`. The two rules hide each
+  other: a reader lax about both lets one root meet a three-root quorum, and
+  until that entry shipped, nothing in the suite checked either (cold gate
+  run 12, D1).
 - **§5.3's "must not count it even **in the moment before that refusal**".**
   §10 refuses the whole checkpoint over an unverified line from a named
   witness, unconditionally and before `T` is used, so no conforming reader has
