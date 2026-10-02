@@ -662,3 +662,59 @@ whose claim is that a rule stated is a rule reachable.
 implementation must now emit. The codes are part of the contract from here on;
 `says` stays, as a semantic hint, for the suite's own discipline.
 
+## D-062 · Canonical base64 wherever the protocol carries it (2026-10-02)
+Every base64 field a note, a key or a receipt carries — a checkpoint's root
+line, a signature payload, a verifier key's data — MUST be canonical: standard
+alphabet, padded, and **pad bits zero** (RFC 4648 §3.5). A non-canonical
+spelling is refused by the step that reads the field.
+
+**Why.** §6 and §7 already argue that two spellings of one head are an attack
+surface — gossip, caches and de-duplication keyed on bytes an attacker chooses
+— and closed that hole for the size line and payload lengths. Non-zero pad
+bits are a second spelling of the same root or signature, and both
+implementations accepted them, because Go's `encoding/base64` and Python's
+decoder are lax about pad bits by default (cold gate run 12, D14a).
+
+**Rejected.** *Specify the lax behaviour as it is* — documents the hole §6 and
+§7 argue against.
+
+**Cost, accepted.** Inputs that verify today are refused; every implementation
+must use a strict decoder or check the pad bits itself.
+
+## D-063 · Closed refusal codes for receipts (2026-10-02)
+Checking a submission receipt becomes a stated procedure with a closed list of
+refusal codes, in §10.1's style.
+
+**Why.** §7 calls receipts "non-repudiable proof of log misbehaviour" — an
+artifact a stranger checks, exactly like a proof bundle or fork evidence, and
+D-061 gave those two closed codes for the reason that applies here unchanged:
+two readers that refuse the same receipt must refuse it for the same reason,
+or a vector can only ask "refused?" (cold gate run 12, D11).
+
+**Cost, accepted.** A third closed vocabulary that every implementation must
+emit.
+
+## D-064 · `SPEC.md` absorbs what is normative in the companion documents (2026-10-02)
+What `SPEC.md` cites as normative from `GOSSIP.md`, `ENFORCEMENT.md` and
+`ENROLLMENT.md` — the parts a verifier or a node needs to interoperate, such as
+the checkpoint acquisition order and the witness-time clock — moves into
+`SPEC.md`. The companion documents stay, and are called informative.
+
+**Why.** A reader holding the spec and the vectors, which is the reader the
+cold-model gate models, has none of the companion documents, so "every
+cross-reference resolves" was false for exactly that reader (cold gate run 12,
+D22).
+
+**Rejected.** *Ship them beside `SPEC.md`* — three more documents a second
+implementer must read and keep consistent, most of which is operational
+guidance rather than protocol.
+
+## D-065 · No closed codes for trust files, requests and policies in v1 (2026-10-02)
+Those layers keep `says` hints matched by hand; closed vocabularies for them
+are recorded for v1.1.
+
+**Why.** A code list per layer is a large normative addition, and the
+remaining gate is close. The layers that strangers check against each other —
+the verifier, evidence, receipts — have codes (D-061, D-063); these are read
+by the node that loads them (cold gate run 12, §5 M2).
+

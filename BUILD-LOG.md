@@ -550,11 +550,12 @@ them, and then run the gate.
 | 6.5l-vii-d-iv | Bounds and bytes: D16, D19, D20 | the text and `reason` caps and `MAX_TRUST_BYTES`/`MAX_EVIDENCE_BYTES` pinned at and one past the boundary, a uint where `rotate_needs_signer` is a bool, U+2028/U+2029 in canonical JSON, and a bundle proving a `rotate` and a `revoke` | ⬜ |
 | 6.5l-vii-d-v | The policy grammar: D7, D8 | the five things §9.1 leaves open stated as both implementations already decide them — checked to agree before a word is written — each with a `policies/` case both ways; CRLF, the same key on two `log` lines, and `k > n` | ⬜ |
 | 6.5l-vii-d-vi | The trust file: D10, D18b–c, D21g | an origin that extends the derived one, a correspondence that agrees on names and not keys, an open `anchor`; whether witness and policy URLs are validated, stated; `trust-bad/07` and `08` given one rule each | ⬜ |
-| 6.5l-vii-d-vii | Notes and receipts: D14b–c, D11 | the note parser stops trimming trailing newlines (a trailing blank line is `note`, as §7 says, with a vector); the code for a known key's line of the other algorithm's length stated as this verifier gives it; a receipt-checking procedure stated as `internal/receipt` performs it, with a vector per rule | ⬜ |
+| 6.5l-vii-d-vii | Notes and receipts: D14b–c, D11, D-063 | the note parser stops trimming trailing newlines (a trailing blank line is `note`, as §7 says, with a vector); the code for a known key's line of the other algorithm's length stated as this verifier gives it; a receipt-checking procedure with a closed list of codes (D-063), implemented in `internal/receipt` and vectored per rule | ⬜ |
 | 6.5l-vii-d-viii | Tiles at scale: D12, D13b | a served log past one tile — a full tile, a partial one, a level-1 tile — and an over-full bundle; an inclusion proof for the right-edge leaf | ⬜ |
 | 6.5l-vii-d-ix | Requests: D15, D16 labels, D18a | `excess-padding` rebuilt from a length where one more group really is excess padding, and §12.1's claim about it corrected; the label value cap at the boundary; reserved labels stated as not validated | ⬜ |
 | 6.5l-vii-d-x | The document's own errors: D21, D22-bool, Q1 | the vectors README's `fresh` wins (confirmed), the `oversize-label-key` passage, the 257/258-byte reason, §9.2's stale `genesis_hash`, "the four" that lists five, v0 in the title, §12.1's not-vectored list; whether booleans are a decoder or a schema rule; and which policy computes `T`, which only a JSON number pins today | ⬜ |
-| 6.5l-vii-d-xi | **Decisions for the user** | four findings change the protocol rather than its prose; see the decision block below. Reached last so the rest proceeds; the loop stops here if they are still open | ⬜ |
+| 6.5l-vii-d-xi | Canonical base64 (D-062, D14a) | every base64 field a note, a key or a receipt carries is canonical — pad bits zero — in both implementations, `SPEC.md` §6, §7 and §9.1 say so, and a re-signed vector shows each field refused in its non-canonical spelling | ⬜ |
+| 6.5l-vii-d-xii | `SPEC.md` absorbs the normative companion text (D-064, D22) | what `SPEC.md` cites as normative from `GOSSIP.md`, `ENFORCEMENT.md` and `ENROLLMENT.md` moves in; the three are called informative; "every cross-reference resolves" made true for a reader holding the spec and the vectors | ⬜ |
 | 6.5l-viii | Cold-model gate run 13 | after 6.5l-vii-d: a fresh agent on a new sealed copy; only `SPEC SUFFICIENT` ticks 6.5l-vii and the `PLAN.md` line | ⬜ |
 | 6.6 | Phase 6 gate audit | what is true, and what needs two people. **Reopened 2026-10-02**: the audit rested on 6.5l-vii, which had not run | ⬜ |
 
@@ -1901,9 +1902,9 @@ under D-061.
 
 ---
 
-## DECISION NEEDED — 6.5l-vii-d-xi: four findings of run 12 change the protocol (raised 2026-10-02)
+## DECISION TAKEN — 6.5l-vii-d-xi: four findings of run 12 change the protocol (raised and answered 2026-10-02)
 
-The loop works through 6.5l-vii-d-i to -x first; it stops at -xi if these are still open. Each has a recommendation, and none is decided here.
+**Answered 2026-10-02: every recommendation, as written** — D-062 (canonical base64), D-063 (receipt codes), D-064 (`SPEC.md` absorbs the normative parts of the companion documents), D-065 (no codes for the other layers in v1). The rows below changed with them: receipt codes join d-vii, canonical base64 is d-xi, and the absorption is d-xii.
 
 1. **Canonical base64 (D14a).** §6 and §7 argue that two spellings of one head are an attack surface, and closed it for the size line and payload lengths. Standard base64 with non-zero pad bits is still a second spelling of the same root or signature, and **both implementations accept it** (Go's `encoding/base64` and Python's decoder are lax about pad bits by default). Requiring zero pad bits (RFC 4648 §3.5) refuses inputs that verify today. *Recommendation: require canonical base64 everywhere a note, key or receipt carries it — the direction §6 and §7 already argue.*
 2. **Closed codes for receipts (D11).** §10.1 and §11.1 give the verifier and the evidence reader closed codes (D-061). A receipt-checking procedure can be stated without codes (6.5l-vii-d-vii does that); giving it codes extends D-061 to a third artifact. *Recommendation: yes, for the same reason as D-061 — receipts are "non-repudiable proof of log misbehaviour", which a stranger checks.*
