@@ -535,7 +535,7 @@ them, and then run the gate.
 | 6.5l-vi-b-ii-d | `checkpoints-bad/` names codes | the harness asserts them; signature-before-origin and framing-before-signature become vectors; §12.1's admission leaves the list | ✅ |
 | 6.5l-vi-b-ii-e | `served-bad/` and `proofs-bad/` name codes | head-before-tiles and the bundle's own order become vectors | ✅ |
 | 6.5l-vi-b-iii | §11.1's refusal vocabulary, specified | the evidence checker's steps named the same way, with their order | ✅ — `internal/evrefusal` package + §11.1 closed-list table |
-| 6.5l-vi-b-iv | §11.1's codes, implemented and vectored | `fork/` names codes; the two step orderings become vectored; §12.1's admission is withdrawn | ⬜ |
+| 6.5l-vi-b-iv | §11.1's codes, implemented and vectored | `fork/` names codes; the two step orderings become vectored; §12.1's admission is withdrawn | ✅ — evrefusal wired through Parse/Check; cases.json uses codes; SHA256SUMS regen'd; SPEC §12.1 admission updated |
 | 6.5l-vii | Cold-model gate run 12 | a *fresh* agent on a *new* copy; the target remains `SPEC SUFFICIENT` | ⬜ |
 | 6.6 | Phase 6 gate audit | what is true, and what needs two people | ⬜ |
 
