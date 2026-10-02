@@ -1,0 +1,22 @@
+�dheldyOnorn/nzxxe3rnorsxg5domv2c2mbqge
+127
+eIZb7YJaG5mw7xlWAnflgmVovQxKsuaSWBbrHd+Z9uE=
+
+— norn/nzxxe3rnorsxg5domv2c2mbqge vqSmZuecU52zMSdVY3oY9IWHrQSy4JkLVSSC5zfiWwcU8D8jOOXFTlK8xa1zqmqnVixgRb4IeG0AhqnRNetIWpV7xg4=
+— norn-witness/pi BR0cUQAAAABo54YQpEvB1fOmFStSNqofkfwzAapTDoN7OmVKnf+1QfpXp1dpGFwj4YDehGLMSVS/8cS7/RKrtnoqMvGfljtN40lwBA==
+— norn-witness/vps Rqb9OAAAAABo54YX4fjJUCGlwfpr4d2ovPyp2Y+8ZTPPEJsd1fbZSxxd4mGINLomu4GVxMcZvvU2n+Hc/73/4UFNiwjSFm53rT/FAw==
+— norn-witness/friend FAT3QgAAAABo54YeI/Fqp8xIIky8F+umxJKMU/xmY8Q9cvYjQ4tBEaaMJP1okMse2gjVBn5cw3mkyiK8kS3QCTdTQFzv/64YehVMBw==
+dsizeeproof�fpolicyy�log norn/nzxxe3rnorsxg5domv2c2mbqge+bea4a666+AV6v97lmGyW99eHglI8syFAU2uY+/HuHHq0VYz9Rmio1 https://log.norn.example/testnet
+witness pi norn-witness/pi+051d1c51+BHeagefoK0s3F5shdMl1Ahsd1ZCE9MC5F5gvM3cLTnZa http://10.0.0.153:8100
+witness vps norn-witness/vps+46a6fd38+BIXCilOrHi0kMxynG/s1EyJ2aWFC1jZc4UlZRza6g8ou https://witness.example.net
+witness friend norn-witness/friend+1404f742+BJjvlkRbihDdM/4Lb/YPiP+eoqk3VgrncrTgSXQNXr6B https://bastion.example.org/w
+group home 2 pi vps friend
+quorum home
+gversioniheld_rootX BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBkconflictingyOnorn/nzxxe3rnorsxg5domv2c2mbqge
+127
+eIZb7YJaG5mw7xlWAnflgmVovQxKsuaSWBbrHd+Z9uE=
+
+— norn/nzxxe3rnorsxg5domv2c2mbqge vqSmZuecU52zMSdVY3oY9IWHrQSy4JkLVSSC5zfiWwcU8D8jOOXFTlK8xa1zqmqnVixgRb4IeG0AhqnRNetIWpV7xg4=
+— norn-witness/pi BR0cUQAAAABo54YQpEvB1fOmFStSNqofkfwzAapTDoN7OmVKnf+1QfpXp1dpGFwj4YDehGLMSVS/8cS7/RKrtnoqMvGfljtN40lwBA==
+— norn-witness/vps Rqb9OAAAAABo54YX4fjJUCGlwfpr4d2ovPyp2Y+8ZTPPEJsd1fbZSxxd4mGINLomu4GVxMcZvvU2n+Hc/73/4UFNiwjSFm53rT/FAw==
+— norn-witness/friend FAT3QgAAAABo54YeI/Fqp8xIIky8F+umxJKMU/xmY8Q9cvYjQ4tBEaaMJP1okMse2gjVBn5cw3mkyiK8kS3QCTdTQFzv/64YehVMBw==

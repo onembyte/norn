@@ -1183,8 +1183,9 @@ A reader MUST, in this order:
    `conflicting`'s size equals `size`,
 3. check `proof` chains `held_root` at `size` to `held`'s signed head — or, when
    `size` is `held`'s own size, that `held_root` is the root `held` is signed
-   over. Without this the reader is taking the accuser's word for the number
-   that matters most, and
+   over. `size` 0 never passes this step: no consistency proof starts at an
+   empty tree, and every log has the same root there. Without this the reader
+   is taking the accuser's word for the number that matters most, and
 4. conclude a fork **only if `held_root` differs from `conflicting`'s root**. If
    they agree, the file proves nothing: a log and its own earlier self is not a
    fork, and a node MUST NOT publish that as an accusation.
@@ -1212,7 +1213,7 @@ checks:
 | 5 | `held` | the held checkpoint fails any §10 check: note framing, log signature, checkpoint body, origin, cosignature, or quorum |
 | 6 | `conflicting` | the conflicting checkpoint fails any §10 check. The held checkpoint is checked first, so a file wrong in both is refused as `held` |
 | 7 | `size` | `size` is above the held checkpoint's own size, or the conflicting checkpoint's size does not equal `size` |
-| 8 | `proof` | the consistency proof does not chain `held_root` at `size` to the held checkpoint's signed head, or a proof is carried where `size` equals the held size and §11.1 requires none |
+| 8 | `proof` | `size` is 0 — no consistency proof starts at an empty tree (RFC 6962 §2.1.2 defines one only for 0 < m < n) and every log has the same root there, so no file can show a disagreement at size 0; or the consistency proof does not chain `held_root` at `size` to the held checkpoint's signed head; or, where `size` equals the held size, `held_root` is not the root the held checkpoint is signed over — there is no proof to check, and this comparison is the only thing binding `held_root` to anything, so a reader that skips it proves a fork from one honest checkpoint and any 32 bytes; or a proof is carried where `size` equals the held size and §11.1 requires none |
 | 9 | `consistent` | `held_root` equals `conflicting`'s root at `size`; the file proves nothing, and a node MUST NOT publish it as an accusation |
 
 **`MAX_EVIDENCE_BYTES` is 65536**. Two signed checkpoints, a root and a

@@ -33,6 +33,14 @@
       "says": "not valid deterministic CBOR"
     },
     {
+      "name": "bad-held-root-at-same-size",
+      "says": "not the one the held checkpoint is signed over"
+    },
+    {
+      "name": "bad-size-zero",
+      "says": "at size 0"
+    },
+    {
       "name": "bad-size-above-held",
       "says": "can only speak for what it holds"
     },
@@ -72,6 +80,7 @@
   "codes": {
     "bad-consistent": "consistent",
     "bad-forged-proof": "proof",
+    "bad-held-root-at-same-size": "proof",
     "bad-non-canonical-cbor": "cbor",
     "bad-open-schema": "schema",
     "bad-other-origin": "held",
@@ -84,6 +93,7 @@
     "bad-short-proof-hash": "schema",
     "bad-size-above-held": "size",
     "bad-size-mismatch": "size",
+    "bad-size-zero": "proof",
     "bad-unverifiable-conflicting": "conflicting",
     "bad-version-and-unknown-key": "version",
     "bad-wrong-version": "version"
@@ -96,6 +106,10 @@
     },
     "bad-forged-proof": {
       "says": "check `proof` chains",
+      "section": "11.1"
+    },
+    "bad-held-root-at-same-size": {
+      "says": "`held_root` is not the root the held checkpoint is signed over",
       "section": "11.1"
     },
     "bad-non-canonical-cbor": {
@@ -146,6 +160,10 @@
       "says": "`conflicting`'s size equals `size`",
       "section": "11.1"
     },
+    "bad-size-zero": {
+      "says": "no file can show a disagreement at size 0",
+      "section": "11.1"
+    },
     "bad-unverifiable-conflicting": {
       "says": "verify **both** checkpoints",
       "section": "11.1"
@@ -158,5 +176,10 @@
       "says": "| `version` | uint | `1` |",
       "section": "11.1"
     }
-  }
+  },
+  "sound": [
+    "evidence",
+    "policy-not-the-readers",
+    "evidence-at-64"
+  ]
 }

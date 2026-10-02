@@ -1260,39 +1260,11 @@ func writeForkEvidence(root, origin string, key ed25519.PrivateKey,
 	// guard that stopped this vector being wrong the first time it was
 	// generated. The branch has to *diverge*: the same history up to `forkAt`,
 	// then an entry this network never carried.
-	branch := append([][]byte(nil), entries[:forkAt]...)
-	divergent, err := forkEntry(root)
-	if err != nil {
-		return err
-	}
-	branch = append(branch, divergent)
-
 	signers, err := witnessSigners(root)
 	if err != nil {
 		return err
 	}
-	forkedDir, err := os.MkdirTemp("", "norn-fork")
-	if err != nil {
-		return err
-	}
-	defer os.RemoveAll(forkedDir)
-
-	store, err := tlogstore.Open(forkedDir, origin, key, tlogstore.WithCosigner(
-		tlogstore.CosignerFunc(staggeredCosigner(signers))))
-	if err != nil {
-		return err
-	}
-	for _, raw := range branch {
-		if _, err := store.Append(raw); err != nil {
-			return err
-		}
-	}
-	forkedSigned, err := store.SignedCheckpoint()
-	if err != nil {
-		return err
-	}
-	forkedCP, err := tlog.Verify(forkedSigned, []string{note.VerifierKey(origin,
-		key.Public().(ed25519.PublicKey))})
+	forkedSigned, forkedCP, err := forkedBranch(root, origin, key, entries, signers, forkAt+1)
 	if err != nil {
 		return err
 	}
@@ -1324,8 +1296,53 @@ func writeForkEvidence(root, origin string, key ed25519.PrivateKey,
 		[]byte(forkedSigned), 0o644); err != nil {
 		return err
 	}
+	// Cold gate run 12, D13a. RFC 6962's consistency proof takes its own
+	// branch when the smaller size is a power of two, and the only sound
+	// evidence was at 41, so a reader that dropped that branch passed every
+	// file. This one is at 64, below a held branch of 127.
+	signed64, cp64, err := forkedBranch(root, origin, key, entries, signers, 64)
+	if err != nil {
+		return err
+	}
+	at64, err := forkevidence.Build(heldTree, heldSigned, signed64, cp64)
+	if err != nil {
+		return err
+	}
+	at64.Policy = policyOf(root)
+	raw64, err := at64.Encode()
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(dir, "evidence-at-64.cbor"), raw64, 0o644); err != nil {
+		return err
+	}
 	return writeForkNegatives(root, origin, key, entries, heldSigned, heldTree, signers,
 		evidence, forkedSigned, forkedCP)
+}
+
+// forkedBranch is a branch of `size` entries that agrees with `entries` up to
+// its last entry and then carries one this network never did, signed by the
+// log key and cosigned exactly as correctly as the real head -- the whole
+// difficulty of a fork: every signature checks out, and only holding both
+// heads reveals it.
+func forkedBranch(root, origin string, key ed25519.PrivateKey, entries [][]byte,
+	signers []cosignpkg.Signer, size int) (string, tlog.Checkpoint, error) {
+	if size < 1 || size-1 > len(entries) {
+		return "", tlog.Checkpoint{}, fmt.Errorf("a branch of %d cannot share %d entries' history",
+			size, len(entries))
+	}
+	branch := append([][]byte(nil), entries[:size-1]...)
+	divergent, err := forkEntry(root)
+	if err != nil {
+		return "", tlog.Checkpoint{}, err
+	}
+	signed, err := signedHeadOver(root, origin, key, append(branch, divergent), signers)
+	if err != nil {
+		return "", tlog.Checkpoint{}, err
+	}
+	cp, err := tlog.Verify(signed, []string{note.VerifierKey(origin,
+		key.Public().(ed25519.PublicKey))})
+	return signed, cp, err
 }
 
 // withExtraKey re-encodes a CBOR map with one more key, so a closed-schema
@@ -1732,9 +1749,16 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 		rawShortProof, 0o644); err != nil {
 		return err
 	}
-	// An accuser can only speak for sizes its own branch reaches.
+	// An accuser can only speak for sizes its own branch reaches. The
+	// conflicting head really is `size` entries -- cold gate run 12 (D17)
+	// found it was the 41-entry one, so step 7's other half ("conflicting's
+	// size equals `size`") refused it too and its own rule was not isolated.
+	beyondSigned, _, err := forkedBranch(root, origin, key, entries, signers, len(entries)+1)
+	if err != nil {
+		return err
+	}
 	aboveHeld := &forkevidence.Evidence{
-		Held: heldSigned, Conflicting: forkedSigned,
+		Held: heldSigned, Conflicting: beyondSigned,
 		Size: int64(len(entries)) + 1, HeldRoot: append([]byte(nil), evidence.HeldRoot...),
 		Proof: evidence.Proof, Policy: policyOf(root),
 	}
@@ -1744,6 +1768,43 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 	}
 	if err := os.WriteFile(filepath.Join(dir, "bad-size-above-held.cbor"),
 		rawAbove, 0o644); err != nil {
+		return err
+	}
+
+	// Cold gate run 12, D2. At the held size there is no proof to check, and
+	// what binds `held_root` to anything is that it is the root `held` is
+	// signed over. Both checkpoints here are the one honest head; `held_root`
+	// is 32 arbitrary bytes. A reader that skips the comparison proves a fork
+	// from one honest checkpoint -- permanently, by §11 rule 4.
+	forgedRoot := &forkevidence.Evidence{
+		Held: heldSigned, Conflicting: heldSigned, Size: int64(len(entries)),
+		HeldRoot: bytes.Repeat([]byte{0x42}, 32), Policy: policyOf(root),
+	}
+	rawForgedRoot, err := forgedRoot.Encode()
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(dir, "bad-held-root-at-same-size.cbor"),
+		rawForgedRoot, 0o644); err != nil {
+		return err
+	}
+	// Cold gate run 12, D3. A cosigned size-0 head, and evidence claiming a
+	// disagreement at size 0. No consistency proof starts at an empty tree and
+	// every log has the same root there; a reader that lets an empty proof
+	// stand proves a fork from any old size-0 checkpoint.
+	emptySigned, err := signedHeadOver(root, origin, key, nil, signers)
+	if err != nil {
+		return err
+	}
+	atZero := &forkevidence.Evidence{
+		Held: heldSigned, Conflicting: emptySigned, Size: 0,
+		HeldRoot: bytes.Repeat([]byte{0x42}, 32), Policy: policyOf(root),
+	}
+	rawAtZero, err := atZero.Encode()
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(dir, "bad-size-zero.cbor"), rawAtZero, 0o644); err != nil {
 		return err
 	}
 
@@ -1785,6 +1846,8 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 		{"name": "bad-short-proof-hash", "says": "a proof hash is 31 bytes"},
 		{"name": "bad-oversize-and-not-cbor", "says": "MAX_EVIDENCE_BYTES"},
 		{"name": "bad-non-canonical-cbor", "says": "not valid deterministic CBOR"},
+		{"name": "bad-held-root-at-same-size", "says": "not the one the held checkpoint is signed over"},
+		{"name": "bad-size-zero", "says": "at size 0"},
 		{"name": "bad-size-above-held", "says": "can only speak for what it holds"},
 		{"name": "bad-policy-says-quorum-none", "says": "no quorum cosigned it"},
 		{"name": "bad-policy-unparseable", "says": "not a `tlog-policy`"},
@@ -1807,6 +1870,8 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 		"bad-short-proof-hash":                    evrefusal.Schema,
 		"bad-oversize-and-not-cbor":               evrefusal.Oversize,
 		"bad-non-canonical-cbor":                  evrefusal.CBOR,
+		"bad-held-root-at-same-size":              evrefusal.Proof,
+		"bad-size-zero":                           evrefusal.Proof,
 		"bad-size-above-held":                     evrefusal.Size,
 		"bad-policy-says-quorum-none":             evrefusal.Held,
 		"bad-policy-unparseable":                  evrefusal.Policy,
@@ -1831,6 +1896,8 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 			"bad-short-proof-hash":                    {"section": "11.1", "says": "| `proof` | array of bytes (32 each) |"},
 			"bad-oversize-and-not-cbor":               {"section": "11.1", "says": "the size bound is checked before any parse"},
 			"bad-non-canonical-cbor":                  {"section": "11.1", "says": "the file is not valid deterministic CBOR"},
+			"bad-held-root-at-same-size":              {"section": "11.1", "says": "`held_root` is not the root the held checkpoint is signed over"},
+			"bad-size-zero":                           {"section": "11.1", "says": "no file can show a disagreement at size 0"},
 			"bad-size-above-held":                     {"section": "11.1", "says": "not above `held`'s own size"},
 			"bad-policy-says-quorum-none":             {"section": "11.1", "says": "never the one in the file"},
 			"bad-policy-unparseable":                  {"section": "11.1", "says": "MUST parse as `c2sp.org/tlog-policy`"},
@@ -1843,6 +1910,9 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 		},
 		"cases": forkCases,
 		"codes": forkCodes,
+		// Cold gate run 12: the files that MUST prove a fork, named so a
+		// reader is held to the positives as well as the negatives.
+		"sound": []string{"evidence", "policy-not-the-readers", "evidence-at-64"},
 		"comment": "evidence that MUST NOT be acted on, checked against trust.cbor. " +
 			"bad-consistent is a log and its own earlier self -- every signature valid, " +
 			"both heads cosigned, the roots agreeing. bad-other-origin is a real fork of " +

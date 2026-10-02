@@ -204,6 +204,18 @@ func Check(ev *Evidence, origin, logVKey, readerPolicy string) (*Finding, error)
 	var heldRoot [32]byte
 	copy(heldRoot[:], ev.HeldRoot)
 
+	// §11.1: size 0 is `proof`. No consistency proof starts at an empty tree
+	// (RFC 6962 §2.1.2 defines one only for 0 < m < n), and at size 0 every
+	// log has the same root, so no file can show a disagreement there. Below a
+	// held branch with entries the proof check refused it anyway; against an
+	// empty held branch the sizes matched, nothing was proved, and the file
+	// came out `consistent` -- the right refusal for the wrong reason
+	// (cold gate run 12, D3).
+	if ev.Size == 0 {
+		return nil, evidenceErrorf(evrefusal.Proof,
+			"the evidence claims a disagreement at size 0, where no consistency proof "+
+				"starts and every log has the same root")
+	}
 	// The held branch really did have this root at this size. Without this a
 	// reader is taking the accuser's word for the number that matters most.
 	if ev.Size != held.Size {
