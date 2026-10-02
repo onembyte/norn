@@ -505,3 +505,51 @@ func wgKeyOf(t *testing.T, raw []byte) string {
 	t.Fatalf("the entry establishes no wg_pk")
 	return ""
 }
+
+// Cold gate run 12, D20. §8.1 binds a bundle's `device` to "the `device_id`
+// the `entry` names -- for an `enroll`, the id inside the embedded request;
+// for the other device types, the `device_id` in the body". Every bundle in
+// the suite proved an `enroll`, so a reader that checked the binding only for
+// enrolments passed it. Computed from the shipped bundles: a `binding`
+// negative proving a `rotate`, and one proving a `revoke`, each labelled with
+// a device the entry's body does not name.
+func TestBindingIsVectoredBeyondEnroll(t *testing.T) {
+	dir := filepath.Join("..", "..", "testdata", "vectors", "proofs-bad")
+	var doc struct {
+		Codes map[string]refusal.Code `json:"codes"`
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, "cases.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	found := map[string]bool{}
+	for name, code := range doc.Codes {
+		if code != refusal.Binding {
+			continue
+		}
+		body, err := os.ReadFile(filepath.Join(dir, name+".bundle"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, err := Decode(body)
+		if err != nil {
+			continue
+		}
+		env, err := entry.Decode(b.Entry)
+		if err != nil {
+			continue
+		}
+		if id, _ := env.Body["device_id"].(string); id != "" && id != b.Device {
+			found[env.T] = true
+		}
+	}
+	for _, kind := range []string{"rotate", "revoke"} {
+		if !found[kind] {
+			t.Errorf("no proofs-bad bundle proves a %s entry under another device's label "+
+				"and is coded `binding`, so a reader that binds only enrolments passes", kind)
+		}
+	}
+}

@@ -996,18 +996,60 @@ func writeBadProofs(root, origin string, key ed25519.PrivateKey, entries [][]byt
 		return err
 	}
 
+	// Cold gate run 12, D20. §8.1 binds `device` to "the `device_id` the
+	// `entry` names -- for an `enroll`, the id inside the embedded request;
+	// for the other device types, the `device_id` in the body", and every
+	// bundle here proved an `enroll`. These prove a `rotate` and a `revoke`,
+	// real accepted entries with real inclusion proofs, under another
+	// device's label: a reader that binds only enrolments accepts them.
+	tree, err := tlog.Build(entries)
+	if err != nil {
+		return err
+	}
+	for _, other := range []struct {
+		file, kind, subject, label string
+	}{
+		{"rotate-entry-other-device", "rotate", "nas", "printer"},
+		{"revoke-entry-other-device", "revoke", "rootrevoked", "nas"},
+	} {
+		at := -1
+		for i, raw := range entries {
+			env, err := entry.Decode(raw)
+			if err == nil && env.T == other.kind && env.Body["device_id"] == other.subject {
+				at = i
+				break
+			}
+		}
+		if at < 0 {
+			return fmt.Errorf("the log has no %s entry for %s", other.kind, other.subject)
+		}
+		p, err := tree.InclusionProof(int64(at))
+		if err != nil {
+			return err
+		}
+		b, err := proof.Build(other.label, int64(at), entries[at], p, signed)
+		if err != nil {
+			return err
+		}
+		if err := write(other.file, b); err != nil {
+			return err
+		}
+	}
+
 	// Every negative names the section that states its rule (run 10).
 	bundleRules := map[string]map[string]string{
-		"open-schema":              {"section": "8.1", "says": "a closed map of exactly these six keys"},
-		"wrong-version":            {"section": "8.1", "says": "`v` | uint | `1`"},
-		"device-not-in-entry":      {"section": "8.1", "says": "`device` is the `device_id` the `entry` names"},
-		"no-quorum":                {"section": "8.1", "says": "a satisfied witness quorum"},
-		"no-quorum-tampered-proof": {"section": "8.1", "says": "a satisfied witness quorum"},
-		"wrong-origin":             {"section": "8.1", "says": "this network's origin"},
-		"wrong-entry":              {"section": "8.1", "says": "reach that checkpoint's root at `index`"},
-		"foreign-checkpoint":       {"section": "8.1", "says": "this network's log key"},
-		"tampered-proof":           {"section": "8.1", "says": "reach that checkpoint's root at `index`"},
-		"wrong-log-key":            {"section": "8.1", "says": "this network's log key"},
+		"open-schema":               {"section": "8.1", "says": "a closed map of exactly these six keys"},
+		"wrong-version":             {"section": "8.1", "says": "`v` | uint | `1`"},
+		"device-not-in-entry":       {"section": "8.1", "says": "`device` is the `device_id` the `entry` names"},
+		"rotate-entry-other-device": {"section": "8.1", "says": "`device` is the `device_id` the `entry` names"},
+		"revoke-entry-other-device": {"section": "8.1", "says": "`device` is the `device_id` the `entry` names"},
+		"no-quorum":                 {"section": "8.1", "says": "a satisfied witness quorum"},
+		"no-quorum-tampered-proof":  {"section": "8.1", "says": "a satisfied witness quorum"},
+		"wrong-origin":              {"section": "8.1", "says": "this network's origin"},
+		"wrong-entry":               {"section": "8.1", "says": "reach that checkpoint's root at `index`"},
+		"foreign-checkpoint":        {"section": "8.1", "says": "this network's log key"},
+		"tampered-proof":            {"section": "8.1", "says": "reach that checkpoint's root at `index`"},
+		"wrong-log-key":             {"section": "8.1", "says": "this network's log key"},
 	}
 
 	// D-061: the §10.1 code each is refused with, in the bundle table's
@@ -1017,21 +1059,25 @@ func writeBadProofs(root, origin string, key ed25519.PrivateKey, entries [][]byt
 	// the binding -- the entry is another one's), and
 	// no-quorum-tampered-proof (the quorum, then the inclusion proof).
 	bundleCodes := map[string]refusal.Code{
-		"open-schema":              refusal.Bundle,
-		"wrong-version":            refusal.Bundle,
-		"device-not-in-entry":      refusal.Binding,
-		"no-quorum":                refusal.Quorum,
-		"no-quorum-tampered-proof": refusal.Quorum,
-		"wrong-origin":             refusal.Origin,
-		"wrong-entry":              refusal.Inclusion,
-		"foreign-checkpoint":       refusal.LogSignature,
-		"tampered-proof":           refusal.Inclusion,
-		"wrong-log-key":            refusal.LogSignature,
+		"open-schema":               refusal.Bundle,
+		"wrong-version":             refusal.Bundle,
+		"device-not-in-entry":       refusal.Binding,
+		"rotate-entry-other-device": refusal.Binding,
+		"revoke-entry-other-device": refusal.Binding,
+		"no-quorum":                 refusal.Quorum,
+		"no-quorum-tampered-proof":  refusal.Quorum,
+		"wrong-origin":              refusal.Origin,
+		"wrong-entry":               refusal.Inclusion,
+		"foreign-checkpoint":        refusal.LogSignature,
+		"tampered-proof":            refusal.Inclusion,
+		"wrong-log-key":             refusal.LogSignature,
 	}
 	bundleCases := []map[string]string{
 		{"name": "open-schema", "says": "unknown field"},
 		{"name": "wrong-version", "says": "unsupported version"},
 		{"name": "device-not-in-entry", "says": "carries an entry about"},
+		{"name": "rotate-entry-other-device", "says": "carries an entry about"},
+		{"name": "revoke-entry-other-device", "says": "carries an entry about"},
 		{"name": "no-quorum", "says": "no quorum cosigned"},
 		{"name": "no-quorum-tampered-proof", "says": "no quorum cosigned"},
 		{"name": "wrong-origin", "says": "is for origin"},

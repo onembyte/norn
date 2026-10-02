@@ -13,6 +13,14 @@
       "says": "carries an entry about"
     },
     {
+      "name": "rotate-entry-other-device",
+      "says": "carries an entry about"
+    },
+    {
+      "name": "revoke-entry-other-device",
+      "says": "carries an entry about"
+    },
+    {
       "name": "no-quorum",
       "says": "no quorum cosigned"
     },
@@ -47,6 +55,8 @@
     "no-quorum": "quorum",
     "no-quorum-tampered-proof": "quorum",
     "open-schema": "bundle",
+    "revoke-entry-other-device": "binding",
+    "rotate-entry-other-device": "binding",
     "tampered-proof": "inclusion",
     "wrong-entry": "inclusion",
     "wrong-log-key": "log-signature",
@@ -75,6 +85,14 @@
     },
     "open-schema": {
       "says": "a closed map of exactly these six keys",
+      "section": "8.1"
+    },
+    "revoke-entry-other-device": {
+      "says": "`device` is the `device_id` the `entry` names",
+      "section": "8.1"
+    },
+    "rotate-entry-other-device": {
+      "says": "`device` is the `device_id` the `entry` names",
       "section": "8.1"
     },
     "tampered-proof": {
