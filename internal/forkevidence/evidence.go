@@ -44,6 +44,9 @@ func evidenceErrorf(code evrefusal.Code, format string, args ...any) error {
 // inherited from §4.0, whose cap is §6's entry framing (§11.1).
 const MaxEvidenceBytes = 1 << 16
 
+// hashSize is §11.1's `bytes (32)`: `held_root` and every `proof` hash.
+const hashSize = 32
+
 // Version is the schema version of an evidence file.
 const Version = 1
 
@@ -165,7 +168,10 @@ func Check(ev *Evidence, origin, logVKey, readerPolicy string) (*Finding, error)
 			"the conflicting checkpoint is size %d, the evidence claims a disagreement at %d",
 			conflicting.Size, ev.Size)
 	}
-	if len(ev.HeldRoot) != 32 {
+	// Parse refuses a wrong length first; this is the backstop for evidence
+	// built in memory (the agent checks its own before filing it). A wrong
+	// length is §11.1's `schema` wherever it is caught.
+	if len(ev.HeldRoot) != hashSize {
 		return nil, evidenceErrorf(evrefusal.Schema,
 			"the held root is %d bytes", len(ev.HeldRoot))
 	}
@@ -177,8 +183,8 @@ func Check(ev *Evidence, origin, logVKey, readerPolicy string) (*Finding, error)
 	if ev.Size != held.Size {
 		proof := make(upstream.TreeProof, 0, len(ev.Proof))
 		for _, hash := range ev.Proof {
-			if len(hash) != 32 {
-				return nil, evidenceErrorf(evrefusal.Proof,
+			if len(hash) != hashSize {
+				return nil, evidenceErrorf(evrefusal.Schema,
 					"a proof hash is %d bytes", len(hash))
 			}
 			var h upstream.Hash
@@ -272,6 +278,20 @@ func Parse(raw []byte) (*Evidence, error) {
 	if !ok {
 		return nil, evidenceErrorf(evrefusal.CBOR, "evidence is not a CBOR map")
 	}
+	// §11.1 step 2, before the key set: a key set is only closed relative to
+	// a version, so a reader cannot judge the schema of a version it does not
+	// speak. This checked the keys first, and a version-2 file with a key
+	// version 1 lacks came out `schema` where §11.1 says `version`
+	// (6.5l-vii-b-ii). An absent version is not 1 either.
+	version, ok := doc["version"].(uint64)
+	if !ok {
+		return nil, evidenceErrorf(evrefusal.Version,
+			"version is %T, want uint", doc["version"])
+	}
+	if version != Version {
+		return nil, evidenceErrorf(evrefusal.Version,
+			"unsupported version %d; this build understands %d", version, Version)
+	}
 	// §11.1: "a closed map of exactly these seven keys". This read the seven it
 	// wanted and ignored anything else, so the closed-map rule was prose only
 	// (cold gate run 8, D25). Evidence is the artifact strangers exchange; a
@@ -285,15 +305,6 @@ func Parse(raw []byte) (*Evidence, error) {
 	}
 	if len(doc) != len(allowed) {
 		return nil, evidenceErrorf(evrefusal.Schema, "evidence is missing fields")
-	}
-	version, ok := doc["version"].(uint64)
-	if !ok {
-		return nil, evidenceErrorf(evrefusal.Version,
-			"version is %T, want uint", doc["version"])
-	}
-	if version != Version {
-		return nil, evidenceErrorf(evrefusal.Version,
-			"unsupported version %d; this build understands %d", version, Version)
 	}
 	ev := &Evidence{}
 	for key, into := range map[string]*string{
@@ -310,10 +321,17 @@ func Parse(raw []byte) (*Evidence, error) {
 		return nil, evidenceErrorf(evrefusal.Schema, "size is %T, want uint", doc["size"])
 	}
 	ev.Size = int64(size)
+	// §11.1 types `held_root` and each `proof` hash as `bytes (32)`, so a
+	// length is part of the schema, checked here with the other types. Check
+	// measured both after `held`, `conflicting` and `size` (6.5l-vii-b-ii).
 	root, ok := doc["held_root"].([]byte)
 	if !ok {
 		return nil, evidenceErrorf(evrefusal.Schema,
 			"held_root is %T, want bytes", doc["held_root"])
+	}
+	if len(root) != hashSize {
+		return nil, evidenceErrorf(evrefusal.Schema,
+			"held_root is %d bytes, want %d", len(root), hashSize)
 	}
 	ev.HeldRoot = root
 	hashes, ok := doc["proof"].([]any)
@@ -326,6 +344,10 @@ func Parse(raw []byte) (*Evidence, error) {
 		if !ok {
 			return nil, evidenceErrorf(evrefusal.Schema,
 				"a proof hash is %T, want bytes", hash)
+		}
+		if len(raw) != hashSize {
+			return nil, evidenceErrorf(evrefusal.Schema,
+				"a proof hash is %d bytes, want %d", len(raw), hashSize)
 		}
 		ev.Proof = append(ev.Proof, raw)
 	}

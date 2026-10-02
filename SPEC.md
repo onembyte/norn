@@ -1206,8 +1206,8 @@ checks:
 |---|---|---|
 | 0 | `oversize` | the file is larger than `MAX_EVIDENCE_BYTES`; a reader accepts **from a stranger**, so the size bound is checked before any parse |
 | 1 | `cbor` | the file is not valid deterministic CBOR (§4.0), or is not a map |
-| 2 | `version` | the map's `version` is not `1` |
-| 3 | `schema` | the map is not the closed set of exactly seven keys, or a value has the wrong type |
+| 2 | `version` | the map's `version` is not `1` — absent, not a uint, or another number. Checked **before** the key set: a key set is only closed relative to a version, so a reader cannot judge the schema of a version it does not speak, and a file with `version: 2` and a key version 1 lacks is `version` |
+| 3 | `schema` | the map is not the closed set of exactly seven keys, or a value has the wrong type — which includes a `held_root` or a `proof` hash that is not **exactly 32 bytes**, as the table above types them. A wrong length is a schema fault, checked here, before any checkpoint is read |
 | 4 | `policy` | the carried `policy` is not a well-formed `c2sp.org/tlog-policy`. The field is **informational**, but a closed schema is part of the format |
 | 5 | `held` | the held checkpoint fails any §10 check: note framing, log signature, checkpoint body, origin, cosignature, or quorum |
 | 6 | `conflicting` | the conflicting checkpoint fails any §10 check. The held checkpoint is checked first, so a file wrong in both is refused as `held` |

@@ -13,6 +13,18 @@
       "says": "unsupported version"
     },
     {
+      "name": "bad-version-and-unknown-key",
+      "says": "unsupported version"
+    },
+    {
+      "name": "bad-short-held-root-and-size-above-held",
+      "says": "held_root is 31 bytes"
+    },
+    {
+      "name": "bad-short-proof-hash",
+      "says": "a proof hash is 31 bytes"
+    },
+    {
       "name": "bad-size-above-held",
       "says": "can only speak for what it holds"
     },
@@ -58,9 +70,12 @@
     "bad-policy-says-quorum-none": "held",
     "bad-policy-unparseable": "policy",
     "bad-proof-at-same-size": "proof",
+    "bad-short-held-root-and-size-above-held": "schema",
+    "bad-short-proof-hash": "schema",
     "bad-size-above-held": "size",
     "bad-size-mismatch": "size",
     "bad-unverifiable-conflicting": "conflicting",
+    "bad-version-and-unknown-key": "version",
     "bad-wrong-version": "version"
   },
   "comment": "evidence that MUST NOT be acted on, checked against trust.cbor. bad-consistent is a log and its own earlier self -- every signature valid, both heads cosigned, the roots agreeing. bad-other-origin is a real fork of another network, which this anchor has no business accepting. `says` is a semantic hint, a phrase the refusal is about; `codes` names the SPEC §11.1 code each MUST be refused with, and the code is the contract. `policy-not-the-readers.cbor` is not listed here: it carries a policy the reader does not share and MUST still prove the fork, because the field is informational and the reader's own policy decides",
@@ -97,6 +112,14 @@
       "says": "Empty when `size` equals",
       "section": "11.1"
     },
+    "bad-short-held-root-and-size-above-held": {
+      "says": "| `held_root` | bytes (32) |",
+      "section": "11.1"
+    },
+    "bad-short-proof-hash": {
+      "says": "| `proof` | array of bytes (32 each) |",
+      "section": "11.1"
+    },
     "bad-size-above-held": {
       "says": "not above `held`'s own size",
       "section": "11.1"
@@ -107,6 +130,10 @@
     },
     "bad-unverifiable-conflicting": {
       "says": "verify **both** checkpoints",
+      "section": "11.1"
+    },
+    "bad-version-and-unknown-key": {
+      "says": "a key set is only closed relative to a version",
       "section": "11.1"
     },
     "bad-wrong-version": {

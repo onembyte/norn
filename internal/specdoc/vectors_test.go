@@ -1560,6 +1560,10 @@ func TestTheVectorsREADMEStatesTheRightCounts(t *testing.T) {
 	for _, c := range []struct{ dir, noun string }{
 		{"checkpoints-bad", "checkpoints that MUST be refused"},
 		{"trust-bad", "anchors that must be rejected"},
+		// 6.5l-vii-b-ii: fork/ said "twelve", in an old step numbering, and
+		// named seven of them; nothing checked it.
+		{"proofs-bad", "bundles that MUST be refused"},
+		{"fork", "that must be **refused**"},
 	} {
 		n := len(caseNames(t, root, c.dir))
 		row := readmeRow(t, string(raw), "`"+c.dir+"/`")

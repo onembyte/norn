@@ -1656,6 +1656,50 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 		withVersion(raw, 2), 0o644); err != nil {
 		return err
 	}
+	// 6.5l-vii-b-ii. Two faults, so §11.1's order decides: `version` comes
+	// before the key set, because a key set is only closed relative to a
+	// version. A reader that checks the keys first says `schema`, which is
+	// what this repository's own reader said until this file existed.
+	if err := os.WriteFile(filepath.Join(dir, "bad-version-and-unknown-key.cbor"),
+		withVersion(withExtraKey(raw, "surprise", "a key version 1 does not have"), 2),
+		0o644); err != nil {
+		return err
+	}
+	// §11.1 types `held_root` as `bytes (32)`, so a 31-byte one is a step-3
+	// schema fault -- and this file is also an accusation about a size its
+	// accuser cannot reach, a step-7 fault. A reader that measures the root
+	// only once it has checked the size answers `size`.
+	shortRoot := &forkevidence.Evidence{
+		Held: heldSigned, Conflicting: forkedSigned,
+		Size: int64(len(entries)) + 1, HeldRoot: append([]byte(nil), evidence.HeldRoot[:31]...),
+		Proof: evidence.Proof, Policy: policyOf(root),
+	}
+	rawShortRoot, err := shortRoot.Encode()
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(dir, "bad-short-held-root-and-size-above-held.cbor"),
+		rawShortRoot, 0o644); err != nil {
+		return err
+	}
+	// A proof hash of 31 bytes. Everything else is the sound evidence, so a
+	// reader that leaves the length to the proof check refuses it too -- as
+	// `proof`, where §11.1 says `schema`.
+	shortHash := append([][]byte(nil), evidence.Proof...)
+	shortHash[0] = append([]byte(nil), evidence.Proof[0][:31]...)
+	shortProof := &forkevidence.Evidence{
+		Held: heldSigned, Conflicting: forkedSigned,
+		Size: forkedCP.Size, HeldRoot: append([]byte(nil), evidence.HeldRoot...),
+		Proof: shortHash, Policy: policyOf(root),
+	}
+	rawShortProof, err := shortProof.Encode()
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(dir, "bad-short-proof-hash.cbor"),
+		rawShortProof, 0o644); err != nil {
+		return err
+	}
 	// An accuser can only speak for sizes its own branch reaches.
 	aboveHeld := &forkevidence.Evidence{
 		Held: heldSigned, Conflicting: forkedSigned,
@@ -1704,6 +1748,9 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 		{"name": "bad-oversize", "says": "MAX_EVIDENCE_BYTES"},
 		{"name": "bad-open-schema", "says": "unknown field"},
 		{"name": "bad-wrong-version", "says": "unsupported version"},
+		{"name": "bad-version-and-unknown-key", "says": "unsupported version"},
+		{"name": "bad-short-held-root-and-size-above-held", "says": "held_root is 31 bytes"},
+		{"name": "bad-short-proof-hash", "says": "a proof hash is 31 bytes"},
 		{"name": "bad-size-above-held", "says": "can only speak for what it holds"},
 		{"name": "bad-policy-says-quorum-none", "says": "no quorum cosigned it"},
 		{"name": "bad-policy-unparseable", "says": "not a `tlog-policy`"},
@@ -1718,18 +1765,21 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 	// deciding. bad-policy-says-quorum-none is `held`: the carried policy
 	// parses, and the held checkpoint fails the reader's OWN quorum.
 	forkCodes := map[string]evrefusal.Code{
-		"bad-oversize":                 evrefusal.Oversize,
-		"bad-open-schema":              evrefusal.Schema,
-		"bad-wrong-version":            evrefusal.Version,
-		"bad-size-above-held":          evrefusal.Size,
-		"bad-policy-says-quorum-none":  evrefusal.Held,
-		"bad-policy-unparseable":       evrefusal.Policy,
-		"bad-proof-at-same-size":       evrefusal.Proof,
-		"bad-consistent":               evrefusal.Consistent,
-		"bad-other-origin":             evrefusal.Held,
-		"bad-forged-proof":             evrefusal.Proof,
-		"bad-unverifiable-conflicting": evrefusal.Conflicting,
-		"bad-size-mismatch":            evrefusal.Size,
+		"bad-oversize":                            evrefusal.Oversize,
+		"bad-open-schema":                         evrefusal.Schema,
+		"bad-wrong-version":                       evrefusal.Version,
+		"bad-version-and-unknown-key":             evrefusal.Version,
+		"bad-short-held-root-and-size-above-held": evrefusal.Schema,
+		"bad-short-proof-hash":                    evrefusal.Schema,
+		"bad-size-above-held":                     evrefusal.Size,
+		"bad-policy-says-quorum-none":             evrefusal.Held,
+		"bad-policy-unparseable":                  evrefusal.Policy,
+		"bad-proof-at-same-size":                  evrefusal.Proof,
+		"bad-consistent":                          evrefusal.Consistent,
+		"bad-other-origin":                        evrefusal.Held,
+		"bad-forged-proof":                        evrefusal.Proof,
+		"bad-unverifiable-conflicting":            evrefusal.Conflicting,
+		"bad-size-mismatch":                       evrefusal.Size,
 	}
 	if err := checkCodes("fork", namesOf(forkCases), forkCodes, evrefusal.Known); err != nil {
 		return err
@@ -1737,18 +1787,21 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 
 	manifest := map[string]any{
 		"rules": map[string]map[string]string{
-			"bad-oversize":                 {"section": "11.1", "says": "MAX_EVIDENCE_BYTES"},
-			"bad-open-schema":              {"section": "11.1", "says": "a closed map of exactly these seven keys"},
-			"bad-wrong-version":            {"section": "11.1", "says": "| `version` | uint | `1` |"},
-			"bad-size-above-held":          {"section": "11.1", "says": "not above `held`'s own size"},
-			"bad-policy-says-quorum-none":  {"section": "11.1", "says": "never the one in the file"},
-			"bad-policy-unparseable":       {"section": "11.1", "says": "MUST parse as `c2sp.org/tlog-policy`"},
-			"bad-proof-at-same-size":       {"section": "11.1", "says": "Empty when `size` equals"},
-			"bad-consistent":               {"section": "11.1", "says": "only if `held_root` differs"},
-			"bad-other-origin":             {"section": "11.1", "says": "this network's origin"},
-			"bad-forged-proof":             {"section": "11.1", "says": "check `proof` chains"},
-			"bad-unverifiable-conflicting": {"section": "11.1", "says": "verify **both** checkpoints"},
-			"bad-size-mismatch":            {"section": "11.1", "says": "`conflicting`'s size equals `size`"},
+			"bad-oversize":                            {"section": "11.1", "says": "MAX_EVIDENCE_BYTES"},
+			"bad-open-schema":                         {"section": "11.1", "says": "a closed map of exactly these seven keys"},
+			"bad-wrong-version":                       {"section": "11.1", "says": "| `version` | uint | `1` |"},
+			"bad-version-and-unknown-key":             {"section": "11.1", "says": "a key set is only closed relative to a version"},
+			"bad-short-held-root-and-size-above-held": {"section": "11.1", "says": "| `held_root` | bytes (32) |"},
+			"bad-short-proof-hash":                    {"section": "11.1", "says": "| `proof` | array of bytes (32 each) |"},
+			"bad-size-above-held":                     {"section": "11.1", "says": "not above `held`'s own size"},
+			"bad-policy-says-quorum-none":             {"section": "11.1", "says": "never the one in the file"},
+			"bad-policy-unparseable":                  {"section": "11.1", "says": "MUST parse as `c2sp.org/tlog-policy`"},
+			"bad-proof-at-same-size":                  {"section": "11.1", "says": "Empty when `size` equals"},
+			"bad-consistent":                          {"section": "11.1", "says": "only if `held_root` differs"},
+			"bad-other-origin":                        {"section": "11.1", "says": "this network's origin"},
+			"bad-forged-proof":                        {"section": "11.1", "says": "check `proof` chains"},
+			"bad-unverifiable-conflicting":            {"section": "11.1", "says": "verify **both** checkpoints"},
+			"bad-size-mismatch":                       {"section": "11.1", "says": "`conflicting`'s size equals `size`"},
 		},
 		"cases": forkCases,
 		"codes": forkCodes,
