@@ -293,7 +293,7 @@ func Parse(raw []byte) (*Evidence, error) {
 	}
 	if version != Version {
 		return nil, evidenceErrorf(evrefusal.Version,
-			"version %d, this build understands %d", version, Version)
+			"unsupported version %d; this build understands %d", version, Version)
 	}
 	ev := &Evidence{}
 	for key, into := range map[string]*string{

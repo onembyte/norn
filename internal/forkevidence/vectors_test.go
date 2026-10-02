@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/onembyte/norn/internal/evrefusal"
@@ -26,6 +27,12 @@ func TestEveryForkNegativeIsRefused(t *testing.T) {
 	}
 	var doc struct {
 		Cases []struct{ Name, Says string } `json:"cases"`
+		// The §11.1 code each file is refused with. `says` is a semantic
+		// hint (§12): a phrase the refusal is about. Where a case names a
+		// code, the code is the contract (§10.1), so the two live in
+		// different fields -- 6.5l-vii-b-i, after `says` had been
+		// overwritten with code names and the hints lost.
+		Codes map[string]evrefusal.Code `json:"codes"`
 	}
 	if err := json.Unmarshal(raw, &doc); err != nil {
 		t.Fatal(err)
@@ -33,11 +40,19 @@ func TestEveryForkNegativeIsRefused(t *testing.T) {
 	if len(doc.Cases) < 2 {
 		t.Fatalf("%d fork negatives; §12.1 names two", len(doc.Cases))
 	}
+	if len(doc.Codes) != len(doc.Cases) {
+		t.Fatalf("%d cases and %d codes: every case names the §11.1 code it is refused with",
+			len(doc.Cases), len(doc.Codes))
+	}
 
 	anchor := shippedAnchor(t, root)
 
 	for _, c := range doc.Cases {
 		t.Run(c.Name, func(t *testing.T) {
+			want, ok := doc.Codes[c.Name]
+			if !ok || !evrefusal.Known(want) {
+				t.Fatalf("names %q, which is not a §11.1 code", want)
+			}
 			body, err := os.ReadFile(filepath.Join(root, "fork", c.Name+".cbor"))
 			if err != nil {
 				t.Fatal(err)
@@ -46,21 +61,18 @@ func TestEveryForkNegativeIsRefused(t *testing.T) {
 			// it may parse and prove nothing. Both are refusals; neither is an
 			// accusation a third party should act on.
 			evidence, err := Parse(body)
-			if err != nil {
-				if got, ok := evrefusal.CodeOf(err); !ok || string(got) != c.Says {
-					t.Errorf("refused for the wrong code.\n  got:  %v (%s)\n  want: %s",
-						err, got, c.Says)
-				}
-				return
+			if err == nil {
+				_, err = Check(evidence, anchor.Origin, anchor.LogKey, anchor.Policy)
 			}
-			_, err = Check(evidence, anchor.Origin, anchor.LogKey, anchor.Policy)
 			if err == nil {
 				t.Fatal("accepted evidence that proves no fork; a reader would act on a " +
 					"false accusation")
 			}
-			if got, ok := evrefusal.CodeOf(err); !ok || string(got) != c.Says {
-				t.Errorf("refused for the wrong code.\n  got:  %v (%s)\n  want: %s",
-					err, got, c.Says)
+			if got, _ := evrefusal.CodeOf(err); got != want {
+				t.Errorf("refused as %q, and cases.json says %q: %v", got, want, err)
+			}
+			if !strings.Contains(err.Error(), c.Says) {
+				t.Errorf("refused for the wrong reason.\n  got:  %v\n  want: %s", err, c.Says)
 			}
 		})
 	}

@@ -2019,6 +2019,60 @@ func TestTheNoSignatureLinesAdmissionHasLeftTheList(t *testing.T) {
 // bundle, which §10.1 refuses at the head, and for a missing one, which is
 // `unserved`; the vectors README said the tile rule caught the tamper cases
 // "first", which is the order §10.1 does not have.
+// The four manifests whose negatives a verifier refuses with a closed-list
+// code all carry it the same way: a `codes` map beside `cases`, one entry per
+// case, every code on its list -- §10.1's for the verifier, §11.1's for an
+// evidence reader. `says` stays what §12 makes it, a semantic hint, and a hint
+// that is only the case's own code name says nothing the code does not.
+// fork/ was the exception for a day: its hints were overwritten with code
+// names and it carried no `codes` map (6.5l-vii-b-i).
+func TestEveryCodedManifestKeepsItsCodesInCodes(t *testing.T) {
+	inRefusal := func(c string) bool { return refusal.Known(refusal.Code(c)) }
+	inEvidence := func(c string) bool { return evrefusal.Known(evrefusal.Code(c)) }
+	for dir, known := range map[string]func(string) bool{
+		"checkpoints-bad": inRefusal, "served-bad": inRefusal,
+		"proofs-bad": inRefusal, "fork": inEvidence,
+	} {
+		t.Run(dir, func(t *testing.T) {
+			var manifest struct {
+				Cases json.RawMessage   `json:"cases"`
+				Codes map[string]string `json:"codes"`
+			}
+			readJSON(t, filepath.Join(vectorRoot(t), dir, "cases.json"), &manifest)
+			// `cases` is bare names in checkpoints-bad and objects elsewhere.
+			type entry struct{ Name, Says string }
+			var cases []entry
+			if err := json.Unmarshal(manifest.Cases, &cases); err != nil {
+				// A failed unmarshal leaves the slice holding empties, so the
+				// fallback starts from nil (the trap the rules guard notes).
+				cases = nil
+				var names []string
+				if err := json.Unmarshal(manifest.Cases, &names); err != nil {
+					t.Fatal(err)
+				}
+				for _, n := range names {
+					cases = append(cases, entry{Name: n})
+				}
+			}
+			if len(manifest.Codes) != len(cases) {
+				t.Fatalf("%d cases and %d codes", len(cases), len(manifest.Codes))
+			}
+			for _, c := range cases {
+				code, ok := manifest.Codes[c.Name]
+				switch {
+				case !ok:
+					t.Errorf("%s has no code", c.Name)
+				case !known(code):
+					t.Errorf("%s names %q, which is not on the closed list", c.Name, code)
+				case c.Says != "" && c.Says == code:
+					t.Errorf("%s's `says` is its own code name, %q: a hint that only "+
+						"repeats the code says nothing the code does not", c.Name, code)
+				}
+			}
+		})
+	}
+}
+
 func TestEveryServedAndBundleNegativeCitesTheRuleOfItsCode(t *testing.T) {
 	for dir, citeFor := range map[string]map[string][]string{
 		"served-bad": {

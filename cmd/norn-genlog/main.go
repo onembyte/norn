@@ -27,6 +27,7 @@ import (
 	"github.com/onembyte/norn/internal/cbor"
 	cosignpkg "github.com/onembyte/norn/internal/cosign"
 	"github.com/onembyte/norn/internal/entry"
+	"github.com/onembyte/norn/internal/evrefusal"
 	"github.com/onembyte/norn/internal/forkevidence"
 	"github.com/onembyte/norn/internal/note"
 	"github.com/onembyte/norn/internal/proof"
@@ -992,7 +993,7 @@ func writeBadProofs(root, origin string, key ed25519.PrivateKey, entries [][]byt
 		{"name": "tampered-proof", "says": "inclusion proof"},
 		{"name": "wrong-log-key", "says": "no valid signature from a trusted key"},
 	}
-	if err := checkCodes("proofs-bad", namesOf(bundleCases), bundleCodes); err != nil {
+	if err := checkCodes("proofs-bad", namesOf(bundleCases), bundleCodes, refusal.Known); err != nil {
 		return err
 	}
 
@@ -1017,14 +1018,15 @@ func writeBadProofs(root, origin string, key ed25519.PrivateKey, entries [][]byt
 }
 
 // checkCodes refuses to write a manifest whose cases and codes disagree:
-// every case names a code on §10.1's list (D-061), and no code names a case
-// that is not there. A negative without a code can only say "refused", which
-// a verifier that runs its checks in the wrong order also says.
-func checkCodes(dir string, names []string, codes map[string]refusal.Code) error {
+// every case names a code on its closed list -- §10.1's for a verifier,
+// §11.1's for an evidence reader (D-061) -- and no code names a case that is
+// not there. A negative without a code can only say "refused", which a reader
+// that runs its checks in the wrong order also says.
+func checkCodes[C ~string](dir string, names []string, codes map[string]C, known func(C) bool) error {
 	for _, name := range names {
-		if code, ok := codes[name]; !ok || !refusal.Known(code) {
-			return fmt.Errorf("%s: case %q names no §10.1 code; every negative must "+
-				"say which step refuses it", dir, name)
+		if code, ok := codes[name]; !ok || !known(code) {
+			return fmt.Errorf("%s: case %q names no code on its closed list; every "+
+				"negative must say which step refuses it", dir, name)
 		}
 	}
 	if len(codes) != len(names) {
@@ -1165,7 +1167,7 @@ func writeBadServed(root, served string, size int64) error {
 				"opening `tile/0/...` sees nothing wrong, and serves the corrupt " +
 				"tile onward to peers asking it for proofs"},
 	}
-	if err := checkCodes("served-bad", namesOf(servedCases), servedCodes); err != nil {
+	if err := checkCodes("served-bad", namesOf(servedCases), servedCodes, refusal.Known); err != nil {
 		return err
 	}
 
@@ -1693,6 +1695,46 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 		return err
 	}
 
+	// `says` is what §12 makes it, a semantic hint. These are the phrases
+	// each case carried until 6.5l-vi-b-iv overwrote them with code names --
+	// two reworded to match the refusal as it now reads: the oversize
+	// check names MAX_EVIDENCE_BYTES, and an unsupported version says so.
+	// The codes live in `codes` (6.5l-vii-b-i).
+	forkCases := []map[string]string{
+		{"name": "bad-oversize", "says": "MAX_EVIDENCE_BYTES"},
+		{"name": "bad-open-schema", "says": "unknown field"},
+		{"name": "bad-wrong-version", "says": "unsupported version"},
+		{"name": "bad-size-above-held", "says": "can only speak for what it holds"},
+		{"name": "bad-policy-says-quorum-none", "says": "no quorum cosigned it"},
+		{"name": "bad-policy-unparseable", "says": "not a `tlog-policy`"},
+		{"name": "bad-proof-at-same-size", "says": "requires none"},
+		{"name": "bad-consistent", "says": "nothing here is a fork"},
+		{"name": "bad-other-origin", "says": "the held checkpoint"},
+		{"name": "bad-forged-proof", "says": "does not chain"},
+		{"name": "bad-unverifiable-conflicting", "says": "the conflicting checkpoint"},
+		{"name": "bad-size-mismatch", "says": "claims a disagreement"},
+	}
+	// D-061: the §11.1 code each is refused with, the first failing step
+	// deciding. bad-policy-says-quorum-none is `held`: the carried policy
+	// parses, and the held checkpoint fails the reader's OWN quorum.
+	forkCodes := map[string]evrefusal.Code{
+		"bad-oversize":                 evrefusal.Oversize,
+		"bad-open-schema":              evrefusal.Schema,
+		"bad-wrong-version":            evrefusal.Version,
+		"bad-size-above-held":          evrefusal.Size,
+		"bad-policy-says-quorum-none":  evrefusal.Held,
+		"bad-policy-unparseable":       evrefusal.Policy,
+		"bad-proof-at-same-size":       evrefusal.Proof,
+		"bad-consistent":               evrefusal.Consistent,
+		"bad-other-origin":             evrefusal.Held,
+		"bad-forged-proof":             evrefusal.Proof,
+		"bad-unverifiable-conflicting": evrefusal.Conflicting,
+		"bad-size-mismatch":            evrefusal.Size,
+	}
+	if err := checkCodes("fork", namesOf(forkCases), forkCodes, evrefusal.Known); err != nil {
+		return err
+	}
+
 	manifest := map[string]any{
 		"rules": map[string]map[string]string{
 			"bad-oversize":                 {"section": "11.1", "says": "MAX_EVIDENCE_BYTES"},
@@ -1708,33 +1750,15 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 			"bad-unverifiable-conflicting": {"section": "11.1", "says": "verify **both** checkpoints"},
 			"bad-size-mismatch":            {"section": "11.1", "says": "`conflicting`'s size equals `size`"},
 		},
-		"cases": []map[string]string{
-			{"name": "bad-oversize", "says": "oversize"},
-			{"name": "bad-open-schema", "says": "schema"},
-			{"name": "bad-wrong-version", "says": "version"},
-			{"name": "bad-size-above-held", "says": "size"},
-			{"name": "bad-policy-says-quorum-none",
-				"says": "held"},
-			{"name": "bad-policy-unparseable",
-				"says": "policy"},
-			{"name": "bad-proof-at-same-size",
-				"says": "proof"},
-			{"name": "bad-consistent",
-				"says": "consistent"},
-			{"name": "bad-other-origin",
-				"says": "held"},
-			{"name": "bad-forged-proof",
-				"says": "proof"},
-			{"name": "bad-unverifiable-conflicting",
-				"says": "conflicting"},
-			{"name": "bad-size-mismatch",
-				"says": "size"},
-		},
+		"cases": forkCases,
+		"codes": forkCodes,
 		"comment": "evidence that MUST NOT be acted on, checked against trust.cbor. " +
 			"bad-consistent is a log and its own earlier self -- every signature valid, " +
 			"both heads cosigned, the roots agreeing. bad-other-origin is a real fork of " +
-			"another network, which this anchor has no business accepting. `says` is what " +
-			"the refusal must be about. `policy-not-the-readers.cbor` is not listed here: " +
+			"another network, which this anchor has no business accepting. `says` is a " +
+			"semantic hint, a phrase the refusal is about; `codes` names the SPEC §11.1 " +
+			"code each MUST be refused with, and the code is the contract. " +
+			"`policy-not-the-readers.cbor` is not listed here: " +
 			"it carries a policy the reader does not share and MUST still prove the fork, " +
 			"because the field is informational and the reader's own policy decides",
 	}
@@ -2522,7 +2546,7 @@ func writeBadCheckpoints(root, origin string, key ed25519.PrivateKey,
 		"21-origin-with-a-suffix":           refusal.Origin,
 		"22-origin-case-changed":            refusal.Origin,
 	}
-	if err := checkCodes("checkpoints-bad", names, codes); err != nil {
+	if err := checkCodes("checkpoints-bad", names, codes, refusal.Known); err != nil {
 		return err
 	}
 
