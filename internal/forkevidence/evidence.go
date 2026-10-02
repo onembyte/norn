@@ -24,7 +24,9 @@ import (
 	"github.com/onembyte/norn/internal/cbor"
 	"github.com/onembyte/norn/internal/cosign"
 	"github.com/onembyte/norn/internal/evrefusal"
+	"github.com/onembyte/norn/internal/note"
 	"github.com/onembyte/norn/internal/policy"
+	"github.com/onembyte/norn/internal/refusal"
 	"github.com/onembyte/norn/internal/tlog"
 )
 
@@ -37,6 +39,26 @@ var ErrEvidence = errors.New("fork evidence error")
 func evidenceErrorf(code evrefusal.Code, format string, args ...any) error {
 	return evrefusal.Wrap(code, fmt.Errorf("%w: %s", ErrEvidence,
 		fmt.Sprintf(format, args...)))
+}
+
+// readerErrorf reports a fault in the reader's own configuration -- its
+// policy, its log key. Nothing can be concluded, so it is ErrEvidence; it
+// carries no §11.1 code, because those describe the file (6.5l-vii-b-iii),
+// as §10.1's describe what a log served.
+func readerErrorf(format string, args ...any) error {
+	return fmt.Errorf("%w: %s", ErrEvidence, fmt.Sprintf(format, args...))
+}
+
+// checkpointRefusal reports a held or conflicting checkpoint that failed §10.
+// The §11.1 code says which checkpoint; the §10.1 code the failure already
+// carries says why, and stays on the chain. A failure with no §10.1 code is
+// not the checkpoint's -- a witness key in the reader's own policy that is a
+// plain note key is the one way to reach here -- and is the reader's fault.
+func checkpointRefusal(code evrefusal.Code, which string, err error) error {
+	if _, ok := refusal.CodeOf(err); !ok {
+		return readerErrorf("checking %s: %v", which, err)
+	}
+	return evrefusal.Wrap(code, fmt.Errorf("%w: %s: %w", ErrEvidence, which, err))
 }
 
 // MaxEvidenceBytes bounds an evidence file: two signed checkpoints, a
@@ -133,10 +155,16 @@ func Build(held *tlog.Tree, heldSigned string, conflicting string,
 // one it has replayed (§9.4). The file's own `policy` field is never used to
 // decide anything; see Evidence.Policy.
 func Check(ev *Evidence, origin, logVKey, readerPolicy string) (*Finding, error) {
+	// The reader first, before anything in the file: a fault here is this
+	// reader's configuration and says nothing about the evidence. This coded
+	// an unparseable reader policy as the file's `policy`, and a malformed
+	// log key surfaced as the file's `held` (6.5l-vii-b-iii).
 	rules, err := policy.Parse(readerPolicy)
 	if err != nil {
-		return nil, evidenceErrorf(evrefusal.Policy,
-			"this reader's own policy does not parse: %v", err)
+		return nil, readerErrorf("this reader's own policy does not parse: %v", err)
+	}
+	if _, err := note.ParseVerifierKey(logVKey); err != nil {
+		return nil, readerErrorf("this reader's own log key does not parse: %v", err)
 	}
 	// The carried policy decides nothing, but a closed schema with a stated
 	// grammar is part of the format: a file whose `policy` is not a policy is
@@ -147,13 +175,11 @@ func Check(ev *Evidence, origin, logVKey, readerPolicy string) (*Finding, error)
 	}
 	held, err := verified(ev.Held, origin, logVKey, rules)
 	if err != nil {
-		return nil, evidenceErrorf(evrefusal.Held,
-			"the held checkpoint: %v", err)
+		return nil, checkpointRefusal(evrefusal.Held, "the held checkpoint", err)
 	}
 	conflicting, err := verified(ev.Conflicting, origin, logVKey, rules)
 	if err != nil {
-		return nil, evidenceErrorf(evrefusal.Conflicting,
-			"the conflicting checkpoint: %v", err)
+		return nil, checkpointRefusal(evrefusal.Conflicting, "the conflicting checkpoint", err)
 	}
 	// An accuser can only speak for sizes its own branch reaches. Above that
 	// there is nothing to compare, and the consistency proof refused it with a
@@ -226,13 +252,16 @@ func Check(ev *Evidence, origin, logVKey, readerPolicy string) (*Finding, error)
 // misbehaving in private; what makes a fork *provable to a third party* is
 // that independent witnesses vouched for both.
 func verified(signed, origin, logVKey string, rules *policy.Policy) (tlog.Checkpoint, error) {
+	// Each failure carries its §10.1 code: tlog.Verify and cosign.Verify name
+	// their own steps, and the origin and the quorum are named here.
 	cp, err := tlog.Verify(signed, []string{logVKey})
 	if err != nil {
-		return tlog.Checkpoint{}, fmt.Errorf("not signed by this network's log key: %w", err)
+		return tlog.Checkpoint{}, refusal.Carry(err,
+			fmt.Errorf("not signed by this network's log key: %w", err))
 	}
 	if cp.Origin != origin {
-		return tlog.Checkpoint{}, fmt.Errorf("origin %q is not this network's %q",
-			cp.Origin, origin)
+		return tlog.Checkpoint{}, refusal.Wrap(refusal.Origin,
+			fmt.Errorf("origin %q is not this network's %q", cp.Origin, origin))
 	}
 	cosignatures, err := cosign.Verify(signed, rules.Keys())
 	if err != nil {
@@ -243,9 +272,9 @@ func verified(signed, origin, logVKey string, rules *policy.Policy) (tlog.Checkp
 		names = append(names, rules.Label(c.Name))
 	}
 	if !rules.Satisfied(names) {
-		return tlog.Checkpoint{}, fmt.Errorf("no quorum cosigned it (quorum %q, "+
-			"cosigned by %v); one log signing two things in private is not something "+
-			"anybody else can check", rules.Quorum(), names)
+		return tlog.Checkpoint{}, refusal.Wrap(refusal.Quorum, fmt.Errorf("no quorum "+
+			"cosigned it (quorum %q, cosigned by %v); one log signing two things in "+
+			"private is not something anybody else can check", rules.Quorum(), names))
 	}
 	return cp, nil
 }

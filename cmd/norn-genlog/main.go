@@ -1656,10 +1656,12 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 		withVersion(raw, 2), 0o644); err != nil {
 		return err
 	}
-	// 6.5l-vii-b-ii. Two faults, so §11.1's order decides: `version` comes
-	// before the key set, because a key set is only closed relative to a
-	// version. A reader that checks the keys first says `schema`, which is
-	// what this repository's own reader said until this file existed.
+	// 6.5l-vii-b-ii. Built, like the two above, on `raw` -- the bad-consistent
+	// evidence -- so it fails three steps: `version`, the key set, and
+	// `consistent`. §11.1's order decides: `version` comes before the key set,
+	// because a key set is only closed relative to a version. A reader that
+	// checks the keys first says `schema`, which is what this repository's own
+	// reader said until this file existed.
 	if err := os.WriteFile(filepath.Join(dir, "bad-version-and-unknown-key.cbor"),
 		withVersion(withExtraKey(raw, "surprise", "a key version 1 does not have"), 2),
 		0o644); err != nil {
@@ -1680,6 +1682,36 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 	}
 	if err := os.WriteFile(filepath.Join(dir, "bad-short-held-root-and-size-above-held.cbor"),
 		rawShortRoot, 0o644); err != nil {
+		return err
+	}
+	// 6.5l-vii-b-iii. §11.1 says the size bound is checked "before any parse",
+	// and bad-oversize parses: a reader that decodes first and measures after
+	// refuses it too, as `oversize`. Here the bytes are not CBOR either, so a
+	// parse-first reader answers `cbor`.
+	if err := os.WriteFile(filepath.Join(dir, "bad-oversize-and-not-cbor.cbor"),
+		bytes.Repeat([]byte{0xff}, forkevidence.MaxEvidenceBytes+1), 0o644); err != nil {
+		return err
+	}
+	// §11.1 step 1, which no file reached: the SOUND evidence -- not `raw`,
+	// which is bad-consistent -- with `size` written in a longer form than the
+	// shortest (§4.0). A decoder that accepts any well-formed CBOR proves the
+	// fork from it; a reader of deterministic CBOR refuses it as `cbor`.
+	sound, err := evidence.Encode()
+	if err != nil {
+		return err
+	}
+	if evidence.Size < 24 || evidence.Size > 0xff {
+		return fmt.Errorf("the non-canonical case widens a one-byte size argument; size is %d",
+			evidence.Size)
+	}
+	shortest := []byte{0x64, 's', 'i', 'z', 'e', 0x18, byte(evidence.Size)}
+	widened := []byte{0x64, 's', 'i', 'z', 'e', 0x19, 0x00, byte(evidence.Size)}
+	if bytes.Count(sound, shortest) != 1 {
+		return fmt.Errorf("the sound evidence does not encode size %d exactly once in "+
+			"its shortest form", evidence.Size)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "bad-non-canonical-cbor.cbor"),
+		bytes.Replace(sound, shortest, widened, 1), 0o644); err != nil {
 		return err
 	}
 	// A proof hash of 31 bytes. Everything else is the sound evidence, so a
@@ -1751,6 +1783,8 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 		{"name": "bad-version-and-unknown-key", "says": "unsupported version"},
 		{"name": "bad-short-held-root-and-size-above-held", "says": "held_root is 31 bytes"},
 		{"name": "bad-short-proof-hash", "says": "a proof hash is 31 bytes"},
+		{"name": "bad-oversize-and-not-cbor", "says": "MAX_EVIDENCE_BYTES"},
+		{"name": "bad-non-canonical-cbor", "says": "not valid deterministic CBOR"},
 		{"name": "bad-size-above-held", "says": "can only speak for what it holds"},
 		{"name": "bad-policy-says-quorum-none", "says": "no quorum cosigned it"},
 		{"name": "bad-policy-unparseable", "says": "not a `tlog-policy`"},
@@ -1771,6 +1805,8 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 		"bad-version-and-unknown-key":             evrefusal.Version,
 		"bad-short-held-root-and-size-above-held": evrefusal.Schema,
 		"bad-short-proof-hash":                    evrefusal.Schema,
+		"bad-oversize-and-not-cbor":               evrefusal.Oversize,
+		"bad-non-canonical-cbor":                  evrefusal.CBOR,
 		"bad-size-above-held":                     evrefusal.Size,
 		"bad-policy-says-quorum-none":             evrefusal.Held,
 		"bad-policy-unparseable":                  evrefusal.Policy,
@@ -1793,6 +1829,8 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 			"bad-version-and-unknown-key":             {"section": "11.1", "says": "a key set is only closed relative to a version"},
 			"bad-short-held-root-and-size-above-held": {"section": "11.1", "says": "| `held_root` | bytes (32) |"},
 			"bad-short-proof-hash":                    {"section": "11.1", "says": "| `proof` | array of bytes (32 each) |"},
+			"bad-oversize-and-not-cbor":               {"section": "11.1", "says": "the size bound is checked before any parse"},
+			"bad-non-canonical-cbor":                  {"section": "11.1", "says": "the file is not valid deterministic CBOR"},
 			"bad-size-above-held":                     {"section": "11.1", "says": "not above `held`'s own size"},
 			"bad-policy-says-quorum-none":             {"section": "11.1", "says": "never the one in the file"},
 			"bad-policy-unparseable":                  {"section": "11.1", "says": "MUST parse as `c2sp.org/tlog-policy`"},

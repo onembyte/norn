@@ -25,6 +25,14 @@
       "says": "a proof hash is 31 bytes"
     },
     {
+      "name": "bad-oversize-and-not-cbor",
+      "says": "MAX_EVIDENCE_BYTES"
+    },
+    {
+      "name": "bad-non-canonical-cbor",
+      "says": "not valid deterministic CBOR"
+    },
+    {
       "name": "bad-size-above-held",
       "says": "can only speak for what it holds"
     },
@@ -64,9 +72,11 @@
   "codes": {
     "bad-consistent": "consistent",
     "bad-forged-proof": "proof",
+    "bad-non-canonical-cbor": "cbor",
     "bad-open-schema": "schema",
     "bad-other-origin": "held",
     "bad-oversize": "oversize",
+    "bad-oversize-and-not-cbor": "oversize",
     "bad-policy-says-quorum-none": "held",
     "bad-policy-unparseable": "policy",
     "bad-proof-at-same-size": "proof",
@@ -88,6 +98,10 @@
       "says": "check `proof` chains",
       "section": "11.1"
     },
+    "bad-non-canonical-cbor": {
+      "says": "the file is not valid deterministic CBOR",
+      "section": "11.1"
+    },
     "bad-open-schema": {
       "says": "a closed map of exactly these seven keys",
       "section": "11.1"
@@ -98,6 +112,10 @@
     },
     "bad-oversize": {
       "says": "MAX_EVIDENCE_BYTES",
+      "section": "11.1"
+    },
+    "bad-oversize-and-not-cbor": {
+      "says": "the size bound is checked before any parse",
       "section": "11.1"
     },
     "bad-policy-says-quorum-none": {

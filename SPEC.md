@@ -1199,7 +1199,7 @@ intervenes. Each step has a vector in `fork/` for that reason.
 closed vocabulary of refusal codes, and the first step whose check fails decides
 which. Two conforming readers that refuse the same file MUST refuse it for the
 same reason, or a vector can only ask "refused?" and a reader that refuses
-everything for the wrong reason passes. The list, in the order the reader
+everything for the wrong reason passes. The codes describe the **file**. A reader whose own trust file cannot be used — its policy does not parse, or its log key does not — has nothing to check the file against: it checks its own configuration before it reads the file, and reports a fault there as its own, with no code. A `held` or `conflicting` refusal is a checkpoint failing §10, so a reader may report §10.1's code for that failure alongside it. The list, in the order the reader
 checks:
 
 | step | code | the refusal |
