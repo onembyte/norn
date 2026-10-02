@@ -1195,6 +1195,26 @@ an operator installs a new trust file: a reader that skips a step accepts an
 accusation any stranger can write, and takes the network down until a human
 intervenes. Each step has a vector in `fork/` for that reason.
 
+**Refusal codes (closed list).** Like §10.1, the evidence reader reports a
+closed vocabulary of refusal codes, and the first step whose check fails decides
+which. Two conforming readers that refuse the same file MUST refuse it for the
+same reason, or a vector can only ask "refused?" and a reader that refuses
+everything for the wrong reason passes. The list, in the order the reader
+checks:
+
+| step | code | the refusal |
+|---|---|---|
+| 0 | `oversize` | the file is larger than `MAX_EVIDENCE_BYTES`; a reader accepts **from a stranger**, so the size bound is checked before any parse |
+| 1 | `decode` | the file is not valid deterministic CBOR (§4.0), or is not a map |
+| 2 | `version` | the map's `version` is not `1` |
+| 3 | `schema` | the map is not the closed set of exactly seven keys, or a value has the wrong type |
+| 4 | `policy` | the carried `policy` is not a well-formed `c2sp.org/tlog-policy`. The field is **informational**, but a closed schema is part of the format |
+| 5 | `held` | the held checkpoint fails any §10 check: note framing, log signature, checkpoint body, origin, cosignature, or quorum |
+| 6 | `conflicting` | the conflicting checkpoint fails any §10 check. The held checkpoint is checked first, so a file wrong in both is refused as `held` |
+| 7 | `size` | `size` is above the held checkpoint's own size, or the conflicting checkpoint's size does not equal `size` |
+| 8 | `proof` | the consistency proof does not chain `held_root` at `size` to the held checkpoint's signed head, or a proof is carried where `size` equals the held size and §11.1 requires none |
+| 9 | `consistent` | `held_root` equals `conflicting`'s root at `size`; the file proves nothing, and a node MUST NOT publish it as an accusation |
+
 **`MAX_EVIDENCE_BYTES` is 65536**. Two signed checkpoints, a root and a
 consistency proof whose length is logarithmic in the tree — an evidence file
 does not wrap an entry either. A file larger than this MUST be refused on
