@@ -656,6 +656,36 @@ func writeDetectCases(root, origin string, key ed25519.PrivateKey, entries [][]b
 		return err
 	}
 
+	// Cold gate run 12, D4. A branch that diverges below the stored size and
+	// then grows past it: the most ordinary equivocation there is, and the
+	// shape detect/ did not have. A reader that compares the branches only
+	// when the served head is the same size or shorter accepts it.
+	longer := append(append([][]byte(nil), entries[:forkAt-1]...), divergent)
+	longer = append(longer, entries[forkAt:forkAt+20]...)
+	if _, err := serveInto(filepath.Join(dir, "fork-longer"), origin, key,
+		longer, signers); err != nil {
+		return err
+	}
+	// Cold gate run 12, D5. This log, honestly signed, with one byte of one
+	// entry changed in transit. Its entries do not hash to its head (§10.1
+	// step 9, `head`) and, recomputed at the stored size, they disagree with
+	// the stored head too -- so a reader that compares branches before it
+	// checks the head accuses an honest log of forking, permanently.
+	if _, err := serveInto(filepath.Join(dir, "tampered-current"), origin, key,
+		entries, signers); err != nil {
+		return err
+	}
+	bundle := filepath.Join(dir, "tampered-current",
+		filepath.FromSlash(tlog.EntryBundlePath(0, len(entries)%tlog.TileWidth)))
+	tampered, err := os.ReadFile(bundle)
+	if err != nil {
+		return err
+	}
+	tampered[len(tampered)-1] ^= 0x01
+	if err := os.WriteFile(bundle, tampered, 0o644); err != nil {
+		return err
+	}
+
 	if err := os.WriteFile(filepath.Join(dir, "earlier.checkpoint"),
 		[]byte(honest), 0o644); err != nil {
 		return err
@@ -745,6 +775,23 @@ func writeDetectCases(root, origin string, key ed25519.PrivateKey, entries [][]b
 			{"name": "shorter-with-no-held-branch", "stored": "current.checkpoint",
 				"serve": "fork-shorter", "outcome": "refuse", "held": "none",
 				"says": "a log does not shrink"},
+			{"name": "fork-on-a-longer-branch", "stored": "earlier.checkpoint",
+				"serve": "fork-longer", "outcome": "fork",
+				"says": "a grown head is compared at the stored size too"},
+			{"name": "tampered-bundle-under-a-stored-head", "stored": "current.checkpoint",
+				"serve": "tampered-current", "outcome": "refuse",
+				"says": "do not hash to the advertised head"},
+		},
+		// D-061, §10.1: the code each case that is not accepted is refused
+		// with. tampered-bundle-under-a-stored-head is `head`, not `fork`:
+		// the head is checked before the branches are compared.
+		"codes": map[string]refusal.Code{
+			"refuse-shrunk":                       refusal.Rollback,
+			"fork-at-the-same-size":               refusal.Fork,
+			"fork-on-a-shorter-branch":            refusal.Fork,
+			"shorter-with-no-held-branch":         refusal.Rollback,
+			"fork-on-a-longer-branch":             refusal.Fork,
+			"tampered-bundle-under-a-stored-head": refusal.Head,
 		},
 		"comment": "pairs, not single artifacts. `stored` is the checkpoint this reader " +
 			"already holds, over the entries in `../served`; `serve` is the log it is " +

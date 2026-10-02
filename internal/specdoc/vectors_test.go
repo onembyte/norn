@@ -1710,20 +1710,39 @@ func TestTheSuiteSaysWhatItsSaysFieldIs(t *testing.T) {
 	}
 }
 
-// ...and the three rules whose only pin is a `says` match have to be named,
-// because a semantic hint cannot carry a normative ordering.
-func TestTheOrderingsPinnedOnlyByASaysMatchAreNamed(t *testing.T) {
+// §12.1 once had to admit orderings pinned only by a `says` match, because
+// outside replay two refusals were the same event to a black-box run. D-061
+// gave the verifier and the evidence reader closed codes, and the codes make
+// an ordering *observable*; run 12 (D5) answered that observable is not
+// observed -- head-before-fork had a code on each side and no file with both
+// faults. So the admission is gone, and §12.1 names, for every ordering
+// §10.1 and §11.1 state, the file that fails both steps (6.5l-vii-d-ii).
+func TestEveryStatedOrderingIsObservedByAVector(t *testing.T) {
 	doc := load(t)
 	section, ok := doc.Section("12.1")
 	if !ok {
 		t.Fatal("§12.1 is missing")
 	}
-	if !strings.Contains(section.Body, "pinned only by a `says` match") {
-		t.Error("§12.1 does not record that §10's signature-before-origin ordering " +
-			"and §11.1's two step orderings are observable only through `says`. " +
-			"Outside replay there is no reason code, so two refusals are the same " +
-			"event to a black-box run — and an ordering between them cannot be " +
-			"seen at all")
+	flat := strings.Join(strings.Fields(section.Body), " ")
+	if strings.Contains(flat, "pinned only by a `says` match") {
+		t.Error("§12.1 still admits an ordering pinned only by a `says` match; every " +
+			"stated ordering has a coded vector")
+	}
+	for _, vector := range []string{
+		"checkpoints-bad/01-unsigned", "checkpoints-bad/03-wrong-origin",
+		"served-bad/tampered-entry-bundle", "detect/tampered-bundle-under-a-stored-head",
+		"proofs-bad/foreign-checkpoint", "proofs-bad/no-quorum-tampered-proof",
+		"proofs-bad/wrong-entry", "fork/bad-oversize-and-not-cbor",
+		"fork/bad-version-and-unknown-key", "fork/bad-short-held-root-and-size-above-held",
+		"fork/bad-other-origin",
+	} {
+		if !strings.Contains(flat, vector) {
+			t.Errorf("§12.1 does not name %s, a vector that observes one of the orderings "+
+				"§10.1 or §11.1 states", vector)
+		}
+		if _, err := os.Stat(filepath.Join(vectorRoot(t), filepath.Dir(vector))); err != nil {
+			t.Errorf("%s: %v", vector, err)
+		}
 	}
 }
 
@@ -1753,6 +1772,25 @@ func TestTheFreshnessTableIsInTheOrderItIsEvaluated(t *testing.T) {
 		t.Errorf("§8.1's freshness table lists %v; D-060 evaluates it top to bottom "+
 			"as %v. A table read in order and a sentence saying otherwise is a "+
 			"section that contradicts itself", order, want)
+	}
+}
+
+// D-060 is checked in SPEC.md and GOSSIP.md; the vectors README restates the
+// same table for whoever starts from the vectors, and nothing checked it. Its
+// `detect/` row kept the remote session's "`fresh` wins" through the 6.5l-ii
+// reconciliation, and cold gate run 12 read it (D21a): a second implementer
+// who trusts the README implements the order the specification rejects.
+func TestTheVectorsREADMEStatesD060(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join(vectorRoot(t), "README.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	row := strings.Join(strings.Fields(readmeRow(t, string(raw), "`detect/`")), " ")
+	if strings.Contains(row, "`fresh` wins") {
+		t.Error("the vectors README's detect/ row says `fresh` wins; D-060 says `hard_stale`")
+	}
+	if !strings.Contains(row, "`hard_stale` wins") {
+		t.Error("the vectors README's detect/ row does not say `hard_stale` wins where both hold")
 	}
 }
 

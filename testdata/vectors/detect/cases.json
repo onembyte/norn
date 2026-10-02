@@ -35,7 +35,29 @@
       "says": "a log does not shrink",
       "serve": "fork-shorter",
       "stored": "current.checkpoint"
+    },
+    {
+      "name": "fork-on-a-longer-branch",
+      "outcome": "fork",
+      "says": "a grown head is compared at the stored size too",
+      "serve": "fork-longer",
+      "stored": "earlier.checkpoint"
+    },
+    {
+      "name": "tampered-bundle-under-a-stored-head",
+      "outcome": "refuse",
+      "says": "do not hash to the advertised head",
+      "serve": "tampered-current",
+      "stored": "current.checkpoint"
     }
   ],
+  "codes": {
+    "fork-at-the-same-size": "fork",
+    "fork-on-a-longer-branch": "fork",
+    "fork-on-a-shorter-branch": "fork",
+    "refuse-shrunk": "rollback",
+    "shorter-with-no-held-branch": "rollback",
+    "tampered-bundle-under-a-stored-head": "head"
+  },
   "comment": "pairs, not single artifacts. `stored` is the checkpoint this reader already holds, over the entries in `../served`; `serve` is the log it is then offered, tiles and all, as a real log would serve it. §10's stored-checkpoint block and §11's duties are reached by nothing else here. fork-on-a-shorter-branch is the one that matters most: it is what a forking log looks like when it hides behind \"logs do not shrink\""
 }

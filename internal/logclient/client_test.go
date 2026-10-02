@@ -957,6 +957,10 @@ func TestEveryDetectVectorReachesItsOutcome(t *testing.T) {
 			Name, Stored, Serve, Outcome, Says string
 			Held                               string `json:"held"`
 		} `json:"cases"`
+		// 6.5l-vii-d-ii: the §10.1 code every case that is not accepted is
+		// refused with. "Refused, and not as a fork" is what head-before-fork
+		// is about, so an outcome alone cannot carry it.
+		Codes map[string]refusal.Code `json:"codes"`
 	}
 	if err := json.Unmarshal(raw, &doc); err != nil {
 		t.Fatal(err)
@@ -988,6 +992,15 @@ func TestEveryDetectVectorReachesItsOutcome(t *testing.T) {
 
 			// Each branch is served with its own tiles, as a real log would.
 			_, err := Verify(Dir(filepath.Join(dir, c.Serve)), with)
+			if c.Outcome != "accept" {
+				want, ok := doc.Codes[c.Name]
+				if !ok || !refusal.Known(want) {
+					t.Fatalf("names %q, which is not a §10.1 code", want)
+				}
+				if got, _ := refusal.CodeOf(err); got != want {
+					t.Errorf("refused as %q, and cases.json says %q: %v", got, want, err)
+				}
+			}
 
 			var fork *ForkError
 			switch c.Outcome {
@@ -1004,7 +1017,7 @@ func TestEveryDetectVectorReachesItsOutcome(t *testing.T) {
 					t.Fatal("accepted a checkpoint older than the one this node holds")
 				}
 				if errors.As(err, &fork) {
-					t.Error("called this a fork; it is an older view of the same log, " +
+					t.Error("called this a fork; the log did not sign two histories, " +
 						"and an accusation that cannot be proved must not be made")
 				}
 				if !strings.Contains(err.Error(), c.Says) {

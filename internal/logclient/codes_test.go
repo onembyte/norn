@@ -537,3 +537,64 @@ func TestTheHeadBeforeTilesOrderHasAVector(t *testing.T) {
 	t.Error("no served-bad case is coded `head` while its tiles also disagree, so a " +
 		"reader that checks tiles before the head passes every file here")
 }
+
+// --- 6.5l-vii-d-ii: detect/ observes two more orderings ------------------
+//
+// Cold gate run 12, D4 and D5. §10 compares the branches at the smaller size
+// whichever way round the sizes fall, and checks the head before the fork.
+// detect/ had a same-size fork, a shorter-branch fork and an honest grown
+// head -- so a reader that never compared a *grown* head, and one that ran
+// the fork comparison before the head check, passed it. Each property is
+// computed from the shipped files, not read from a case's name.
+func TestTheDetectOrdersHaveVectors(t *testing.T) {
+	dir := filepath.Join(vectorRoot(), "detect")
+	var doc struct {
+		Cases []struct{ Name, Stored, Serve, Outcome string } `json:"cases"`
+		Codes map[string]refusal.Code                         `json:"codes"`
+	}
+	if err := json.Unmarshal([]byte(readFile(t, filepath.Join(dir, "cases.json"))), &doc); err != nil {
+		t.Fatal(err)
+	}
+	anchor := shippedLogAnchor(t)
+	// The branch a case serves, rebuilt from its own entries, and the head
+	// it is served under.
+	branch := func(serve string) (*tlog.Tree, tlog.Checkpoint) {
+		d := Dir(filepath.Join(dir, serve))
+		cp := checkpointIn(t, filepath.Join(dir, serve), "checkpoint", anchor)
+		entries, err := fetchEntries(d, cp.Size)
+		if err != nil {
+			t.Fatalf("%s: %v", serve, err)
+		}
+		tree, err := tlog.Build(entries)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return tree, cp
+	}
+	var longer, headFirst bool
+	for _, c := range doc.Cases {
+		stored := checkpointIn(t, dir, c.Stored, anchor)
+		tree, cp := branch(c.Serve)
+		at, err := tree.HeadAt(min(cp.Size, stored.Size))
+		if err != nil {
+			t.Fatal(err)
+		}
+		disagrees := at != stored.Root
+		if c.Outcome == "fork" && cp.Size > stored.Size && disagrees {
+			longer = true
+		}
+		// The served entries do not hash to the head they are served under,
+		// and recomputed at the stored size they disagree with the stored
+		// head: a reader that compared branches first would accuse.
+		if doc.Codes[c.Name] == refusal.Head && tree.Head() != cp.Root && disagrees {
+			headFirst = true
+		}
+	}
+	if !longer {
+		t.Error("no detect/ case serves a longer branch that disagrees below the stored size (D4)")
+	}
+	if !headFirst {
+		t.Error("no detect/ case is coded `head` while its branch also disagrees with the " +
+			"stored head, so a reader that checks for a fork first passes every case (D5)")
+	}
+}
