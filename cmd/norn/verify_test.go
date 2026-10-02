@@ -5,10 +5,12 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/onembyte/norn/internal/note"
@@ -19,14 +21,27 @@ import (
 // The CLI is where a person meets the protocol, so these tests care about what
 // it refuses and what it says, not only that it runs.
 
+var (
+	nornBinOnce sync.Once
+	nornBinPath string
+	nornBinErr  string
+)
+
 func nornBinary(t *testing.T) string {
 	t.Helper()
-	bin := filepath.Join(t.TempDir(), "norn")
-	build := exec.Command("go", "build", "-o", bin, ".")
-	if out, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("building norn: %v\n%s", err, out)
+	nornBinOnce.Do(func() {
+		bin := filepath.Join(os.TempDir(), fmt.Sprintf("norn-cli-test-%d", os.Getpid()))
+		build := exec.Command("go", "build", "-o", bin, ".")
+		if out, err := build.CombinedOutput(); err != nil {
+			nornBinErr = fmt.Sprintf("building norn: %v\n%s", err, out)
+			return
+		}
+		nornBinPath = bin
+	})
+	if nornBinErr != "" {
+		t.Fatal(nornBinErr)
 	}
-	return bin
+	return nornBinPath
 }
 
 func vectors() string { return filepath.Join("..", "..", "testdata", "vectors") }
