@@ -1205,7 +1205,7 @@ checks:
 | step | code | the refusal |
 |---|---|---|
 | 0 | `oversize` | the file is larger than `MAX_EVIDENCE_BYTES`; a reader accepts **from a stranger**, so the size bound is checked before any parse |
-| 1 | `decode` | the file is not valid deterministic CBOR (§4.0), or is not a map |
+| 1 | `cbor` | the file is not valid deterministic CBOR (§4.0), or is not a map |
 | 2 | `version` | the map's `version` is not `1` |
 | 3 | `schema` | the map is not the closed set of exactly seven keys, or a value has the wrong type |
 | 4 | `policy` | the carried `policy` is not a well-formed `c2sp.org/tlog-policy`. The field is **informational**, but a closed schema is part of the format |

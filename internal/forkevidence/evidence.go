@@ -266,11 +266,11 @@ func Parse(raw []byte) (*Evidence, error) {
 	}
 	value, err := cbor.Decode(raw)
 	if err != nil {
-		return nil, evidenceErrorf(evrefusal.Decode, "not valid deterministic CBOR: %v", err)
+		return nil, evidenceErrorf(evrefusal.CBOR, "not valid deterministic CBOR: %v", err)
 	}
 	doc, ok := value.(map[string]any)
 	if !ok {
-		return nil, evidenceErrorf(evrefusal.Decode, "evidence is not a CBOR map")
+		return nil, evidenceErrorf(evrefusal.CBOR, "evidence is not a CBOR map")
 	}
 	// §11.1: "a closed map of exactly these seven keys". This read the seven it
 	// wanted and ignored anything else, so the closed-map rule was prose only

@@ -23,7 +23,7 @@ type Code string
 // The evidence reader's ten, in the order `forkevidence.Check` checks them.
 const (
 	Oversize    Code = "oversize"    // file exceeds MAX_EVIDENCE_BYTES
-	Decode      Code = "decode"      // not valid deterministic CBOR / not a map
+	CBOR        Code = "cbor"        // not valid deterministic CBOR / not a map
 	Version     Code = "version"     // unsupported evidence version
 	Schema      Code = "schema"      // closed-map rule, missing field, wrong type
 	Policy      Code = "policy"      // carried policy does not parse
@@ -35,7 +35,7 @@ const (
 )
 
 var all = []Code{
-	Oversize, Decode, Version, Schema, Policy, Held, Conflicting, Size, Proof, Consistent,
+	Oversize, CBOR, Version, Schema, Policy, Held, Conflicting, Size, Proof, Consistent,
 }
 
 // All is the list in §11.1's order. It is a copy.

@@ -14,6 +14,7 @@ import (
 
 	cborpkg "github.com/onembyte/norn/internal/cbor"
 	entrypkg "github.com/onembyte/norn/internal/entry"
+	"github.com/onembyte/norn/internal/evrefusal"
 	"github.com/onembyte/norn/internal/forkevidence"
 	"github.com/onembyte/norn/internal/policy"
 	"github.com/onembyte/norn/internal/proof"
@@ -1854,7 +1855,98 @@ func TestTheVerifierHasAClosedListOfRefusalCodes(t *testing.T) {
 	}
 }
 
-// None of the new codes may collide with §5.2's: a reason code has to mean
+// --- D-061: closed refusal codes for §11 -------------------------------
+//
+// The evidence reader gets the same treatment: a closed list in `internal/evrefusal`
+// and a matching table in SPEC.md §11.1, so the package and the document cannot drift.
+
+var evidenceCodes = func() []string {
+	var out []string
+	for _, c := range evrefusal.All() {
+		out = append(out, string(c))
+	}
+	return out
+}()
+
+func TestTheEvidenceRefusalPackageIsSection11_1(t *testing.T) {
+	doc := load(t)
+	section, ok := doc.Section("11.1")
+	if !ok {
+		t.Fatal("§11.1 is missing")
+	}
+	var table []string
+	seen := map[string]bool{}
+	for _, m := range regexp.MustCompile("(?m)^\\| *[0-9]+ *\\| *`([a-z-]+)` *\\|").
+		FindAllStringSubmatch(section.Body, -1) {
+		if !seen[m[1]] {
+			seen[m[1]] = true
+			table = append(table, m[1])
+		}
+	}
+	if got, want := strings.Join(table, " "), strings.Join(evidenceCodes, " "); got != want {
+		t.Errorf("§11.1's table lists\n  %s\nand internal/evrefusal lists\n  %s", got, want)
+	}
+}
+
+func TestTheEvidenceReaderHasAClosedListOfRefusalCodes(t *testing.T) {
+	doc := load(t)
+	section, ok := doc.Section("11.1")
+	if !ok {
+		t.Fatal("§11.1 is missing")
+	}
+	if !strings.Contains(section.Body, "closed list") {
+		t.Error("§11.1 does not say its refusal list is closed")
+	}
+	var order []string
+	seen := map[string]int{}
+	for _, line := range strings.Split(section.Body, "\n") {
+		m := regexp.MustCompile("^\\| *[0-9]+ *\\| *`([a-z-]+)` *\\|").
+			FindStringSubmatch(line)
+		if m == nil {
+			continue
+		}
+		seen[m[1]]++
+		if seen[m[1]] == 1 {
+			order = append(order, m[1])
+		}
+	}
+	for _, code := range evidenceCodes {
+		if seen[code] == 0 {
+			t.Errorf("§11.1 does not define `%s`", code)
+		}
+	}
+	for code := range seen {
+		var known bool
+		for _, c := range evidenceCodes {
+			known = known || c == code
+		}
+		if !known {
+			t.Errorf("§11.1 defines `%s`, which internal/evrefusal does not have", code)
+		}
+	}
+	if strings.Join(order, ",") != strings.Join(evidenceCodes, ",") {
+		t.Errorf("§11.1 lists the codes as %v; the precedence is %v", order, evidenceCodes)
+	}
+}
+
+// None of the evidence codes may collide with §10.1's or §5.2's: a code has to
+// mean one thing wherever an operator reads it.
+func TestTheEvidenceCodesDoNotCollideWithOthers(t *testing.T) {
+	doc := load(t)
+	for _, sec := range []string{"5.2", "10.1"} {
+		section, ok := doc.Section(sec)
+		if !ok {
+			t.Fatalf("§%s is missing", sec)
+		}
+		for _, code := range evidenceCodes {
+			if strings.Contains(section.Body, "| `"+code+"` |") {
+				t.Errorf("`%s` is both an evidence refusal (§11.1) and a §%s code", code, sec)
+			}
+		}
+	}
+}
+
+// None of the new §10.1 codes may collide with §5.2's: a reason code has to mean
 // one thing wherever an operator reads it.
 func TestTheVerifierCodesDoNotCollideWithReplays(t *testing.T) {
 	doc := load(t)

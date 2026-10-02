@@ -12,7 +12,7 @@ import (
 
 func TestAllIsTheClosedListInPrecedenceOrder(t *testing.T) {
 	want := []Code{
-		Oversize, Decode, Version, Schema, Policy, Held, Conflicting, Size, Proof, Consistent,
+		Oversize, CBOR, Version, Schema, Policy, Held, Conflicting, Size, Proof, Consistent,
 	}
 	got := All()
 	if len(got) != len(want) {
