@@ -95,5 +95,23 @@ class TrustRejections(unittest.TestCase):
         trust.validate(fixture.trust_file())
 
 
+class TrustAcceptances(unittest.TestCase):
+    """The positives, through the same `parse` the negatives go through.
+
+    Nothing read `trust-good/` here: the generator validated each document
+    (`trust.validate`), which never sees the bytes, so a size cap one byte too
+    strict passed the reference's whole suite (6.5l-vii-d-iv-b).
+    """
+
+    def test_every_acceptable_trust_file_is_accepted(self):
+        for name, doc in fixture.trust_acceptances():
+            with self.subTest(case=name):
+                trust.parse(cbor.encode(doc))
+
+    def test_one_is_exactly_at_the_cap(self):
+        sizes = [len(cbor.encode(doc)) for _, doc in fixture.trust_acceptances()]
+        self.assertIn(trust.MAX_TRUST_BYTES, sizes)
+
+
 if __name__ == "__main__":
     unittest.main()

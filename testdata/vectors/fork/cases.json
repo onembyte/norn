@@ -41,6 +41,10 @@
       "says": "at size 0"
     },
     {
+      "name": "bad-one-past-the-cap",
+      "says": "MAX_EVIDENCE_BYTES"
+    },
+    {
       "name": "bad-size-above-held",
       "says": "can only speak for what it holds"
     },
@@ -82,6 +86,7 @@
     "bad-forged-proof": "proof",
     "bad-held-root-at-same-size": "proof",
     "bad-non-canonical-cbor": "cbor",
+    "bad-one-past-the-cap": "oversize",
     "bad-open-schema": "schema",
     "bad-other-origin": "held",
     "bad-oversize": "oversize",
@@ -114,6 +119,10 @@
     },
     "bad-non-canonical-cbor": {
       "says": "the file is not valid deterministic CBOR",
+      "section": "11.1"
+    },
+    "bad-one-past-the-cap": {
+      "says": "MAX_EVIDENCE_BYTES",
       "section": "11.1"
     },
     "bad-open-schema": {
@@ -180,6 +189,7 @@
   "sound": [
     "evidence",
     "policy-not-the-readers",
-    "evidence-at-64"
+    "evidence-at-64",
+    "evidence-at-the-cap"
   ]
 }

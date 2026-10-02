@@ -1568,8 +1568,15 @@ func TestTheVectorsREADMEStatesTheRightCounts(t *testing.T) {
 		n := len(caseNames(t, root, c.dir))
 		row := readmeRow(t, string(raw), "`"+c.dir+"/`")
 		digits := fmt.Sprintf("%d %s", n, c.noun)
-		spelled := words[n] + " " + c.noun
-		if !strings.Contains(row, digits) && !strings.Contains(row, spelled) {
+		// Only a number the table can spell is matched spelled. This used
+		// words[n] unconditionally, and past twenty-five that is "", so the
+		// "spelled" form was the bare noun -- contained in any row that ends
+		// in it, whatever its number. `trust-bad/` has had more than
+		// twenty-five cases since the guard was written and was never checked
+		// (6.5l-vii-d-iv-b).
+		word, spellable := words[n]
+		spelled := word + " " + c.noun
+		if !strings.Contains(row, digits) && (!spellable || !strings.Contains(row, spelled)) {
 			t.Errorf("`%s/` ships %d cases and its README row says neither %q nor %q",
 				c.dir, n, digits, spelled)
 		}

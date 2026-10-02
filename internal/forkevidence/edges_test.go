@@ -180,3 +180,59 @@ func TestEverySoundEvidenceFileProvesAFork(t *testing.T) {
 		t.Error("no sound file is at a power-of-two size below the held one (D13a)")
 	}
 }
+
+// Cold gate run 12, D16, for MAX_EVIDENCE_BYTES: a sound file exactly at the
+// cap (in `sound`, so it MUST prove a fork) and a file exactly a byte past
+// it, coded `oversize`, that is sound in every other respect. The second is
+// the dangerous one: a reader whose cap is one byte too lax decodes it, and
+// it proves a fork. parseWithin with the cap lifted is that reader.
+func TestTheEvidenceCapIsPinnedFromBothSides(t *testing.T) {
+	root := filepath.Join("..", "..", "testdata", "vectors")
+	anchor := shippedAnchor(t, root)
+	var doc struct {
+		Sound []string                  `json:"sound"`
+		Codes map[string]evrefusal.Code `json:"codes"`
+	}
+	raw, err := os.ReadFile(filepath.Join(root, "fork", "cases.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	read := func(name string) []byte {
+		body, err := os.ReadFile(filepath.Join(root, "fork", name+".cbor"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return body
+	}
+	var atTheCap bool
+	for _, name := range doc.Sound {
+		if len(read(name)) == MaxEvidenceBytes {
+			atTheCap = true
+		}
+	}
+	if !atTheCap {
+		t.Error("no sound evidence file is exactly MAX_EVIDENCE_BYTES, so a reader whose " +
+			"cap is one byte too strict passes")
+	}
+	var onePast bool
+	for name, code := range doc.Codes {
+		body := read(name)
+		if code != evrefusal.Oversize || len(body) != MaxEvidenceBytes+1 {
+			continue
+		}
+		ev, err := parseWithin(body, 4*MaxEvidenceBytes)
+		if err != nil {
+			continue
+		}
+		if _, err := Check(ev, anchor.Origin, anchor.LogKey, anchor.Policy); err == nil {
+			onePast = true
+		}
+	}
+	if !onePast {
+		t.Error("no `oversize` file is exactly one byte past MAX_EVIDENCE_BYTES and sound " +
+			"in every other respect, so a reader whose cap is one byte too lax passes")
+	}
+}

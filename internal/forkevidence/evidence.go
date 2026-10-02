@@ -307,11 +307,23 @@ func (e *Evidence) Encode() ([]byte, error) {
 
 // Parse reads an evidence file.
 func Parse(raw []byte) (*Evidence, error) {
-	if len(raw) > MaxEvidenceBytes {
+	return parseWithin(raw, MaxEvidenceBytes)
+}
+
+// parseWithin is Parse under a given size cap. Only Parse's cap is §11.1's;
+// another exists so a test can ask what a reader with a different one would
+// conclude from a file -- which is how the vector one byte past the cap is
+// shown to be sound in every other respect.
+func parseWithin(raw []byte, max int) (*Evidence, error) {
+	if len(raw) > max {
 		return nil, evidenceErrorf(evrefusal.Oversize,
-			"file is %d bytes, MAX_EVIDENCE_BYTES is %d", len(raw), MaxEvidenceBytes)
+			"file is %d bytes, MAX_EVIDENCE_BYTES is %d", len(raw), max)
 	}
-	value, err := cbor.Decode(raw)
+	// Decoded under the evidence cap, not the decoder's default: cbor.Decode
+	// applies MAX_ENTRY_BYTES (65535), so a legal 65536-byte evidence file
+	// was refused -- one byte too strict, and coded `cbor` rather than
+	// anything about its size (cold gate run 12, D16).
+	value, err := cbor.DecodeWithin(raw, max)
 	if err != nil {
 		return nil, evidenceErrorf(evrefusal.CBOR, "not valid deterministic CBOR: %v", err)
 	}

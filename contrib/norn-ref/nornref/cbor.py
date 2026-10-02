@@ -72,9 +72,9 @@ def encode(value: Any) -> bytes:
 
 
 class _Decoder:
-    def __init__(self, buf: bytes) -> None:
-        if len(buf) > MAX_ENTRY_BYTES:
-            raise ProfileError(f"input exceeds {MAX_ENTRY_BYTES} bytes")
+    def __init__(self, buf: bytes, max_bytes: int = MAX_ENTRY_BYTES) -> None:
+        if len(buf) > max_bytes:
+            raise ProfileError(f"input exceeds {max_bytes} bytes")
         self.buf = buf
         self.pos = 0
         self.depth = 0
@@ -157,9 +157,15 @@ class _Decoder:
         raise AssertionError("unreachable")
 
 
-def decode(raw: bytes) -> Any:
-    """Decode one value, rejecting anything non-canonical or outside the profile."""
-    dec = _Decoder(raw)
+def decode(raw: bytes, max_bytes: int = MAX_ENTRY_BYTES) -> Any:
+    """Decode one value, rejecting anything non-canonical or outside the profile.
+
+    `max_bytes` is the input cap, MAX_ENTRY_BYTES unless the caller's format
+    has its own. A trust file's is MAX_TRUST_BYTES, one byte larger: decoding
+    one under the entry cap refused a legal 65536-byte trust file
+    (6.5l-vii-d-iv-b) -- the bug Go's evidence reader had the same day.
+    """
+    dec = _Decoder(raw, max_bytes)
     value = dec.value()
     if dec.pos != len(raw):
         raise ProfileError("trailing bytes")

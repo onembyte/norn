@@ -1422,6 +1422,10 @@ def trust_rejections() -> list[tuple[str, dict[str, Any]]]:
             f"https://mirror{i}.norn.example/testnet" for i in range(2000)])),
         ("30-duplicate-witness-name-only", damaged(
             witnesses=base["witnesses"] + [dict(base["witnesses"][0])])),
+        # Cold gate run 12, D16. `38-oversize` is thousands of bytes over, so
+        # a cap one byte too lax passed. Exactly one byte past, and correct in
+        # every other respect: only the size refuses it.
+        ("41-one-past-the-cap", trust_of_size(trust.MAX_TRUST_BYTES + 1)),
     ]
 
 
@@ -1494,7 +1498,44 @@ def trust_acceptances() -> list[tuple[str, dict[str, Any]]]:
         # trust files carried one -- so a reader that required it rejected
         # nothing in the suite.
         ("no-anchor", {k: v for k, v in base.items() if k != "anchor"}),
+        # Cold gate run 12, D16: exactly MAX_TRUST_BYTES, which a cap one byte
+        # too strict refuses.
+        ("at-the-cap", trust_of_size(trust.MAX_TRUST_BYTES)),
     ]
+
+
+def trust_of_size(target: int) -> dict[str, Any]:
+    """The fixture's trust file, padded to exactly `target` encoded bytes.
+
+    Padded the way `38-oversize` is, with *valid* `log_urls` -- whose count
+    nothing bounds -- so the file is correct in every respect but its size:
+    mirrors up to a little under the target, then one filler URL whose length
+    makes up the rest exactly.
+    """
+    base = trust_file()
+
+    def encoded(urls: list[str]) -> int:
+        return len(trust.encode(dict(base, log_urls=urls)))
+
+    mirrors = [f"https://mirror{i}.norn.example/testnet" for i in range(target // 32)]
+    # The most mirrors that still leave room for a filler: measured, not
+    # estimated -- CBOR's header sizes change with lengths and counts.
+    lo, hi = 0, len(mirrors)
+    while lo < hi:
+        mid = (lo + hi + 1) // 2
+        if encoded(base["log_urls"] + mirrors[:mid]) + 300 <= target:
+            lo = mid
+        else:
+            hi = mid - 1
+    urls = base["log_urls"] + mirrors[:lo]
+    filler = 100
+    for _ in range(8):
+        doc = dict(base, log_urls=urls + ["https://pad.norn.example/" + "p" * filler])
+        gap = target - len(trust.encode(doc))
+        if gap == 0:
+            return doc
+        filler += gap
+    raise ValueError(f"cannot pad the trust file to exactly {target} bytes")
 
 
 def _policy_with_pi_note_key() -> str:

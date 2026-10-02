@@ -1855,6 +1855,27 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 		return err
 	}
 
+	// Cold gate run 12, D16. bad-oversize is thousands of bytes over and
+	// bad-oversize-and-not-cbor is not evidence, so a cap one byte off in
+	// either direction passed. Exactly at the cap, sound: it MUST prove the
+	// fork (it is in `sound`). Exactly one byte past, sound in every other
+	// respect: `oversize` -- and a reader whose cap is one byte too lax
+	// decodes it and proves the fork from it.
+	atCap, err := evidenceOfSize(root, evidence, forkevidence.MaxEvidenceBytes)
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(dir, "evidence-at-the-cap.cbor"), atCap, 0o644); err != nil {
+		return err
+	}
+	onePast, err := evidenceOfSize(root, evidence, forkevidence.MaxEvidenceBytes+1)
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(dir, "bad-one-past-the-cap.cbor"), onePast, 0o644); err != nil {
+		return err
+	}
+
 	// Cold gate run 9, D8. §11.1 states MAX_EVIDENCE_BYTES and calls its bound
 	// the thing that "matters more here than anywhere else in the document",
 	// and nothing in the suite was ever close -- a reader with a cap of a
@@ -1895,6 +1916,7 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 		{"name": "bad-non-canonical-cbor", "says": "not valid deterministic CBOR"},
 		{"name": "bad-held-root-at-same-size", "says": "not the one the held checkpoint is signed over"},
 		{"name": "bad-size-zero", "says": "at size 0"},
+		{"name": "bad-one-past-the-cap", "says": "MAX_EVIDENCE_BYTES"},
 		{"name": "bad-size-above-held", "says": "can only speak for what it holds"},
 		{"name": "bad-policy-says-quorum-none", "says": "no quorum cosigned it"},
 		{"name": "bad-policy-unparseable", "says": "not a `tlog-policy`"},
@@ -1919,6 +1941,7 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 		"bad-non-canonical-cbor":                  evrefusal.CBOR,
 		"bad-held-root-at-same-size":              evrefusal.Proof,
 		"bad-size-zero":                           evrefusal.Proof,
+		"bad-one-past-the-cap":                    evrefusal.Oversize,
 		"bad-size-above-held":                     evrefusal.Size,
 		"bad-policy-says-quorum-none":             evrefusal.Held,
 		"bad-policy-unparseable":                  evrefusal.Policy,
@@ -1945,6 +1968,7 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 			"bad-non-canonical-cbor":                  {"section": "11.1", "says": "the file is not valid deterministic CBOR"},
 			"bad-held-root-at-same-size":              {"section": "11.1", "says": "`held_root` is not the root the held checkpoint is signed over"},
 			"bad-size-zero":                           {"section": "11.1", "says": "no file can show a disagreement at size 0"},
+			"bad-one-past-the-cap":                    {"section": "11.1", "says": "MAX_EVIDENCE_BYTES"},
 			"bad-size-above-held":                     {"section": "11.1", "says": "not above `held`'s own size"},
 			"bad-policy-says-quorum-none":             {"section": "11.1", "says": "never the one in the file"},
 			"bad-policy-unparseable":                  {"section": "11.1", "says": "MUST parse as `c2sp.org/tlog-policy`"},
@@ -1959,7 +1983,7 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 		"codes": forkCodes,
 		// Cold gate run 12: the files that MUST prove a fork, named so a
 		// reader is held to the positives as well as the negatives.
-		"sound": []string{"evidence", "policy-not-the-readers", "evidence-at-64"},
+		"sound": []string{"evidence", "policy-not-the-readers", "evidence-at-64", "evidence-at-the-cap"},
 		"comment": "evidence that MUST NOT be acted on, checked against trust.cbor. " +
 			"bad-consistent is a log and its own earlier self -- every signature valid, " +
 			"both heads cosigned, the roots agreeing. bad-other-origin is a real fork of " +
@@ -2289,6 +2313,13 @@ func appendForgedSecondLine(signed, whose string) (string, error) {
 // grammar bounds a `witness` URL not at all, which is the only field in the
 // whole artifact with room to grow while staying correct.
 func hugePolicy(root string) string {
+	return policyWithWitnessURL(root, "https://witness.example/"+strings.Repeat("padding/", 9000))
+}
+
+// policyWithWitnessURL is the fixture's log line and first witness, with that
+// witness given `url`, and a quorum of it. A witness URL is the one field the
+// policy grammar does not bound, which is what makes it the place to pad.
+func policyWithWitnessURL(root, url string) string {
 	var logLine, witnessLine string
 	for _, line := range strings.Split(policyOf(root), "\n") {
 		switch {
@@ -2300,9 +2331,32 @@ func hugePolicy(root string) string {
 	}
 	fields := strings.Fields(witnessLine)
 	name, vkey := fields[1], fields[2]
-	url := "https://witness.example/" + strings.Repeat("padding/", 9000)
 	return logLine + "\nwitness " + name + " " + vkey + " " + url +
 		"\nquorum " + name + "\n"
+}
+
+// evidenceOfSize is `sound` -- valid evidence of a real fork -- with its
+// carried policy padded until the encoded file is exactly `target` bytes. The
+// carried policy decides nothing (§11.1), so the padding changes the size and
+// nothing else: the file proves the fork, or is refused for its size alone.
+func evidenceOfSize(root string, sound *forkevidence.Evidence, target int) ([]byte, error) {
+	pad := 100
+	for range 8 {
+		ev := *sound
+		ev.Policy = policyWithWitnessURL(root, "https://witness.example/"+strings.Repeat("p", pad))
+		raw, err := ev.Encode()
+		if err != nil {
+			return nil, err
+		}
+		if len(raw) == target {
+			return raw, nil
+		}
+		pad += target - len(raw)
+		if pad < 1 {
+			return nil, fmt.Errorf("evidence is already more than %d bytes", target)
+		}
+	}
+	return nil, fmt.Errorf("cannot pad evidence to exactly %d bytes", target)
 }
 
 // quorumNonePolicy is a policy an accuser might write to make its own evidence

@@ -74,7 +74,7 @@ def parse(raw: bytes) -> dict[str, Any]:
     from . import cbor
     if len(raw) > MAX_TRUST_BYTES:
         raise TrustError(f"trust file exceeds {MAX_TRUST_BYTES} bytes")
-    doc = cbor.decode(raw)
+    doc = cbor.decode(raw, max_bytes=MAX_TRUST_BYTES)
     validate(doc)
     return doc
 

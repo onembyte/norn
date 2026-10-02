@@ -332,6 +332,7 @@ def write_trust_rejections(out: pathlib.Path) -> None:
         # D7: equality, not a prefix match.
         "40-log-key-name-suffix": {
             "section": "9.1", "says": "its note name MUST equal `origin`"},
+        "41-one-past-the-cap": size,
     }
     for name_, _ in fixture.trust_rejections():
         if name_ not in trust_rules:
