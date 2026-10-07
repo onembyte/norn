@@ -47,7 +47,7 @@ func (a *Agent) restoreHead() {
 		return
 	}
 	mirror := logclient.Dir(dir)
-	result, err := logclient.Verify(mirror, a.anchorFor(nil))
+	result, err := verify(mirror, a.anchorFor(nil))
 	// The trust file names the keys and policy from before any in-log
 	// rotation (D-020), and the point of rotating in the log is that nobody
 	// re-provisions. So a mirror this node accepted under a key or a policy it
@@ -58,7 +58,7 @@ func (a *Agent) restoreHead() {
 	// and gets no second attempt.
 	if code, _ := refusal.CodeOf(err); code == refusal.LogSignature || code == refusal.Quorum {
 		if published, perr := logclient.Published(mirror, a.replayAnchor()); perr == nil {
-			result, err = logclient.Verify(mirror, a.anchorUnder(published))
+			result, err = verify(mirror, a.anchorUnder(published))
 		}
 	}
 	if err != nil {

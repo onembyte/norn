@@ -364,6 +364,30 @@ func (a *Agent) anchorUnder(st *state.State) logclient.Anchor {
 	}
 }
 
+// verify is logclient.Verify as a node uses it, with one refusal the verifier
+// does not yet make: a log whose entry 0 is not this network's genesis.
+//
+// Replay aborts on such an entry and returns an empty state with `bad-genesis`
+// at index 0, and the verifier returns that as a success -- a correctly
+// signed, cosigned log, replayed to nothing. In owner mode that nothing was
+// installed: six peers to none, no error, no alarm (audit SEC-029). But a log
+// whose first entry is not this network's genesis is not this network's log,
+// and nothing in it is a fact about this network, so a node refuses it as it
+// refuses any log it cannot use. The refusal has no §10.1 code yet: that is
+// run 13's D12, a protocol question (6.5l-ix). The error is plain until then.
+func verify(f logclient.Fetcher, anchor logclient.Anchor) (*logclient.Result, error) {
+	result, err := logclient.Verify(f, anchor)
+	if err != nil {
+		return nil, err
+	}
+	if result.Checkpoint.Size > 0 && result.State.Size == 0 {
+		return nil, fmt.Errorf("%w: this log's entry 0 is not this network's genesis "+
+			"(replay aborted with %s); nothing in it is this network's",
+			logclient.ErrLog, replay.ReasonBadGenesis)
+	}
+	return result, nil
+}
+
 // replayAnchor is the genesis this node's trust file pins.
 func (a *Agent) replayAnchor() replay.Anchor {
 	return replay.Anchor{Net: a.cfg.Anchor.Net, GenesisHash: a.cfg.Anchor.GenesisHash}
@@ -392,7 +416,7 @@ func (a *Agent) Once() error {
 		return errors.New("agent: frozen by a proven fork; the interface is untouched")
 	}
 
-	result, verifyErr := logclient.Verify(a.cfg.Fetcher, anchor)
+	result, verifyErr := verify(a.cfg.Fetcher, anchor)
 
 	// A fork is not an ordinary verification failure: it is proof the log
 	// equivocated, and §11 gives a node four things to do about it.
@@ -745,7 +769,7 @@ func (a *Agent) askPeers(anchor logclient.Anchor) (*logclient.Result, string) {
 	var best *logclient.Result
 	var from string
 	for _, addr := range gossip.Choose(a.cfg.Peers(), a.fanout(), a.peerOrder) {
-		result, err := logclient.Verify(gossip.Peer(addr), anchor)
+		result, err := verify(gossip.Peer(addr), anchor)
 		if err != nil {
 			// A second *history* is not a broken neighbour. §11 does not care
 			// which source it arrived from, and a peer is how a node learns
