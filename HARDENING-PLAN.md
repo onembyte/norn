@@ -72,6 +72,31 @@ incident that produced it. Read that section before the first firing.
     Opus 5.5". Tagged: every DECISION write-up, and the rows whose mistakes
     would be silent security failures — 6.5m-sec-001a/b, the SEC-005(a),
     SEC-010 and SEC-029 rows, SEC-011, H2 and H4.
+12. **Codex lanes run beside the loop** (owner's instruction, 2026-10-07:
+    "use a codex session with my own subscription to work in parallel …
+    choose the model you see fit for each task").
+    - A row marked `[codex: <model>/<effort>]` is built by `codex exec` in its
+      own clone, `~/norn-lanes/<lane>` (a local `git clone` of this repository
+      on branch `codex/<lane>`), under `-s workspace-write`, so it can write
+      nothing outside that clone, push nowhere, and reach no network. Its brief
+      (`~/norn-lanes/BRIEF-<lane>.md`, outside the repository) carries these
+      rules: TDD with the red output kept, a control per behaviour, the full
+      gate, one commit per row, no edits to `BUILD-LOG.md`,
+      `HARDENING-PLAN.md`, `DECISIONS.md`, `SPEC.md` or any generated file.
+    - **Models, by how much a mistake would cost:** `gpt-6-astra` (frontier)
+      for rows whose correctness is subtle; `gpt-6.1-sol` (the workhorse) at
+      `medium` for well-specified fixes and `high` where the behaviour has
+      edges; `gpt-6-luna` for documents only. 🧠 rows and DECISION write-ups are
+      never delegated.
+    - **Integration is a loop sub-checkpoint, done here, never by Codex:**
+      fetch the branch, read every line of the diff, rerun each control the
+      report names, rebase onto `master`, run the full gate, write the journal
+      entry and tick the row, push. A lane whose work does not survive review
+      is sent back with the reason, or redone here. Codex's commits keep their
+      author and their `Codex-Model:` line.
+    - At most **two lanes at once**, on files disjoint from each other and
+      from the row the loop is on; integrating a finished lane is allowed
+      while the loop waits for Mythos.
 
 ---
 
@@ -189,7 +214,8 @@ wholesale; a finding is believed only when reproduced against master.
 - b. The same for SEC-016…SEC-036.
 - c. Each confirmed finding becomes a row of its own in this plan, placed by
   severity (a confirmed critical goes ahead of H2), with the audit's id in
-  its name. Findings that change what a conforming implementation accepts
+  its name. *Done 2026-10-07: the rows are in `BUILD-LOG.md`'s hardening track,
+  each with its owner — here, or a Codex lane (§1 rule 12).* Findings that change what a conforming implementation accepts
   wait on a DECISION per §1 rule 7.
 
 #### HS-001 · 6.5m-sec-001a/b · SEC-001, confirmed 2026-10-07 ⏱3 🔒
