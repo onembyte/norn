@@ -61,6 +61,17 @@ incident that produced it. Read that section before the first firing.
    comment density and voice. No new dependency without a DECISION;
    `internal/depgraph` stays green.
 10. **When a script fails mid-way, inspect the tree before continuing.**
+11. **Rows tagged 🧠 run under Mythos** (owner's instruction, 2026-10-07).
+    The model cannot switch itself; only the owner can, with `/model`. So:
+    when the next row to do is tagged 🧠 and this firing is **not** running
+    on Mythos, it does no work on that row: it sends a notification — "next
+    row needs Mythos: <row> — switch with /model" — and stops. It does not
+    skip ahead: the tagged rows are the ones placed first on purpose. When a
+    firing running on Mythos finishes a tagged row and the next row is
+    untagged, it notifies "Mythos row done: <row> — you can switch back to
+    Opus 5.5". Tagged: every DECISION write-up, and the rows whose mistakes
+    would be silent security failures — 6.5m-sec-001a/b, the SEC-005(a),
+    SEC-010 and SEC-029 rows, SEC-011, H2 and H4.
 
 ---
 
