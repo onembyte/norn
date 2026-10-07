@@ -149,6 +149,9 @@ func build(config Config, logger *slog.Logger) (*agent.Agent, time.Duration, err
 	if mode == reconcile.Observe {
 		logger.Info("observe mode: this node will alarm and write nothing (D-005)")
 	}
+	for _, warning := range stateDirWarnings(config.StateDir) {
+		logger.Warn(warning)
+	}
 
 	raw, err := os.ReadFile(config.Trust)
 	if err != nil {

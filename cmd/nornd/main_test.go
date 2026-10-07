@@ -234,3 +234,76 @@ func TestTheDaemonHandsItsStateDirectoryToTheAgent(t *testing.T) {
 		t.Error("the mirror was written to the run directory")
 	}
 }
+
+// devShmIsTmpfs reads /proc/mounts rather than asking internal/durable, so
+// the test does not grade the code with its own answer.
+func devShmIsTmpfs() bool {
+	raw, err := os.ReadFile("/proc/mounts")
+	if err != nil {
+		return false
+	}
+	for _, line := range strings.Split(string(raw), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) >= 3 && fields[1] == "/dev/shm" && fields[2] == "tmpfs" {
+			return true
+		}
+	}
+	return false
+}
+
+// A state directory exists to outlive the process (D-069) and the machine
+// (SEC-006). One that cannot be created, cannot be written, or sits on a
+// tmpfs keeps neither promise, and the node would say nothing about it until
+// the restart that needed it. So it is said at start -- and only said: a node
+// that cannot keep its freeze still enforces, and refusing to start would
+// leave the network with no node at all.
+func TestAStateDirectoryThatCannotKeepStateIsSaidOutLoud(t *testing.T) {
+	bin := nornd(t)
+	trustFile := filepath.Join(vectors(), "trust.cbor")
+	start := func(stateDir string) string {
+		out, _ := runNornd(t, bin, "-iface", "norn-not-a-real-iface0", "-trust", trustFile,
+			"-state-dir", stateDir, "-once")
+		return out
+	}
+
+	t.Run("a usable directory is not news", func(t *testing.T) {
+		if out := start(t.TempDir()); strings.Contains(out, "will not survive") {
+			t.Errorf("a usable state directory raised a warning:\n%s", out)
+		}
+	})
+	t.Run("a directory that cannot be created", func(t *testing.T) {
+		file := filepath.Join(t.TempDir(), "a-file")
+		if err := os.WriteFile(file, nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if out := start(filepath.Join(file, "norn")); !strings.Contains(out, "will not survive a restart") {
+			t.Errorf("an uncreatable state directory was not reported:\n%s", out)
+		}
+	})
+	t.Run("a directory that cannot be written", func(t *testing.T) {
+		if os.Geteuid() == 0 {
+			t.Skip("root ignores directory permissions")
+		}
+		dir := t.TempDir()
+		if err := os.Chmod(dir, 0o555); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { os.Chmod(dir, 0o755) })
+		if out := start(dir); !strings.Contains(out, "will not survive a restart") {
+			t.Errorf("a read-only state directory was not reported:\n%s", out)
+		}
+	})
+	t.Run("a directory on a tmpfs", func(t *testing.T) {
+		if !devShmIsTmpfs() {
+			t.Skip("no tmpfs at /dev/shm on this machine; the Linux CI runner has one")
+		}
+		dir, err := os.MkdirTemp("/dev/shm", "norn-state-")
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { os.RemoveAll(dir) })
+		if out := start(dir); !strings.Contains(out, "will not survive a reboot") {
+			t.Errorf("a state directory on a tmpfs was not reported:\n%s", out)
+		}
+	})
+}
