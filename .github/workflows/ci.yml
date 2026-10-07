@@ -1,10 +1,18 @@
 name: ci
-on: [push, pull_request]
+# Owner's rule (~/.claude/CLAUDE.md, 2026-10-07): until 2026-11-01 this
+# private repo runs CI on Linux only -- macOS bills 10x per minute and used
+# most of the account's included minutes -- pull_request is dropped because
+# it double-runs a push, and a newer run on the same ref cancels an older one.
+# The full gate still runs on this Mac before every push.
+on: [push, workflow_dispatch]
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   go:
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest]
     runs-on: ${{ matrix.os }}
     env:
       # Turn "ssh-agent is not installed" from a skip into a failure: the
@@ -13,7 +21,7 @@ jobs:
       NORN_REQUIRE_SSH_AGENT: "1"
       # The tmpfs tests (state_dir warnings, durable.Volatile) can run only on
       # Linux, and only here; a skip on this job is a failure.
-      NORN_REQUIRE_TMPFS: ${{ matrix.os == 'ubuntu-latest' && '1' || '0' }}
+      NORN_REQUIRE_TMPFS: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5

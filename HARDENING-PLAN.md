@@ -43,7 +43,12 @@ incident that produced it. Read that section before the first firing.
    gate run). Regenerate first, then test; `vectors-check`, `ref-test`,
    `lint`, `fmt-check` and `vet` are safe alongside.
 6. **Commit, tick in `BUILD-LOG.md`, push `master` as a fast-forward.** One
-   sub-checkpoint per commit. Never force, never rebase pushed history.
+   sub-checkpoint per commit. Never force, never rebase pushed history. The
+   owner's rules in `~/.claude/CLAUDE.md` apply: stage named paths, never
+   `git add -A`; the only trailer is `Co-Authored-By`; and until 2026-11-01
+   the head commit of every push carries `[skip ci]` (the account's Actions
+   minutes are nearly spent; the full gate runs here). CI is Linux-only for
+   the same reason; macOS is covered by this Mac.
 7. **Stop and write a DECISION block** (`BUILD-LOG.md`, then commit and
    push) for: a change to what a conforming implementation must accept or
    refuse that `SPEC.md` does not already state, beyond the decisions in §2
@@ -477,8 +482,10 @@ No behaviour change: one file per vector set, `make vectors-check` and
 Every run warns that `actions/checkout@v4`, `actions/setup-go@v5` and
 `actions/setup-python@v5` target Node 20, which GitHub now forces onto Node
 24, and that `ubuntu-latest` moves to Ubuntu 26 on 2026-10-19. Bump the three
-actions to their Node 24 majors (read each changelog first), and confirm both
-OS jobs and the reference job are green with no deprecation annotation.
+actions to their Node 24 majors (read each changelog first), and confirm the
+Linux job and the reference job are green with no deprecation annotation. The
+govulncheck job is `workflow_dispatch`, not `schedule:`, until the owner lifts
+the Actions-budget rule (2026-11-01).
 
 #### H13 · 6.5m-xii · Documents tell the truth about scale and plans (F10–F12) ⏱1
 - a. `THREAT-MODEL.md` §6: the scale ceiling as numbers (entries × bytes ×

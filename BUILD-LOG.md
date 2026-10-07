@@ -660,7 +660,7 @@ plan before the first line of code, and stops at **[decision]** and **[user]**.
 | 6.5m-ix | H10 | Tailscale/Headscale observe via LocalAPI | an event-driven, read-only peer source over a fake LocalAPI; `-backend tailscale` refuses every mode but observe; no `tailscale.com` dependency | ⬜ |
 | 6.5m-x | H11 | The log server scales and rate-limits (F8) | a submission replays one entry, not the log; a per-source limit returns §7's 429 | ⬜ |
 | 6.5m-xi | H12 | Split `cmd/norn-genlog` (F9) | one file per vector set; `make vectors-log` leaves `testdata/` unchanged | ⬜ |
-| 6.5m-ci | HC | CI on supported runtimes | the three actions on their Node 24 majors; both OS jobs and the reference job green with no deprecation annotation | ⬜ |
+| 6.5m-ci | HC | CI on supported runtimes | the three actions on their Node 24 majors; the Linux job and the reference job green with no deprecation annotation; govulncheck as a `workflow_dispatch` job, never `schedule:` before 2026-11-01 (owner's Actions-budget rule) | ⬜ |
 | 6.5m-xii | H13 | Documents tell the truth about scale and plans (F10–F12) | the scale ceiling stated as numbers; every "planned" checked against the code; each new factual sentence guarded | ⬜ |
 | 6.7 | H14 | `contrib/verify-py/`, kept | a cold-built standard-library verifier passes every vector, committed as written with its provenance; `make verify-py` in `make ci` | ⬜ |
 | 6.6 | H15 | Phase 6 gate audit | see the 6.6 row above | ⬜ |
