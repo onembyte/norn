@@ -433,3 +433,83 @@ func TestCosignersCombine(t *testing.T) {
 		t.Errorf("both cosigners must reach the checkpoint:\n%s", raw)
 	}
 }
+
+// fiveEntries opens a fresh store, appends five fixture entries, and returns
+// the directory and the partial-bundle directory the five live in.
+func fiveEntries(t *testing.T) (dir, partial string) {
+	t.Helper()
+	dir = t.TempDir()
+	store, err := Open(dir, "norn/test", testLogKey(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, raw := range suiteEntries(t)[:5] {
+		if _, err := store.Append(raw); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return dir, filepath.Join(dir, "tile", "entries", "000.p")
+}
+
+// SEC-011. A power cut between creating a temporary file and writing it
+// leaves an empty `.tmp-*` in the partial-bundle directory; the glob that
+// finds partials matched dotfiles and read the first match, and an empty file
+// decodes to no entries -- so a 5-entry log reopened at size 0, and the store
+// signed and published that head. Temporaries are not bundles.
+func TestALeftoverTemporaryDoesNotShrinkTheLogOnReopen(t *testing.T) {
+	dir, partial := fiveEntries(t)
+	if err := os.WriteFile(filepath.Join(partial, ".tmp-000"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := Open(dir, "norn/test", testLogKey(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reopened.Size() != 5 {
+		t.Fatalf("reopened at size %d, want 5: a leftover temporary was read as the bundle", reopened.Size())
+	}
+}
+
+// A crash between writing the new partial and removing the old one leaves two
+// widths side by side. The log is the longer one; the shorter is what a crash
+// left, and reading it by luck of directory order shrinks the log by one.
+func TestTwoPartialWidthsResolveToTheWider(t *testing.T) {
+	dir, partial := fiveEntries(t)
+	// Rebuild the 4-entry partial exactly as the store wrote it before the
+	// fifth append, beside the 5-entry one.
+	four, err := tlog.EncodeBundle(suiteEntries(t)[:4])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(partial, "4"), four, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := Open(dir, "norn/test", testLogKey(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reopened.Size() != 5 {
+		t.Fatalf("reopened at size %d, want 5: the narrower partial was read", reopened.Size())
+	}
+}
+
+// A partial whose name claims a width it does not hold is not the log either:
+// the widest name wins only when the file decodes to exactly that many
+// entries, or a lying name would shrink -- or worse, misorder -- the log.
+func TestAPartialIsReadOnlyAtTheWidthItsNameClaims(t *testing.T) {
+	dir, partial := fiveEntries(t)
+	four, err := tlog.EncodeBundle(suiteEntries(t)[:4])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(partial, "9"), four, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := Open(dir, "norn/test", testLogKey(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reopened.Size() != 5 {
+		t.Fatalf("reopened at size %d, want 5: a file named 9 holding four entries was read", reopened.Size())
+	}
+}

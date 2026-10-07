@@ -19,6 +19,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
+	"sort"
+	"strconv"
+	"strings"
 
 	upstream "golang.org/x/mod/sumdb/tlog"
 
@@ -182,16 +186,49 @@ func (s *Store) readBundle(index int64) ([][]byte, error) {
 		return nil, err
 	}
 	// A partial bundle carries its width in the path, and the width is not
-	// known until the file is found -- so look, rather than guess.
-	matches, err := filepath.Glob(base + ".p" + string(filepath.Separator) + "*")
-	if err != nil || len(matches) == 0 {
-		return nil, nil
-	}
-	raw, err = os.ReadFile(matches[0])
+	// known until the file is found -- so look, rather than guess. What a
+	// crash can leave in that directory decides how to look (SEC-011): a
+	// temporary file, dot-prefixed, is never a bundle; two widths side by
+	// side mean the crash fell between writing the new one and removing the
+	// old, and the log is the wider; and a name is only a claim, so a file
+	// counts only if it decodes to exactly the width its name gives. Reading
+	// the first glob match took an empty temporary for the bundle and
+	// reopened a five-entry log at size zero.
+	names, err := os.ReadDir(base + ".p")
 	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
 		return nil, err
 	}
-	return tlog.DecodeBundle(raw)
+	var widths []int
+	for _, name := range names {
+		if strings.HasPrefix(name.Name(), ".") || name.IsDir() {
+			continue
+		}
+		width, err := strconv.Atoi(name.Name())
+		if err != nil || width < 1 || width >= tlog.TileWidth {
+			continue
+		}
+		widths = append(widths, width)
+	}
+	sort.Sort(sort.Reverse(sort.IntSlice(widths)))
+	for _, width := range widths {
+		raw, err := os.ReadFile(filepath.Join(base+".p", strconv.Itoa(width)))
+		if err != nil {
+			return nil, err
+		}
+		entries, err := tlog.DecodeBundle(raw)
+		if err != nil || len(entries) != width {
+			continue // torn, or a name lying about its width
+		}
+		return entries, nil
+	}
+	if len(widths) > 0 {
+		return nil, storeErrorf("%s.p holds no bundle that decodes to its name's width; "+
+			"the log's tail is damaged and must be restored before this log serves", base)
+	}
+	return nil, nil
 }
 
 // Bundles are sequences of big-endian uint16 length-prefixed entries (§6).
@@ -273,14 +310,6 @@ func (s *Store) writeFile(rel string, data []byte) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	if filepath.Base(dir) != "" && filepath.Ext(filepath.Dir(rel)) == ".p" {
-		stale, _ := filepath.Glob(filepath.Join(dir, "*"))
-		for _, old := range stale {
-			if old != path {
-				_ = os.Remove(old)
-			}
-		}
-	}
 	tmp, err := os.CreateTemp(filepath.Dir(path), ".tmp-*")
 	if err != nil {
 		return err
@@ -297,7 +326,38 @@ func (s *Store) writeFile(rel string, data []byte) error {
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	return os.Rename(tmp.Name(), path)
+	if err := os.Rename(tmp.Name(), path); err != nil {
+		return err
+	}
+	// Only now, with the new partial in place, do the older widths go: a
+	// crash between the two steps leaves the log longer than it should look,
+	// never shorter, and readBundle picks the wider (SEC-011). Removing first
+	// left an empty directory, which reopened the log at the last full
+	// bundle -- size zero for any log under 256 entries.
+	if filepath.Ext(filepath.Dir(rel)) == ".p" {
+		stale, _ := filepath.Glob(filepath.Join(dir, "*"))
+		for _, old := range stale {
+			if old != path {
+				_ = os.Remove(old)
+			}
+		}
+	}
+	return syncDir(dir)
+}
+
+// syncDir flushes a directory's entries, so a rename survives a power cut.
+// Windows cannot open a directory for writing and orders its metadata
+// itself, so there it is skipped, as internal/durable does.
+func syncDir(dir string) error {
+	if runtime.GOOS == "windows" {
+		return nil
+	}
+	d, err := os.Open(dir)
+	if err != nil {
+		return err
+	}
+	defer d.Close()
+	return d.Sync()
 }
 
 // Entry returns the entry at an index, read back from the served bundles.
