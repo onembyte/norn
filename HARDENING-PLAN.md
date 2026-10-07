@@ -37,6 +37,11 @@ incident that produced it. Read that section before the first firing.
    holds the originals) — never a shell loop over an unquoted list.
 5. **The full gate before every commit:** `make test` (race, ~10 min),
    `make vectors vectors-log vectors-check ref-test lint fmt-check vet`.
+   **Never run `make vectors` or `make vectors-log` while `make test` is
+   running:** they rewrite `testdata/` in place, and tests that read a file
+   mid-rewrite fail for reasons that are not in the code (6.5m-i-a's first
+   gate run). Regenerate first, then test; `vectors-check`, `ref-test`,
+   `lint`, `fmt-check` and `vet` are safe alongside.
 6. **Commit, tick in `BUILD-LOG.md`, push `master` as a fast-forward.** One
    sub-checkpoint per commit. Never force, never rebase pushed history.
 7. **Stop and write a DECISION block** (`BUILD-LOG.md`, then commit and
@@ -111,35 +116,31 @@ origin/master`; the full gate is green on the pushed head.
 
 ### Stage B — node hardening (review F1–F3) 🔒
 
-#### H1 · 6.5m-i · The stored head survives a restart (F1) ⏱2 🔒
-*Why:* `agent.New` (`internal/agent/agent.go:207`) restores only a fork
-freeze (`fork.go:43`). Until the first verify, `a.last` is nil, so
-`logclient.Verify` gets `Stored: nil` and skips §10's size and branch
-comparison entirely. A restarted node accepts any correctly cosigned head,
-including an old one: every revocation since is undone.
-- a. **Red test** (`internal/agent`): verify a 20-entry cosigned log in a
-  temp `RunDir`; build a new `Agent` over the same `RunDir`; serve a cosigned
-  10-entry head of the same log; the first `Once()` must refuse it
-  (`rollback`) and leave the 20-entry proven set in the fake table.
-- b. **Red test:** a corrupt or foreign mirror is reported (new event
-  `MIRROR_UNUSABLE`) and ignored — the node starts exactly as it does today,
-  and never enforces from an unverified mirror.
-- c. **Red test:** a mirror whose head is signed by a key the trust file
-  does not name, but which the mirror's own replayed state published (a
-  rotated log key, §9.4), is restored — the node had accepted it before.
-- d. Implement `restoreLast()`: verify `RunDir/mirror` with
-  `logclient.Verify(logclient.Dir(mirror), anchor)` using the trust file's
-  key; on `log-signature`, replay the mirror's entries, add
-  `logclient.KeysFrom(state)` and retry once (the same key rule `Once` uses).
-  Seed `a.last` from the result; do **not** reconcile from it before the
-  first cycle (the first cycle reconciles as usual).
-- e. `SPEC.md` §13.2 gains one sentence (D-069): the stored checkpoint and
-  the node's own branch persist across a restart, and a restarted node
-  compares every candidate against them before adopting anything.
-  `ENFORCEMENT.md` §8 row "nornd crashes" says the same.
-- f. Controls: remove the seeding (a fails); skip the mirror's verification
-  (b fails); drop the learned-key retry (c fails).
-*Acceptance:* the three tests and their controls; full gate.
+#### H1 · 6.5m-i · The stored head survives a restart (F1) ⏱4 🔒
+*Why:* `agent.New` restored only a fork freeze. Until the first verify,
+`a.last` was nil, so `logclient.Verify` got `Stored: nil` and skipped §10's
+size and branch comparison entirely. A restarted node accepted any correctly
+cosigned head, including an old one: every revocation since was undone.
+*Design, settled in H1-a:* the head read back from the mirror is **held**
+(compared against, and the source of learned keys and policy) but **never
+enforced** until something verifies in the new process. Enforcing it would
+let a restart during an outage reopen peers an `S_hard` drop had closed, and
+the witness clock is not seeded from it for the same reason.
+- a. A restart does not undo a revocation: red test with a revoked device
+  and an older cosigned head; `restoreHead` verifies `RunDir/mirror` under
+  the trust file; `anchorFor(held)` shared by the cycle and the restore.
+  Guard test: a restored head is not enforced while the log is unreachable.
+  Controls: no restore; held head not sent as stored; restored head enforced.
+- b. An unusable mirror (corrupt, truncated, foreign) raises
+  `MIRROR_UNUSABLE` and the node starts as if it had none; a missing one is
+  silent. Control: restore without verifying.
+- c. A restart after a log-key rotation still verifies: when the trust
+  file's key and policy no longer verify the mirror, replay the mirror's
+  entries and retry once under the keys and policy that state publishes.
+  Red first: today such a node never verifies again after a restart.
+  Control: drop the retry.
+- d. D-069: `DECISIONS.md`, one sentence in `SPEC.md` §13.2, `ENFORCEMENT.md`
+  §8's crash row, and a `docclaims` guard.
 
 #### H2 · 6.5m-ii · Network budgets: no fetch can stall enforcement (F2) ⏱2 🔒
 *Why:* `gossip.Peer.Fetch` (`internal/gossip/server.go:111`) uses

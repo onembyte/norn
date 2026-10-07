@@ -171,8 +171,15 @@ type Config struct {
 
 // Agent runs the cycle and remembers the last state that verified.
 type Agent struct {
-	cfg         Config
-	last        *logclient.Result
+	cfg  Config
+	last *logclient.Result
+	// restored is the head this node held when it last stopped, read back
+	// from its own mirror and verified again under the anchor at start
+	// (D-069). It is only ever compared against -- §10's stored checkpoint
+	// -- and never enforced: it verified in another process, at a witness
+	// time this one cannot place, and installing it before anything verified
+	// here would let a restart reopen peers an `S_hard` drop had closed.
+	restored    *logclient.Result
 	fights      *fight.Detector
 	quarantined bool
 	// clock remembers the newest instant any quorum vouched for. It is the
@@ -257,30 +264,38 @@ func New(cfg Config) (*Agent, error) {
 		// Each node walks the mesh in its own order, so two nodes started
 		// together do not ask the same peers at the same moments.
 		peerOrder: rand.New(rand.NewSource(time.Now().UnixNano()))}
-	// A fork this node proved earlier outlives the process (§11).
+	// A fork this node proved earlier outlives the process (§11), and so
+	// does the head it held (D-069).
 	agent.loadFreeze()
+	agent.restoreHead()
 	return agent, nil
 }
 
 // Mode reports the mode this agent runs in.
 func (a *Agent) Mode() reconcile.Mode { return a.cfg.Mode }
 
-// Once verifies the log and reconciles the interface with it.
+// held is the head §10 compares every candidate against: the last state that
+// verified in this process, or, before anything has, the one restored from
+// the run directory when the node started.
+func (a *Agent) held() *logclient.Result {
+	if a.last != nil {
+		return a.last
+	}
+	return a.restored
+}
+
+// anchorFor is what a checkpoint must satisfy, given the head this node holds.
 //
-// It returns an error when the cycle could not do its job, having already done
-// whatever was safe: an error here means "this cycle learned nothing", never
-// "the peer table has been abandoned".
-func (a *Agent) Once() error {
-	// The head this node already holds goes with every request: §10 requires a
-	// new checkpoint to be at least as large and to contain it, and a node
-	// that forgot to say what it holds would accept a correctly signed,
-	// correctly cosigned view of its own past -- un-revoking whoever was
-	// revoked since.
+// The held head goes with every request: §10 requires a new checkpoint to be
+// at least as large and to contain it, and a node that forgot to say what it
+// holds would accept a correctly signed, correctly cosigned view of its own
+// past -- un-revoking whoever was revoked since.
+func (a *Agent) anchorFor(held *logclient.Result) logclient.Anchor {
 	var stored *tlog.Checkpoint
 	var heldTree *tlog.Tree
-	if a.last != nil {
-		held := a.last.Checkpoint
-		stored, heldTree = &held, a.last.Tree
+	if held != nil {
+		checkpoint := held.Checkpoint
+		stored, heldTree = &checkpoint, held.Tree
 	}
 	// D-020: the roots can rotate the log key inside the log, and a node
 	// learns the new one by replaying a log it already accepted. The trust
@@ -289,16 +304,16 @@ func (a *Agent) Once() error {
 	// than one whose is stale.
 	keys := []string{a.cfg.Anchor.LogKey}
 	policy := a.cfg.Anchor.Policy
-	if a.last != nil {
-		keys = append(keys, logclient.KeysFrom(a.cfg.Anchor.Origin, a.last.State)...)
+	if held != nil {
+		keys = append(keys, logclient.KeysFrom(a.cfg.Anchor.Origin, held.State)...)
 		// A published policy replaces the trust file's: one document, not two
 		// (§9.4). Raising a quorum has to bind the nodes already watching, or
 		// it protects only the ones who were not.
-		if published := logclient.PolicyFrom(a.last.State); published != "" {
+		if published := logclient.PolicyFrom(held.State); published != "" {
 			policy = published
 		}
 	}
-	anchor := logclient.Anchor{
+	return logclient.Anchor{
 		Anchor:  replay.Anchor{Net: a.cfg.Anchor.Net, GenesisHash: a.cfg.Anchor.GenesisHash},
 		LogKeys: keys,
 		Origin:  a.cfg.Anchor.Origin,
@@ -306,6 +321,15 @@ func (a *Agent) Once() error {
 		Stored:  stored,
 		Held:    heldTree,
 	}
+}
+
+// Once verifies the log and reconciles the interface with it.
+//
+// It returns an error when the cycle could not do its job, having already done
+// whatever was safe: an error here means "this cycle learned nothing", never
+// "the peer table has been abandoned".
+func (a *Agent) Once() error {
+	anchor := a.anchorFor(a.held())
 	// §11 duty 4: a node that has proved its log forked accepts nothing
 	// further. Not the forked log, and not the original either -- it has
 	// evidence that this log signs whatever suits it, and "it looks fine
@@ -369,7 +393,7 @@ func (a *Agent) Once() error {
 		if !a.checkpointAskedSet {
 			a.checkpointAsked, a.checkpointAskedSet = mono, true
 		}
-		a.last = result
+		a.last, a.restored = result, nil
 	}
 
 	// Witness time advances only on a checkpoint that actually verified; a

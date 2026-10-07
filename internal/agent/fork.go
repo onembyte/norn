@@ -172,13 +172,14 @@ func (a *Agent) writeEvidence(fork *logclient.ForkError) (string, error) {
 	if a.cfg.RunDir == "" {
 		return "", errors.New("no run directory to write evidence to")
 	}
-	if a.last == nil {
+	held := a.held()
+	if held == nil {
 		return "", errors.New("nothing held to compare against")
 	}
 	// Built from **this node's** branch, not the served one: the served tree
 	// is the one under suspicion, and evidence drawn from it would be the
 	// accused certifying the accusation.
-	evidence, err := forkevidence.Build(fork.Held, a.last.SignedCheckpoint,
+	evidence, err := forkevidence.Build(fork.Held, held.SignedCheckpoint,
 		fork.Signed, fork.Conflicting)
 	if err != nil {
 		return "", err
