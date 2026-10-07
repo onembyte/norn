@@ -609,10 +609,10 @@ plan before the first line of code, and stops at **[decision]** and **[user]**.
 | 6.5m-i-d-iv | H1-d-iv | A state directory that cannot keep state is said out loud | `nornd` warns at start when `state_dir` cannot be created or written, or is on a tmpfs, naming what will not survive a restart or a reboot (tmpfs on Linux, tested on the CI runner's `/dev/shm`) | ✅ |
 | 6.5m-i-e | H1-e | D-069 written down | `DECISIONS.md` D-069; `SPEC.md` §13.2 says the stored checkpoint and what the node learned from it persist across a restart and a reboot and are compared before anything is adopted; `ENFORCEMENT.md` §8's crash row; a `docclaims` guard | ✅ |
 | 6.5m-sec | HS | Triage the security audit that never reached master | each of SEC-001…SEC-036 on branch `claude/tender-mccarthy-bzllsp` recorded as confirmed on master (with the test that shows it), fixed on master (by what), or not reproducible (what was tried); each confirmed one a row of its own, a confirmed critical ahead of H2; protocol questions as DECISION blocks. The branch's `6.5m-i`…`6.5m-vi` commit labels are unrelated to this table | ⬜ |
-| 6.5m-sec-a | HS-a | SEC-001…SEC-015 against master | SEC-001 first | ⬜ |
+| 6.5m-sec-a | HS-a | SEC-001…SEC-015 against master | SEC-001 first | ✅ |
 | 6.5m-sec-a-i | HS-a-i | SEC-001 against master | reproduced or refuted in Go, in the Python reference and in the shipped vectors; a DECISION block if confirmed | ✅ |
 | 6.5m-sec-a-ii | HS-a-ii | SEC-002…SEC-008 against master | one line each, with the evidence | ✅ |
-| 6.5m-sec-a-iii | HS-a-iii | SEC-009…SEC-015 against master | one line each, with the evidence | ⬜ |
+| 6.5m-sec-a-iii | HS-a-iii | SEC-009…SEC-015 against master | one line each, with the evidence | ✅ |
 | 6.5m-sec-b | HS-b | SEC-016…SEC-036 against master | — | ⬜ |
 | 6.5m-sec-c | HS-c | Confirmed findings become rows | placed by severity in `HARDENING-PLAN.md` and here | ⬜ |
 | 6.5m-sec-001a | HS-001a | SEC-001's outside route closed, and its use seen | `norn-log` refuses a submission whose signature preimage it already holds (409 naming the index), and `norn monitor` raises an alarm on any entry whose preimage repeats an earlier one. Neither changes what a verifier accepts, so neither waits on the decision; neither is the fix either — a malicious log can still append | ⬜ |
@@ -636,6 +636,15 @@ plan before the first line of code, and stops at **[decision]** and **[user]**.
 | 7.0 | H17 | `ACTION-PLAN.md` and the email draft | a test plan for the owner; an email drafted in the form `wireguard.com` asks for, read from the page at the time; a pre-send checklist; **nothing sent** | ⬜ |
 | U1 | — | Observe mode on the homelab mesh (6.5m-vii) | **[user]** one node a day, then every node for seven days | ⬜ |
 | U2–U7 | — | Lab, nginx, OpenTimestamps, NAS, phone enrollment, LocalAPI on a real node, outside people | **[user]** `HARDENING-PLAN.md` Stage G | ⬜ |
+
+- **6.5m-sec-a-iii — SEC-009…SEC-015 checked against master: six confirmed, one partly fixed; 6.5m-sec-a closes.**
+  - **Three probes, each run and deleted:**
+    - **SEC-009:** a policy whose two witnesses share one note name parses, and both are labelled as the first.
+    - **SEC-010:** a root-signed `params` entry mixing a valid and an invalid value is rejected, yet across 200 replays of one log it changed `rotate_needs_signer` 31 times. Go disagrees with itself, so two nodes on the same log can differ on whether a device-only rotate installs a key.
+    - **SEC-011:** a single empty temporary file left by a power cut makes a reopened log come back at size 0.
+  - **By reading:** SEC-012 (the node's own key in owner mode's desired set — the kernel half cannot be run on this Mac), SEC-013 (= F3), SEC-015 (the replay fuzzer opens a file name the fixture lost long ago and skips on every run). SEC-014 is partly fixed by 6.5l-vii-d-xii-iv; runbook R7 still calls rotation a remedy for a compromised log key.
+  - **Bug fix or decision.** SEC-009, 010, 011, 012 and 015 make the implementations do what `SPEC.md` already says, and need no decision. SEC-014's verifier-side retirement would, and it will be raised as one; its runbook correction will not.
+  - **Gate:** generators first (no change under `testdata/`), then `make test` (race) alone, green in all 49 packages with tests; `vectors-check`, 221 reference tests, `lint`, `fmt-check`, `vet` clean. No code changed in this step.
 
 - **6.5m-sec-a-ii — SEC-002…SEC-008 checked against master: two fixed, three partly fixed, and two confirmed holes that matter more than their labels.**
   - **The table** is under "AUDIT TRIAGE" with the decision blocks; every line was checked here, by reading master's code or with a throwaway probe that was deleted after running.
@@ -2124,6 +2133,13 @@ The audit lives on branch `claude/tender-mccarthy-bzllsp` (`docs/audit/SECURITY_
 | 006 | medium | **Fixed by H1-d**: `state_dir` defaults to `/var/lib/norn`, evidence is durable, and tmpfs is warned about. Refusing to start was rejected in D-069 | 6.5m-i-d-i…iv | — |
 | 007 | medium | **Fixed for nodes** by 6.5l-vii-d-xii-ii. The monitor half is SEC-002 (3) | as 002 | as 002 |
 | 008 | medium | **Confirmed.** `norn sign` refuses every type but `enroll` (`sign.go`); there is no `revoke`, `rotate` or governance command (`main.go` lists ten); `ENROLLMENT.md` §4–5 and runbooks R1–R10 document commands that do not exist | `cmd/norn/main.go`, `sign.go` | new: the tools, and until then the documents say only `enroll` exists |
+| 009 | medium (low end) | **Confirmed.** A policy with two witnesses whose keys share one note name parses, and `Label` attributes every line with that name to the first; a nested policy can then count one party twice. §10 (6.5k-iv-c) already says a line names a witness by name **and** key id, so attributing by the matched key is a bug fix, not a protocol change | probe: two witnesses, one note name — parsed, both labelled `a` | new: attribute by matched key |
+| 010 | medium | **Confirmed, and worse than nondeterminism between implementations:** Go disagrees with itself. A root-signed `params` entry `{rotate_needs_signer: false, checkpoint_interval: true}` is rejected `decode`, yet over 200 replays of the same log `rotate_needs_signer` became `false` 31 times, because the handler writes each key before checking the next, in map order. §5.1 already says a rejected entry changes nothing, so this is a bug fix | probe: rejected `decode`; `false` 31/200 | new, ahead of H2: validate then merge, in both implementations; a mixed-validity vector; a determinism test |
+| 011 | medium | **Confirmed.** One empty `.tmp-*` left in `tile/entries/000.p/` by a power cut makes a reopened 5-entry log come back at **size 0**: the glob matches dotfiles, an empty file decodes to no entries, and `recover` never compares with the checkpoint it last signed. The old partial is also removed before the new one is written, and the directory is never synced | probe: 5 → 0 | new: write-then-remove, ignore temporaries, sync the directory, refuse to open below the last checkpoint |
+| 012 | medium | **Confirmed by reading:** `desired()` includes every proven device, the node's own among them, and nothing reads the interface's key; per the audit, kernel and wireguard-go ignore a peer with the interface's own key, so owner mode would rewrite the table every `T_poll`. The kernel half cannot be run here | `agent.go` `desired`; no `PublicKey` read in `wgdev` | new: exclude the interface's own key; a fake that models it |
+| 013 | medium | **Confirmed** — it is F3 | as F3 | H3, H4 |
+| 014 | medium | **Partly fixed.** §4.3, §9.4 and `ENROLLMENT.md` now agree that learned log keys accumulate and are never retired (6.5l-vii-d-xii-iv). **Open:** runbook R7 still offers rotation as the remedy for a *compromised* log key, which leaves the stolen key trusted | `ENROLLMENT.md` R7 | new: R7 says rotation is not revocation; verifier-side retirement would be a protocol change and a DECISION |
+| 015 | medium | **Confirmed.** `FuzzReplayAfterAValidGenesis` opens `00-genesis.cbor`; the fixture is `0-genesis.cbor`, so it skips on every run | `internal/replay/fuzz_test.go` | new: the right file, a multi-entry corpus, and a test that the target does not skip |
 
 ---
 
