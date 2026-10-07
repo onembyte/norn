@@ -338,6 +338,10 @@ def _h_params(state: State, env: dict[str, Any], index: int) -> None:
     body = env["body"]
     if not body:
         raise Reject("decode")
+    # Every key is checked before any is applied: SPEC 5.1 says a rejected
+    # entry changes nothing, and writing as we went left the keys before the
+    # bad one in the state (SEC-010).
+    checked: dict[str, Any] = {}
     for key, value in body.items():
         if key not in DEFAULT_PARAMS:
             raise Reject("decode")
@@ -350,7 +354,8 @@ def _h_params(state: State, env: dict[str, Any], index: int) -> None:
             raise Reject("decode")
         if not isinstance(value, expected):
             raise Reject("decode")
-        state.params[key] = value
+        checked[key] = value
+    state.params.update(checked)
 
 
 def _h_note(state: State, env: dict[str, Any], index: int) -> None:

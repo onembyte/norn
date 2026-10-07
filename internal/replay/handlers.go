@@ -355,6 +355,13 @@ func hParams(_ *replayer, st *state.State, env *entry.Envelope, _ uint64) error 
 	if len(env.Body) == 0 {
 		return rejectWith(ReasonDecode)
 	}
+	// Every key is checked before any is applied. §5.1: a rejected entry
+	// changes nothing -- and this handler wrote each key as it went, so an
+	// entry with one good key and one bad one landed the good key and was
+	// then rejected, in whatever order Go visited the map. Two nodes on one
+	// log disagreed about `mmd`; one node disagreed with itself from poll to
+	// poll (SEC-010).
+	checked := make(map[string]any, len(env.Body))
 	for key, value := range env.Body {
 		switch key {
 		case "rotate_needs_signer":
@@ -362,14 +369,17 @@ func hParams(_ *replayer, st *state.State, env *entry.Envelope, _ uint64) error 
 			if !ok {
 				return rejectWith(ReasonDecode)
 			}
-			st.Params[key] = b
+			checked[key] = b
 		default:
 			n, ok := value.(uint64)
 			if !ok {
 				return rejectWith(ReasonDecode)
 			}
-			st.Params[key] = n
+			checked[key] = n
 		}
+	}
+	for key, value := range checked {
+		st.Params[key] = value
 	}
 	return nil
 }
