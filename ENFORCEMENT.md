@@ -151,7 +151,8 @@ watchdog window for *new* rogue IPs to zero, but is **blind to the swap attack**
 
 | Event | Owner | Watchdog | Observe |
 |---|---|---|---|
-| `nornd` crashes | table keeps last written proven set; no new peers appear until restart | control plane keeps adding; window becomes ∞ → the monitor alarms on missing heartbeat | alarms stop → monitor alarms |
+| `nornd` crashes | table keeps last written proven set; no new peers appear until restart; the restarted node holds its stored head and any fork freeze again (D-069) | control plane keeps adding; window becomes ∞ → the monitor alarms on missing heartbeat | alarms stop → monitor alarms |
+| host reboots | the stored head and any fork freeze are read back from `state_dir` (default `/var/lib/norn`, never `/run`, which a reboot clears — D-069); the restored head is compared against, not enforced, until a checkpoint verifies; `nornd` warns at start if `state_dir` is unwritable or on a tmpfs | same | same |
 | checkpoint stale > S (`degraded`) | keep last proven set; alarm | same | alarm |
 | stale > S_hard (opt-in) | `ReplacePeers` with empty set — fail closed | evict all | — |
 | fork detected | freeze at last proven set; alarm; refuse new state | same | alarm |

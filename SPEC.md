@@ -1707,6 +1707,18 @@ refuses further checkpoint adoption or interface changes under that anchor.
 If `nornd` stops, the WireGuard table keeps its last contents; a watchdog that
 is not running cannot bound an external writer's rogue-key window.
 
+A node's stored checkpoint (§10), the log keys and policy it learned from the
+state it verified (§9.4), and the evidence of a fork it proved (§11) persist
+across a restart and a reboot (D-069). At startup the persisted checkpoint is
+verified again under the trust file, and under what its own entries publish
+when a key or policy was rotated in the log; one that does not verify is
+reported and ignored. Every candidate checkpoint is compared against the stored
+checkpoint before anything is adopted, so an older head of the node's own log
+is refused after a restart as it was before one. The restored checkpoint is
+held, not enforced: as above, a node on which no checkpoint has verified since
+startup leaves the interface untouched, and a restored checkpoint is not
+enforced until a checkpoint verifies in the new process.
+
 ### 13.3 Published proven set
 
 The in-memory set controls the enforcer. A node also publishes its last

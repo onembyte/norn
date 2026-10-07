@@ -72,7 +72,7 @@ incident that produced it. Read that section before the first firing.
   not-vectored list. Replaces "a run's verdict reads exactly `SPEC
   SUFFICIENT`", which four runs have shown a stochastic reader cannot
   deliver.
-- **D-069 (to record in H1-e): a node's stored checkpoint, and what it
+- **D-069 (recorded 2026-10-07 in H1-e): a node's stored checkpoint, and what it
   learned from it, survive a restart and a reboot.**
   §10's `stored_cp` and §11 rule 4's "forever" already imply it; the node did
   not do it (F1). This is a node-contract clarification taken under the

@@ -778,3 +778,47 @@ is the only check in the project that no session author can game.
 visible in §12.1 rather than fixed. The severity rating is the reader's own,
 so the transcript audit also checks that no finding is rated low while its
 text describes two implementations disagreeing on an outcome.
+
+## D-069 · What a node held outlives a restart and a reboot (2026-10-07)
+A node keeps three things on disk, in a state directory that survives a
+reboot (`nornd`: `state_dir`, default `/var/lib/norn`; `proven.json` stays in
+`/run/norn`):
+
+- the stored checkpoint §10 compares against, as the mirror of the log it
+  verified;
+- what it learned from that state: the log keys and witness policy it
+  published (§9.4);
+- the evidence of a fork it proved, whose presence is the freeze (§11).
+
+At start the node verifies its mirror again under the trust file. If the trust
+file's keys or policy refuse it — the only refusals what a node learned can
+change — it is verified once more under what the mirror's own entries publish,
+which is the authority it was accepted under: a root quorum, replayed from the
+pinned genesis. What verifies is held as the stored checkpoint. It is compared
+against and is **not enforced** until a checkpoint verifies in the new
+process. A mirror that does not verify is reported (`MIRROR_UNUSABLE`) and
+ignored. Evidence is written durably and never over another file.
+
+**Why.** §10's comparison protects only a node that remembers what it held.
+A restarted node held nothing until its first verification, so it accepted an
+older, correctly cosigned head of its own log and undid every revocation since
+(review F1, audit SEC-004). The freeze and the head lived under `/run`, a tmpfs
+cleared at boot (SEC-006). And a node restarted after an in-log key rotation
+could verify neither its mirror nor its log again. §11's "forever" has to
+outlive the machine, and a restart or a reboot is something an attacker can
+cause.
+
+**Rejected.** *Enforce the restored head at once* — it verified at a witness
+time this process cannot place, and installing it during an outage would let a
+restart reopen peers an `S_hard` drop had closed. *Refuse to start when the
+state directory is on a tmpfs or cannot be written* — a node that cannot keep
+its freeze still enforces, and refusing would leave the network with no node;
+`nornd` warns instead. *Persist only the checkpoint* — the learned keys and
+policy come from replaying the entries, and the mirror already holds them to
+serve peers. *Name evidence by content hash* — §11 names
+`fork/<unix>.evidence`.
+
+**Cost, accepted.** One full verification of the mirror at start. The mirror
+does not yet survive a power cut, because it syncs nothing; its head can then
+name a file the disk never received, and the node reports it unusable and holds
+nothing. That is `HARDENING-PLAN.md` H4-f. The freeze does survive one.

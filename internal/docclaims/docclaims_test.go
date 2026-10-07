@@ -372,3 +372,51 @@ func TestTheCompanionsSayWhatTheyAre(t *testing.T) {
 		}
 	}
 }
+
+// D-069. The node keeps its stored checkpoint, what it learned from the state
+// it verified, and a fork's evidence across a restart and a reboot, and holds
+// the restored head without enforcing it (6.5m-i). §13.2 is where a second
+// implementer reads that, and ENFORCEMENT.md is where an operator reads where
+// it lives -- so both are pinned here, and the operator's path is pinned to
+// the constant `nornd` actually uses.
+func TestTheStoredHeadOutlivingARestartIsWrittenDown(t *testing.T) {
+	read := func(parts ...string) string {
+		raw, err := os.ReadFile(filepath.Join(append([]string{"..", ".."}, parts...)...))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return strings.Join(strings.Fields(string(raw)), " ")
+	}
+	spec := read("SPEC.md")
+	start := strings.Index(spec, "### 13.2 Failure semantics")
+	end := strings.Index(spec, "### 13.3")
+	if start < 0 || end < start {
+		t.Fatal("SPEC.md has no §13.2 to read")
+	}
+	section := spec[start:end]
+	for _, claim := range []string{
+		"persist across a restart and a reboot",
+		"compared against the stored checkpoint before anything is adopted",
+		"is not enforced until a checkpoint verifies in the new process",
+	} {
+		if !strings.Contains(section, claim) {
+			t.Errorf("SPEC.md §13.2 does not say %q (D-069)", claim)
+		}
+	}
+
+	main := read("cmd", "nornd", "main.go")
+	const def = `DefaultStateDir = "/var/lib/norn"`
+	if !strings.Contains(main, def) {
+		t.Fatalf("nornd's default state directory is no longer %s; update this "+
+			"test and ENFORCEMENT.md together", def)
+	}
+	enforcement := read("ENFORCEMENT.md")
+	for _, claim := range []string{"`/var/lib/norn`", "host reboots", "D-069"} {
+		if !strings.Contains(enforcement, claim) {
+			t.Errorf("ENFORCEMENT.md §8 does not mention %s", claim)
+		}
+	}
+	if !strings.Contains(read("DECISIONS.md"), "## D-069") {
+		t.Error("DECISIONS.md has no D-069")
+	}
+}
