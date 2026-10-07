@@ -314,8 +314,35 @@ func nextPoll(interval time.Duration, state string) time.Duration {
 	return DegradedPoll
 }
 
-// report turns an agent event into a log line at the right level: a peer
-// nobody proved is a warning, a bookkeeping note is not.
+// Every kind has a deliberate level, so outages and evidence of a fork cannot
+// disappear among routine messages. The declaration test keeps this table in
+// step with the agent and reconciler as they gain new kinds.
+var eventLevels = map[string]slog.Level{
+	agent.Fork:                  slog.LevelError,
+	agent.Frozen:                slog.LevelError,
+	agent.HardStale:             slog.LevelError,
+	agent.Quarantined:           slog.LevelError,
+	agent.QuarantineFailed:      slog.LevelError,
+	agent.Degraded:              slog.LevelWarn,
+	agent.MirrorUnusable:        slog.LevelWarn,
+	agent.MirrorFailed:          slog.LevelWarn,
+	agent.ClockSkew:             slog.LevelWarn,
+	reconcile.UnprovenPeer:      slog.LevelWarn,
+	reconcile.EvictedPeer:       slog.LevelWarn,
+	agent.VerifyFailed:          slog.LevelWarn,
+	agent.EnforcingOnStaleState: slog.LevelWarn,
+	agent.InterfaceUnavailable:  slog.LevelWarn,
+	agent.ControlPlaneFight:     slog.LevelWarn,
+	agent.PeerRefused:           slog.LevelWarn,
+	agent.AdoptedFromPeer:       slog.LevelWarn,
+	agent.NoStateYet:            slog.LevelWarn,
+	agent.ProviderClaim:         slog.LevelWarn,
+	// A proven peer may simply not have connected yet, and installing it is
+	// not the watchdog's job. Its absence is routine (G4 non-goal).
+	reconcile.MissingPeer: slog.LevelInfo,
+}
+
+// report preserves the event's details while giving it its chosen level.
 func report(logger *slog.Logger, event agent.Event) {
 	attrs := []any{"kind", event.Kind}
 	if event.Peer != nil {
@@ -327,14 +354,13 @@ func report(logger *slog.Logger, event agent.Event) {
 			attrs = append(attrs, "endpoint", event.Peer.Endpoint.String())
 		}
 	}
-	switch event.Kind {
-	case reconcile.UnprovenPeer, reconcile.EvictedPeer, agent.VerifyFailed,
-		agent.EnforcingOnStaleState, agent.InterfaceUnavailable,
-		agent.ControlPlaneFight, agent.Quarantined, agent.QuarantineFailed:
-		logger.Warn(event.Message, attrs...)
-	default:
-		logger.Info(event.Message, attrs...)
+	level, ok := eventLevels[event.Kind]
+	if !ok {
+		// An unknown kind means the reporting contract was broken. Make that
+		// visible even if a binary was built without running the tests.
+		level = slog.LevelError
 	}
+	logger.Log(context.Background(), level, event.Message, attrs...)
 }
 
 func newLogger(asJSON bool) *slog.Logger {

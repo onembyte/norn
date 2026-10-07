@@ -78,11 +78,17 @@ incident that produced it. Read that section before the first firing.
     - A row marked `[codex: <model>/<effort>]` is built by `codex exec` in its
       own clone, `~/norn-lanes/<lane>` (a local `git clone` of this repository
       on branch `codex/<lane>`), under `-s workspace-write`, so it can write
-      nothing outside that clone, push nowhere, and reach no network. Its brief
-      (`~/norn-lanes/BRIEF-<lane>.md`, outside the repository) carries these
-      rules: TDD with the red output kept, a control per behaviour, one commit
-      per row, no edits to `BUILD-LOG.md`,
-      `HARDENING-PLAN.md`, `DECISIONS.md`, `SPEC.md` or any generated file.
+      nothing outside that clone and one output directory
+      (`--add-dir ~/norn-lanes/out/<lane>`, mounted as `/lane-out`), pushes
+      nowhere, and reaches no network. The sandbox also keeps `.git`
+      read-only, so **a lane cannot commit** (lane B found this first); a
+      lane therefore does **one row**, leaves the work in its tree, and
+      writes the commit message to its output directory; the integrator
+      commits it onto `master` after review, keeping the message and its
+      `Codex-Model:` line. Its brief (`~/norn-lanes/BRIEF-<lane>.md`, outside
+      the repository) carries these rules: TDD with the red output kept, a
+      control per behaviour, no edits to `BUILD-LOG.md`, `HARDENING-PLAN.md`,
+      `DECISIONS.md`, `SPEC.md` or any generated file.
     - **Models, by how much a mistake would cost:** `gpt-6-astra` (frontier)
       for rows whose correctness is subtle; `gpt-6.1-sol` (the workhorse) at
       `medium` for well-specified fixes and `high` where the behaviour has
@@ -99,8 +105,7 @@ incident that produced it. Read that section before the first firing.
       fetch the branch, read every line of the diff, rerun each control the
       report names, rebase onto `master`, run the full gate, write the journal
       entry and tick the row, push. A lane whose work does not survive review
-      is sent back with the reason, or redone here. Codex's commits keep their
-      author and their `Codex-Model:` line.
+      is sent back with the reason, or redone here.
     - At most **two lanes at once**, on files disjoint from each other and
       from the row the loop is on; integrating a finished lane is allowed
       while the loop waits for Mythos.
