@@ -329,3 +329,46 @@ func TestTheGossipStateMachineDoesNotAlsoStateTheRejectedOrder(t *testing.T) {
 		}
 	}
 }
+
+// D-064 demoted the three companions to informative and d-xii moved every rule
+// they used to own into `SPEC.md`. A document's standing is only real where
+// the document itself says so: a companion that never names the spec invites a
+// reader to treat its narrative as a contract, which is the drift d-xii spent
+// five checkpoints undoing. Each one has to carry the label and name its
+// better — neither alone is a declaration.
+func TestTheCompanionsSayWhatTheyAre(t *testing.T) {
+	for _, name := range []string{"GOSSIP.md", "ENFORCEMENT.md", "ENROLLMENT.md"} {
+		raw, err := os.ReadFile(filepath.Join("..", "..", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Flattened, because prose wraps: a self-declaration split across a
+		// line break is still a self-declaration.
+		doc := strings.Join(strings.Fields(string(raw)), " ")
+		if !strings.Contains(doc, "informative") {
+			t.Errorf("%s never says it is informative", name)
+		}
+		if !strings.Contains(doc, "disagrees with `SPEC.md`") {
+			t.Errorf("%s never says which document wins when it disagrees with "+
+				"`SPEC.md`", name)
+		}
+		// A companion may say where the normative text lives — "(normative in
+		// `SPEC.md` §…)" — but may not claim any of its own text normative:
+		// the header just said the whole document is informative, and a
+		// section that contradicts its own header is how the drift starts
+		// again. ENFORCEMENT.md §4 carried exactly that heading ("normative
+		// pseudocode") until d-xii-v.
+		for at := 0; ; at++ {
+			i := strings.Index(doc[at:], "(normative")
+			if i < 0 {
+				break
+			}
+			at += i
+			if !strings.HasPrefix(doc[at+len("(normative"):], " in `SPEC.md`") {
+				t.Errorf("%s claims normative text of its own (%q): an "+
+					"informative document may only point at where the "+
+					"normative text lives", name, doc[at:at+40])
+			}
+		}
+	}
+}

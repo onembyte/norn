@@ -152,10 +152,8 @@ type Config struct {
 	// Fanout is `r`: how many peers to ask per round. Defaults to
 	// gossip.DefaultFanout.
 	Fanout int
-	// GossipEvery is T_g: how often to ask peers whether anybody has proved a
-	// fork. Unlike checkpoint gossip it runs whatever the log is doing, so it
-	// has its own interval rather than the poll's. Defaults to
-	// DefaultGossipEvery.
+	// GossipEvery is T_g: how often to ask proven peers for checkpoints and
+	// evidence, even while the log answers. Defaults to DefaultGossipEvery.
 	GossipEvery time.Duration
 	Emit        func(Event)
 
@@ -185,7 +183,12 @@ type Agent struct {
 	frozen   bool
 	frozenBy string
 	// evidenceAsked is the monotonic reading of the last evidence round.
-	evidenceAsked time.Duration
+	evidenceAsked    time.Duration
+	evidenceAskedSet bool
+	// checkpointAsked is the last peer checkpoint round, or the first
+	// successful adoption when there has not been a round yet.
+	checkpointAsked    time.Duration
+	checkpointAskedSet bool
 	// peerOrder decides which peers get asked, and is a node's own so two
 	// nodes started together do not walk the mesh in step.
 	peerOrder *rand.Rand
@@ -325,17 +328,19 @@ func (a *Agent) Once() error {
 		return verifyErr
 	}
 
-	// Ask peers when the log could not be used at all, and also when it could
-	// but what it gave is stale: `GOSSIP.md` part 5 has a degraded node poll
-	// **all sources**, and the reason is T2. A log that is up and stuck
-	// answers every request perfectly with something old, and only a peer can
-	// say so -- asking peers solely when the log is unreachable would leave a
-	// whole mesh stale behind a log that never stopped answering.
-	//
-	// While the view is fresh, peers are not asked at all. A node polling
-	// every 200 ms that also asked three neighbours each time would put a
-	// great deal of traffic on the link it is protecting, to learn nothing.
-	if verifyErr != nil || a.isStale(result) {
+	// A healthy log can serve a different, equally valid branch to another
+	// node. Ask proven peers every T_g even while this log is healthy. An
+	// unusable or stale log also triggers an immediate fallback round; the
+	// daemon's faster degraded poll keeps checking all sources (§15).
+	var direct *logclient.Result
+	if verifyErr == nil {
+		direct = result
+	}
+	mono := a.cfg.Mono()
+	periodic := a.cfg.Peers != nil && a.checkpointAskedSet &&
+		mono-a.checkpointAsked >= a.cfg.GossipEvery
+	if verifyErr != nil || a.isStale(result) || periodic {
+		a.checkpointAsked, a.checkpointAskedSet = mono, true
 		if fromPeer, peer := a.askPeers(anchor); fromPeer != nil &&
 			(verifyErr != nil || fromPeer.Checkpoint.Size > result.Checkpoint.Size) {
 			a.emit(Event{Kind: AdoptedFromPeer, Message: fmt.Sprintf(
@@ -343,6 +348,9 @@ func (a *Agent) Once() error {
 				fromPeer.Checkpoint.Size, peer, whyPeer(verifyErr))})
 			result, verifyErr = fromPeer, nil
 		}
+	}
+	if a.frozen {
+		return errors.New("agent: frozen by a fork found in a peer checkpoint; the interface is untouched")
 	}
 	if verifyErr != nil {
 		a.emit(Event{Kind: VerifyFailed, Message: verifyErr.Error()})
@@ -358,6 +366,9 @@ func (a *Agent) Once() error {
 			Message: "holding the interface to the last state that verified"})
 		result = a.last
 	} else {
+		if !a.checkpointAskedSet {
+			a.checkpointAsked, a.checkpointAskedSet = mono, true
+		}
 		a.last = result
 	}
 
@@ -365,9 +376,12 @@ func (a *Agent) Once() error {
 	// head this node refused says nothing about what time it is. This comes
 	// before reconciling because how old the view is decides what reconciling
 	// is allowed to do.
-	if verifyErr == nil && result.QuorumTime != nil {
+	if direct != nil && direct.QuorumTime != nil {
+		a.clock.Observe(*direct.QuorumTime, a.cfg.Mono())
+		a.checkClock(*direct.QuorumTime, direct.State.Params)
+	}
+	if verifyErr == nil && result != direct && result.QuorumTime != nil {
 		a.clock.Observe(*result.QuorumTime, a.cfg.Mono())
-		a.checkClock(*result.QuorumTime, result.State.Params)
 	}
 	fresh := a.freshness(result)
 	a.reportFreshness(fresh)
@@ -481,11 +495,21 @@ func (a *Agent) reconcile(result *logclient.Result, fresh proven.Freshness) erro
 	}
 	for i := range plan.Alarms {
 		alarm := plan.Alarms[i]
+		if alarm.Kind == reconcile.EvictedPeer {
+			continue // an attempted eviction is not yet an eviction
+		}
 		a.emit(Event{Kind: alarm.Kind, Peer: &alarm,
 			Message: fmt.Sprintf("%s %s", alarm.Kind, alarm.Key.Short())})
 	}
 	if err := reconcile.Apply(a.cfg.Device, plan); err != nil {
 		return err
+	}
+	for i := range plan.Alarms {
+		alarm := plan.Alarms[i]
+		if alarm.Kind == reconcile.EvictedPeer {
+			a.emit(Event{Kind: alarm.Kind, Peer: &alarm,
+				Message: fmt.Sprintf("%s %s", alarm.Kind, alarm.Key.Short())})
+		}
 	}
 	a.noteEvictions(plan)
 	return nil
@@ -636,9 +660,8 @@ func (a *Agent) PeerAddresses(port int) []string {
 // log's, including §10's comparison with the head this node already holds. So
 // a lying peer is exactly as dangerous as a lying log, which is to say caught.
 //
-// Peers are asked only when the log could not be used. A node polling every
-// 200 ms that also asked three neighbours each time would put a great deal of
-// traffic on the link it is protecting, to learn nothing.
+// Peer checkpoint rounds run on T_g even with a healthy log, and immediately
+// when that log is unusable or stale. They do not run on every local poll.
 func (a *Agent) askPeers(anchor logclient.Anchor) (*logclient.Result, string) {
 	if a.cfg.Peers == nil {
 		return nil, ""
@@ -673,11 +696,8 @@ func (a *Agent) askPeers(anchor logclient.Anchor) (*logclient.Result, string) {
 // checkClock compares this machine's wall clock against witness time and
 // alarms if they disagree by more than Δclock.
 //
-// This runs on the direct-from-log path only, which today is the only path
-// there is. When gossip arrives (4.5) a checkpoint pulled from a peer must
-// *not* come through here: a peer may legitimately be serving an older head,
-// and its age is the peer's business rather than evidence about this machine's
-// clock.
+// This runs on the direct-from-log path only. A peer may legitimately serve
+// an older head, so its timestamp is not evidence about this machine's clock.
 //
 // The alarm is all that happens. Nothing downstream reads it, by design: a
 // node that changed what it enforced because of its own clock would be doing

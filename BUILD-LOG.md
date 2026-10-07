@@ -543,7 +543,7 @@ them, and then run the gate.
 | 6.5l-vii-b-ii | `version` before `schema` | `forkevidence.Parse` checks the closed key set before the version, and §11.1's table — rightly: a key set is only closed relative to a version — says the reverse; a file with `version: 2` **and** an unknown key is `schema` here and `version` there. Parse follows the table, and that file becomes a vector. **Same step, reported by the parallel session and confirmed by reading `Check`:** §11.1 types `held_root` and each `proof` hash as `bytes (32)`, a step-3 `schema` fault, and the lengths are checked in `Check` after `held`, `conflicting` and `size` — `held_root` coded `schema` there, a short `proof` hash coded `proof`. Both move into `Parse` as `schema` | ✅ |
 | 6.5l-vii-b-iii | The rest of §11.1's order | a two-fault case for each adjacent pair of steps an implementation could plausibly swap, shipped as a vector where §11.1 argues the order (the size bound before any parse; `held` before `conflicting`), each with its control. **Also reported by the parallel session and confirmed:** `Check` codes the *reader's own* unparseable policy as `policy`; that is the reader's configuration, not the evidence, and §10.1's convention leaves it uncoded. **And one code has no vector at all:** of §11.1's ten, `cbor` is the only one no shipped file is refused with | ✅ |
 | 6.5l-vii-c | The run | a sealed copy of `SPEC.md` and `testdata/vectors/` only, a fresh agent that never touches this repository, the variant sweep as in run 11; the report is `SPEC-DEFECTS-12.md`. Only a report reading `SPEC SUFFICIENT` ticks 6.5l-vii | ✅ — **`SPEC SUFFICIENT WITH GAPS`**: 1,212/1,212 checks (549 `SHA256SUMS` digests, 663 behaviour), 59 of 276 single variants and 16 of 86 composites survive; four survivors are security failures. Report `SPEC-DEFECTS-12.md`, decisions `SPEC-DECISIONS-12.md` |
-| 6.5l-vii-d | Run 12's findings | the report exists: 22 defects, five rated high (D1–D5), each a claim to verify before it is fixed. Triaged and subdivided before any fix; whatever changes the protocol rather than its prose is written up as a decision for the user. **Subdivided below.** Checked first against this implementation, not run 12's: D1–D5 hold here (the decoder refuses a repeated `kid`; `Check` compares `held_root` at the held size; the loop compares at the smaller size and checks the head first), so they are gaps in the suite and the prose — a risk to every *other* implementation — and the fixes are vectors. D14b is the reverse: this note parser trims every trailing newline, so it accepts the blank line §7 forbids | ⬜ |
+| 6.5l-vii-d | Run 12's findings | the report exists: 22 defects, five rated high (D1–D5), each a claim to verify before it is fixed. Triaged and subdivided before any fix; whatever changes the protocol rather than its prose is written up as a decision for the user. **Subdivided below.** Checked first against this implementation, not run 12's: D1–D5 hold here (the decoder refuses a repeated `kid`; `Check` compares `held_root` at the held size; the loop compares at the smaller size and checks the head first), so they are gaps in the suite and the prose — a risk to every *other* implementation — and the fixes are vectors. D14b is the reverse: this note parser trims every trailing newline, so it accepts the blank line §7 forbids | ✅ — every sub-item reviewed; run 13 re-tests the fixed document |
 | 6.5l-vii-d-i | `fork/`: D2, D3, D17, D13a | §11.1's `proof` row gains the clause step 3 already states (at the held size, `held_root` is the root `held` is signed over) and `bad-held-root-at-same-size` ships; `size` 0 is specified as what this reader does — no consistency proof starts at 0 — with its vector; `bad-size-above-held` rebuilt so only its own rule refuses it; a sound evidence file at a power-of-two size, the consistency shape no vector exercises | ✅ |
 | 6.5l-vii-d-ii | `detect/`: D4, D5 | `fork-on-a-longer-branch` (a grown head that rewrites history below the stored size: `fork`) and a stored head served a tampered bundle (`head`, not `fork`); §12.1's "make every ordering observable" made true | ✅ |
 | 6.5l-vii-d-iii | The log grows once: D1, D6, D9 | a repeated-`kid` entry (`decode`), one entry per envelope member of the wrong type, and the three order entries for `revoke` and `rotate`; §5.1 step 3 names the member types; §12.1's "at most once" admission corrected | ✅ |
@@ -551,16 +551,80 @@ them, and then run the gate.
 | 6.5l-vii-d-iv-a | Log and entry bounds: D16 text, reason, bool; D19 | the `text` and `reason` caps pinned at the cap (accepted, or refused only by a later check) and one byte past it — still multi-byte, so bytes and characters still disagree — a uint where `rotate_needs_signer` is a bool, and U+2028/U+2029 in the escapes label; §12.1's "257 bytes" made true | ✅ |
 | 6.5l-vii-d-iv-b | Whole-file caps: D16 trust and evidence | `MAX_TRUST_BYTES` and `MAX_EVIDENCE_BYTES` at exactly 65,536 (accepted) and 65,537 (refused), where every vector was far over | ✅ |
 | 6.5l-vii-d-iv-c | Bundle binding beyond `enroll`: D20 | bundles proving a `rotate` and a `revoke` entry under another device's label, `binding` | ✅ |
-| 6.5l-vii-d-v | The policy grammar: D7, D8 | the five things §9.1 leaves open stated as both implementations already decide them — checked to agree before a word is written — each with a `policies/` case both ways; CRLF, the same key on two `log` lines, and `k > n` | ⬜ |
-| 6.5l-vii-d-vi | The trust file: D10, D18b–c, D21g | an origin that extends the derived one, a correspondence that agrees on names and not keys, an open `anchor`; whether witness and policy URLs are validated, stated; `trust-bad/07` and `08` given one rule each | ⬜ |
-| 6.5l-vii-d-vii | Notes and receipts: D14b–c, D11, D-063 | the note parser stops trimming trailing newlines (a trailing blank line is `note`, as §7 says, with a vector); the code for a known key's line of the other algorithm's length stated as this verifier gives it; a receipt-checking procedure with a closed list of codes (D-063), implemented in `internal/receipt` and vectored per rule | ⬜ |
-| 6.5l-vii-d-viii | Tiles at scale: D12, D13b | a served log past one tile — a full tile, a partial one, a level-1 tile — and an over-full bundle; an inclusion proof for the right-edge leaf | ⬜ |
-| 6.5l-vii-d-ix | Requests: D15, D16 labels, D18a | `excess-padding` rebuilt from a length where one more group really is excess padding, and §12.1's claim about it corrected; the label value cap at the boundary; reserved labels stated as not validated | ⬜ |
-| 6.5l-vii-d-x | The document's own errors: D21, D22-bool, Q1 | ~~the vectors README's `fresh` wins~~ (fixed in d-ii, where that row was being edited anyway), the `oversize-label-key` passage, ~~the 257/258-byte reason~~ (made true in d-iv-a: the vector is 257 bytes now), §9.2's stale `genesis_hash`, "the four" that lists five, v0 in the title, §12.1's not-vectored list; whether booleans are a decoder or a schema rule; and which policy computes `T`, which only a JSON number pins today | ⬜ |
-| 6.5l-vii-d-xi | Canonical base64 (D-062, D14a) | every base64 field a note, a key or a receipt carries is canonical — pad bits zero — in both implementations, `SPEC.md` §6, §7 and §9.1 say so, and a re-signed vector shows each field refused in its non-canonical spelling | ⬜ |
-| 6.5l-vii-d-xii | `SPEC.md` absorbs the normative companion text (D-064, D22) | what `SPEC.md` cites as normative from `GOSSIP.md`, `ENFORCEMENT.md` and `ENROLLMENT.md` moves in; the three are called informative; "every cross-reference resolves" made true for a reader holding the spec and the vectors | ⬜ |
-| 6.5l-viii | Cold-model gate run 13 | after 6.5l-vii-d: a fresh agent on a new sealed copy; only `SPEC SUFFICIENT` ticks 6.5l-vii and the `PLAN.md` line | ⬜ |
+| 6.5l-vii-d-v | The policy grammar: D7, D8 | the initial claim of parser agreement corrected by inspection: Go accepted forward quorum references while Python refused them, and neither checked vkeys, IDs, role algorithms or aliases. D-066 aligns both parsers to C2SP; §9.1 and `policies/` now state and cover final LF, controls, `none`, earlier quorum definitions, parsed key identity and threshold bounds | ✅ |
+| 6.5l-vii-d-vi | The trust file: D10, D18b–c, D21g | D-067 records opaque URL text and no policy/trust URL correspondence; Go preserves a present empty witness URL; the `anchor` map is closed; trust negatives 07, 08, 13, 42 and 43 each isolate the named rule; 41 negatives and five acceptances | ✅ |
+| 6.5l-vii-d-vii | Notes and receipts: D14b–c, D11, D-063 | the note parser stops trimming trailing newlines (a trailing blank line is `note`, as §7 says, with a vector); the code for a known key's line of the other algorithm's length stated as this verifier gives it; a receipt-checking procedure with a closed list of codes (D-063), implemented in `internal/receipt` and vectored per rule | ✅ |
+| 6.5l-vii-d-vii-a | Note framing and algorithm-length handling: D14b–c | Go and Python require exactly one final LF; a known log-key line with the other supported payload length is `log-signature`, not `note`; §7 and §10.1 state the distinction; `checkpoints-bad/23` and `/24` isolate the two findings | ✅ |
+| 6.5l-vii-d-vii-b | Receipt procedure and closed codes: D11, D-063 | §7 defines a check order and closed codes; `receipt.Check` returns those codes; signed receipt cases exercise each one, with `cases.json` and guards tying cases to rules | ✅ |
+| 6.5l-vii-d-viii | Tiles at scale: D12, D13b | a served log past one tile — a full tile, a partial one, a level-1 tile — and an over-full bundle; an inclusion proof for the right-edge leaf | ✅ |
+| 6.5l-vii-d-viii-a | Multi-tile served log and exact bundle width: D12 | `served-large/` has 300 entries, a full and partial level-0 tile, and a level-1 tile; an over-full final bundle is refused as `entries`; generation and served-log verification exercise the actual paths | ✅ |
+| 6.5l-vii-d-viii-b | RFC 6962 right-edge inclusion shape: D13b | a valid proof at size 127 for index 126 is independently generated, shipped, and checked; a parity-only inclusion reader must fail it | ✅ |
+| 6.5l-vii-d-ix | Requests: D15, D16 labels, D18a | `excess-padding` rebuilt from a length where one more group really is excess padding, and §12.1's claim about it corrected; the label value cap at the boundary; reserved labels stated as not validated and accepted at request and replay layers | ✅ |
+| 6.5l-vii-d-ix-i | Bech32m excess-padding vector: D15 | a correctly signed request with 8L mod 5 in {0, 3, 4}; append one 5-bit group, verify the decoded payload is unchanged and only §16.2 refuses it; correct §12.1's claim and control both the bytes and rule | ✅ |
+| 6.5l-vii-d-ix-ii | Label-value cap boundary: D16 | a signed 256-byte label is accepted and a signed 257-byte label is refused; both cases are consumed by Go and Python and named by §12.1 | ✅ |
+| 6.5l-vii-d-ix-iii | Reserved request labels: D18a | §4.0 says hint syntax is not validated; a signed request vector and an accepted enrollment replay preserve malformed `ip`/`endpoint` strings; Go and Python assert request and replay behavior | ✅ |
+| 6.5l-vii-d-x | The document's own errors: D21, D22-bool, Q1 | ~~the vectors README's `fresh` wins~~ (fixed in d-ii), ~~the `oversize-label-key` layer attribution~~ (d-x-i), ~~the 257/258-byte reason~~ (made true in d-iv-a), ~~§9.2's stale `genesis_hash`~~, ~~"the four" that lists five~~, ~~v0 in the title~~ (d-x-ii), ~~§12.1's coverage omissions~~ (d-x-iii), ~~whether booleans are a decoder or a schema rule~~ (d-x-iv); ~~which policy computes `T`~~ (d-x-v, pinned by a vector at last) | ✅ — all five sub-items done |
+| 6.5l-vii-d-x-i | D21(b), `oversize-label-key` layer attribution | the signed request is refused by the §4.0 decoder's 24-byte map-key cap before `labels` field validation; Go and Python tests pin that path, and §12.1 plus the reference generator no longer claim the field rule fires first | ✅ |
+| 6.5l-vii-d-x-ii | D21(d–f), stale examples and document labels | §9.2's genesis hash matches `trust.toml`; §5.1 names all five precedence vectors; the SPEC title matches its frozen v1 status; Go guards each factual claim | ✅ |
+| 6.5l-vii-d-x-iii | D21(g–h), coverage-table honesty | `trust-bad/07` and `/08` are documented as single-fault cases; the §12.1 audit found and added the missing same-size `held_root` and replay-order citations; representative run-12 findings are guarded | ✅ |
+| 6.5l-vii-d-x-iv | D22, CBOR booleans | CBOR decoders admit booleans; field schemas reject a boolean where uint is required. `fork/bad-bool-size.cbor` pins the §11.1 `schema` code in Go and generic profile acceptance in Python | ✅ |
+| 6.5l-vii-d-x-v | Q1, the policy used to compute `T` | the checkpoint's acceptance policy computes its `T`; a policy entry in its replay range applies to the next checkpoint, not retroactively. The Go verifier test distinguishes 1760003607 from 1760003600 | ✅ |
+| 6.5l-vii-d-xi | Canonical base64 (D-062, D14a) | all normative base64 fields use canonical spelling; split into root/signature framing, verifier keys, and receipt hashes | ✅ — reviewed in three steps |
+| 6.5l-vii-d-xi-i | Checkpoint root and signed-note payload base64 | §6 roots and §7 signature/cosignature payloads reject non-zero pad bits at their owning framing layer; `checkpoints-bad/25-signature-nonzero-pad-bits` and `/26-cosignature-nonzero-pad-bits` are `note`, `/27-root-nonzero-pad-bits` is `checkpoint` | ✅ — reviewed |
+| 6.5l-vii-d-xi-ii | Verifier-key base64 | 33-byte verifier-key data has no pad bits; require exact canonical base64 spelling, with an isolated trust `log_key` negative and parser checks for both algorithms | ✅ — reviewed |
+| 6.5l-vii-d-xi-iii | Receipt leaf-hash base64 | a correctly signed receipt with non-zero pad bits is refused as `leaf-hash` | ✅ — reviewed |
+| 6.5l-vii-d-stamp | Restore the modified served checkpoint's OTS fixture | regenerate its body digest with the reference OTS implementation, confirm the proof binds the current checkpoint, then rerun the full CLI suite | ✅ — reviewed |
+| 6.5l-vii-d-xii | `SPEC.md` absorbs the normative companion text (D-064, D22) | what `SPEC.md` cites as normative from `GOSSIP.md`, `ENFORCEMENT.md` and `ENROLLMENT.md` moves in; the three are called informative; "every cross-reference resolves" made true for a reader holding the spec and the vectors | ✅ — all five sub-items done; companions informative |
+| 6.5l-vii-d-xii-i | Checkpoint acquisition | put source-neutral trust and §10 verification before adoption in §15; retain fork-before-rollback and cite existing served/detect cases | ✅ — reviewed |
+| 6.5l-vii-d-xii-ii | Witness-time clock and peer gossip endpoints | move the node clock, polling conditions and endpoint contracts from `GOSSIP.md` into §15, resolving its polling sketch against the implemented node and §§5.3/8.1 | ✅ — reviewed |
+| 6.5l-vii-d-xii-iii | Enforcement contract | move the proven-set interface, modes, reconciler and failure semantics from `ENFORCEMENT.md` into §13 and §8 | ✅ — reviewed |
+| 6.5l-vii-d-xii-iv | Enrollment and key handling | move bootstrap, signing, rotation and overlap rules needed by an interoperable node from `ENROLLMENT.md` into §§9.4 and 16.3 | ✅ — reviewed |
+| 6.5l-vii-d-xii-v | Companion and cross-reference audit | mark the three companion documents informative; remove remaining normative dependencies from `SPEC.md`; guard the spec-and-vectors-only reading | ✅ — reviewed |
+| 6.5l-viii | Cold-model gate run 13 | after 6.5l-vii-d: a fresh agent on a new sealed copy; only `SPEC SUFFICIENT` ticks 6.5l-vii and the `PLAN.md` line | ❌ **FAILED** — `SPEC INSUFFICIENT`: 1,353/1,353 checks (645 `SHA256SUMS` digests, 708 behaviour), first run 707/708 on a harness misreading; **54 of 313** single variants survive and 4 of 13,986 survivor × caught composites are genuine rescues; 19 defects (`SPEC-DEFECTS-13.md`), decisions `SPEC-DECISIONS-13.md`. Attempt 1 void, attempt 2 audited from its transcript (below) |
+| 6.5l-ix | Run 13's findings | the report exists: 19 defects, five of them prose that changes what a node does — D1 open `rotate`/`revoke` bodies re-key a device, D2 no stated key for bundles and receipts after a log-key rotation, D4 orders called normative and licensed reversible, D5 two definitions of a checkpoint's age, D6 whose note rules win. Each a claim to verify against this implementation before it is fixed; triaged and subdivided before any fix; whatever changes the protocol rather than its prose is written up as a decision for the user | ⬜ |
+| 6.5l-x | Cold-model gate runs 14 onward | after 6.5l-ix: a fresh agent on a new sealed copy per run. **D-068 (2026-10-07):** two consecutive runs with zero high- or medium-severity defects, every low finding recorded in §12.1, tick 6.5l-vii and the `PLAN.md` line | ⬜ |
 | 6.6 | Phase 6 gate audit | what is true, and what needs two people. **Reopened 2026-10-02**: the audit rested on 6.5l-vii, which had not run | ⬜ |
+
+**Hardening track** (2026-10-07). The order and the detail of every row are in
+`HARDENING-PLAN.md`; this table is the only place a row is ticked. The loop takes
+the first row here that is not ✅, subdivides it into `-a`, `-b`, … rows from the
+plan before the first line of code, and stops at **[decision]** and **[user]**.
+
+| # | Plan | Checkpoint | Done when | ✔ |
+|---|---|---|---|---|
+| 6.5m-0 | H0 | Land the pile | the reviewed, uncommitted work of 6.5l-vii-d-v … d-xii-v, d-stamp, run 13 and the 6.5l-ix triage is secret-scanned, regenerates exactly, passes the full gate, and is committed and pushed; only `PROGRESS.html` stays untracked | ✅ |
+| 6.5m-0-a | H0-a | Inventory | the pile listed by area; nothing outside `~/norn` touched | ✅ |
+| 6.5m-0-b | H0-b | Secret scan | no private key, seed, token or `cmd/norn/norn-witness/` path in the diff or any untracked file | ✅ |
+| 6.5m-0-c | H0-c | Generated files reproduce | `make vectors vectors-log vectors-sums` leave the tree byte-identical, including the three deletions | ✅ |
+| 6.5m-0-d | H0-d | Full gate | `make test` (race), `vectors-check`, `ref-test`, `lint`, `fmt-check`, `vet` green on the pile | ✅ |
+| 6.5m-0-e | H0-e | Commit and push | one commit naming every row it lands (the rows' intermediate trees never existed, so per-row commits would never have passed the gate); fast-forward push | ✅ |
+| 6.5m-i | H1 | The stored head survives a restart (F1) | a restarted node restores `a.last` from its verified mirror and refuses an older cosigned head on its first cycle; a corrupt mirror is reported and ignored; D-069 in §13.2 | ⬜ |
+| 6.5m-ii | H2 | Network budgets (F2) | a peer or log that never answers cannot stop a cycle from reconciling: a gossip client timeout, a per-round budget, a per-verify budget, each with a hanging-server test | ⬜ |
+| 6.5m-iii | H3 | An unchanged head is a reconcile-only cycle (F3a) | 50 cycles over an unchanged log fetch the checkpoint 50 times and no bundle or tile; a periodic full re-verify still catches tiles corrupted later | ⬜ |
+| 6.5m-iv | H4 | Incremental fetch and replay (F3b–c) | a resumable replayer equal to a full replay at every split point; `VerifyFrom` equal to `Verify` code for code on every served, detect and checkpoint negative; one new entry fetches one bundle and the changed tiles | ⬜ |
+| 6.5l-ix | H5 | Run 13's findings | see the 6.5l-ix row above; subdivided from `HARDENING-PLAN.md` H5. **[decision]** for D2, D6, D9, D12, D13 | ⬜ |
+| 6.5l-x | H6 | Sealed runs under D-068 | see the 6.5l-x row above | ⬜ |
+| 6.5m-v | H7 | Mesh simulation: T1–T8 in CI | `internal/sim` runs N agents over real loopback gossip with a programmable log; T1, T1b, T2–T8 pass in simulated time, each with a control that disables the mechanism it proves; `make lab-sim` | ⬜ |
+| 6.5m-vi | H8 | Observe-mode deployment kit | a hardened systemd unit and example config, each checked by a test; `/metrics` with `GOSSIP.md` §9's names; a log-server Dockerfile; `OBSERVE.md` | ⬜ |
+| 6.5m-viii | H9 | Reconcile 2.6b with 4.4 | the witness interop test runs (not skips) and passes under `NORN_REQUIRE_WITNESS=1`; row 2.6b says what 4.4 already proved | ⬜ |
+| 6.5m-ix | H10 | Tailscale/Headscale observe via LocalAPI | an event-driven, read-only peer source over a fake LocalAPI; `-backend tailscale` refuses every mode but observe; no `tailscale.com` dependency | ⬜ |
+| 6.5m-x | H11 | The log server scales and rate-limits (F8) | a submission replays one entry, not the log; a per-source limit returns §7's 429 | ⬜ |
+| 6.5m-xi | H12 | Split `cmd/norn-genlog` (F9) | one file per vector set; `make vectors-log` leaves `testdata/` unchanged | ⬜ |
+| 6.5m-xii | H13 | Documents tell the truth about scale and plans (F10–F12) | the scale ceiling stated as numbers; every "planned" checked against the code; each new factual sentence guarded | ⬜ |
+| 6.7 | H14 | `contrib/verify-py/`, kept | a cold-built standard-library verifier passes every vector, committed as written with its provenance; `make verify-py` in `make ci` | ⬜ |
+| 6.6 | H15 | Phase 6 gate audit | see the 6.6 row above | ⬜ |
+| 6.10 | H16 | Hand-over material | `TRY-NORN.md` with every command run in a test; a review packet for the comparison table | ⬜ |
+| 7.0 | H17 | `ACTION-PLAN.md` and the email draft | a test plan for the owner; an email drafted in the form `wireguard.com` asks for, read from the page at the time; a pre-send checklist; **nothing sent** | ⬜ |
+| U1 | — | Observe mode on the homelab mesh (6.5m-vii) | **[user]** one node a day, then every node for seven days | ⬜ |
+| U2–U7 | — | Lab, nginx, OpenTimestamps, NAS, phone enrollment, LocalAPI on a real node, outside people | **[user]** `HARDENING-PLAN.md` Stage G | ⬜ |
+
+- **6.5m-0 — five days of reviewed work committed in one piece, and the hardening track begins.**
+  - **What it lands.** Rows 6.5l-vii-d-v through d-xii-v and d-stamp (each already reviewed and ticked, with its own entry below), run 13's report and decisions file (6.5l-viii ❌), the 6.5l-ix triage row, D-066 and D-067; and today's D-068, `HARDENING-PLAN.md`, and the review it is built from (`mythos_optimization_addition.md`). `NEXT-CHECKPOINTS.md` is folded into the plan and left as a pointer. Only `PROGRESS.html`, a local progress page, stays untracked.
+  - **Why one commit and not one per row**, as the review asked. The rows were built in one working tree over five days and touch the same files — `SPEC.md`, this log, `fixture.py`, `SHA256SUMS` — so the tree between two rows never existed and cannot be rebuilt from the final one. A per-row split would be a series of commits that never passed the gate. The row boundaries survive where they were always recorded: one entry per row in this log.
+  - **Checked before it was committed, not after.** A secret scan of the diff and every untracked file found no private key, seed, token or path under `cmd/norn/norn-witness/`: every 64-hex string is a public key, a hash or a `SHA256SUMS` digest, and every `norn-witness/` hit is a public verifier key's name. `make vectors`, `vectors-log` and `vectors-sums` left all 646 files under `testdata/` byte-identical, so the three deleted vectors are deletions the generators own, not files lost by hand.
+  - **Two corrections to the review, found while writing the plan.** It scheduled an unmodified witness cosigning (2.6b) as new work; row 4.4 closed that on 2026-09-19 and only the Phase 2 row was never updated (H9 reconciles it). And `NEXT-CHECKPOINTS.md` listed `norn audit --by` as missing; it is row 5.8.
+  - **One thing the pile changes about the plan's urgency.** 6.5l-vii-d-xii-ii made a node ask its proven peers for checkpoints every `T_g` even while the log answers. Before, a peer that never replied could stall a cycle only when the log was already down; now it can on a healthy network, every `T_g`, with Go's default HTTP client and no timeout. F2 (H2) is therefore reachable in normal operation, which is why it stays second.
+  - **Gate:** `make test` (race) green in all 48 packages that have tests — 51 packages, 880 tests — both halves of `vectors-check`, 221 reference tests, `lint`, `fmt-check` and `vet` clean, on exactly the tree committed.
 
 - **6.5l-vii-d-iv-c — a bundle's binding is vectored for `rotate` and `revoke`; 6.5l-vii-d-iv closes.**
   - **D20.** §8.1 binds `device` to "the `device_id` the `entry` names — for an `enroll`, the id inside the embedded request; for the other device types, the `device_id` in the body". `subjectOf` already did both; every shipped bundle proved an `enroll`, so a reader that checked the binding only for enrolments passed the suite. `rotate-entry-other-device` proves the real accepted `rotate-nas` under the label `printer`; `revoke-entry-other-device` proves the real `revoke-by-roots` (it revokes `rootrevoked`) under the label `nas`. Each has a genuine inclusion proof against the served head, so only the binding refuses it: `binding`. The generator finds the two entries by decoding the log, not by index — d-iii showed how fast indices move. Both cite §8.1's binding sentence, the one ii-e's citation guard requires of every `binding` negative.
@@ -1940,6 +2004,17 @@ under D-061.
 
 ---
 
+## DECISION TAKEN — 6.5l-x: when the cold-model gate passes (2026-10-07)
+
+**Answered 2026-10-07: the review's rule**, recorded as **D-068**. The
+`PLAN.md` line "Cold-model gate repeated on frozen spec" passes on two
+consecutive sealed runs with zero defects the report rates high or medium, every
+low-severity finding of both runs recorded in §12.1's not-vectored list. The
+rejected readings — the exact verdict string, a single clean run, no gate — are
+in `DECISIONS.md` under D-068.
+
+---
+
 ## DECISION TAKEN — 6.5l-vii-d-xi: four findings of run 12 change the protocol (raised and answered 2026-10-02)
 
 **Answered 2026-10-02: every recommendation, as written** — D-062 (canonical base64), D-063 (receipt codes), D-064 (`SPEC.md` absorbs the normative parts of the companion documents), D-065 (no codes for the other layers in v1). The rows below changed with them: receipt codes join d-vii, canonical base64 is d-xi, and the absorption is d-xii.
@@ -1949,3 +2024,907 @@ under D-061.
 3. **Normative documents that do not ship (D22).** `SPEC.md` calls `GOSSIP.md`, `ENFORCEMENT.md` and `ENROLLMENT.md` normative, and a reader holding the spec and the vectors has none of them, so "every cross-reference resolves" is false for exactly the reader the gate models. Either they ship beside `SPEC.md` and the vectors, or `SPEC.md` absorbs what is normative in them and calls the rest informative. *Recommendation: absorb — the checkpoint acquisition order and the witness-time clock are the parts a verifier needs; the rest is operational guidance.*
 4. **Closed vocabularies for the remaining layers (run 12 §5, M2).** Trust files, enrollment requests, policies and receipts have no closed refusal codes, so "refused for its own reason" is judged there by matching `says` by hand. *Recommendation: not for v1 — a code list per layer is a large normative addition with the gate this close; record it as v1.1.*
 
+---
+
+## CHECKPOINT — 6.5l-vii-d-v: policy grammar (2026-10-02)
+
+- **Review corrected the checkpoint's premise.** Its original description said
+  the implementations agreed on the remaining §9.1 readings. A direct parser
+  comparison showed Go accepted a forward `quorum` reference while Python
+  refused it. Neither implementation parsed verifier keys, recomputed their
+  IDs, checked role algorithms, or caught duplicate public keys under aliases.
+  Both also allowed defining the predefined name `none`.
+- **D-066 and §9.1 now follow C2SP `tlog-policy`.** Policies require a final
+  line feed; only tab and line feed are allowed ASCII controls; high-bit bytes
+  remain content. `quorum` must name `none` or a prior definition. `none` cannot
+  be defined or used as a group member. Both parsers validate vkey syntax and
+  IDs, enforce log/witness algorithms, reject Unicode whitespace in vkey names,
+  and detect duplicate raw public keys across every directive. Canonical
+  base64 pad bits remain in d-xi under D-062. All threshold and shared witness /
+  group namespace rules remain stated and covered.
+- **Both implementations and the artifacts are aligned.** Go and Python policy
+  parsing, shared Go/Python vkey parsing, policy fixtures, tests, vector
+  generation, §9.1, §12.1, and the vectors README were updated. `policies/`
+  contains 57 cases (13 accepted, 44 refused) and three evaluation tables.
+  `make vectors` generated the vectors, `make vectors-check` reports matching
+  reference and Go output, and all 611 entries in `SHA256SUMS` verify.
+- **Focused review passed.** `go test ./internal/policy ./internal/note`,
+  `go test ./internal/genesis ./internal/trust`, and `make ref-test` passed;
+  the Python reference suite ran 210 tests. A broader `go test ./internal/...`
+  run did not complete within the review window and was stopped, so it is not
+  recorded as passing.
+- **Next:** 6.5l-vii-d-vi, trust-file rules and isolation. No work from that
+  checkpoint is included here.
+
+
+## CHECKPOINT — 6.5l-vii-d-vi: trust-file rules and isolation (2026-10-02)
+
+- **The initial review separated old coverage from actual code defects.** Go
+  accepted an unknown `anchor` member while Python already rejected it; the
+  Go trust validator now requires exactly `type`, `max_lag`, and `mode`. The
+  origin derivation and witness-key correspondence checks were already in
+  place, but the old negatives could fail an earlier rule. `13-origin-only`
+  now changes the derived origin by one character; `42-witness-key-mismatch`
+  keeps all witness names aligned and changes only the key; `43-anchor-unknown-member`
+  carries all required members plus one unknown.
+- **The minimum and uniqueness checks now have independent negatives.**
+  `07-no-witnesses` uses `quorum none` with no policy witnesses, so only the
+  trust-file witness minimum refuses it. `08-duplicate-witness-name` lists
+  all three policy witnesses and duplicates `pi` with the same key, so
+  correspondence remains aligned and uniqueness is the failing rule. The
+  redundant `29` and `30` trust vectors were removed.
+- **D-067 records URL behavior.** Trust URL fields are opaque text, not URI
+  syntax. `log_urls` remains non-empty; an optional witness URL may be present
+  with an empty value. C2SP policy URLs are application-specific and need not
+  match trust-file URLs. Go now preserves the presence of an empty witness URL
+  through canonical CBOR encoding and TOML rendering. `trust-good/url-fields-are-opaque`
+  exercises an invalid URI spelling, an empty witness URL, and differing
+  policy URL text in one accepted trust file. See [C2SP `tlog-policy`](https://c2sp.org/tlog-policy)
+  and D-067 in `DECISIONS.md`.
+- **The prose and generated fixtures agree.** §9.1 states the closed `anchor`
+  map and the URL rules; §12.1 attributes `bad-empty-group` to the field-count
+  rule and no longer claims the deleted duplicate-name vector is unvectored.
+  `trust-bad/` has 41 cases and `trust-good/` has five acceptances. The suite
+  has 612 checksum entries.
+- **Focused review passed.** `go test ./internal/trust ./internal/genesis
+  ./internal/specdoc ./cmd/norn-log`; `make ref-test` (212 tests);
+  `make vectors-check` (reference and Go generated vectors match);
+  `(cd testdata/vectors && shasum -a 256 -c SHA256SUMS)`; and `git diff --check`.
+- **Next:** 6.5l-vii-d-vii, notes and receipt verification. It is queued and
+  has not started.
+
+
+## SUB-CHECKPOINT — 6.5l-vii-d-vii-a: note framing and signature lengths (2026-10-03)
+
+- **Go and Python disagreed about the signature-block terminator.** Go
+  required a final LF, then trimmed all trailing LFs and accepted a blank line
+  after the last signature. Python's `splitlines()` rejected that extra blank
+  line but accepted an unterminated last signature. Both now strip exactly
+  one final LF and reject either malformed form.
+- **The verifier now resolves the key before interpreting its payload length.**
+  A 76-byte payload is a valid frame in isolation, but a line whose name and
+  key ID match a trusted log key has to verify as the log's 68-byte `0x01`
+  signature. `note.Verify` now refuses a mismatched length even when another
+  line from the same key verifies. `tlog.Verify` reports `log-signature`;
+  malformed framing remains `note`.
+- **D14b and D14c have checkpoint vectors.**
+  `23-extra-final-newline` is refused as `note`. `24-log-key-other-algorithm-length`
+  is refused as `log-signature`, including beside the good log signature.
+  The signature-blind coverage guard now applies the trusted key's public
+  algorithm length while still skipping cryptographic verification.
+- **§7, §10.1, and the coverage table reflect the boundary.** A decoder first
+  frames either supported payload length; after matching a trusted key, the
+  algorithm-specific length and signature are checked at the signature step.
+  The stale admission that no-signature notes were unvectored was removed;
+  `01-unsigned` already pins that order.
+- **Focused review passed.** `go test ./internal/note ./internal/tlog
+  ./internal/specdoc -count=1`; `make ref-test` (213 tests);
+  `make vectors-check` (reference and Go generated vectors match);
+  `(cd testdata/vectors && shasum -a 256 -c SHA256SUMS)`; and
+  `git diff --check`. The checksum manifest has 614 entries.
+- **Closed:** d-vii-b is complete. Its review and implementation record follows.
+
+#### 6.5l-vii-d-vii-b review — 2026-10-03
+
+- **Contract gap:** D-063 requires a closed receipt refusal-code vocabulary.
+  D11 additionally names the missing first-line header check, trust-origin
+  binding, 32-byte leaf-hash check, and a refusal vector for each rule.
+- **Implementation gap:** `receipt.Check` currently wraps every failure as a
+  generic `receipt:` error. It verifies the signed note before parsing the
+  receipt body, and has no stable code for callers to consume. Keep the
+  existing `ErrExpired` sentinel for the separate submit-monitor condition.
+- **Vector gap:** `receipt-bad/` contains only the re-signed leading-zero
+  deadline. The closed set for this procedure is `note`, `log-signature`,
+  `receipt`, `origin`, `leaf-hash`, `deadline`, `entry`, and `expired`; each
+  code will have a case tied to a specific rule in `cases.json`.
+- **Review result:** the checker, manifest, generators, spec defect, and
+  decisions were read before implementation. Findings are now in
+  `PROGRESS.html`; the artifact was opened for review.
+- **Procedure implementation:** `receipt.Check` now frames the signed note
+  before looking up a key, then returns a typed code at each ordered check.
+  The closed vocabulary is exported in check order. Existing error messages
+  remain intact, and `ErrExpired` remains reserved for the submit monitor.
+- **Focused check:** `go test ./internal/receipt -count=1` passes, including
+  exact code assertions for malformed text, wrong origin, wrong signer,
+  mismatched entry, and expiry. The first assertion draft classified a
+  correctly framed three-line receipt as `note`; the test exposed that the
+  code belongs to receipt-body shape, and was corrected before proceeding.
+- **Vectors and §7:** `receipt-bad/` now has one case for every code, and the Go
+  package executes each case with the anchor, submitted leaf, and declared
+  checking time. `cases.json` carries parallel `rules` and `codes` maps;
+  `internal/specdoc` checks every phrase against §7 and enforces the code-table
+  order. §7 now gives the ordered procedure and closed table; the vector README
+  and §12.1 describe the framing and time-dependent cases accurately.
+- **Review finding resolved:** the first guard run showed that the manifest's
+  rule phrases did not match the exact wording and line breaks in §7. The case
+  hints and §7 text were aligned, then `go test ./internal/receipt
+  ./internal/specdoc -count=1` passed.
+- **Mutation controls:** 16 controls failed at the intended receipt fixture or
+  rule, including the expiry-time boundary; every file was restored byte for
+  byte.
+- **Final checks passed:** `go test ./internal/receipt ./internal/specdoc
+  ./cmd/norn -count=1`; `make ref-test` (213 tests); `make vectors-check`
+  (Python reference and Go-generated vectors match); all 621 checksums;
+  `make fmt-check`; and `git diff --check`.
+- **Closed:** d-vii-b is complete.
+
+#### 6.5l-vii-d-viii review — 2026-10-03
+
+- **D12, tile scale:** the shipped `served/` checkpoint has 138 entries and
+  only `tile/0/000.p/138` plus `tile/entries/000.p/138`. The tile writer and
+  verifier have code for full bundles, partial bundles, and higher levels,
+  but no served fixture reaches those paths. `writeBadServed` also chooses a
+  bundle path from `size % 256` at index zero, which must be revisited for a
+  multi-bundle log.
+- **D13b, inclusion shape:** active-device proof bundles do not include the
+  last leaf. `internal/tlog` checks the last leaf of the 138-entry tree, but
+  the reported parity-only reading still passes the shipped proof vectors;
+  the distinguishing shape is size 127, index 126.
+- **Subdivision before implementation:** d-viii-a covers a 300-entry served
+  log, its full/partial level-0 and level-1 tiles, and an over-full final
+  bundle refused as `entries`. d-viii-b separately covers a right-edge proof
+  at size 127, index 126. Only d-viii-a starts next.
+- **Review sources:** D12/D13b in `SPEC-DEFECTS-12.md`, `Tree.Tiles`,
+  `logclient.fetchEntries`/`checkTiles`, `writeBadServed`, and the existing
+  proof tests and fixtures were reviewed before changing code.
+- **Implementation finding:** the first 300-entry generation retained
+  `tile/0/000.p/255` after publishing the full `tile/0/000`. `tlogstore` cleans
+  stale partial bundle paths but did not clean the equivalent hash-tile path.
+  `tlogstore.writeTiles` now removes the superseded `.p` directory when it
+  publishes a full-width tile. `TestFullTileRemovesItsSupersededPartialPath`
+  pins the 255-to-256 transition.
+- **D12 fixture:** `served-large/` is a signed 300-entry log with exactly
+  `tile/0/000` (256 hashes), `tile/0/001.p/44`, and `tile/1/000.p/1`; its full
+  and partial entry bundles are at indexes 0 and 1. `served-bad/` now uses
+  this as its base. `overfull-entry-bundle` adds one decodable entry to the
+  final bundle and is refused as `entries` before replay.
+- **Integration correction:** the full verifier run exposed two local test
+  policies using the old `log <origin> <key>` spelling. Updated both to the
+  current `log <vkey>` grammar; no production policy behavior changed here.
+- **Controls:** removing the level-1 tile, replacing the over-full bundle with
+  its honest bytes, and breaking its §6 rule phrase each failed at the intended
+  test. Every temporary change was restored byte for byte.
+- **Checks passed:** `go test ./internal/logclient -count=1` (81.537s),
+  `go test ./internal/specdoc ./internal/tlogstore -count=1`, focused served
+  vector tests, `make vectors-check` (Python and Go generated vectors match),
+  all 629 checksums, `make fmt-check`, and `git diff --check`.
+- **Closed:** d-viii-a is complete. D-viii-b's review is complete; implement
+  the size-127/index-126 proof next.
+
+#### 6.5l-vii-d-viii-b implementation — 2026-10-03
+
+- **Red first:** `TestRightEdgeInclusionProofAtSize127` failed because
+  `proofs/cases.json` did not name a size-127/index-126 proof.
+- **Vector added:** `cmd/norn-genlog` now writes `proofs/right-edge.json` with
+  the final entry bytes, derived leaf hash, tree root, and inclusion path for
+  the last leaf of a 127-entry tree. `proofs/cases.json` names the file and
+  its exact size/index. The proof is checked by the upstream RFC 6962 routine
+  in the generator and in the vector test; a second implementation can check
+  the committed bytes without running this generator.
+- **Focused result:** `go test ./internal/proof -run
+  '^TestRightEdgeInclusionProofAtSize127$' -count=1` passes.
+- **Coverage guard:** `TestRightEdgeProofIsNamedInSpecCoverage` requires
+  §12.1 to name the file, index 126, 127-entry boundary and D13b.
+- **Mutation controls:** flipping a proof hash made upstream verification fail;
+  changing the manifest index to 125 failed the last-leaf assertion; breaking
+  the §12.1 citation failed the coverage guard. Each temporary edit was
+  restored byte for byte.
+- **Checks passed:** `go test ./internal/proof ./internal/specdoc -count=1`,
+  the 255-to-256 tile cleanup regression test, `make vectors-check` (Python and
+  Go generators match), all 630 vector checksums, `make fmt-check`, and
+  `git diff --check`.
+- **Closed:** d-viii-b and parent d-viii are complete.
+
+#### 6.5l-vii-d-ix review — 2026-10-03
+
+- **D15, excess padding:** the original valid request is 204 bytes
+  (`8L mod 5 = 2`). Appending one group combines with its three padding bits to
+  complete a byte, so the resulting text decodes as a 205-byte payload ending
+  in `0x00`; §4.0's whole-input rule refuses it before §16.2's padding rule.
+  The replacement needs a correctly signed payload whose bit-length remainder
+  `8L mod 5` is 0, 3 or 4, so one extra zero group leaves at least five unused
+  bits without adding a decoded byte.
+- **D16, label value cap:** the negative is 258 bytes. A 256-byte signed
+  request must be accepted, and 257 bytes must be refused, to distinguish the
+  stated cap on both sides. The current request tests already consume the
+  request vectors, so the coverage can stay in that interface.
+- **D18a, reserved hints:** request validation checks label shape and byte
+  limits but does not interpret `ip` or `endpoint`. §4.3 currently calls them
+  advisory hints without saying whether malformed values are accepted. The
+  report's witness is an otherwise valid signed request with `ip =
+  "not-a-cidr"`; the prose fix is to say these hint values are not validated.
+- **Subdivision before implementation:** d-ix-i fixes and controls the padding
+  vector and its §12.1 claim; d-ix-ii pins the label value boundary; d-ix-iii
+  specifies and positively vectors malformed reserved hints. Only d-ix-i
+  starts next.
+- **Review sources:** D15, D16 and D18(a) in `SPEC-DEFECTS-12.md`; §4.3,
+  §12.1 and §16.2; `internal/enrollreq`, `internal/bech32m`, request vector
+  readers, and the Python request generator were inspected before edits.
+
+#### 6.5l-vii-d-ix-i implementation — 2026-10-03
+
+- **Red first:** the new Go test rejected the old control because its 204-byte
+  signed request has `8L mod 5 = 2`, outside the distinguishing set.
+- **Corrected vector:** Python now emits `req-padding-base`, a valid signed
+  203-byte request (`8L mod 5 = 4`). `excess-padding` is exactly its data
+  groups plus one zero 5-bit group, so the padding is six bits and no decoded
+  byte is added. The manifest explains those six unused bits.
+- **Independent checks:** Go and Python both read the committed base and bad
+  text, verify the base signature, compare the group sequences, and require
+  `too much padding` from their strict decoder. §12.1 now names the control and
+  states why the negative is refused by §16.2 alone. The request inventory
+  count is 6; `requests-bad/` remains at 25.
+- **Mutation controls:** replacing the bad text with the valid control made
+  Go accept it and broke the group-shape assertion; weakening the Go padding
+  guard made the negative acceptable; weakening Python's guard made its vector
+  test fail; changing the §12.1 phrase from six to five unused bits failed the
+  coverage guard. Each temporary edit was restored byte for byte.
+- **Checks passed:** `go test ./internal/enrollreq ./internal/specdoc -count=1`,
+  `make ref-test` (214 tests), `make vectors-check` (reference and Go vectors
+  match), all 633 checksums, `make fmt-check`, and `git diff --check`.
+- **Closed:** d-ix-i is complete. Review d-ix-ii's label-value boundary next.
+
+#### 6.5l-vii-d-ix-ii review — 2026-10-03
+
+- **D16 finding:** `requests-bad/oversize-label` is 258 bytes (`é` × 129),
+  so a reader with a 257-byte cap still refuses it. The request field is capped
+  at 256 **UTF-8 bytes**; both implementations already measure bytes
+  (`len(text)` in Go and `len(value.encode("utf-8"))` in Python). Unit tests
+  exercise the bound, but no shipped request vector does.
+- **Boundary pair:** add an accepted signed label of `é` × 128 (256 bytes,
+  128 code points) and change the existing negative to `é` × 128 plus `x`
+  (257 bytes, 129 code points). This distinguishes the exact byte cap from a
+  reader that counts characters or allows one extra byte. The negative keeps
+  its valid device signature and must fail only at the label-value check.
+- **Coverage plan:** Go's positive-vector loop and a new focused boundary test,
+  plus a Python test over the same files, will verify both requests. §12.1 will
+  name the pair and their byte lengths. The implementation itself needs no
+  behavior change unless a vector exposes a mismatch.
+- **Review sources:** D16 in `SPEC-DEFECTS-12.md`; §4.0's `labels` bound and
+  §12.1; `internal/fields.Labels`, `enrollreq.Request.validate`, Python's
+  `fields.labels`, the label fixtures and the existing positive-request loops.
+
+#### 6.5l-vii-d-ix-ii implementation — 2026-10-04
+
+- **Red first:** the boundary test failed on the shipped 258-byte value; the
+  case could not distinguish a 256-byte limit from one that allows 257.
+- **Vector pair:** `req-label-at-cap` is a valid signed request with `é` × 128
+  (256 UTF-8 bytes, 128 code points). `oversize-label` now has `é` × 128 plus
+  `x` (257 UTF-8 bytes, 129 code points) and a signature over those exact
+  bytes. Go and Python both accept the first and refuse the second specifically
+  as longer than 256 bytes.
+- **Coverage:** §12.1 names the exact byte boundary and the one-past vector,
+  explains why a character-counting reader accepts the negative, and updates
+  the request inventory to 7 positives. The vectors README identifies the
+  new 256-byte control.
+- **Mutation controls:** replacing the negative with the accepted control made
+  the Go refusal and byte-length checks fail; Go and Python caps set to 257
+  accepted the negative and failed their tests; caps set to 255 rejected the
+  positive boundary and failed; changing §12.1's 257-byte claim to 258 failed
+  its guard. All temporary edits were restored byte for byte. Same-size Python
+  cap mutations left stale ignored bytecode; those caches were cleared before
+  the final reference run.
+- **Checks passed after cache cleanup:** `go test ./internal/enrollreq
+  ./internal/specdoc -count=1`; `make ref-test` (215 tests);
+  `make vectors-check` (reference and Go vectors match); all 636 checksums;
+  `make fmt-check`; and `git diff --check`.
+- **Closed:** d-ix-ii is complete. Review d-ix-iii's reserved-label behavior
+  next.
+
+#### 6.5l-vii-d-ix-iii implementation — 2026-10-04
+
+- **Red first:** the new Go and Python request tests failed because no positive
+  malformed-hints case existed. The replay assertions first observed that the
+  `escaped` device is revoked later in the fixture; they now replay only through
+  its enrollment, where its status must be active and both values must survive.
+- **Normative rule:** §4.0 now says `ip` and `endpoint` values are opaque during
+  request checking and replay. Their syntax MUST NOT be validated, malformed
+  syntax alone MUST NOT invalidate a request or its embedded enrollment
+  request, and a consumer MAY validate a hint before using it. The existing
+  UTF-8, type, and byte-length constraints still apply.
+- **Positive vectors:** `requests/req-reserved-hints` is a valid signed request
+  with `ip = "not-a-cidr"` and `endpoint = "not-an-endpoint"`. The accepted
+  `log/51-enroll-unicode-labels` enrollment carries both exact strings into
+  `state.json`. Go and Python each check the request signature and labels, then
+  replay through that log entry and assert the accepted state. §12.1 and the
+  vectors README describe both layers; the request inventory is now 8 cases.
+- **Mutation controls:** temporary Go and Python request-validator mutations
+  that rejected `not-a-cidr` failed their request tests; temporary replay
+  mutations in both implementations failed the accepted-state tests. Changing
+  `MUST NOT` to `SHOULD NOT` failed the normative guard, and changing the
+  coverage claim from replay to parsing failed the §12.1 guard. All temporary
+  edits were restored before final checks.
+- **Checks passed:** `go test ./internal/enrollreq ./internal/replay
+  ./internal/specdoc -count=1`; `make ref-test` (217 tests);
+  `make vectors-check` (reference and Go generators match); all 639 vector
+  checksums; `make fmt-check`; and `git diff --check`.
+- **Closed:** d-ix-iii and parent d-ix are complete. Proceed to d-x.
+
+#### 6.5l-vii-d-x review and subdivision — 2026-10-04
+
+- **First item, D21(b):** Go's CBOR decoder enforces the 23-byte key cap while
+  decoding every map; `fields.Labels` checks map shape, count, value types and
+  value lengths, but not key length. Python has the same separation between
+  `cbor._Decoder` and `fields.labels`. The correctly signed
+  `requests-bad/oversize-label-key` therefore reaches the decoder cap before
+  request-field validation. The Go vector test already checks the refusal
+  message and that the signature covers the shipped bytes; Python needed the
+  corresponding exact-layer assertion. The §12.1 sentence and a generator
+  comment were both backwards. No vector bytes or implementation behavior need
+  to change.
+- **Subdivision before work:** d-x-i corrects and guards that attribution;
+  d-x-ii handles the stale trust example, list count and frozen-version title;
+  d-x-iii audits the trust negatives and §12.1 omissions; d-x-iv resolves the
+  boolean layer; d-x-v states which policy computes `T` after checking the
+  current verifier and vectors. Each sub-checkpoint will be reviewed before
+  implementation.
+- **Review sources:** D21(b), D21(d–h), D22 and Q1 in
+  `SPEC-DEFECTS-12.md`; §4.0, §5.1, §5.3, §9.2, §9.4 and §12.1; Go and Python
+  CBOR decoders, request field validators, request vector readers and the
+  reference generator.
+
+#### 6.5l-vii-d-x-i implementation — 2026-10-04
+
+- **Red first:** `TestOversizeRequestLabelKeyCoverageNamesTheDecoderLayer`
+  failed because §12.1 said the request key reached the `labels` field rule
+  first.
+- **Correction and coverage:** §12.1 now says the signed 24-byte label key is
+  refused by the decoder before field validation. The Python reference test
+  now checks the exact profile error; Go already checks that error and that
+  the vector's signature covers its bytes. The stale comment in the reference
+  generator now describes why `entries-hostile/past-the-key-limit` isolates
+  the decoder rule alongside the request negative.
+- **Mutation controls:** raising the Go or Python decoder cap from 23 to 24
+  made the signed request negative be accepted and failed its corresponding
+  test. Restoring the old §12.1 attribution failed the new coverage guard. All
+  temporary mutations were restored.
+- **Checks passed:** Go tests for `internal/cbor`, `internal/enrollreq` and
+  `internal/specdoc`; Python's exact-layer request test; both vector
+  generators; all 639 checksums; formatting and whitespace checks.
+- **Closed:** d-x-i is complete. Review d-x-ii next.
+
+#### 6.5l-vii-d-x-ii review — 2026-10-04
+
+- **D21(d):** the trust vector's `trust.toml` carries the full
+  `genesis_hash`; §9.2's worked example contains an unrelated truncated value.
+  The existing guard covers the fingerprint but not the hash inside the
+  example.
+- **D21(e):** §5.1 names three precedence vectors and then two more, but calls
+  them four. The manifest has all five entries at indices 99–103.
+- **D21(f):** the preamble's title says draft v0 while the next paragraph says
+  frozen v1. No protocol behavior changes are involved in these corrections.
+- **Review and implementation:** test-first guards failed on the stale hash,
+  title and count. §9.2 now copies the exact hash from `trust.toml`; §5.1 names
+  all five manifest cases; the title now says `Specification v1` and agrees
+  with the frozen status line.
+- **Mutation controls:** a one-digit hash change failed the trust-example
+  guard, reverting the title to v0 failed the version guard, and changing
+  “five” back to “four” failed the ordering-vector guard. Each temporary edit
+  was restored before checks.
+- **Checks passed:** `go test ./internal/specdoc -count=1`, both vector
+  generators, `make fmt-check`, and `git diff --check`.
+- **Closed:** d-x-ii is complete. Review d-x-iii next.
+
+#### 6.5l-vii-d-x-iii review — 2026-10-04
+
+- **D21(g) was already corrected in d-vi:** the reference generator builds
+  `07-no-witnesses` with `quorum none` and no witness names, so only the
+  explicit witness minimum fails. `08-duplicate-witness-name` keeps the full
+  expected witness set and adds a byte-identical `pi`; the names and keys still
+  correspond, so only uniqueness fails. The current §12.1 row says this; the
+  run-12 report's statement that each file broke two rules was stale.
+- **D21(h), rechecked after the later coverage work:** most cited omissions
+  moved into named coverage rows or into the explicit not-vectored discussion.
+  A §12.1 scan against representative D1, D2, D4, D5 and D8–D20 cases found
+  two remaining omissions: `fork/bad-held-root-at-same-size` and the five
+  replay-order entries 99–103. Add both coverage rows and a regression test
+  that keeps these findings accounted for. The other representative cases
+  were already present.
+- **Review sources:** D21(g–h) and D1–D20 in `SPEC-DEFECTS-12.md`;
+  §5.1, §9.1, §11.1 and §12.1; the two trust generator cases, their manifest,
+  `fork/cases.json`, and the corresponding Go vector readers.
+
+#### 6.5l-vii-d-x-iii implementation — 2026-10-04
+
+- **Red first:** the new coverage audit passed the trust-isolation row but
+  failed on the missing same-size `held_root` case and the unlisted replay
+  order vector `log/102-bad-precedence-threshold-before-dup-id`.
+- **Coverage restored:** §12.1 now cites all five `log/99`–`log/103` cases as
+  the replay-order witnesses and adds a separate `fork/bad-held-root-at-same-size`
+  row. It states that both checkpoints verify, the size equals held's size,
+  the proof is empty, and the signed held root still decides the `proof`
+  refusal.
+- **Report reconciliation:** `SPEC-DEFECTS-12.md` now records D21(g) as
+  resolved in d-vi and D21(h) as resolved by the later coverage rows. A guard
+  pins the two isolated trust examples and representative run-12 findings.
+- **Mutation controls:** weakening either trust-isolation explanation failed
+  its row guard; removing the same-size held-root citation or a replay-order
+  citation failed the coverage audit. Each temporary edit was restored.
+- **Checks passed:** `go test ./internal/specdoc -count=1`, both vector
+  generators, all 639 checksums, `make fmt-check`, and `git diff --check`.
+- **Closed:** d-x-iii is complete. Review d-x-iv next.
+
+#### 6.5l-vii-d-x-iv review — 2026-10-04
+
+- **D22's boolean ambiguity:** both generic CBOR decoders admit `true` and
+  `false`. The Go fork evidence parser requires `size` to be `uint64`, and
+  returns §11.1's `schema` code for `true`; Python's reference package has no
+  fork evidence parser, so its vector check pins generic CBOR acceptance.
+- **Normative wording:** §4.0 now says booleans are valid profile items and
+  schemas MUST reject them outside `params.rotate_needs_signer`. §11.1 names
+  `size: true` as a wrong-type schema refusal.
+- **Vector and coverage:** the Go generator starts from sound evidence, changes
+  only `size` to `true`, and canonically encodes `fork/bad-bool-size.cbor`.
+  The manifest expects `schema`; §12.1 and the vector README name the case, and
+  the Go spec guard pins the profile/schema distinction.
+- **Mutation controls:** rejecting `true` in either CBOR decoder failed its
+  focused vector check; coercing the fork `size` boolean to an integer failed
+  the expected-schema check; changing the manifest code to `cbor`, weakening
+  §4.0's MUST, or renaming the §12.1 citation each failed its corresponding
+  guard. All temporary changes were restored.
+- **Checks passed:** `go test ./internal/cbor -count=1`, the focused fork
+  evidence tests for every manifest negative and the boolean layer,
+  `go test ./internal/specdoc -count=1`, the 219-test Python reference suite,
+  both vector generators, all 640 checksums, `make fmt-check`, and
+  `git diff --check`.
+- **Separate package-suite finding:** a full `go test ./internal/forkevidence`
+  also runs older in-memory cases whose `trustKeys` helper writes `log
+  <origin> <key>`, while the current policy parser treats the second token as
+  the verifier key. Those cases stop in policy parsing before reaching evidence
+  checks. The new D22 tests use the shipped policy and pass. This was left
+  outside d-x-iv and corrected in d-x-v alongside the same stale helper in
+  the freshness package; no runtime code changed.
+- **Closed:** d-x-iv is complete. Review d-x-v next.
+
+#### 6.5l-vii-d-x-v review — 2026-10-04
+
+- **Q1 review:** §5.3 says the checkpoint's policy determines `T`, and §9.4
+  says a replayed policy applies to checkpoints accepted after replay. The
+  current verifier checks and times a checkpoint with the policy passed in
+  before replay; agent and monitor then adopt a policy from the resulting
+  state for the next checkpoint. The ambiguity was whether a policy entry in
+  the current checkpoint retroactively changes that checkpoint's `T`.
+- **Decision applied:** use the policy under which the checkpoint was accepted.
+  This was the recorded Q1 choice in `SPEC-DECISIONS-12.md`. §5.3 and §9.4 now
+  state that a policy entry in the current replay range affects the next
+  checkpoint, not the current checkpoint's `T`.
+- **Discriminating vector:** `proofs/cases.json` now records both values for
+  `served/checkpoint`: 1760003607 under the trust file's 2-of-3 policy and
+  1760003600 under the 3-of-3 policy replayed from that checkpoint. The Go
+  verifier test recomputes each and requires the reported `T` to match the
+  acceptance policy. §12.1 and the vectors README explain the difference.
+- **Red first:** the spec guard failed on missing §5.3/§9.4 wording and coverage;
+  the verifier test failed because the manifest lacked the replayed-policy
+  comparison value.
+- **Mutation controls:** temporarily computing `T` under the replayed policy
+  produced 1760003600 and failed the verifier test; changing the comparison
+  value in `proofs/cases.json` failed the same test; weakening §5.3's MUST NOT
+  retroactivity clause failed the spec guard. Each mutation was restored.
+- **Test fixture maintenance:** the full freshness and fork evidence suites
+  had local policy helpers using stale `log <origin> <key>` syntax. Updated
+  those helpers to the current `log <verifier-key>` grammar; production code
+  did not change.
+- **Checks passed:** full `go test ./internal/cbor ./internal/freshness
+  ./internal/forkevidence ./internal/logclient ./internal/specdoc -count=1`,
+  `make vectors-check`, all 640 checksums, `make fmt-check`, and
+  `git diff --check`.
+- **Closed:** d-x-v is complete. Review d-xi next.
+
+#### 6.5l-vii-d-xi-i review — 2026-10-04
+
+- **Scope:** D14a's checkpoint-root and signed-note payload fields. Verifier
+  keys and receipt leaf hashes remain in d-xi-ii and d-xi-iii.
+- **Red first:** Go `note.Split` accepted non-zero pad bits in both 68-byte
+  signature and 76-byte cosignature payloads; `tlog.ParseCheckpoint` accepted
+  the alternate spelling of a 32-byte root. The Python note parser accepted
+  the alternate signature spelling too. The new spec guard also failed until
+  §6, §7 and §12.1 stated and cited canonical encoding.
+- **Implementation:** Go note and checkpoint parsing now use strict padded
+  base64 and compare the re-encoded bytes with the original text. The Python
+  reference note parser does the same for signature payloads. §6 and §7 cite
+  RFC 4648 §3.5 and require zero unused pad bits.
+- **Vectors:** `checkpoints-bad/25-signature-nonzero-pad-bits` changes only the
+  log signature spelling; `/26-cosignature-nonzero-pad-bits` changes only a
+  witness payload spelling; `/27-root-nonzero-pad-bits` is re-signed and
+  re-cosigned over the alternate root spelling. The first two refuse as
+  `note`; the root refuses as `checkpoint`. All decode to the same signed
+  bytes as their canonical forms. §12.1 and the vectors README name each file;
+  the vector set now has 27 cases and 643 checksums.
+- **Audit correction:** the signature-blind-set model itself used permissive
+  base64, so its first full run misclassified the two malformed signature
+  cases. It now enforces canonical note framing, and the README calls the new
+  cases by full path so the numeric-prefix guard cannot confuse them with its
+  list of signature-blind cases.
+- **Mutation controls:** reverting either Go parser or the Python note parser
+  to lax decoding made its regression fail. Weakening §6 or §7's pad-bit rule,
+  or removing the §12.1 citation, failed the spec guard. All temporary
+  mutations were restored.
+- **Checks passed:** the full package run reported `internal/note`,
+  `internal/tlog` and `internal/logclient` passing; its first specdoc run caught
+  the stale blind-reader model described above. After correcting that model,
+  `go test ./internal/specdoc -count=1`, the focused logclient manifest test,
+  `make ref-test` (220 tests), `make vectors-check`, all 643 SHA256 sums,
+  `make fmt-check`, and `git diff --check` passed.
+- **Closed:** d-xi-i is complete. Review verifier-key base64 in d-xi-ii next.
+
+#### 6.5l-vii-d-xi-ii review — 2026-10-05
+
+- **Scope correction:** A verifier key encodes one algorithm byte and a 32-byte
+  Ed25519 public key: 33 bytes become 44 base64 characters with no padding.
+  The queued claim about non-zero pad bits was impossible. The real alternate
+  spelling was an embedded CR or LF: Go's standard and strict base64 decoders
+  ignore them, so the key bytes and derived ID stay the same.
+- **Red first and isolation:** The Go parser regression failed for CR and LF
+  under both note and cosignature key algorithms; the new
+  `trust-bad/44-log-key-base64-cr` was accepted. Its policy omits the optional
+  `log` line, and removing just the CR makes the trust anchor valid. Thus
+  policy control-byte and key-correspondence rules cannot account for its
+  refusal. The §7/§9.1/§12.1 coverage guard failed before the prose and vector
+  citation were added.
+- **Implementation:** Go `ParseVerifierKey` uses strict standard base64 and
+  checks that re-encoding reproduces the exact key data; the Python reference
+  keeps validated decoding and adds the same exact comparison. §7 and §9.1
+  require canonical verifier-key data and explain its actual length. The trust
+  manifest names the §9.1 rule; §12.1 cites the vector and explains why a
+  policy-key CR cannot isolate the rule.
+- **Mutation controls:** Removing Go's exact comparison while keeping strict
+  decoding made the note and trust regressions fail. Making Python's decoder
+  permissive and removing its exact comparison made all four CR/LF cases fail.
+  Each temporary mutation was restored.
+- **Checks passed:** `go test ./internal/note ./internal/policy ./internal/trust
+  ./internal/specdoc -count=1`, `make ref-test` (221 tests),
+  `make vectors-check`, all 644 SHA256 sums, and `make fmt-check`.
+- **Closed:** d-xi-ii is complete. Receipt leaf-hash base64 is d-xi-iii.
+
+#### 6.5l-vii-d-xi-iii review — 2026-10-05
+
+- **Red first:** `receipt-bad/leaf-hash-nonzero-pad-bits.note` changes only the
+  two unused pad bits in a 32-byte hash's final base64 data character, then is
+  re-signed under the anchored log key. It decodes to the honest receipt's leaf
+  hash. The Go receipt checker accepted it, including the submitted-entry
+  binding; the new manifest case failed its `leaf-hash` code assertion.
+- **Implementation and contract:** Receipt checking now uses strict standard
+  base64 and requires exact re-encoding of the hash line. §7 states canonical
+  encoding and assigns a malformed spelling to `leaf-hash`; §12.1 and the
+  vector README cite the negative. Nine receipt negatives cover the same eight
+  closed codes. The reference generator produces the new signed vector.
+- **Controls:** The pre-fix Go checker accepted the vector. Weakening §7's
+  `MUST` to `should` made the focused spec guard fail; the normative text was
+  restored. The vector test also verifies the signature, compares the good and
+  bad signed texts, and proves the altered base64 decodes to the same bytes.
+- **Checks passed:** `go test ./internal/receipt ./internal/specdoc
+  ./internal/monitor -count=1`, the four submission tests in `cmd/norn`,
+  `make ref-test` (221 tests), `make vectors-check`, all 645 SHA256 sums, and
+  `make fmt-check`. The first broad Go run also found that the spec citation
+  guard needed this second `leaf-hash` rule; it was updated and rerun green.
+- **Separate fixture issue:** The full `cmd/norn` suite still fails
+  `TestTheStampedDigestIsTheBody`: the dirty `served/checkpoint` already in
+  this worktree at the start of the checkpoint hashes to `7bc1fc58…`, whereas
+  the tracked `anchors/checkpoint-138.ots` records `ba7d2643…`. This receipt
+  change did not alter either file. The stamp fixture needs its own repair
+  before the full CLI gate can pass.
+- **Closed:** d-xi-iii and parent d-xi are complete. The separate
+  d-stamp fixture repair is next, then d-xii.
+
+#### 6.5l-vii-d-stamp review — 2026-10-05
+
+- **Red first:** The modified `served/checkpoint` already in the worktree
+  hashes to `7bc1fc582f713b74…` over the three body lines and blank
+  separator; `anchors/cases.json` and `checkpoint-138.ots` still carried
+  `ba7d26432c2b9640…`. Both the OTS manifest check and the CLI stamp-digest
+  test failed. The mismatch was in the fixture, not the receipt work.
+- **Reference rebuild:** Used the local `python-opentimestamps` checkout at
+  `3af4643` and `contrib/ots-vector/generate.py`. It rewrote the checkpoint
+  proof and digest manifest for `7bc1fc582f713b74…`. `sample.ots` remained
+  byte-identical (SHA256 `f7b9924a…`), as did the calendar response; only
+  `checkpoint-138.ots`, `cases.json`, and their SHA256SUMS lines changed.
+- **Checks passed:** `go test ./cmd/norn ./internal/ots ./internal/specdoc
+  -count=1` including the full CLI suite, `make vectors-check`, all 645
+  SHA256 sums, `make fmt-check`, and `git diff --check`. The OTS check also
+  parses and walks the regenerated proof from the current checkpoint body.
+- **Closed:** d-stamp is complete. d-xii is the next checkpoint.
+
+#### 6.5l-vii-d-xii-i review — 2026-10-05
+
+- **Boundary:** §10 and the verifier already applied one validation path to
+  log and peer bytes. `GOSSIP.md` §2's older sketch reversed two safety
+  decisions: it tested rollback before shorter-branch divergence, and appeared
+  to adopt before fetching tiles. Moving that sketch verbatim into the spec
+  would have contradicted the existing vectors and node.
+- **Contract:** §15 now says a candidate from `log_urls` or a proven peer
+  passes the same §10 verifier under the node's own anchor and previously
+  accepted state. Entry bundles, tree head and tiles are checked before replay
+  or adoption; a stored branch is compared before the rollback rule.
+  `detect/cases.json`'s shorter-fork and consistent-shrink cases are named.
+  §10's source and handoff comments now refer within `SPEC.md`. `GOSSIP.md`
+  §2 is an informative summary of that order, without the contradictory
+  pseudocode.
+- **Coverage honesty:** §12.1 says static vectors pin the bytes and the fork
+  versus rollback outcomes, but cannot show whether the bytes arrived from a
+  log or peer. The Go agent and gossip tests exercise source transport and
+  adoption. Peer polling cadence is deliberately left to d-xii-ii: the old
+  companion text says every `T_g`, while the implemented node asks peers
+  when the log is unusable or the current view is stale.
+- **Controls and checks:** The new spec guard failed before §15 and §12.1
+  were written; weakening §15's source-neutral `MUST` to `should` made it fail
+  again, then was restored. `go test ./internal/specdoc ./internal/agent
+  ./internal/gossip ./internal/logclient -count=1`, `make fmt-check`, and
+  `git diff --check` passed.
+- **Closed:** d-xii-i is complete. Witness time, polling and endpoints are
+  d-xii-ii.
+
+#### 6.5l-vii-d-xii-ii review — 2026-10-05
+
+- **Behavior gap:** `GOSSIP.md` promised a peer checkpoint round every `T_g`,
+  but the node only asked peers when its direct log failed or became stale.
+  Two healthy nodes served different quorum-valid branches could therefore
+  keep enforcing them without exchanging heads. Timed tests first failed at
+  30 and 60 seconds; a healthy split-view test produced no `FORK`.
+- **Correction:** `Agent.Once` now asks up to the existing fanout of proven
+  peers on the gossip cadence, even with a healthy direct log, while retaining
+  immediate fallback on a failed or stale log. A peer fork freezes before the
+  stored checkpoint or interface can change. Evidence remains an independent
+  pull path; its first round at monotonic zero is now tracked explicitly so
+  subsequent sub-`T_g` cycles do not repeat it.
+- **Clock boundary:** The verified direct log head is kept separate from a
+  peer-selected head. `CLOCK_SKEW` is evaluated only on direct log time;
+  witness time from an accepted peer still advances the monotonic freshness
+  estimate. The peer-only skew regression failed under the old path and now
+  passes alongside the existing skewed-clock and stale-log controls.
+- **Contract:** §15 now states quorum time, the monotonic estimate, the
+  `quorum none` unknown state, the strict 5-minute skew alarm, checkpoint and
+  evidence polling, proven-peer selection, and the read-only tunnel endpoints.
+  `GOSSIP.md` §5–6 is aligned with that contract, including the optional and
+  currently unsupported hint. §12.1 says static vectors cannot encode polling
+  cadence or endpoint access. The spec guard failed before the contract moved.
+- **Checks:** focused timing, split-view, skew and spec guards passed. The full
+  `internal/agent`, `internal/gossip`, `internal/freshness`, and `cmd/nornd`
+  suites passed. The first full `internal/specdoc` run caught the frozen-spec
+  phrase `before freezing`; after replacing it with an explicit verification
+  order, the full specdoc suite passed. `make fmt-check` and `git diff --check`
+  passed. No vectors changed in this checkpoint.
+- **Closed:** d-xii-ii is complete. The enforcement contract is d-xii-iii.
+
+#### 6.5l-vii-d-xii-iii review — 2026-10-06
+
+- **Boundary:** `ENFORCEMENT.md` §4 promised a `reconcile.json` file and a
+  latency histogram the current node does not publish. Its `proven.json`
+  example omitted `age_seconds`. More seriously, §8.1's old condition 4 said
+  a stale view makes every identity unproven, while the implemented and
+  documented `degraded` state retains the last verified set. The latter is
+  the established failure behavior; only opt-in `hard_stale` empties the
+  enforcer's desired table.
+- **Contract:** §13 now specifies the in-memory proven set, provider's limited
+  role, `observe`/`owner`/`watchdog` modes, endpoint-only updates, polling,
+  alarms, fight response, startup and verification failures, fork freeze, and
+  hard-stale behavior. §13.3 owns the `proven.json` schema and distinguishes
+  its last verified claims from what `hard_stale` currently installs. §8.1
+  now separates identity proof from the view's freshness classification.
+  §12.1 names the static-vector coverage limit. The companion document is
+  aligned and leaves latency measurement in its Phase 3 plan.
+- **Implementation corrections:** `proven.json` now emits `devices: []` and
+  `labels: {}` for empty collections, rather than JSON `null`. A failed
+  watchdog remove still reports the observed `UNPROVEN_PEER`, but no longer
+  claims `EVICTED_PEER` until the write succeeds. Each mismatch had a focused
+  regression that failed first and passed after its correction; the new
+  §13 spec guard likewise failed before the contract was written.
+- **Checks:** `go test ./internal/proven ./internal/reconcile ./internal/agent
+  ./cmd/nornd ./internal/specdoc -count=1` passed; the full specdoc suite was
+  rerun after the final wording review. `make fmt-check` and
+  `git diff --check` passed. No protocol vectors changed in this checkpoint.
+- **Closed:** d-xii-iii is complete. Enrollment and key handling is d-xii-iv.
+
+#### 6.5l-vii-d-xii-iv review — 2026-10-06
+
+- **Boundary:** `ENROLLMENT.md` §6 said nodes accept checkpoints signed by the
+  old key "until `overlap` elapses, then new only" — the reading D-020
+  rejected; the decided truth is that `overlap` binds the log and verifier
+  keys accumulate, none ever retired. §7's header called the UX rules
+  "binding", §2 had `norn init` generating 24-word paper roots, reading them
+  back, auto-signing and submitting — none of which exists — and §3 drew a
+  `<log>/pending` inbox, a `norn trust import` QR flow and a word-list
+  fingerprint where the node has Crockford base32; §4 and R5/R6 named
+  `norn rotate`, `norn revoke`, `norn migrate` and `norn-log restore`
+  subcommands that are not built. The implemented node and the recorded
+  decisions win: the companion is aligned and marked informative, its unbuilt
+  flows marked **planned**.
+- **Contract:** §16.3 now owns the ssh-agent abstraction (`SSH_AUTH_SOCK`,
+  Ed25519 only, non-Ed25519 keys skipped not refused, every returned
+  signature verified against the key asked for), the OpenSSH unencrypted-mode
+  key file (0600, refuse other-readable, refuse passphrase-protected with
+  the `ssh-add` answer), append-only threshold signing (MUST NOT rewrite
+  `ts`/`after`/body on an entry that already carries signatures), and the
+  root rule that `--yes` MUST NOT exist for the root role; the ceremony
+  itself is declared not normative — a node reads its results, not its
+  script. §9.4 states that a learned key is **never retired** and that the
+  exposure of a resumed superseded key ends when the log stops signing with
+  it, never by the passage of `overlap`. §16.1 owns what-you-sign-is-what-
+  you-see, §4.3's `log_key` row cites §9.4, and §12.1 names the key-handling
+  coverage limit.
+- **Implementation corrections:** `norn sign --yes --role root` was accepted —
+  with a root key loaded it minted a scripted root authorization, the exact
+  thing the companion's rule 2 exists to prevent. The combination is now
+  refused before anything is read; the refusal case in `TestSignRefusals`
+  failed first against the uncorrected command. Seven comments across
+  keyfile, entry, sshagent, logclient, sign, qrterm and sign's tests cited
+  `ENROLLMENT.md` for rules that are now the SPEC's; they cite §16.3, §16.1,
+  §16.2 and §9.4. The new §16.3 spec guard failed before the contract was
+  written.
+- **Controls:** Seven, each caught by a named test and restored byte for
+  byte. Making non-Ed25519 agent keys refused, allowing `ts`/`after` rewrite
+  on a signed entry, retiring a learned key at `overlap`'s passage, reverting
+  the §4.3 citation and deleting the §12.1 coverage bullet each failed
+  `TestKeyHandlingAndEnrollmentBootstrapAreSelfContained` on the exact rule;
+  removing the `--yes` root refusal failed
+  `TestSignRefusals/--yes_for_the_root_role` with the entry minted again.
+  The third control — restoring the delegation sentence §16.3 had lost —
+  initially **passed**: the sentence wrapped "normative in" and
+  "`ENROLLMENT.md`" across a line break that a raw `Contains` misses, so both
+  self-contained guards (§13's and §16.3's) now read a whitespace-flattened
+  body, after which the mutation failed as it must. `ssh-agent` and
+  `ssh-keygen` joined `notVectors`, the third-party list the bare-name
+  resolver already keeps.
+- **Checks:** `go test ./internal/specdoc ./cmd/norn ./internal/sshagent
+  ./internal/keyfile ./internal/logclient ./internal/entry -count=1` passed,
+  then the full `go test ./...` — which caught the README's test count left
+  stale by the earlier run (863 vs 878) and now reading 878. `make
+  fmt-check` and `git diff --check` passed. No protocol vectors changed in
+  this checkpoint.
+- **Closed:** d-xii-iv is complete. The final companion audit is d-xii-v.
+
+#### 6.5l-vii-d-xii-v review — 2026-10-06
+
+- **Boundary:** the companions still narrated as if they contracted.
+  `GOSSIP.md`'s §9 heading claimed "`nornd` exposes Prometheus on the
+  tunnel address" over ten metrics not one of which exists — the node
+  publishes `proven.json` and nothing else — and its header said nothing
+  about where the rules live. `ENFORCEMENT.md` §4 called its reconciler
+  sketch "(normative pseudocode)" two lines under a header that said the
+  SPEC owns the contract, and §9 pointed at "SPEC §14" — canonical JSON —
+  for the published interface that is §13.3. `SPEC.md` itself kept one live
+  dependency: §6's tile-serving sentence pointed at `GOSSIP.md` for what a
+  node does with the tiles it fetched. The implemented node and the
+  recorded decisions win: the pointer resolves inside the document, the
+  unbuilt metrics are marked **planned**, and every companion now says
+  what it is.
+- **Contract:** the preamble states the companions' standing —
+  `GOSSIP.md`, `ENFORCEMENT.md` and `ENROLLMENT.md` are **informative**,
+  no rule lives in them (D-064), and a companion that disagrees is the
+  companion that is wrong — which is what makes "written against this
+  document and the vectors beside it" true without a footnote. §6's
+  tile-serving sentence cites §15, where the obligation on a serving node
+  lives. Each companion header carries the same declaration in its own
+  voice: informative, and where it disagrees with `SPEC.md`, the SPEC and
+  the implemented node win. `GOSSIP.md`'s metrics section is retitled
+  **planned** and says plainly that none of them exist yet;
+  `ENFORCEMENT.md`'s reconciler sketch points at §13.1 for the normative
+  modes, and its verifier/enforcer interface at §13.3.
+- **Implementation corrections:** no Go source changed — no code behaviour
+  was at stake in this row. The two outright errors fixed were
+  `ENFORCEMENT.md` §4's normativity claim and §9's stale pointer; a first
+  draft of `GOSSIP.md`'s metrics note also cited `ENFORCEMENT.md` §6's
+  matrix for a claim that matrix does not make — caught by rereading the
+  target before moving on, and cut.
+- **Controls:** five, each caught by a named test and restored byte for
+  byte. A delegation sentence re-entering `SPEC.md` wrapped across a line
+  break failed `TestTheSpecReadingNeedsNoCompanion` on the flattened body
+  — the lesson d-xii-iv learned, holding. Reverting §6's sentence to
+  "(`GOSSIP.md`)" failed the same guard on the required phrase, the only
+  thing that could catch it: the parenthetical matches no forbidden
+  wording. Deleting the preamble sentence failed it twice, on the
+  standing list and on "no rule lives in them". Restoring `GOSSIP.md`'s
+  old header failed `TestTheCompanionsSayWhatTheyAre` on both halves.
+  Reverting `ENFORCEMENT.md` §4's heading failed the same guard's
+  normativity clause — written after discovering the revert would
+  otherwise pass, and proven red by that very mutation.
+- **Checks:** `go test ./internal/specdoc ./internal/docclaims -count=1`
+  passed, then the full `go test ./...` — which caught the README's test
+  count moving 878 → 880 with the two new guards, and now reading 880.
+  `make fmt-check` and `git diff --check` passed. No protocol vectors
+  changed in this checkpoint.
+- **Closed:** d-xii is complete — all five sub-items reviewed, D-064 done
+  and D22's cross-reference clause closed with it: a reader holding
+  `SPEC.md` and the vectors needs no other document to build a node. Next
+  is 6.5l-viii, the cold-model gate run.
+
+#### 6.5l-viii — cold-model gate run 13: `SPEC INSUFFICIENT` — 2026-10-06
+
+- **The seal.** Run 12's sealed copy left with its session, and so did run
+  11's prompt; both were rebuilt from what this ledger records of them. The
+  tree under test is the uncommitted working tree after d-xii-v — everything
+  since `39daef3` is uncommitted, so the seal is pinned by fingerprints, not
+  by a commit: `SPEC.md` sha256 `00750a05…7257`, `SHA256SUMS` `7bddf838…f139`
+  (645 digests), the whole vectors tree `89fe1213…`. The layout mirrors the
+  repository's (`SPEC.md`, `testdata/vectors/`, `work/`), because §12 tells
+  the reader the vector root "ships as `testdata/vectors/`" and run 12's
+  `vectors/` rename contradicted the document it was testing.
+- **Attempt 1 — void.** A fresh agent read the sealed spec and froze a
+  392-line pre-vector decisions log, then was cut off twice by its model
+  provider's usage limits, mid-implementation. Its transcript, audited
+  rather than taken at its word: 80 tool calls, no web, no reference to this
+  repository, and no read outside the seal — but from its fourth call it
+  dropped `gate-13/` from its write paths, so all eight of its source files
+  landed **beside** the seal. That breaks the prompt's absolute rule even
+  though nothing leaked in, and every turn so far had run on one model
+  (`glm-5.3`) that a resume would have handed to another. A run with three
+  footnotes cannot be the one that ticks the gate: it is kept aside for the
+  record (`run13-attempt1-*` in the session scratch area) and does not count.
+- **Attempt 2 — the run.** A fresh seal of the identical bytes (fingerprints
+  re-verified, 645/645), a new agent pinned to one model, and run 12's
+  prompt with two additions: the one write prefix, to be checked before
+  every write, and a closing self-check that nothing landed outside `work/`.
+  A watcher polled for strays beside the seal and in this repository every
+  20 seconds for the whole run and never fired. It finished in 48 minutes.
+- **The audit**, from its transcript rather than its word: 90 tool calls,
+  all 174 turns on `claude-opus-5-5`, **no** web access, **no** reference to
+  this repository. Before `decisions.md` it made one directory listing
+  (`find testdata | head -100` — file *names*, no contents), read `SPEC.md`
+  in full in eight consecutive reads, and ran `go version`; the log was
+  written once, at 21:37:40, and never touched again — its first vector run
+  is at 21:52:14. Three things it confessed and the transcript confirms, none
+  of which carried protocol information in: its first `go version` updated
+  Go's telemetry counters under the user's home before it pointed `HOME`
+  into `work/`; its one background sweep made the harness write a log under
+  the session's `tasks/`; and its final self-check ran `ls -la` on the
+  seal's parent once — after the report was written — which listed only the
+  seal. The next prompt says the self-check must not look upward.
+- **The tally.** 1,353 of 1,353: all 645 `SHA256SUMS` digests and 708
+  behaviour checks, every closed vocabulary compared by exact string. Its
+  first full run scored 707: a harness that assumed the uppercase request
+  mirror's `text` held the lowercase form — not a protocol reading. The one
+  base change after that was found by its own sweep: its trust loader
+  compared witness *counts*, which made the duplicate-name rule dead code.
+- **The sweep.** 313 single variants, **54 survive**: 7 change what a
+  conforming node does, 9 sit where the prose does not decide, 29 are
+  coverage gaps behind clear prose, and 9 are the ones §12.1 already
+  declares. Eleven of the rules involved are never even evaluated by any
+  vector. 1,431 survivor pairs all still pass — the 54 are independent
+  holes; of 13,986 survivor × caught pairs, 11 pass and 4 are genuine
+  rescues. 47 concrete inputs signed with the suite's own keys show each
+  survivor that matters is a real divergence, not an asserted one.
+- **The five that change what a node does.** **D1** §5.1's table says
+  `rotate`/`revoke` bodies are "well-formed" where every other row says
+  "well-formed and closed" — and no vector carries an unknown body key, so a
+  device-signed rotate with one extra field re-keys the device on one node
+  and is `decode` on another. **D2** after a log-key rotation nothing says
+  which key verifies a bundle or a receipt, and §8's "someone holding only
+  `norn.trust`" cannot verify any made after `overlap`. **D4** §5.1 calls
+  its order normative and, a sentence later, says an ordering with no vector
+  "a second implementation may reverse" — five such reversals change
+  `rejected` in the canonical state, and §12.1 claims the receipt *order* is
+  vectored when no receipt has two adjacent faults. **D5** §8.1 and §15
+  define a checkpoint's age two ways; a larger head carrying an older quorum
+  time is `fresh` under one and `hard_stale` under the other, which empties
+  the peer table. **D6** the preamble says the reused specifications win on
+  conflict while §7 and §10 are stricter, and the exact 68/76-byte length is
+  applied even to lines from keys no reader holds. The other fourteen are in
+  the report.
+- **Where this leaves d-xii.** None of the nineteen names a companion
+  document or a normative rule living outside `SPEC.md`: the spec-and-vectors
+  reading d-xii set out to make possible is the one this reader used, and
+  what it found is inside the document.
+- **The gate line stays open.** `SPEC SUFFICIENT` is the bar, and only a run
+  that reaches it ticks 6.5l-vii and the `PLAN.md` line. 6.5l-ix is the
+  triage: every finding checked against this implementation before anything
+  is fixed, and the ones that change the protocol rather than its prose
+  written up as decisions for the user. Run 14 is 6.5l-x.

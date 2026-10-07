@@ -1,7 +1,10 @@
 # Norn — Enforcement Layer
 
-Written **2026-09-18** (plan part 5). How `nornd` turns the proven set into a
-refused handshake. Implements `THREAT-MODEL.md` §5; feeds `SPEC.md` §14.
+Written **2026-09-18** (plan part 5). This document is **informative**: how
+`nornd` turns the proven set into a refused handshake, as deployment and
+measurement context. `SPEC.md` §§8.1 and 13 own the node's enforcement contract;
+where this document disagrees with `SPEC.md`, the SPEC and the implemented node
+win.
 
 ## 1. Principle
 
@@ -66,7 +69,8 @@ connected it yet). Never writes. Mandatory first mode everywhere (D-005).
 - The endpoint provider may supply endpoints / allowed-ips **only for keys in
   `proven`**; keys it mentions that are not proven are logged and dropped. A control
   plane thus degrades to an *endpoint directory* — the role it should have had.
-- Window for a rogue key: **none**. It is never written.
+- Norn never deliberately writes a rogue key. An external writer's change is
+  corrected on the next cycle; the window depends on polling and reconfiguration.
 
 ### enforce / watchdog
 Someone else (NetBird, innernet, a human) owns the table; `nornd` polices it.
@@ -85,7 +89,7 @@ Someone else (NetBird, innernet, a human) owns the table; `nornd` polices it.
   - `quarantine` — bring the interface down (`ip link set … down`) until an
     operator intervenes. Fail-closed by choice, never by default.
 
-## 4. Reconciler (normative pseudocode)
+## 4. Reconciler (pseudocode; the normative modes are `SPEC.md` §13.1)
 
 ```
 every T_poll, and immediately on proven-set change:
@@ -98,11 +102,12 @@ every T_poll, and immediately on proven-set change:
               else if endpoints changed: ConfigureDevice({Peers: changed, UpdateOnly: true})
     watchdog: for k in keys(actual) − keys(desired): ConfigureDevice({Peers: [{k, Remove: true}]})
               fight-detect(k)
-  write /run/norn/proven.json and /run/norn/reconcile.json (for other tools / the monitor)
+  after a verified cycle, publish /run/norn/proven.json and its proof bundles
 ```
 
-Idempotent; safe to run twice; reconcile latency is logged as a histogram
-(`norn_reconcile_seconds`) so the watchdog window is a measured number, not a claim.
+Idempotent; safe to run twice. Reconcile latency measurement remains in the
+Phase 3 plan (§10); the current node does not publish a `reconcile.json` file
+or the `norn_reconcile_seconds` histogram.
 
 Swap attack check (A1): the control plane installs the attacker's key with the
 legit device's allowed-ips and removes the legit key. Owner mode: desired still
@@ -152,7 +157,7 @@ watchdog window for *new* rogue IPs to zero, but is **blind to the swap attack**
 | fork detected | freeze at last proven set; alarm; refuse new state | same | alarm |
 | trust file missing/invalid | refuse to start | refuse to start | refuse to start |
 
-## 9. Interface between verifier and enforcer (→ SPEC §14)
+## 9. Interface between verifier and enforcer (→ `SPEC.md` §13.3)
 
 In-process (nornd embeds the verifier). Also serialised to `/run/norn/proven.json`,
 which is how everything *else* finds out — the monitor, Home Assistant, a support
@@ -162,6 +167,7 @@ bundle, an operator with `jq`:
 { "version": 1,
   "checkpoint": {"origin": …, "size": N, "root": "<hex>", "cosigned_at": null},
   "freshness": "fresh" | "degraded" | "hard_stale" | "unknown",
+  "age_seconds": 0 | null,
   "devices": [ {"device_id": "…", "wg_pk": "<b64>", "labels": {…}, "expires": 0,
                 "proof": "proofs/<device_id>.bundle", "since_index": N} … ],
   "written_at_local_clock": T }
@@ -182,8 +188,9 @@ otherwise act on:
   pointing at nothing would be worse than no field: an alarm would cite evidence
   that does not exist.
 
-The file is replaced atomically, because it is rewritten every `T_poll` forever
-while something else is reading it.
+The file is replaced atomically after a verified cycle, because something else
+may read it during a write. An empty device set and empty labels are JSON
+arrays and objects, respectively, not `null`.
 
 ## 10. Phase 3 measurement plan
 

@@ -63,10 +63,14 @@ def parse_vkey(text: str) -> Verifier:
     if len(parts) != 3 or not all(parts):
         raise NoteError("verifier key must be name+keyid+keydata")
     name, keyhash, keydata = parts
+    if any(char.isspace() for char in name):
+        raise NoteError("verifier key name contains whitespace")
     try:
         raw = base64.b64decode(keydata, validate=True)
     except (ValueError, base64.binascii.Error) as exc:
         raise NoteError("key data is not base64") from exc
+    if base64.b64encode(raw).decode("ascii") != keydata:
+        raise NoteError("key data base64 is not canonical")
     if len(raw) != 33 or raw[0] not in (ALG_ED25519, ALG_COSIGNATURE):
         raise NoteError("only Ed25519 note and cosignature keys are supported")
     alg, public = raw[0], raw[1:]
@@ -97,8 +101,13 @@ def split(signed: str) -> tuple[str, list[tuple[str, bytes]]]:
     if not sep:
         raise NoteError("note has no signature block")
     text += "\n"
+    if not block.endswith("\n"):
+        raise NoteError("signature block does not end in a newline")
     signatures: list[tuple[str, bytes]] = []
-    for line in block.splitlines():
+    # Strip exactly the final line terminator. `splitlines()` silently accepts
+    # an unterminated last line, while trimming all newlines would erase an
+    # extra blank line after the last signature (D14b).
+    for line in block[:-1].split("\n"):
         if not line.startswith(SIG_PREFIX):
             raise NoteError(f"bad signature line: {line!r}")
         name, _, blob = line[len(SIG_PREFIX):].partition(" ")
@@ -106,6 +115,8 @@ def split(signed: str) -> tuple[str, list[tuple[str, bytes]]]:
             raw = base64.b64decode(blob, validate=True)
         except (ValueError, base64.binascii.Error) as exc:
             raise NoteError("signature is not base64") from exc
+        if base64.b64encode(raw).decode("ascii") != blob:
+            raise NoteError("signature base64 is not canonical")
         if len(raw) != 68:
             raise NoteError("signature must be 4-byte key id plus 64-byte signature")
         signatures.append((name, raw))

@@ -1,17 +1,22 @@
 # Norn — Enrollment, Signer Keys, Recovery
 
 Written **2026-09-18** (plan part 7). The part that decides whether anyone runs a
-2-of-3 root. Rule: **every flow must work with a laptop and a phone camera**; no
-mobile app in v0.
+2-of-3 root. `SPEC.md` owns every rule an interoperable node needs from this
+document — key handling, signing and the root `--yes` refusal in §16.3,
+enrollment requests and the display rule in §16, log-key rotation and `overlap`
+in §9.4, entry bodies in §4.3. This document is **informative**: the ceremony's
+runbook and the reasoning, and where it disagrees with `SPEC.md`, the SPEC and
+the implemented node win. Flows marked **planned** below are direction, not promises. Rule:
+**every flow must work with a laptop and a phone camera**; no mobile app in v0.
 
 ## 1. Key tiers
 
 | Tier | Where the key lives | Ed25519? | Use |
 |---|---|---|---|
-| 0 | an **OpenSSH private key file**, unencrypted, mode 0600 (`ssh-keygen -t ed25519 -N ""`) | ✓ | **device keys** (`nornd` signs `rotate` and self-`revoke` with nobody at the keyboard), lab, CI |
+| 0 | an **OpenSSH private key file**, unencrypted, mode 0600 (`ssh-keygen -t ed25519 -N ""`) | ✓ | **device keys** — the key that signs `rotate` and self-`revoke` (`SPEC.md` §4.3) with nobody at the keyboard — lab, CI |
 | 1 | an **ssh-agent** (OpenSSH agent, 1Password/Bitwarden SSH agent, gpg-agent, macOS keychain-backed agent) | ✓ | **signers (default)** |
 | 2 | hardware with **touch**: Tillitis TKey (native Ed25519 signer app, via its agent), YubiKey OpenPGP applet (Ed25519, touch policy on, via gpg-agent) | ✓ | **roots (default)** |
-| 3 | **paper**: 24-word mnemonic → Ed25519 seed, sealed envelope | ✓ | root backups, the third root |
+| 3 | **paper**: 24-word mnemonic → Ed25519 seed, sealed envelope — **planned**; `norn init` does not generate paper keys yet | ✓ | root backups, the third root |
 | — | Secure Enclave, TPM 2.0 | ✗ P-256 only | **not supported**; say so in docs so nobody wastes an evening |
 | v1 | YubiKey FIDO2 `ed25519-sk` (signature is a FIDO assertion, not raw Ed25519) | ~ | Phase 7: second signature kind `ed25519-sk` in `sigs[]` |
 
@@ -21,10 +26,11 @@ signature, so TKey, YubiKey-OpenPGP, software keys and password-manager agents a
 look identical to Norn. `kid` = derived from the agent's public key. No Norn key
 store to secure, no key format to invent.
 
-**Tier 0 is a file because a daemon cannot type a passphrase.** `nornd` signs
-`rotate` and self-`revoke` at boot with nobody present, so that key lives on disk
-under 0600 — and an encrypted file would not help, since the passphrase would have
-to live beside it. So Norn **refuses** a passphrase-protected key and says what to
+**Tier 0 is a file because a device cannot type a passphrase.** The device key
+signs `rotate` and self-`revoke` (`SPEC.md` §4.3) with nobody at the keyboard, so
+that key lives on disk under 0600 — and an encrypted file would not help, since
+the passphrase would have to live beside it. So Norn **refuses** a
+passphrase-protected key and says what to
 do instead: `ssh-add` it once and let Norn use the agent, which is tier 1. The two
 tiers are **one format**: `ssh-add` loads a key `norn` wrote, unchanged, and that
 is a test, not a claim (`internal/keyfile`). An earlier draft of this table said
@@ -47,9 +53,14 @@ root-3  paper, envelope at a relative's / a friend's
 root_thr = 2 · signer_thr = 1 · signer-1 = laptop ssh-agent key
 ```
 
-`norn init` walks it: generates root-2/3 as words on screen (never written to disk),
-asks you to read them back, verifies, generates `genesis`, asks root-1 and root-2
-to sign (touch; type words), submits, prints the trust file as QR + fingerprint.
+`norn init` walks the implemented part: it takes root, signer and log keys from
+files and agents (tiers 0–2), builds `genesis`, prints every public key and the
+trust file's fingerprint, and refuses a trust file whose `genesis_hash` does not
+match entry 0. The fingerprint is Crockford base32, four groups of four
+(`7f3x-2hnq-9kd4-vp2w`), and every node is provisioned to compare it against the
+admin's screen (`SPEC.md` §9.3). The paper-root steps — words on screen, read
+them back, verify — are **planned**, and when paper arrives it will follow §7
+rule 3 below.
 Org default: `root_thr = 2` of ≥ 3 hardware keys held by different people, `signer_thr = 1..2`.
 
 ## 3. Enrolling a device
@@ -58,9 +69,10 @@ Org default: `root_thr = 2` of ≥ 3 hardware keys held by different people, `si
 device$  norn enroll --name pi-cam [--wg-key /etc/wireguard/wg0.key | --gen] [--expires 30d] [--label ip=10.9.0.14/32]
          → creates device identity key (/var/lib/norn/device.key, tier 0/1)
          → prints an ENROLLMENT REQUEST as QR + text  (norn1… ≈ 200 chars)
-         → optionally POSTs it to <log>/pending (convenience inbox; untrusted)
+         → optionally POSTs it to <log>/pending (convenience inbox; untrusted; **planned**)
 
-admin$   norn sign norn1…            # or: norn sign --pending
+admin$   norn sign norn1…            # the --pending inbox is planned; today the
+                                      # request is pasted or piped
          pi-cam  wg=…7f2a  device=…c910  labels ip=10.9.0.14/32  expires 30d
          sign with signer-1 (agent: 1Password) ? [touch/confirm]
          → full `enroll` entry → norn submit → receipt → waits for inclusion
@@ -74,8 +86,9 @@ if the deadline passes with the leaf still absent it says so plainly: that
 receipt is now proof the log misbehaved (`THREAT-MODEL.md` A2), and it should be
 kept.
 
-device$  norn trust import  <QR of norn.trust>       # once per device, out of band
-         fingerprint: "coral-mango-tiger-piano" — matches the admin's screen?  [y]
+device$  # planned: `norn trust import <QR of norn.trust>`. Today: copy norn.trust
+         # to the device out of band, and compare its fingerprint (7f3x-2hnq-
+         # 9kd4-vp2w form) with the admin's screen before trusting it (§9.3).
          nornd starts, sees itself in the log, is active on every peer ≤ T_c + T_g
 ```
 
@@ -106,16 +119,20 @@ until the threshold is met. Appending is safe because the preimage excludes `sig
 signatures, which would invalidate them. It reports progress after every run
 ("2 of 2 signer signatures. Ready for `norn submit`"), because a signer who stops
 one signature short has done nothing at all. Every prompt shows the entry hash and the human summary;
-`--yes` exists for signer entries in scripts and **does not exist** for root entries.
+`--yes` exists for signer entries in scripts and **does not exist** for root
+entries — `norn sign` refuses the combination outright, and the rule is
+normative in `SPEC.md` §16.3.
 
 ## 4. Rotation, revocation, expiry
 
-- **Rotate** (`norn rotate` on the device): new WG key, `rotate` entry signed by the
+- **Rotate** (the `rotate` entry is normative, `SPEC.md` §4.3; the `norn rotate`
+  subcommand is **planned**, not built): new WG key, `rotate` entry signed by the
   device key (+ a signer if `rotate_needs_signer`). The device keeps the old WG key
   until it sees the entry included, then swaps; peers switch at their next checkpoint.
   Gap ≤ T_c + T_g. Overlapping dual-key grace is v1 backlog.
-- **Revoke**: `norn revoke pi-cam --reason lost` (signer) · `norn revoke --self`
-  (device, on suspicion) · `norn revoke pi-cam --root` (emergency, roots). Effect on
+- **Revoke** (the entry is normative, `SPEC.md` §4.3; the `norn revoke` subcommand
+  is **planned**): a signer revokes `pi-cam --reason lost`; a device self-revokes
+  on suspicion; roots revoke in an emergency. Effect on
   every honest node ≤ T_c + T_g + T_poll (G4), measured by lab T7.
 - **Expiry**: `enroll.expires` for guests and contractors; evaluated at checkpoint
   time, so a laptop that never comes back simply falls out.
@@ -131,18 +148,18 @@ history. Append-only means recovery = *new entries that supersede*.
 | R2 | Signer key **stolen** | roots: `signer_remove`; `norn audit --by <kid> --since <t>` lists everything that key signed; `revoke` rogue devices; re-`enroll` any it wrongly revoked | none for honest peers |
 | R3 | One root of 2-of-3 lost or stolen | remaining two: `root_remove` + `root_add` (new paper key). **Do it the same day** — with one root gone, the next loss is R5 | none |
 | R4 | Device rebuilt / device key lost | `revoke` + fresh `enroll` | that device only |
-| R5 | Root quorum lost or stolen | **re-genesis**: `norn migrate` builds a new `genesis` under new roots, auto-generates re-enrollment requests for every active device (device keys persist), batch-signs them, produces one new trust file. Deliver it to each device out of band. This is the one procedure that touches every device, and it is the price of losing the roots; `norn migrate` makes it an afternoon, not a month | until each device imports the new trust file |
-| R6 | Log storage lost | `norn-log restore --from <any node>` — every node holds all tiles; the log resumes at the same size with the same key | none for nodes (they gossip meanwhile) |
+| R5 | Root quorum lost or stolen | **re-genesis** (`norn migrate` is **planned**, not built): build a new `genesis` under new roots, auto-generate re-enrollment requests for every active device (device keys persist), batch-sign them, produce one new trust file. Deliver it to each device out of band. This is the one procedure that touches every device, and it is the price of losing the roots; `norn migrate` will make it an afternoon, not a month | until each device imports the new trust file |
+| R6 | Log storage lost | **planned**: `norn-log restore --from <any node>` — every node holds all tiles; the log resumes at the same size with the same key | none for nodes (they gossip meanwhile) |
 | R7 | Log **key** compromised or lost | roots publish `log_key` entry (§6); the log signs checkpoints with **both** keys for `overlap` (30 d) so nodes with old trust files still verify while they replay the rotation | none |
 | R8 | Witness key rotation / policy change | roots publish `policy` entry (§6); same overlap logic for cosignatures | none |
 | R9 | Node's trust file lost | re-deliver (QR); nothing else changes | that node only |
 | R10 | Device stolen | `revoke`; evicted everywhere ≤ G4 bound; the device key can do nothing but self-revoke | none |
 
-## 6. Two governance entries this forces (→ SPEC v0.1)
+## 6. The two governance entries (normative in `SPEC.md` §§4.3 and 9.4)
 
 | `t` | body | signatures | effect |
 |---|---|---|---|
-| `log_key` | `pk` (new log verifier key), `overlap` (uint s) | ≥ `root_thr` roots | nodes accept checkpoints signed by old **or** new key until `overlap` elapses, then new only |
+| `log_key` | `pk` (new log verifier key), `overlap` (uint s) | ≥ `root_thr` roots | the log signs checkpoints with **both** keys for at least `overlap` — an obligation on the **log** (`SPEC.md` §9.4), not a rule a verifier times — and verifier keys accumulate: a learned key is never retired |
 | `policy` | `text` (verbatim tlog-policy) | ≥ `root_thr` roots | replaces the witness policy in replayed state |
 
 Consequence: `norn.trust` carries the **initial** log key and policy plus the genesis
@@ -151,10 +168,13 @@ node with an old trust file still bootstraps because of the overlap window, and 
 node that replayed the rotation trusts the new keys from its own state (G6 holds:
 it never trusts anything not rooted in its trust file).
 
-## 7. UX principles (binding)
+## 7. UX principles
+
+The normative ones live in `SPEC.md`: rule 1 is §16.1's display rule, rule 2 is
+§16.3's root `--yes` refusal. The rest are how the tools should feel.
 
 1. What you sign is what you see: every prompt shows device name, key fingerprints, labels, expiry, entry hash.
 2. Hardware roots need a touch; there is no `--yes` for root entries.
-3. Paper keys are typed, never pasted from a file, and never stored by `norn`.
+3. Paper keys are typed, never pasted from a file, and never stored by `norn` — the rule the **planned** tier-3 flow will follow.
 4. Any flow that needs a second device works with a phone camera and a QR.
 5. `norn status` on any node shows: proven peers, checkpoint age, degraded/fork state, and the last five log entries in plain words ("2 h ago: signer-1 enrolled pi-cam").

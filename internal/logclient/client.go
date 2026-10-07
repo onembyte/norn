@@ -110,8 +110,9 @@ type Result struct {
 type Anchor struct {
 	replay.Anchor
 	// LogKeys are signed-note verifier keys. At least one must have signed the
-	// checkpoint. More than one appears during a `log_key` rotation, where old
-	// and new are both valid for `overlap` (`ENROLLMENT.md` part 6).
+	// checkpoint. More than one appears across a `log_key` rotation, and none
+	// is ever retired: keys accumulate (§9.4), so the anchor's key stays valid
+	// alongside every key the roots later published.
 	LogKeys []string
 	// Origin is the network's origin line, verbatim from the trust file. A
 	// checkpoint says which log it is about in its first line, and until §10

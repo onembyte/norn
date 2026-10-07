@@ -149,7 +149,7 @@ func Preimage(e *Envelope) ([]byte, error) {
 //
 // The key is a crypto.Signer rather than an ed25519.PrivateKey so that a key
 // held by an ssh-agent -- a hardware token, a password manager -- is the same
-// thing to an entry as a key in memory (`ENROLLMENT.md` part 1). ed25519
+// thing to an entry as a key in memory (§16.3). ed25519
 // .PrivateKey already satisfies the interface, so an in-memory key is passed
 // exactly as before.
 //

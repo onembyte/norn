@@ -3,12 +3,12 @@
     {
       "file": "tampered-entry-bundle.bin",
       "name": "tampered-entry-bundle",
-      "path": "tile/entries/000.p/138",
+      "path": "tile/entries/001.p/44",
       "says": "one byte of one entry changed: the bundle still frames, and the tree it builds is not the one the checkpoint is signed over"
     },
     {
       "name": "missing-entry-bundle",
-      "path": "tile/entries/000.p/138",
+      "path": "tile/entries/001.p/44",
       "remove": true,
       "says": "a log that will not serve its entries cannot be replayed, and a verifier must refuse rather than report what it has"
     },
@@ -16,11 +16,11 @@
       "files": [
         {
           "file": "consistent-entry-bundle.bin",
-          "path": "tile/entries/000.p/138"
+          "path": "tile/entries/001.p/44"
         },
         {
           "file": "consistent-hash-tile.bin",
-          "path": "tile/0/000.p/138"
+          "path": "tile/0/001.p/44"
         }
       ],
       "name": "consistent-tampered-log",
@@ -29,17 +29,24 @@
     {
       "file": "tampered-hash-tile.bin",
       "name": "tampered-hash-tile",
-      "path": "tile/0/000.p/138",
+      "path": "tile/0/001.p/44",
       "says": "one byte of one leaf hash changed: the entries and the signed head are untouched, so a verifier that reaches the head without opening `tile/0/...` sees nothing wrong, and serves the corrupt tile onward to peers asking it for proofs"
+    },
+    {
+      "file": "overfull-entry-bundle.bin",
+      "name": "overfull-entry-bundle",
+      "path": "tile/entries/001.p/44",
+      "says": "the bundle decodes but holds one more entry than the checkpoint size and its path imply"
     }
   ],
   "codes": {
     "consistent-tampered-log": "head",
     "missing-entry-bundle": "unserved",
+    "overfull-entry-bundle": "entries",
     "tampered-entry-bundle": "head",
     "tampered-hash-tile": "tiles"
   },
-  "comment": "a served log is a directory, so each case names the path to replace with `file`, the paths to replace with `files`, or the path to delete with `remove`, over an otherwise honest copy of `served/`. Every one MUST be refused, with the SPEC §10.1 code `codes` names for it",
+  "comment": "a served log is a directory, so each case names the path to replace with `file`, the paths to replace with `files`, or the path to delete with `remove`, over an otherwise honest copy of `served-large/`. Every one MUST be refused, with the SPEC §10.1 code `codes` names for it",
   "rules": {
     "consistent-tampered-log": {
       "says": "that comparison is what binds the entries to the head",
@@ -49,6 +56,10 @@
       "says": "any file a later step needs and cannot fetch",
       "section": "10.1"
     },
+    "overfull-entry-bundle": {
+      "says": "A partial bundle holds **exactly** the number of entries its path declares",
+      "section": "6"
+    },
     "tampered-entry-bundle": {
       "says": "that comparison is what binds the entries to the head",
       "section": "6"
@@ -57,5 +68,6 @@
       "says": "checking them is not optional",
       "section": "6"
     }
-  }
+  },
+  "serve_over": "served-large"
 }

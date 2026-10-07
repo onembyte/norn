@@ -203,7 +203,7 @@ Freeze `SPEC.md`, publish vectors, README with threat model and comparison table
 blog post, WireGuard mailing list + r/WireGuard + HN, request review from a
 transparency-dev / Sigsum person — sequence and review targets in `PUBLICATION.md`.
 **PASS when:**
-- [ ] Cold-model gate repeated on frozen spec: independent verifier passes all vectors.
+- [ ] Cold-model gate repeated on frozen spec: independent verifier passes all vectors. **Pass rule (D-068):** two consecutive sealed runs with no defect rated high or medium, every low finding recorded in `SPEC.md` §12.1.
 - [ ] One person outside this homelab runs the lab and files an issue.
 - [ ] Comparison table (Tailnet Lock / Nebula / NetBird / Norn) reviewed by someone who has run at least two of them.
 

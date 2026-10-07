@@ -443,23 +443,27 @@ type servedNegative struct {
 	Files  []struct{ Path, File string } `json:"files"`
 }
 
-func servedNegatives(t *testing.T) ([]servedNegative, map[string]refusal.Code) {
+func servedNegatives(t *testing.T) ([]servedNegative, map[string]refusal.Code, string) {
 	t.Helper()
 	var manifest struct {
-		Cases []servedNegative        `json:"cases"`
-		Codes map[string]refusal.Code `json:"codes"`
+		ServeOver string                  `json:"serve_over"`
+		Cases     []servedNegative        `json:"cases"`
+		Codes     map[string]refusal.Code `json:"codes"`
 	}
 	raw := readFile(t, filepath.Join(vectorRoot(), "served-bad", "cases.json"))
 	if err := json.Unmarshal([]byte(raw), &manifest); err != nil {
 		t.Fatal(err)
 	}
-	return manifest.Cases, manifest.Codes
+	if manifest.ServeOver == "" {
+		manifest.ServeOver = "served"
+	}
+	return manifest.Cases, manifest.Codes, manifest.ServeOver
 }
 
 // apply builds the served directory a case describes.
-func (c servedNegative) apply(t *testing.T) string {
+func (c servedNegative) apply(t *testing.T, serveOver string) string {
 	t.Helper()
-	honest := filepath.Join(vectorRoot(), "served")
+	honest := filepath.Join(vectorRoot(), serveOver)
 	dir := servedWith(t, honest, readFile(t, filepath.Join(honest, "checkpoint")))
 	replace := func(path, file string) {
 		at := filepath.Join(dir, filepath.FromSlash(path))
@@ -482,7 +486,7 @@ func (c servedNegative) apply(t *testing.T) string {
 }
 
 func TestEveryServedNegativeIsRefusedWithItsCode(t *testing.T) {
-	cases, codes := servedNegatives(t)
+	cases, codes, serveOver := servedNegatives(t)
 	if len(codes) != len(cases) {
 		t.Fatalf("%d cases and %d codes: every case names the §10.1 code it is refused with",
 			len(cases), len(codes))
@@ -494,7 +498,7 @@ func TestEveryServedNegativeIsRefusedWithItsCode(t *testing.T) {
 			if !ok || !refusal.Known(want) {
 				t.Fatalf("names %q, which is not a §10.1 code", want)
 			}
-			_, err := Verify(Dir(c.apply(t)), anchor)
+			_, err := Verify(Dir(c.apply(t, serveOver)), anchor)
 			if err == nil {
 				t.Fatal("accepted")
 			}
@@ -511,12 +515,12 @@ func TestEveryServedNegativeIsRefusedWithItsCode(t *testing.T) {
 // coded `head`: a reader that checks tiles first refuses that same log as
 // `tiles`, and one that never rebuilds the tree has nothing else to say.
 func TestTheHeadBeforeTilesOrderHasAVector(t *testing.T) {
-	cases, codes := servedNegatives(t)
+	cases, codes, serveOver := servedNegatives(t)
 	for _, c := range cases {
 		if codes[c.Name] != refusal.Head || c.Remove {
 			continue
 		}
-		dir := c.apply(t)
+		dir := c.apply(t, serveOver)
 		cp := checkpointIn(t, dir, "checkpoint", shippedLogAnchor(t))
 		entries, err := fetchEntries(Dir(dir), cp.Size)
 		if err != nil {

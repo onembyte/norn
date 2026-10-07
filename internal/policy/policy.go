@@ -17,6 +17,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/onembyte/norn/internal/note"
 )
@@ -74,20 +75,22 @@ func (p *Policy) RequiresCosignatures() bool { return p.quorum != NoQuorum }
 // requirement nobody is enforcing — so an unknown keyword, a forward
 // reference or a threshold larger than its group is an error, not a warning.
 func Parse(text string) (*Policy, error) {
+	if !strings.HasSuffix(text, "\n") {
+		return nil, policyErrorf("the final directive must end in a line feed")
+	}
+
 	p := &Policy{groups: map[string]group{}, names: map[string]bool{}}
-	seenKeys := map[string]bool{}
+	seenPublicKeys := map[string]bool{}
 	quorumLines := 0
 
 	for number, raw := range strings.Split(text, "\n") {
 		where := fmt.Sprintf("line %d", number+1)
-		// §9.1: fields are separated by ASCII spaces and tabs **only**. This
-		// used `strings.Fields`, which splits on every Unicode space, so a
-		// vertical tab separated two fields here and was an error in the
-		// reference implementation -- a divergence no vector could see
-		// (cold gate run 8, D12).
+		// C2SP tlog-policy is a byte format: only tab and line feed are
+		// permitted ASCII controls. This check precedes comment handling, so a
+		// comment cannot hide a control byte.
 		for _, r := range raw {
-			if r != ' ' && r != '\t' && isSpace(r) {
-				return nil, policyErrorf("%s: whitespace other than space and tab", where)
+			if forbiddenControl(r) {
+				return nil, policyErrorf("%s: forbidden ASCII control byte", where)
 			}
 		}
 		line := strings.Trim(raw, " \t")
@@ -105,10 +108,14 @@ func Parse(text string) (*Policy, error) {
 			if len(fields) < 2 || len(fields) > 3 {
 				return nil, policyErrorf("%s: log takes a key and an optional url", where)
 			}
-			if seenKeys[fields[1]] {
-				return nil, policyErrorf("%s: that key is already in this policy", where)
+			v, err := parsePolicyVKey(fields[1], note.AlgEd25519)
+			if err != nil {
+				return nil, policyErrorf("%s: invalid log verifier key: %v", where, err)
 			}
-			seenKeys[fields[1]] = true
+			if seenPublicKeys[string(v.Public)] {
+				return nil, policyErrorf("%s: that public key is already in this policy", where)
+			}
+			seenPublicKeys[string(v.Public)] = true
 			entry := Log{Key: fields[1]}
 			if len(fields) == 3 {
 				entry.URL = fields[2]
@@ -120,13 +127,20 @@ func Parse(text string) (*Policy, error) {
 				return nil, policyErrorf("%s: witness takes a name, a key and an optional url", where)
 			}
 			name := fields[1]
+			if name == NoQuorum {
+				return nil, policyErrorf("%s: %q is predefined and cannot be a witness name", where, name)
+			}
 			if p.names[name] {
 				return nil, policyErrorf("%s: %q is already defined", where, name)
 			}
-			if seenKeys[fields[2]] {
-				return nil, policyErrorf("%s: that key is already in this policy", where)
+			v, err := parsePolicyVKey(fields[2], note.AlgCosignature)
+			if err != nil {
+				return nil, policyErrorf("%s: invalid witness verifier key: %v", where, err)
 			}
-			seenKeys[fields[2]] = true
+			if seenPublicKeys[string(v.Public)] {
+				return nil, policyErrorf("%s: that public key is already in this policy", where)
+			}
+			seenPublicKeys[string(v.Public)] = true
 			p.names[name] = true
 			entry := Witness{Name: name, Key: fields[2]}
 			if len(fields) == 4 {
@@ -139,11 +153,17 @@ func Parse(text string) (*Policy, error) {
 				return nil, policyErrorf("%s: group takes a name, a threshold and members", where)
 			}
 			name, keyword, members := fields[1], fields[2], fields[3:]
+			if name == NoQuorum {
+				return nil, policyErrorf("%s: %q is predefined and cannot be a group name", where, name)
+			}
 			if p.names[name] {
 				return nil, policyErrorf("%s: %q is already defined", where, name)
 			}
 			seen := map[string]bool{}
 			for _, member := range members {
+				if member == NoQuorum {
+					return nil, policyErrorf("%s: the predefined %q cannot be a group member", where, member)
+				}
 				// Members must already exist: a policy that referred forward
 				// could describe a cycle, and a cycle has no meaning here.
 				if !p.names[member] {
@@ -165,6 +185,9 @@ func Parse(text string) (*Policy, error) {
 			if len(fields) != 2 {
 				return nil, policyErrorf("%s: quorum takes one name", where)
 			}
+			if fields[1] != NoQuorum && !p.names[fields[1]] {
+				return nil, policyErrorf("%s: quorum names %q, which is not defined earlier", where, fields[1])
+			}
 			quorumLines++
 			p.quorum = fields[1]
 
@@ -176,16 +199,25 @@ func Parse(text string) (*Policy, error) {
 	if quorumLines != 1 {
 		return nil, policyErrorf("a policy has exactly one quorum line, this one has %d", quorumLines)
 	}
-	if p.quorum != NoQuorum && !p.names[p.quorum] {
-		return nil, policyErrorf("the quorum names %q, which nothing defines", p.quorum)
-	}
 	return p, nil
 }
 
-// isSpace is the ASCII whitespace set, spelled out rather than taken from
-// `unicode`: the rule is about ASCII, and a Unicode definition would drift.
-func isSpace(r rune) bool {
-	return r == ' ' || r == '\t' || r == '\n' || r == '\v' || r == '\f' || r == '\r'
+func forbiddenControl(r rune) bool {
+	return r < 0x20 && r != '\t' && r != '\n' || r == 0x7f
+}
+
+func parsePolicyVKey(text string, wantAlg byte) (note.Verifier, error) {
+	v, err := note.ParseVerifierKey(text)
+	if err != nil {
+		return note.Verifier{}, err
+	}
+	if strings.IndexFunc(v.Name, unicode.IsSpace) >= 0 {
+		return note.Verifier{}, fmt.Errorf("verifier key name contains whitespace")
+	}
+	if v.Alg != wantAlg {
+		return note.Verifier{}, fmt.Errorf("verifier key uses algorithm 0x%02x, want 0x%02x", v.Alg, wantAlg)
+	}
+	return v, nil
 }
 
 // splitFields splits on runs of spaces and tabs, and nothing else.

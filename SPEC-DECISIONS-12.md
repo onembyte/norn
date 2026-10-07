@@ -81,9 +81,12 @@ Q1. Which policy computes T for the checkpoint the state was replayed from: the
     policy (§9)"; §9.4 says a policy entry supersedes the trust policy "for every
     checkpoint a node accepts after replaying it, and for §5.3's T". The fixture
     log contains `policy-rotated` (2-of-3 → 3-of-3), so the two readings give
-    different T on served/checkpoint. Choice: the policy the checkpoint was
+    different T on served/checkpoint. Decision: the policy the checkpoint was
     accepted under (the trust file's, for a node that has replayed nothing).
-    Not decided by the text.
+    A policy in the checkpoint's own replay range applies to the next
+    checkpoint, not retroactively to this one's T. §5.3 and §9.4 now say this;
+    the vector records 1760003607 under the acceptance policy and 1760003600
+    under the replayed policy to keep the distinction observable.
 Q2. Expired iff expires != 0 && expires <= T; no clock → no expiry. Clear.
 
 ## Notes and checkpoints (§6, §7, §10)
@@ -145,3 +148,35 @@ M1. The `cases.json` schemas of every vector directory are not specified in
 M2. Outside §5.2/§10.1/§11.1 there is no closed refusal vocabulary (trust files,
     requests, entries-hostile, policies, receipts): "refused for its own reason"
     can only be judged by mapping `says` by hand.
+
+## Selections made after the gate (2026-10-02, D-066)
+
+The choices below supersede the pre-vector readings above where they differ.
+They follow the C2SP `tlog-policy` document named by §9.1; a review of the
+repository found that the implementations did not establish a common reading.
+
+- **T4:** every policy `vkey` is parsed and its key ID recomputed; `log` keys
+  use algorithm `0x01`, `witness` keys use `0x04`. Canonical base64 pad bits
+  remain governed by D-062 and checkpoint 6.5l-vii-d-xi.
+- **T5:** `none` is predefined and cannot be defined as a witness or group or
+  appear as a group member. `all` and `any` are special only in a threshold
+  position and remain legal names elsewhere.
+- **T6:** witness and group names share one namespace, as both parsers already
+  implemented.
+- **T7:** the `quorum` line MUST name a witness or group defined on an earlier
+  line; `none` is the predefined exception. The Python reference already
+  enforced ordering; Go is aligned to it.
+- **Additional C2SP details recorded by D-066:** duplicate vkeys are compared
+  by underlying public key, every directive line ends in line feed, and ASCII
+  controls other than tab and line feed (including DEL) are rejected. These
+  details were absent from the local restatement. Names `all` and `any` are
+  ordinary names outside the threshold position.
+
+## Selections made for trust-file rules (2026-10-02, D-067)
+
+- Trust URL values are opaque text; Norn does not URI-validate them.
+- `log_urls` remains required and non-empty. A witness `url` is optional, and
+  present empty text is allowed.
+- Optional `log` and `witness` URLs in the C2SP policy are application-specific
+  and need not equal the trust file's endpoint fields. Only the existing key
+  and name correspondence requirements bind those sections.

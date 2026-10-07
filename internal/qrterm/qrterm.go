@@ -1,8 +1,8 @@
 // Package qrterm draws a QR code in a terminal.
 //
-// `ENROLLMENT.md` part 7 rule 4 is binding: any flow that needs a second device
-// works with a phone camera and a QR. An enrollment request is ~250 characters,
-// which nobody types across a room correctly.
+// A flow that needs a second device goes through a phone camera and a QR
+// (§16.2): an enrollment request is ~250 characters, which nobody types
+// across a room correctly.
 //
 // The encoding is rsc.io/qr's; what this package owns is the part a library
 // cannot check -- the quiet zone and the light/dark mapping. A code with no

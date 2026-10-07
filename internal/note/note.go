@@ -15,6 +15,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"unicode"
 )
 
 // AlgEd25519 is the note signature algorithm byte.
@@ -102,8 +103,11 @@ func ParseVerifierKey(text string) (Verifier, error) {
 	if len(parts) != 3 || parts[0] == "" || parts[1] == "" || parts[2] == "" {
 		return Verifier{}, noteErrorf("verifier key must be name+keyid+keydata")
 	}
-	raw, err := base64.StdEncoding.DecodeString(parts[2])
-	if err != nil {
+	if strings.IndexFunc(parts[0], unicode.IsSpace) >= 0 {
+		return Verifier{}, noteErrorf("verifier key name contains whitespace")
+	}
+	raw, err := base64.StdEncoding.Strict().DecodeString(parts[2])
+	if err != nil || base64.StdEncoding.EncodeToString(raw) != parts[2] {
 		return Verifier{}, noteErrorf("key data is not base64")
 	}
 	if len(raw) != ed25519.PublicKeySize+1 ||
@@ -157,8 +161,12 @@ func Split(signed string) (string, []Signature, error) {
 	if !strings.HasSuffix(block, "\n") {
 		return "", nil, noteErrorf("the signature block does not end in a newline")
 	}
+	// Remove exactly the one required terminator. Trimming all trailing LFs
+	// made a note with a blank line after its final signature indistinguishable
+	// from one whose last signature line ended correctly (D14b).
+	block = strings.TrimSuffix(block, "\n")
 	var sigs []Signature
-	for _, line := range strings.Split(strings.TrimRight(block, "\n"), "\n") {
+	for _, line := range strings.Split(block, "\n") {
 		if !strings.HasPrefix(line, SigPrefix) {
 			return "", nil, noteErrorf("bad signature line %q", line)
 		}
@@ -166,8 +174,8 @@ func Split(signed string) (string, []Signature, error) {
 		if !ok {
 			return "", nil, noteErrorf("signature line has no key name")
 		}
-		raw, err := base64.StdEncoding.DecodeString(blob)
-		if err != nil {
+		raw, err := base64.StdEncoding.Strict().DecodeString(blob)
+		if err != nil || base64.StdEncoding.EncodeToString(raw) != blob {
 			return "", nil, noteErrorf("signature is not base64")
 		}
 		// A note signature is 4 + 64. A cosignature is 4 + 8 + 64: the
@@ -205,16 +213,16 @@ func Verify(signed string, vkeys []string) (string, error) {
 	// settles for cosignatures, on the log itself (cold gate run 8, D21).
 	var verified bool
 	for _, sig := range sigs {
-		// A cosignature is not a signature over this text, so it is skipped
-		// rather than failed: a checkpoint carrying the log's signature *and*
-		// three witnesses' cosignatures must still verify under the log key
-		// alone. internal/cosign is where the others are checked.
-		if sig.IsCosignature() {
-			continue
-		}
 		for _, v := range trusted {
 			if v.Name != sig.Name || v.IsCosigner() || string(v.ID()) != string(sig.KeyID) {
 				continue
+			}
+			// A 76-byte payload is a valid frame in isolation, but it is the
+			// other algorithm's length for this matched note key. Resolve the
+			// name and key ID before deciding that a line is an unrelated
+			// cosignature; §10.1 assigns this failure to log-signature (D14c).
+			if len(sig.Sig) != ed25519.SignatureSize {
+				return "", noteErrorf("a signature line naming %s has the wrong length", v.Name)
 			}
 			if !ed25519.Verify(v.Public, []byte(text), sig.Sig) {
 				return "", noteErrorf("a signature line naming %s does not verify", v.Name)

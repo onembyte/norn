@@ -1,7 +1,10 @@
 # Norn — Distribution, Freshness, Witnesses, Gossip
 
-Written **2026-09-18** (plan part 6). How a node gets a checkpoint it can trust,
-how it knows the checkpoint is recent, and how two nodes discover they were lied to.
+Written **2026-09-18** (plan part 6). This document is **informative**: the
+distribution story — how a node gets a checkpoint it can trust, how it knows
+the checkpoint is recent, and how two nodes discover they were lied to — and no
+rule an interoperable node needs lives here; `SPEC.md` owns those. Where it
+disagrees with `SPEC.md`, the SPEC and the implemented node win.
 
 ## 1. Three signals, three jobs
 
@@ -18,20 +21,18 @@ no longer a split view, it is a forgery of signed entries, which needs signer ke
 
 ## 2. Acquiring a checkpoint
 
-```
-every T_g (30 s), and on demand:
-  candidates := fetch(log_urls…) ∪ fetch(r random proven peers, r = 3) ∪ {stored}
-  for cp in candidates sorted by size desc:
-      if !VerifyCheckpoint(cp, log key): continue
-      if !policy.Satisfied(cp cosignatures): continue           # §4
-      if stored && cp.size < stored.size: continue               # never go backwards
-      if stored && !Consistent(stored → cp): FORK(stored, cp)    # §6
-      adopt cp; fetch tiles; replay; hand proven set to enforcer
-      break
-```
+`SPEC.md` §§10 and 15 define acceptance. A checkpoint from a proven peer has
+the same trust requirements as one from a `log_urls` endpoint. The node checks
+the signature, origin and witness policy, fetches the candidate's entries and
+tiles, and verifies their tree before using the candidate. It compares the
+candidate and stored branches at their common size **before** applying the
+rollback rule: a shorter divergent branch is a fork, while a shorter
+consistent branch is refused without an accusation. Only a fully verified,
+replayed checkpoint can replace the stored one or change the proven set.
 
-Order of sources matters only for speed; **trust is identical** — a checkpoint from
-a peer is as good as one from the log because the signatures are the same.
+Source order affects how soon the node hears about a head; it does not change
+what the node can accept. Peer selection and the polling schedule are described
+in §6 below.
 
 ## 3. Witness deployment
 
@@ -103,6 +104,9 @@ and the monitor, never by `nornd` on the handshake path.
 
 ## 5. Freshness — witness time is the clock
 
+`SPEC.md` §§5.3, 8.1 and 15 define the clock and state machine. This section
+explains the operating consequences.
+
 A node's wall clock is untrusted (A11). Define for an adopted checkpoint:
 
 - `quorum_time(cp)` = the latest instant T such that the witnesses whose cosignature
@@ -115,9 +119,11 @@ A node's wall clock is untrusted (A11). Define for an adopted checkpoint:
 - A policy of `quorum none` has **no** `quorum_time`: a network that asked for no
   corroboration has nobody vouching for the time either, so its freshness is
   `unknown`, not perfect.
-- On every adoption the node records `(mono_now, quorum_time)`.
-- `age()` = `quorum_time_at_adoption` + (monotonic elapsed since) — compared against
-  the *newest* `quorum_time` it has seen.
+- On each verified checkpoint with quorum time the node can record
+  `(mono_now, quorum_time)`; only the newest time advances its estimate.
+- The node estimates now from the newest quorum time it has seen plus monotonic
+  elapsed time since seeing it. A held checkpoint's age is that estimate minus
+  its own quorum time; an older peer head cannot move the estimate backwards.
 - The wall clock is used for one thing only: raising `CLOCK_SKEW`. The test is
   `|(wall − quorum_time) − age| > Δclock` on a **direct-from-log** fetch — never on a
   checkpoint pulled from a peer, which may legitimately be older.
@@ -175,17 +181,23 @@ outside the tunnel), plain HTTP:
 |---|---|
 | `GET /norn/checkpoint` | its currently adopted cosigned checkpoint |
 | `GET /norn/tile/…`, `GET /norn/tile/entries/…` | tlog-tiles it holds (it holds all of them — full replication) |
-| `GET /norn/evidence` | any fork evidence it holds (§7) |
-| `POST /norn/hint` | "I have size N" — optional nudge; receiver pulls, never trusts the body |
+| `GET /norn/evidence` | the newest fork evidence it holds, or 404 (§7) |
 
-Every `T_g` a node pulls `/norn/checkpoint` from `r = 3` random proven peers and
-runs §2 on the result. Consistency proofs are computed locally from tiles (the node
-has them), so a peer serves data, never claims.
+An implementation may offer `POST /norn/hint` as an optional nudge to pull;
+the receiver never trusts its body. The current server rejects writes, including
+this optional endpoint.
+
+Every `T_g` (30 seconds by default) a node pulls `/norn/checkpoint` from up
+to `r = 3` random proven peers, including when its direct log answers. An
+unusable or stale log triggers an immediate peer round. The node runs §15's
+source-neutral verification on each answer. Consistency proofs are computed
+locally from tiles, so a peer serves data, never claims.
 
 The address is **derived from the interface, never configured**: `nornd` takes a
 gossip *port* and gets the host from the WireGuard device itself, so there is no
-setting that could point it at `0.0.0.0`. The endpoints are read-only — anything
-but `GET` is refused, because a peer answers questions and takes no instructions —
+setting that could point it at `0.0.0.0`. The required endpoints are read-only —
+`GET` and `HEAD` are accepted and writes are refused, because a peer answers
+questions and takes no instructions —
 and they expose the node's mirror directory and nothing beside it.
 
 Properties this buys, each with a lab test (§8):
@@ -193,8 +205,8 @@ Properties this buys, each with a lab test (§8):
   the whole connected mesh (T2).
 - **Split-view detection with colluding witnesses** — two nodes fed different
   quorum-valid checkpoints detect it on their next exchange (T1).
-- **Evidence propagation** — a node that detects a fork pushes `/norn/hint`; peers
-  pull `/norn/evidence`, verify it independently, and freeze too (T1b).
+- **Evidence propagation** — peers independently pull `/norn/evidence`, verify
+  it, and freeze too (T1b). An optional hint can shorten discovery latency.
 
 Gossip carries only signed material, so a rogue peer inside the watchdog window
 can withhold but not deceive; unproven peers are not polled.
@@ -227,7 +239,12 @@ routes so the log serves *different content per client IP*.
 Each scenario is a script under `lab/tests/` that exits 0 on PASS and prints the
 measured latency. `make lab-test` runs all of them.
 
-## 9. Metrics (`nornd` exposes Prometheus on the tunnel address)
+## 9. Metrics (**planned**: `nornd` will expose Prometheus on the tunnel address)
+
+None of these exist yet: the node publishes `/run/norn/proven.json`
+(`SPEC.md` §13.3) and no metrics at all. The list is the shape the exporter
+should take, kept here so the names are argued about before the exporter is
+written rather than after.
 
 `norn_checkpoint_size`, `norn_checkpoint_age_seconds`, `norn_state{fresh|degraded|hard_stale|fork}`,
 `norn_gossip_peers_polled_total`, `norn_gossip_adopted_from{log|peer}`,

@@ -36,6 +36,15 @@ func logKey(t *testing.T) ed25519.PrivateKey {
 	return ed25519.NewKeyFromSeed(seed[:])
 }
 
+// witnessKey is the in-process witness's own key. It used to be the log key
+// under the cosignature algorithm, which D-066 refuses: a policy compares keys
+// by the underlying public key, across `log` and `witness` lines alike.
+func witnessKey(t *testing.T) ed25519.PrivateKey {
+	t.Helper()
+	seed := sha256.Sum256([]byte("norn/logserver-test/witness-key"))
+	return ed25519.NewKeyFromSeed(seed[:])
+}
+
 func fixtureSeed(t *testing.T, name string) ed25519.PrivateKey {
 	t.Helper()
 	raw, err := os.ReadFile(filepath.Join(vectorRoot(), "keys.json"))
@@ -64,9 +73,10 @@ const testWitnessName = "norn-witness/logserver-test"
 func testPolicy(t *testing.T, origin string) string {
 	t.Helper()
 	public := logKey(t).Public().(ed25519.PublicKey)
-	return "log " + origin + " " + note.VerifierKey(origin, public) + "\n" +
+	witness := witnessKey(t).Public().(ed25519.PublicKey)
+	return "log " + note.VerifierKey(origin, public) + "\n" +
 		"witness " + testWitnessName + " " +
-		note.CosignerVerifierKey(testWitnessName, public) + "\n" +
+		note.CosignerVerifierKey(testWitnessName, witness) + "\n" +
 		"quorum " + testWitnessName + "\n"
 }
 
@@ -102,7 +112,7 @@ func theLog(t *testing.T) (*Server, *httptest.Server, replay.Anchor, string) {
 	// very check the anchor exists to make.
 	store, err := tlogstore.Open(dir, origin, logKey(t), tlogstore.WithCosigner(
 		tlogstore.CosignerFunc(cosign.Append(
-			[]cosign.Signer{{Name: testWitnessName, Key: logKey(t)}},
+			[]cosign.Signer{{Name: testWitnessName, Key: witnessKey(t)}},
 			cosign.At(time.Unix(1_760_003_600, 0))))))
 	if err != nil {
 		t.Fatal(err)

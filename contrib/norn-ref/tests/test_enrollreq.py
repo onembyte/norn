@@ -7,6 +7,7 @@ is checked before anything is believed, and that a request can never be
 mistaken for -- or replayed as -- a log entry.
 """
 import unittest
+from pathlib import Path
 
 from nornref import bech32m, cbor, enrollreq, entry, fixture, keys
 
@@ -14,6 +15,7 @@ NET = fixture.NET
 DEV = fixture.KEYS["laptop"]
 WG = fixture.WG["spare"]
 TS = fixture.T0
+VECTOR_ROOT = Path(__file__).resolve().parents[3] / "testdata" / "vectors"
 
 
 def a_request(**over):
@@ -159,6 +161,64 @@ class TextForm(unittest.TestCase):
         other = "q" if text[10] != "q" else "p"
         with self.assertRaises(enrollreq.RequestError):
             enrollreq.decode_text(text[:10] + other + text[11:])
+
+
+class ShippedPaddingVector(unittest.TestCase):
+    def test_excess_padding_appends_one_group_without_changing_the_signed_request(self):
+        base_text = (VECTOR_ROOT / "requests" / "req-padding-base.txt").read_text().strip()
+        bad_text = (VECTOR_ROOT / "requests-bad" / "excess-padding.txt").read_text().strip()
+
+        base_hrp, base_groups = bech32m.decode_raw(base_text)
+        base_raw = bech32m.decode(base_text)[1]
+        self.assertEqual((8 * len(base_raw)) % 5, 4)
+        request = enrollreq.decode(base_raw)
+        self.assertEqual(enrollreq.check(request, net=NET), request)
+
+        bad_hrp, bad_groups = bech32m.decode_raw(bad_text)
+        self.assertEqual(bad_hrp, base_hrp)
+        self.assertEqual(bad_groups, base_groups + [0])
+        with self.assertRaisesRegex(bech32m.Bech32Error, "too much padding"):
+            bech32m.decode(bad_text)
+
+
+class ShippedLabelBoundary(unittest.TestCase):
+    def test_label_value_limit_is_256_utf8_bytes(self):
+        base_text = (VECTOR_ROOT / "requests" / "req-label-at-cap.txt").read_text().strip()
+        request = enrollreq.decode_text(base_text)
+        self.assertEqual(enrollreq.check(request, net=NET), request)
+        base_label = request["labels"]["ip"]
+        self.assertEqual(len(base_label.encode("utf-8")), 256)
+        self.assertEqual(len(base_label), 128)
+
+        bad_text = (VECTOR_ROOT / "requests-bad" / "oversize-label.txt").read_text().strip()
+        bad_raw = bech32m.decode(bad_text)[1]
+        bad_request = cbor.decode(bad_raw)
+        bad_label = bad_request["labels"]["ip"]
+        self.assertEqual(len(bad_label.encode("utf-8")), 257)
+        self.assertEqual(len(bad_label), 129)
+        self.assertTrue(enrollreq.verify(bad_request),
+                        "the negative must be correctly signed before the cap rejects it")
+        with self.assertRaisesRegex(enrollreq.RequestError, "longer than 256 bytes"):
+            enrollreq.decode_text(bad_text)
+
+
+class ShippedReservedHints(unittest.TestCase):
+    def test_malformed_reserved_hints_are_accepted_as_opaque_signed_text(self):
+        text = (VECTOR_ROOT / "requests" / "req-reserved-hints.txt").read_text().strip()
+        request = enrollreq.decode_text(text)
+        self.assertEqual(enrollreq.check(request, net=NET), request)
+        self.assertTrue(enrollreq.verify(request))
+        self.assertEqual(request["labels"], {
+            "ip": "not-a-cidr",
+            "endpoint": "not-an-endpoint",
+        })
+
+
+class ShippedMapKeyCap(unittest.TestCase):
+    def test_oversize_request_label_key_is_refused_by_the_cbor_profile(self):
+        text = (VECTOR_ROOT / "requests-bad" / "oversize-label-key.txt").read_text().strip()
+        with self.assertRaisesRegex(enrollreq.RequestError, "map key must be 1-23 bytes"):
+            enrollreq.decode_text(text)
 
 
 class Check(unittest.TestCase):

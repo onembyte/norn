@@ -179,6 +179,7 @@ func FromResult(result *logclient.Result, now time.Time, fresh Freshness) (Set, 
 			Root:   hex.EncodeToString(result.Checkpoint.Root[:]),
 		},
 		Freshness: fresh.State,
+		Devices:   []Device{},
 		WrittenAt: now.Unix(),
 	}
 
@@ -201,13 +202,17 @@ func FromResult(result *logclient.Result, now time.Time, fresh Freshness) (Set, 
 	at := EvaluationTime(result)
 	for _, id := range Devices(result.State, at) {
 		device := result.State.Devices[id]
+		labels := device.Labels
+		if labels == nil {
+			labels = map[string]string{}
+		}
 		raw, err := hex.DecodeString(device.WgPk)
 		if err != nil {
 			return Set{}, fmt.Errorf("proven: %s has an unreadable key: %w", id, err)
 		}
 		set.Devices = append(set.Devices, Device{
 			DeviceID: id, WgPk: base64.StdEncoding.EncodeToString(raw),
-			Labels: device.Labels, Expires: int64(device.Expires),
+			Labels: labels, Expires: int64(device.Expires),
 			Proof: filepath.Join(ProofDir, id+".bundle"), SinceIndex: int64(device.SinceIndex),
 		})
 	}

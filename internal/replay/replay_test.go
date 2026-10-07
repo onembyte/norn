@@ -122,6 +122,33 @@ func TestReplayedStateEqualsStateJSONByteForByte(t *testing.T) {
 	}
 }
 
+func TestMalformedReservedHintsSurviveEnrollmentReplay(t *testing.T) {
+	anchor, entries, manifest := loadCase(t, filepath.Join(vectorRoot(), "log"))
+	enrollIndex := -1
+	for i, item := range manifest.Entries {
+		if item.Name == "51-enroll-unicode-labels" {
+			enrollIndex = i
+			break
+		}
+	}
+	if enrollIndex < 0 {
+		t.Fatal("the malformed-hints enrollment is missing from the log manifest")
+	}
+	st := Replay(anchor, entries[:enrollIndex+1])
+	device, ok := st.Devices["escaped"]
+	if !ok {
+		t.Fatal("the malformed-hints enrollment was not accepted")
+	}
+	if device.Status != state.StatusActive {
+		t.Fatalf("device status = %q, want active", device.Status)
+	}
+	for key, want := range map[string]string{"ip": "not-a-cidr", "endpoint": "not-an-endpoint"} {
+		if got := device.Labels[key]; got != want {
+			t.Errorf("replayed labels[%q] = %q, want %q", key, got, want)
+		}
+	}
+}
+
 func TestEveryGenesisCaseAbortsAndMatchesItsState(t *testing.T) {
 	dirs, err := filepath.Glob(filepath.Join(vectorRoot(), "genesis", "*"))
 	if err != nil {

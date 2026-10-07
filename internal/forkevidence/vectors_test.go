@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	cborpkg "github.com/onembyte/norn/internal/cbor"
 	"github.com/onembyte/norn/internal/evrefusal"
 	"github.com/onembyte/norn/internal/policy"
 )
@@ -75,6 +76,29 @@ func TestEveryForkNegativeIsRefused(t *testing.T) {
 				t.Errorf("refused for the wrong reason.\n  got:  %v\n  want: %s", err, c.Says)
 			}
 		})
+	}
+}
+
+func TestBooleanForkSizeIsAProfileItemAndSchemaRefusal(t *testing.T) {
+	root := filepath.Join("..", "..", "testdata", "vectors")
+	raw, err := os.ReadFile(filepath.Join(root, "fork", "bad-bool-size.cbor"))
+	if err != nil {
+		t.Fatalf("the boolean-size evidence vector is missing: %v", err)
+	}
+	value, err := cborpkg.DecodeWithin(raw, MaxEvidenceBytes)
+	if err != nil {
+		t.Fatalf("boolean is valid under the CBOR profile: %v", err)
+	}
+	doc, ok := value.(map[string]any)
+	if !ok {
+		t.Fatalf("decoded %T, want map", value)
+	}
+	if size, ok := doc["size"].(bool); !ok || !size {
+		t.Fatalf("size is %#v (%T), want true", doc["size"], doc["size"])
+	}
+	_, err = Parse(raw)
+	if got, _ := evrefusal.CodeOf(err); got != evrefusal.Schema {
+		t.Fatalf("refused as %q, want schema: %v", got, err)
 	}
 }
 

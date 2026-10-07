@@ -1,4 +1,5 @@
 """RED first: deterministic CBOR for the Norn subset (SPEC §4.0/§4.1)."""
+from pathlib import Path
 import unittest
 from nornref import cbor
 
@@ -55,6 +56,13 @@ class DecodeStrict(unittest.TestCase):
     def test_rejects_trailing_bytes(self):
         with self.assertRaises(cbor.ProfileError):
             cbor.decode(h("0100"))
+
+    def test_boolean_in_fork_size_is_a_valid_profile_item(self):
+        vector = (Path(__file__).resolve().parents[3] / "testdata" / "vectors"
+                  / "fork" / "bad-bool-size.cbor")
+        decoded = cbor.decode(vector.read_bytes())
+        self.assertIs(type(decoded["size"]), bool)
+        self.assertIs(decoded["size"], True)
 
 
 if __name__ == "__main__":

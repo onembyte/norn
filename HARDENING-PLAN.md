@@ -1,0 +1,444 @@
+# Norn — the hardening plan, start to finish
+
+*Written 2026-10-07. Sources: the review in `mythos_optimization_addition.md`
+(findings F1–F12, guardrails §5), `NEXT-CHECKPOINTS.md` (folded in here; that
+file now only points here), run 13's report `SPEC-DEFECTS-13.md`, and D-068.
+Every code claim this plan rests on was re-checked against the source before
+it was written; the line references are to the tree as of `39daef3` plus the
+uncommitted pile.*
+
+**This file is the order and the detail. `BUILD-LOG.md` is the ledger.** A
+checkpoint is ticked in `BUILD-LOG.md` only — never here — so the two cannot
+disagree about what is done. The loop takes the first checkpoint in §3's order
+whose `BUILD-LOG.md` row is not ✅.
+
+---
+
+## 1. Rules for every checkpoint
+
+These restate `mythos_optimization_addition.md` §5; each rule there names the
+incident that produced it. Read that section before the first firing.
+
+1. **Before anything:** `git status`, `git log -1`, `git fetch` and compare
+   with `origin/master`, and `ListAgents` / `ps` for another writer whose
+   working directory is `~/norn`. If anything else wrote since the last
+   commit this loop made, or a previous firing is mid-checkpoint, **finish
+   that or stop — never start a second**.
+2. **Subdivide in `BUILD-LOG.md` first.** Each checkpoint below already lists
+   its sub-steps; copy them into the table as `-a`, `-b`, … rows before the
+   first line of code, and split further if one turns out bigger than a
+   sitting.
+3. **TDD.** The failing test is written and run red *before* the change. A
+   test that is green before the change is not the test for the change.
+4. **A control for every new rule, vector or behaviour.** Mutate one thing,
+   run, restore byte for byte, verify the restore with `cmp`, record which
+   test failed. A control that does not compile, or runs on an already
+   mutated tree, proves nothing. Use an in-memory runner (Python script that
+   holds the originals) — never a shell loop over an unquoted list.
+5. **The full gate before every commit:** `make test` (race, ~10 min),
+   `make vectors vectors-log vectors-check ref-test lint fmt-check vet`.
+6. **Commit, tick in `BUILD-LOG.md`, push `master` as a fast-forward.** One
+   sub-checkpoint per commit. Never force, never rebase pushed history.
+7. **Stop and write a DECISION block** (`BUILD-LOG.md`, then commit and
+   push) for: a change to what a conforming implementation must accept or
+   refuse that `SPEC.md` does not already state, beyond the decisions in §2
+   (fixing one implementation to match a rule the spec and the other
+   implementation already agree on is a bug fix, not a decision); anything
+   that needs the NAS, the Pi, a VPS or the public internet beyond Go/Python
+   module downloads; anything that needs a person. Rows marked **[user]** are
+   not looped. **An open decision blocks only the rows that depend on it**
+   (§3's *needs* lines): the loop records it and takes the next unblocked
+   row, and stops only when no unblocked row remains.
+8. **Generated artifacts are regenerated, never edited by hand**: `make
+   vectors`, `make vectors-log`, `make vectors-sums`, and `anchors/` only via
+   `contrib/ots-vector/generate.py` (recipe in the review's §6).
+9. **Do not refactor what a checkpoint does not name.** Match the code's
+   comment density and voice. No new dependency without a DECISION;
+   `internal/depgraph` stays green.
+10. **When a script fails mid-way, inspect the tree before continuing.**
+
+---
+
+## 2. Decisions this plan rests on
+
+- **D-068 (taken 2026-10-07): the cold-model gate passes on two consecutive
+  sealed runs with zero behaviour-changing defects** (severity H or M in the
+  report's own rating), every low-severity finding recorded in §12.1's
+  not-vectored list. Replaces "a run's verdict reads exactly `SPEC
+  SUFFICIENT`", which four runs have shown a stochastic reader cannot
+  deliver.
+- **D-069 (to record in H1): a node's stored checkpoint survives a restart.**
+  §10's `stored_cp` and §11 rule 4's "forever" already imply it; the node did
+  not do it (F1). This is a node-contract clarification taken under the
+  user's 2026-10-07 instruction to follow the review's recommendations; it
+  changes no wire format and no vector.
+
+---
+
+## 3. The checkpoints, in order
+
+Legend: ⏱ rough size in firings · 🔒 security-relevant · **[user]** not
+looped · **[decision]** stops for the user at a point named in the steps.
+
+### Stage A — make the tree safe
+
+#### H0 · 6.5m-0 · Land the pile ⏱1
+*Why:* 174 files (+5,299/−990) of reviewed work — BUILD-LOG rows
+6.5l-vii-d-v … d-xii-v, d-stamp, run 13 and the 6.5l-ix triage row — sit
+uncommitted since 2026-10-02. One `git checkout` from gone (F4).
+- a. Inventory the pile by area (`git status`, `git diff --stat`); confirm
+  nothing outside `~/norn` was edited.
+- b. **Secret scan** of the diff and every untracked file: `PRIVATE KEY`,
+  `seed`, 64-hex strings outside `testdata/vectors/keys.json`, tokens, any
+  path under `cmd/norn/norn-witness/` (a witness key was scrubbed from
+  history once — it must never return).
+- c. Confirm the three deleted vectors (`policies/no-trailing-newline.txt`,
+  `trust-bad/29-…`, `30-…`) are generator-owned removals: `make vectors
+  vectors-log` must reproduce the tree exactly.
+- d. Full gate.
+- e. Record D-068 in `DECISIONS.md`; add the hardening rows to
+  `BUILD-LOG.md` (done when this plan was written).
+- f. **Commit as one gate-green commit** whose message enumerates every row
+  it lands. *Deviation from the review, recorded:* the review asked for one
+  commit per row, but the rows' intermediate trees never existed and cannot
+  be reconstructed from interleaved files (`SPEC.md`, `BUILD-LOG.md`,
+  `fixture.py`, `SHA256SUMS` are touched by most rows); per-row commits
+  would be commits that never passed the gate. The row boundaries survive in
+  `BUILD-LOG.md`'s narrative, one entry per row.
+- g. Push. `PROGRESS.html` (Codex's local progress page) is left untracked.
+*Acceptance:* `git status` shows only `PROGRESS.html`; `master ==
+origin/master`; the full gate is green on the pushed head.
+
+### Stage B — node hardening (review F1–F3) 🔒
+
+#### H1 · 6.5m-i · The stored head survives a restart (F1) ⏱2 🔒
+*Why:* `agent.New` (`internal/agent/agent.go:207`) restores only a fork
+freeze (`fork.go:43`). Until the first verify, `a.last` is nil, so
+`logclient.Verify` gets `Stored: nil` and skips §10's size and branch
+comparison entirely. A restarted node accepts any correctly cosigned head,
+including an old one: every revocation since is undone.
+- a. **Red test** (`internal/agent`): verify a 20-entry cosigned log in a
+  temp `RunDir`; build a new `Agent` over the same `RunDir`; serve a cosigned
+  10-entry head of the same log; the first `Once()` must refuse it
+  (`rollback`) and leave the 20-entry proven set in the fake table.
+- b. **Red test:** a corrupt or foreign mirror is reported (new event
+  `MIRROR_UNUSABLE`) and ignored — the node starts exactly as it does today,
+  and never enforces from an unverified mirror.
+- c. **Red test:** a mirror whose head is signed by a key the trust file
+  does not name, but which the mirror's own replayed state published (a
+  rotated log key, §9.4), is restored — the node had accepted it before.
+- d. Implement `restoreLast()`: verify `RunDir/mirror` with
+  `logclient.Verify(logclient.Dir(mirror), anchor)` using the trust file's
+  key; on `log-signature`, replay the mirror's entries, add
+  `logclient.KeysFrom(state)` and retry once (the same key rule `Once` uses).
+  Seed `a.last` from the result; do **not** reconcile from it before the
+  first cycle (the first cycle reconciles as usual).
+- e. `SPEC.md` §13.2 gains one sentence (D-069): the stored checkpoint and
+  the node's own branch persist across a restart, and a restarted node
+  compares every candidate against them before adopting anything.
+  `ENFORCEMENT.md` §8 row "nornd crashes" says the same.
+- f. Controls: remove the seeding (a fails); skip the mirror's verification
+  (b fails); drop the learned-key retry (c fails).
+*Acceptance:* the three tests and their controls; full gate.
+
+#### H2 · 6.5m-ii · Network budgets: no fetch can stall enforcement (F2) ⏱2 🔒
+*Why:* `gossip.Peer.Fetch` (`internal/gossip/server.go:111`) uses
+`http.Get` — Go's default client, no timeout — inside `Once()`, which the
+daemon calls synchronously. One proven peer that accepts and never answers
+stops a watchdog node from evicting anything. The log fetcher has a 30 s
+per-request timeout, but one `Verify` makes a request per bundle and tile.
+- a. **Red test:** a loopback peer whose handler blocks forever; `Once()`
+  must return within the round budget and the fake table must still have
+  been reconciled (an injected rogue key evicted in watchdog mode). Run it
+  under a goroutine with a hard test deadline so a regression fails rather
+  than hangs.
+- b. **Red test:** the same for evidence polling (`pollEvidence`).
+- c. **Red test:** a log fetcher that answers each request slowly — one
+  `Verify` stops at its overall budget and the cycle reconciles on
+  `a.last` (`ENFORCING_ON_STALE_STATE`).
+- d. Implement: a gossip `http.Client` with a per-request timeout (default
+  5 s — a tunnel neighbour); a per-round budget for `askPeers` and
+  `pollEvidence`; a budget wrapper for `logclient.Fetcher` that refuses
+  further fetches once a `Verify`'s deadline has passed (no interface change
+  needed: the wrapper is a `Fetcher`). Defaults and flags in
+  `cmd/nornd/config.go`, refused if absurd (like `hard-stale`).
+- e. Controls: remove the client timeout (a fails within the hard
+  deadline); remove the round budget; remove the verify budget (c fails).
+*Acceptance:* three tests, controls, full gate; `GOSSIP.md`/§15 state the
+budgets as implementation defaults, not protocol.
+
+#### H3 · 6.5m-iii · An unchanged head is a reconcile-only cycle (F3a) ⏱1
+*Why:* `DefaultPoll` is 200 ms (`cmd/nornd/config.go:236`) and every cycle
+runs the full `Verify` — every bundle, every tile, a full replay. At 10⁴
+entries and fifty nodes that is a self-inflicted denial of service.
+- a. **Red test** with a counting `Fetcher`: 50 cycles over an unchanged
+  log make 50 `checkpoint` requests and **zero** bundle or tile requests.
+- b. **Red test:** when the checkpoint bytes change, the next cycle does a
+  full verification (today's path) and adopts the new head.
+- c. **Red test:** a log whose tiles are corrupted *after* the head was
+  verified is caught by the periodic full re-verify (default every
+  5 minutes and on every gossip round), not ignored forever.
+- d. Implement the fast path in `Once()`: fetch `checkpoint`; if the bytes
+  equal `a.last.SignedCheckpoint` and no full re-verify is due, skip
+  `Verify`, recompute freshness from the clock, run the gossip and evidence
+  rounds on their cadence, reconcile.
+- e. Controls: remove the short-circuit (a fails); remove the periodic
+  re-verify (c fails).
+
+#### H4 · 6.5m-iv · Incremental fetch and replay (F3b–c) ⏱3 🔒
+*Why:* a grown head still re-fetches and replays everything.
+- a. **`replay.Replayer`**: a resumable fold that carries the state **and**
+  the seen-set of entry hashes (`replay.go:106`) — `Replay(anchor,
+  entries)` becomes `New(anchor).Apply(entries...)`. **Property test:** for
+  the fixture log and every split point k, applying `entries[:k]` then
+  `entries[k:]` yields byte-identical `state.json` to a full replay; the same
+  for `served-large/`. Control: drop the seen-set carry-over → the
+  `dup-entry` vectors and the property test fail.
+- b. **`logclient.VerifyFrom(held *Result, f, anchor)`**: fetch only the
+  bundles and tiles beyond the held size; rebuild the tree by appending to
+  the held one; compute the consistency of held→new locally (no supplied
+  proof, §10); then the same checks as `Verify` for the new head (codes
+  unchanged). **Property test:** for every pair of sizes in the fixture,
+  `VerifyFrom` and `Verify` give the same result, code for code, on every
+  `served-bad/`, `detect/` and `checkpoints-bad/` case.
+- c. **Counting test:** one appended entry causes exactly the new bundle and
+  the changed tiles to be fetched.
+- d. The agent uses `VerifyFrom` when it holds a head and falls back to
+  `Verify` on any doubt (fork evidence, mirror restore, the periodic full
+  re-verify from H3).
+- e. Controls for each: a wrong tile offset, a skipped consistency check, a
+  replay resumed without its seen-set — each must fail a named test.
+
+### Stage C — the spec gate under D-068
+
+#### H5 · 6.5l-ix · Run 13's findings ⏱6–8 **[decision]**
+*Why:* run 13 (`SPEC-DEFECTS-13.md`): 1,353/1,353 checks pass, 19 defects,
+verdict `SPEC INSUFFICIENT`. Same pattern as 6.5l-vii-d.
+- a. **Triage, against this implementation first** (guardrail 4): for each
+  of D1–D19, does Go and/or Python already do the right thing (suite gap) or
+  not (bug here)? Record the table in `BUILD-LOG.md`.
+- b. **One DECISION block for every finding the triage puts in rule 7's
+  first class, with a recommendation each — then continue with c–e while it
+  waits.** Expected at least: D2 (which
+  log keys verify bundles and receipts after a rotation; §8's "only
+  `norn.trust`" promise), D6 (whose note rules win where C2SP is laxer), D9
+  (a `policy` entry with two `log` lines), D12 (a refusal code for a served
+  log whose entry 0 is not the genesis — the closed list would grow), D13
+  (CBOR simple values other than the four named). If the block is still open
+  when c–e and f's undecided-free parts are done, H5 and H6 wait and the
+  loop moves on to H7.
+- c. **The log grows once** (one regeneration + anchors): D1
+  `bad-rotate-unknown-body-key` / `bad-revoke-unknown-body-key` and "closed"
+  in both §5.1 rows; D3 an accepted n-of-n threshold; D4's replay two-fault
+  orderings; D17's log-side boundaries.
+- d. **Receipts, checkpoints, policies, trust:** D4's receipt orderings
+  (two-fault receipts), D18's unreached served-path and receipt refusals,
+  D10 (vkey name syntax, U+00A0), D7 ("the same keys"), D8 (a directive after
+  `quorum`).
+- e. **Fork and proofs:** D14 a sound same-size fork in `sound`; D15
+  `proofs/at-the-cap` and `proofs-bad/one-past-the-cap` (bundles grown with
+  unlisted witnesses' cosignature lines); D4's §11.1 held-before-policy
+  two-fault file.
+- f. **Prose:** D4's "may reverse" sentence becomes "still normative, merely
+  untested"; D5 one definition of age (§8.1 cites §15) with a
+  `staleness.json` case built from two (T, learned-at) pairs; D11 the name a
+  learned log key signs under; D16 the served-rotated codes; D19 the
+  coverage rows; and the decisions from b, applied.
+- Every sub-step: controls, regenerate, full gate, commit, push.
+
+#### H6 · 6.5l-x · Sealed runs until D-068 is met ⏱1 per run + fixes
+*Needs:* H5 complete, including its decisions.
+- a. Seal from the pushed `HEAD` with `git archive` (`SPEC.md` +
+  `testdata/vectors/` + empty `work/`), verify every digest, confirm no path
+  back to `~/norn`.
+- b. A fresh general-purpose agent with run 11's prompt verbatim except the
+  directory and the report number (`BUILD-LOG.md` 6.5l-vii-c records it).
+- c. **Audit its transcript, not its word:** tool calls naming `~/norn` = 0,
+  web calls = 0, decisions logged before the first vector read; copy
+  `SPEC-DEFECTS-N.md` and its decisions file in.
+- d. Count the H and M findings. **Zero → this run counts toward D-068;
+  otherwise the counter resets** and its findings become the next
+  6.5l-ix-style row before the next run.
+- e. Two consecutive clean runs → tick 6.5l-vii and `PLAN.md` Phase 6 line 1
+  with both reports' names and commits.
+
+### Stage D — testable and runnable without hardware
+
+#### H7 · 6.5m-v · Mesh simulation: T1–T8 in CI ⏱5 🔒
+*Why:* every agent test drives one `Once()` against fakes; the daemon has
+never met a slow, split or lying network (F7). `GOSSIP.md` §8's T1–T8 are
+the Phase 4 security properties and exist only on paper.
+- a. **`internal/sim`**: N `Agent`s, each with a `peertable.Fake`, an
+  injectable monotonic clock, and a real gossip HTTP server on a loopback
+  port; a programmable log `Fetcher` per client (honest, stalled, branch A/B
+  per client, replay an older head, kill witnesses, skew a node's wall
+  clock); a deterministic scheduler so a test runs in seconds, not T_g
+  multiples of real time.
+- b. T2 (log freeze → peers carry the head), T4 (replay rejected), T6
+  (witness quorum loss → hold, degrade, recover).
+- c. T1 (split view with colluding witnesses → both nodes prove the fork,
+  freeze, proven set unchanged) and T1b (evidence propagation to a node that
+  saw only one branch, ≤ 3·T_g in simulated time).
+- d. T5 (wall clock +2 h → `CLOCK_SKEW`, not degraded) and T7 (revoke
+  latency ≤ T_c + T_g + T_poll in simulated time, the number written to a
+  result file).
+- e. T3 (honest witnesses, lying log, receipt check) and T8 offline (an
+  anchored checkpoint passes `--anchored`, a tampered one fails).
+- f. `make lab-sim`; a CI job; each scenario prints its measured simulated
+  latency. Controls: for each T, disable the mechanism it proves (gossip,
+  evidence polling, the fork comparison, the skew rule) and watch exactly
+  that scenario fail.
+*Note:* simulated time proves ordering and bounds in the code; it does not
+replace the lab's wall-clock measurements (H-user rows), and the result
+files say so.
+
+#### H8 · 6.5m-vi · Observe-mode deployment kit ⏱3
+- a. `contrib/systemd/nornd.service`: observe by default; `Restart=always`;
+  `AmbientCapabilities=CAP_NET_ADMIN` and nothing else;
+  `NoNewPrivileges`, `ProtectSystem=strict`, `ProtectHome`, `PrivateTmp`,
+  `RuntimeDirectory=norn` (gives `/run/norn`), `StateDirectory`, read-only
+  trust file path. A test parses the unit and checks each hardening line.
+- b. `contrib/nornd.toml.example`, every key commented, observe mode; a test
+  loads it with `LoadConfig`.
+- c. **`/metrics`** on the tunnel address beside gossip, Prometheus text
+  format written by hand (no new dependency), exactly the nine names
+  `GOSSIP.md` §9 argued about; tests for each; `GOSSIP.md` §9 stops saying
+  "planned".
+- d. `contrib/norn-log/Dockerfile` (static build, non-root, read-only root
+  filesystem). Verified only if a container daemon is running — otherwise
+  the row says "written, not built" and H-user U2 builds it.
+- e. `OBSERVE.md`: one page, "watch your WireGuard mesh with Norn for a
+  week" — install, trust file, observe, what each alarm means, how to stop.
+  Every command in it is run in a test or by the user in U1.
+
+#### H9 · 6.5m-viii · Reconcile 2.6b with 4.4 ⏱<1
+*Correction to the review, found while writing this plan:* the review (and
+`NEXT-CHECKPOINTS.md` 6.8c) read `BUILD-LOG.md` row 2.6b, which still says
+"⬜ Phase 4". That row is stale. Row 4.4 closed it: the
+`internal/interop` test drives an unmodified `omniwitness` built by `make
+witness`, and `PLAN.md`'s line is already ticked "Closed by 4.4". There is
+nothing to build.
+- a. Run `NORN_REQUIRE_WITNESS=1 go test ./internal/interop/` with the
+  binaries in `build/` and confirm the test **ran** (not skipped) and
+  passed. If `build/omniwitness` is missing, `make witness` (Go module
+  downloads only).
+- b. Control: strip the witness line handling (the test's own negative
+  half already does this; confirm it fails as it says).
+- c. Mark row 2.6b "✅ closed by 4.4" with the commit, so the two rows stop
+  disagreeing. No other change.
+
+#### H10 · 6.5m-ix · Tailscale / Headscale observe via LocalAPI (D-014) ⏱3
+- a. A minimal LocalAPI client (unix socket, `status` and the IPN bus
+  watcher) written against the documented JSON — no `tailscale.com`
+  dependency (a `depgraph` test forbids it).
+- b. A read-only peer source producing `peertable.Peer`s; `nornd -backend
+  tailscale` forces observe mode and refuses `owner`/`watchdog`.
+- c. Tests against a fake LocalAPI server: proven peer silent, unproven
+  peer → `UNPROVEN_PEER` from the event (not a poll), removed peer, socket
+  missing.
+- d. Validation against a real `tailscaled` is user row U6.
+
+### Stage E — maintenance and honesty
+
+#### H11 · 6.5m-x · Log server scales and rate-limits (F8) ⏱2
+*Needs:* H4-a (the resumable replayer).
+- a. The server keeps its replayed state in memory (H4's `Replayer`) and
+  folds a candidate onto a copy; `deadline()` reads `mmd` from that state.
+  Counting test: a submission replays one entry, not the log.
+- b. A per-source token bucket returning §7's 429; tests.
+- c. `THREAT-MODEL.md` A3/A8: only a signer-key holder can grow the log;
+  the courtesy check refuses garbage.
+
+#### H12 · 6.5m-xi · Split `cmd/norn-genlog` by vector directory (F9) ⏱1
+No behaviour change: one file per vector set, `make vectors-check` and
+`git diff --stat testdata/` empty are the proof.
+
+#### H13 · 6.5m-xii · Documents tell the truth about scale and plans (F10–F12) ⏱1
+- a. `THREAT-MODEL.md` §6: the scale ceiling as numbers (entries × bytes ×
+  nodes; replay time on a Pi measured or stated as unmeasured).
+- b. Every "planned" in `ENROLLMENT.md`/`GOSSIP.md` checked against the
+  code; what H8 built is no longer planned.
+- c. `docclaims` guards for each new factual sentence.
+
+#### H14 · 6.7 · `contrib/verify-py/`: an independent verifier, kept ⏱2
+A fresh agent on a sealed copy (the gate prompt's constraints verbatim)
+builds a Python standard-library verifier and a harness over every vector;
+committed as written with `PROVENANCE.md` (sealed commit, prompt, date,
+transcript audit); `make verify-py`, in `make ci`; never edited by hand.
+
+#### H15 · 6.6 · Phase 6 gate audit ⏱1
+*Needs:* H6 finished, or the gate line recorded as open with the reason.
+Each `PLAN.md` gate line and each `PUBLICATION.md` inventory row against
+what exists (✅ fails if missing, ⬜ fails if present); what needs people.
+
+#### H16 · 6.10 · Hand-over material for the human gate lines ⏱2
+- a. `TRY-NORN.md`: a stranger goes from a clean checkout to offline
+  verification, the simulation (`make lab-sim`) and an observe-mode node,
+  every command copy-pasteable and run in a test.
+- b. A review packet for the comparison table: each claim, its source, and
+  the questions for a reviewer who has run two of the systems.
+
+### Stage F — your hand-over
+
+#### H17 · 7.0 · `ACTION-PLAN.md`: how to test Norn, and how to present it ⏱2
+*Needs:* every row H0–H16 ✅, or blocked on a recorded decision that the
+plan then states as open.
+- a. **Your test plan**, in order, each step with what you should see and
+  what to send back: offline verification; the simulation; a local witness;
+  observe mode on one node of your real mesh for a day, then the whole mesh
+  for seven (U1); reading the alarms; what "it works" means and what it does
+  not claim.
+- b. **Read `wireguard.com`'s contact guidance at that time** (WebFetch the
+  page, record what it says verbatim) and draft the presentation email in
+  exactly the form it asks for — plain text, the right list or address, no
+  attachments if it says so — with an honest status: what is built, what is
+  measured, what is not, the repository link, and what is being asked of
+  them.
+- c. A pre-send checklist: repository visibility, license, the README status
+  line, which numbers come from a real deployment. **Nothing is sent by the
+  loop.**
+- d. After H17, the loop stops itself (`CronDelete`) and sends a one-line
+  notification.
+
+### Stage G — yours, not looped **[user]**
+
+| row | what | needs |
+|---|---|---|
+| U1 · 6.5m-vii | observe mode on the homelab mesh: one node a day, then all nodes for seven days; alarms to ntfy | access to the nodes |
+| U2 · 6.8d, 6.9a–f | a stock nginx serving the log (`PLAN.md` Phase 2's last open line), the container lab (`lab/compose.yaml`), the chaos container, T1–T8 on real kernels, the Phase 3 measurements, patched NetBird/Headscale, the six demos | a container runtime with disk, or the NAS |
+| U3 · 6.9g | a real OpenTimestamps anchor upgraded to a Bitcoin attestation | contacting public calendars |
+| U4 · 6.9h | the lab on TrueNAS `.155` with the Pi and a VPS as witnesses | NAS/VPS access and keys |
+| U5 · 6.9i | enrollment with a phone and a hardware key, timed | you, a phone, a key |
+| U6 | the LocalAPI watcher against a real `tailscaled`/Headscale | a Tailscale node |
+| U7 | an outside person runs it; a reviewer checks the comparison table; the email to the WireGuard team; publication per `PUBLICATION.md` | other people |
+
+---
+
+### Not scheduled: Phase 7
+
+`PLAN.md`'s backlog — FIDO2 `ed25519-sk`, dual-key rotate grace, the NetBird
+upstream admission hook, macOS/Windows agents, public witness onboarding,
+multi-log validity, policy transparency, an Internet-Draft, and D-065's
+closed codes for trust files, requests and policies (v1.1). None starts
+without the user choosing it.
+
+### Decisions the user rows need, asked once
+
+1. Where the lab runs first: containers on this Mac (a runtime started and
+   disk freed) or straight to the NAS.
+2. How the builder reaches the NAS, the Pi and the VPS, and with which keys.
+3. Public network actions: OpenTimestamps calendars, posting anywhere, the
+   email.
+4. People: who holds the phone and the key, who runs the lab as a stranger,
+   who reviews the comparison table.
+
+## 4. Order rationale
+
+Stage A first because nothing else is safe while five days of work are one
+command from lost. Stage B before the spec loop because the three node bugs
+are live in any deployment and none of them touches `SPEC.md`'s protocol.
+Stage C's decision block is raised early (H5-b) so it is answered while the
+loop keeps working. Stage D makes the security properties checkable on every
+push before any hardware exists. Stage F comes last because the test plan
+and the email must describe what is true at the end, not what was hoped at
+the start.

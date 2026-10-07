@@ -13,6 +13,7 @@ from __future__ import annotations
 import pathlib
 import sys
 
+import base64
 import hashlib
 
 from nornref import canonjson, cbor, enrollreq, entry, fixture, note, replay, trust
@@ -40,7 +41,7 @@ OWNED = frozenset({
 #: Produced by `make vectors-log` from the Go implementation, because building
 #: a tiled log requires one (SPEC §12, the suite's two provenances). Pruning
 #: them here deleted them silently -- eleven files -- until this was scoped.
-FOREIGN = frozenset({"served", "proofs", "fork", "checkpoints-bad", "served-rotated",
+FOREIGN = frozenset({"served", "served-large", "proofs", "fork", "checkpoints-bad", "served-rotated",
                     "proofs-bad", "served-bad", "served-superseded",
                     "served-twice-cosigned", "served-extra-witness",
                     "served-name-collision", "detect"})
@@ -303,17 +304,19 @@ def write_trust_rejections(out: pathlib.Path) -> None:
     wkey = {"section": "9.1", "says": "is a **cosignature** verifier key"}
     wname = {"section": "9.1", "says": "a witness `name` is 1–64 bytes"}
     corr = {"section": "9.1", "says": "MUST name **exactly** the witnesses"}
+    witness_unique = {"section": "9.1", "says": "unique within the file"}
     polkey = {"section": "9.1", "says": "it MUST be `norn.trust.log_key`"}
     polparse = {"section": "9.1", "says": "verbatim `c2sp.org/tlog-policy`; MUST parse"}
     name = {"section": "9.1", "says": "| `name` | text, 1–64 bytes |"}
     anchor = {"section": "9.1", "says": "All three members are required"}
+    anchor_closed = {"section": "9.1", "says": "It is a closed map"}
     mode = {"section": "9.1", "says": "`mode` MUST be"}
     size = {"section": "9.1", "says": "MAX_TRUST_BYTES"}
     trust_rules = {
         "01-unknown-key": closed, "02-wrong-version": version, "03-short-net": net,
         "04-origin-mismatch": origin, "05-short-genesis-hash": ghash,
-        "06-bad-log-key": logkey, "07-no-witnesses": corr,
-        "08-duplicate-witness-name": corr, "09-policy-without-quorum": polparse,
+        "06-bad-log-key": logkey, "07-no-witnesses": witnesses,
+        "08-duplicate-witness-name": witness_unique, "09-policy-without-quorum": polparse,
         "10-missing-policy": polparse, "11-log-key-name-mismatch": logname,
         "12-witness-key-unparseable": wkey, "13-origin-only": origin,
         "14-missing-name": name, "15-witness-key-is-a-note-key": wkey,
@@ -323,7 +326,6 @@ def write_trust_rejections(out: pathlib.Path) -> None:
         "22-missing-genesis-hash": ghash, "23-missing-log-key": logkey,
         "24-missing-log-urls": urls, "25-missing-witnesses": witnesses,
         "26-name-too-long": name, "27-name-empty": name, "28-empty-log-urls": urls,
-        "29-no-witnesses-only": witnesses, "30-duplicate-witness-name-only": wname,
         "31-witness-open-schema": closed, "32-witness-name-too-long": wname,
         "33-log-url-empty-string": urls, "34-anchor-missing-member": anchor,
         "35-anchor-unknown-mode": mode, "36-policy-log-key-mismatch": polkey,
@@ -333,6 +335,10 @@ def write_trust_rejections(out: pathlib.Path) -> None:
         "40-log-key-name-suffix": {
             "section": "9.1", "says": "its note name MUST equal `origin`"},
         "41-one-past-the-cap": size,
+        "42-witness-key-mismatch": corr,
+        "43-anchor-unknown-member": anchor_closed,
+        "44-log-key-base64-cr": {
+            "section": "9.1", "says": "verifier-key data MUST be canonical RFC 4648 base64"},
     }
     for name_, _ in fixture.trust_rejections():
         if name_ not in trust_rules:
@@ -380,10 +386,10 @@ def write_trust_acceptances(out: pathlib.Path) -> None:
         cases.append(name)
     write(out / "trust-good" / "cases.json", canonjson.dumps({
         "comment": "every file here MUST be accepted as a trust anchor. Each "
-                   "exercises a member SPEC 9.1 marks optional, or a value it "
-                   "leaves open: a reader that requires a witness `url`, or "
-                   "refuses an `anchor` type it does not recognise, rejects "
-                   "files this document permits",
+                   "exercises an optional member or an intentionally open URL "
+                   "reading: URL syntax is application-specific, policy URLs "
+                   "need not match trust-file URLs, and an explicitly empty "
+                   "witness URL is permitted",
         "cases": cases,
     }) + "\n")
 
@@ -416,24 +422,98 @@ def write_trust(out: pathlib.Path) -> None:
     # misbehaviour", which means two parties will one day compare two copies of
     # one, and a number with two spellings is a comparison with two answers.
     #
-    # The same receipt with one leading zero, re-signed so the signature is
-    # impeccable and only the spelling is wrong.
-    padded_text = note.receipt_text(doc["origin"], genesis_leaf, deadline)
-    lines = padded_text.split("\n")
-    lines[3] = "0" + lines[3]
-    padded = note.sign("\n".join(lines), doc["origin"], fixture.KEYS["logkey"])
-    write(out / "receipt-bad" / "leading-zero.note", padded)
+    good_text = note.receipt_text(doc["origin"], genesis_leaf, deadline)
+    cases = []
+    rules = {}
+    codes = {}
+
+    def add_case(name: str, text: str, code: str, says: str,
+                 *, signer: str = "logkey", malformed: bool = False,
+                 raw_signed: str | None = None,
+                 now_unix: int | None = None) -> None:
+        # Framing negatives cannot be re-signed: the defect is in the signature
+        # block terminator itself. Every body/signature negative is signed over
+        # its altered content by the named log key unless it tests trust lookup.
+        if malformed:
+            signed_case = text
+        elif raw_signed is not None:
+            signed_case = raw_signed
+        else:
+            signed_case = note.sign(text, doc["origin"], fixture.KEYS[signer])
+        write(out / "receipt-bad" / name, signed_case)
+        case = {"name": name, "says": says}
+        if now_unix is not None:
+            case["now_unix"] = now_unix
+        cases.append(case)
+        rules[name] = {"section": "7", "says": says}
+        codes[name] = code
+
+    # Note framing is tested before any trusted signature lookup.
+    add_case("extra-final-newline.note", signed + "\n", "note",
+             "a second `0x0A` after the final signature creates a forbidden blank line",
+             malformed=True)
+
+    # Same receipt text, signed by a key other than the one in trust.cbor.
+    add_case("untrusted-log-key.note", good_text, "log-signature",
+             "The note MUST verify under the anchored log key", signer="logkey2")
+
+    body_lines = good_text.splitlines()
+    changed = body_lines.copy()
+    changed[0] = "norn/receipt/v2"
+    add_case("wrong-header.note", "\n".join(changed) + "\n", "receipt",
+             "The first line MUST be")
+
+    changed = body_lines.copy()
+    changed[1] = "norn/elsewhere"
+    add_case("wrong-origin.note", "\n".join(changed) + "\n", "origin",
+             "The origin line MUST equal the anchored origin")
+
+    changed = body_lines.copy()
+    changed[2] = "!!!!"
+    add_case("bad-leaf-hash.note", "\n".join(changed) + "\n", "leaf-hash",
+             "The leaf hash MUST be standard base64 and decode to exactly 32 bytes")
+
+    # The 32-byte hash ends in one '=' and has two unused pad bits. Change only
+    # those bits, then re-sign the text so signature verification still passes.
+    changed = body_lines.copy()
+    alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+    leaf_text = changed[2]
+    if len(leaf_text) != 44 or not leaf_text.endswith("="):
+        raise ValueError("fixture leaf hash must be 32-byte standard base64")
+    last = alphabet.index(leaf_text[-2])
+    if last % 4 != 0:
+        raise ValueError("fixture leaf hash is not canonical base64")
+    changed[2] = leaf_text[:-2] + alphabet[last + 1] + "="
+    if base64.b64decode(changed[2], validate=True) != base64.b64decode(leaf_text, validate=True):
+        raise ValueError("pad-bit mutation changed the leaf hash")
+    add_case("leaf-hash-nonzero-pad-bits.note", "\n".join(changed) + "\n", "leaf-hash",
+             "unused pad bits in the leaf hash MUST be zero")
+
+    # The same receipt with one leading zero, re-signed so only its spelling is
+    # wrong. `ParseUint` alone accepts this second representation.
+    changed = body_lines.copy()
+    changed[3] = "0" + changed[3]
+    add_case("leading-zero.note", "\n".join(changed) + "\n", "deadline",
+             "The deadline MUST be canonical decimal")
+
+    changed = body_lines.copy()
+    changed[2] = base64.b64encode(hashlib.sha256(b"a different entry").digest()).decode("ascii")
+    add_case("different-entry.note", "\n".join(changed) + "\n", "entry",
+             "the submitted entry's leaf hash MUST equal the receipt's leaf hash")
+
+    # Expiry is a relation between the receipt and the caller's supplied time;
+    # carry that time in the case instead of changing an otherwise good note.
+    add_case("expired-at-deadline.note", signed, "expired",
+             "A nonzero checking time at or after the deadline MUST refuse the receipt",
+             raw_signed=signed, now_unix=deadline)
+
     write(out / "receipt-bad" / "cases.json", canonjson.dumps({
-        "comment": "receipts that MUST be refused. Each is `receipt.note` with one "
-                   "thing changed and re-signed, so the note verifies and only the "
-                   "named rule can refuse it",
-        "cases": [{
-            "name": "leading-zero.note",
-            "says": "the deadline line is canonical decimal, as SPEC 6's size "
-                    "line is: `0` + the honest deadline is the same number and a "
-                    "second spelling of it",
-            "section": "7",
-        }],
+        "comment": "receipt refusal vectors in §7 check order. Body and signer "
+                   "negatives are re-signed; extra-final-newline is malformed note "
+                   "framing and expired-at-deadline uses the explicit time in its case",
+        "cases": cases,
+        "rules": rules,
+        "codes": codes,
     }) + "\n")
 
 
@@ -467,6 +547,19 @@ def write_policies(out: pathlib.Path) -> None:
     policy_rules["bad-no-quorum"] = policy_rules["bad-two-quorums"]
     policy_rules["bad-forward-reference"] = {
         "section": "9.1", "says": "previously-defined witnesses or groups"}
+    policy_rules["bad-quorum-forward-reference"] = {
+        "section": "9.1", "says": "a previously-defined witness, a previously-defined group"}
+    policy_rules["quorum-none-empty"] = {
+        "section": "9.1", "says": "the predefined `none` quorum"}
+    policy_rules["reserved-words-as-names"] = {
+        "section": "9.1", "says": "`all` and `any` are ordinary names"}
+    for name in ("bad-witness-name-none", "bad-group-name-none"):
+        policy_rules[name] = {
+            "section": "9.1", "says": "`none` is predefined, cannot be defined"}
+    policy_rules["bad-none-group-member"] = {
+        "section": "9.1", "says": "`none` MUST NOT appear as a group member"}
+    policy_rules["bad-group-witness-name-collision"] = {
+        "section": "9.1", "says": "Witness and group names share one namespace"}
     policy_rules["bad-unknown-keyword"] = {
         "section": "9.1", "says": "the four directives"}
     # One phrase per character: the set is closed and each of its three
@@ -481,21 +574,44 @@ def write_policies(out: pathlib.Path) -> None:
     # Cold gate run 11, D2 and D5, and the declarations that pointed at the
     # table's opening sentence rather than at the row that states the rule.
     # A declaration that any case in the directory could satisfy says nothing.
-    for name in ("bad-duplicate-key", "bad-log-key-as-witness"):
+    for name in ("bad-duplicate-witness-public-key-alias",
+                 "bad-duplicate-log-public-key-alias", "bad-duplicate-log-line",
+                 "bad-log-lines-same-key-alias", "bad-duplicate-key",
+                 "bad-log-key-as-witness"):
         policy_rules[name] = {
-            "section": "9.1", "says": "a verifier key appears **once** in a policy"}
+            "section": "9.1", "says": "Keys are compared by their parsed underlying public key"}
+    for name in ("bad-log-vkey-malformed", "bad-witness-vkey-malformed"):
+        policy_rules[name] = {"section": "9.1", "says": "Every `<vkey>` MUST be parsed"}
+    for name in ("bad-log-vkey-id", "bad-witness-vkey-id"):
+        policy_rules[name] = {
+            "section": "9.1", "says": "declared key ID MUST equal the recomputed ID"}
+    policy_rules["bad-log-vkey-algorithm"] = {
+        "section": "9.1", "says": "A `log` vkey MUST use algorithm `0x01`"}
+    policy_rules["bad-witness-vkey-algorithm"] = {
+        "section": "9.1", "says": "a `witness` vkey MUST use algorithm `0x04`"}
+    policy_rules["bad-vkey-name-space"] = {
+        "section": "9.1", "says": "contain neither `+` nor a Unicode space"}
     policy_rules["two-log-lines"] = {"section": "9.1", "says": "**more than one is allowed**"}
     policy_rules["bad-empty-group"] = {
         "section": "9.1", "says": "`group` a name, a threshold and one or more members"}
     policy_rules["bad-duplicate-name"] = {"section": "9.1", "says": "name is defined **once**"}
     policy_rules["bad-duplicate-member"] = {"section": "9.1", "says": "**no member twice**"}
-    for name in ("bad-k-zero", "bad-k-leading-zero"):
+    for name in ("bad-k-zero", "bad-k-leading-zero", "bad-k-above-size"):
         policy_rules[name] = {"section": "9.1", "says": "**canonical decimal** with `1 ≤ k ≤ n`"}
+    policy_rules["threshold-at-size"] = {
+        "section": "9.1", "says": "the inclusive upper threshold `k = n` is valid"}
     policy_rules["bad-uppercase-keyword"] = {"section": "9.1", "says": "are **lowercase**"}
     policy_rules["blank-and-whitespace-lines"] = {
         "section": "9.1", "says": "holds only spaces and tabs, is **ignored**"}
-    policy_rules["no-trailing-newline"] = {
-        "section": "9.1", "says": "the last directive need not end in one"}
+    policy_rules["bad-no-trailing-newline"] = {
+        "section": "9.1", "says": "Every directive line, including the final line, ends in ASCII line feed"}
+    policy_rules["bad-crlf"] = {"section": "9.1", "says": "carriage return is forbidden"}
+    for name in ("bad-control-nul", "bad-control-unit-separator", "bad-control-del",
+                 "bad-control-in-comment"):
+        policy_rules[name] = {
+            "section": "9.1", "says": "all other bytes `0x00–0x08`, `0x0B–0x1F` and `0x7F` are an error"}
+    policy_rules["u0085-is-content"] = {
+        "section": "9.1", "says": "Bytes `0x80–0xFF` are content, not separators"}
     policy_rules["nested-group"] = {
         "section": "9.1", "says": "counts as **one** member of the outer group"}
     policy_rules["no-log-line"] = {"section": "9.1", "says": "**not required**"}
@@ -512,8 +628,8 @@ def write_policies(out: pathlib.Path) -> None:
         "comment": "SPEC 9.1's restated `tlog-policy` grammar, one whole policy "
                    "per rule, each differing from a valid one in exactly one way. "
                    "A case with `accept` true MUST parse; the rest MUST be "
-                   "refused. The text is the file verbatim -- some cases turn on "
-                   "whether it ends in a newline. A case with `evaluate` also "
+                   "refused. The text is the file verbatim and requires its final "
+                   "line feed. A case with `evaluate` also "
                    "says what its quorum MEANS: each entry gives a set of "
                    "cosigner names and whether they satisfy it, which is the "
                    "only way a reader's arithmetic can be checked",

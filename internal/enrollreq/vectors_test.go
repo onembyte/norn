@@ -217,6 +217,107 @@ func TestEveryRequestNegativeIsRefused(t *testing.T) {
 	}
 }
 
+func TestExcessPaddingVectorHasOnlyPaddingFault(t *testing.T) {
+	baseText, err := os.ReadFile(filepath.Join(vectorRoot(), "requests", "req-padding-base.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	base, err := DecodeText(strings.TrimSpace(string(baseText)))
+	if err != nil {
+		t.Fatalf("padding control request is invalid: %v", err)
+	}
+	if err := Check(base, shippedNet(t)); err != nil {
+		t.Fatalf("padding control signature does not verify: %v", err)
+	}
+	baseBytes, err := Encode(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if remainder := (8 * len(baseBytes)) % 5; remainder != 0 && remainder != 3 && remainder != 4 {
+		t.Fatalf("padding control is %d bytes, so 8L mod 5 is %d; want 0, 3 or 4",
+			len(baseBytes), remainder)
+	}
+
+	badText, err := os.ReadFile(filepath.Join(vectorRoot(), "requests-bad", "excess-padding.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	baseHRP, baseGroups, err := bech32m.DecodeRaw(strings.TrimSpace(string(baseText)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	badHRP, badGroups, err := bech32m.DecodeRaw(strings.TrimSpace(string(badText)))
+	if err != nil {
+		t.Fatalf("excess-padding checksum is invalid: %v", err)
+	}
+	if badHRP != baseHRP || len(badGroups) != len(baseGroups)+1 ||
+		!bytes.Equal(badGroups[:len(baseGroups)], baseGroups) || badGroups[len(badGroups)-1] != 0 {
+		t.Fatal("excess-padding must append exactly one zero 5-bit group to its valid control")
+	}
+	if _, _, err := bech32m.Decode(strings.TrimSpace(string(badText))); err == nil ||
+		!strings.Contains(err.Error(), "too much padding") {
+		t.Fatalf("excess-padding was not refused by the padding rule: %v", err)
+	}
+}
+
+func TestOversizeLabelVectorIsOneBytePastTheCap(t *testing.T) {
+	baseText, err := os.ReadFile(filepath.Join(vectorRoot(), "requests", "req-label-at-cap.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	base, err := DecodeText(strings.TrimSpace(string(baseText)))
+	if err != nil {
+		t.Fatalf("the 256-byte label control is invalid: %v", err)
+	}
+	if err := Check(base, shippedNet(t)); err != nil {
+		t.Fatalf("the 256-byte label control signature does not verify: %v", err)
+	}
+	if got := len([]byte(base.Labels["ip"])); got != 256 {
+		t.Fatalf("accepted label is %d UTF-8 bytes, want exactly 256", got)
+	}
+	if got := len([]rune(base.Labels["ip"])); got != 128 {
+		t.Fatalf("accepted label is %d code points, want 128", got)
+	}
+
+	text, err := os.ReadFile(filepath.Join(vectorRoot(), "requests-bad", "oversize-label.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, raw, err := bech32m.Decode(strings.TrimSpace(string(text)))
+	if err != nil {
+		t.Fatalf("oversize-label is not a valid bech32m wrapper: %v", err)
+	}
+	value, err := cbor.Decode(raw)
+	if err != nil {
+		t.Fatalf("oversize-label is not valid CBOR: %v", err)
+	}
+	request, ok := value.(map[string]any)
+	if !ok {
+		t.Fatalf("request is %T, want map[string]any", value)
+	}
+	labels, ok := request["labels"].(map[string]any)
+	if !ok {
+		t.Fatalf("labels is %T, want map[string]any", request["labels"])
+	}
+	label, ok := labels["ip"].(string)
+	if !ok {
+		t.Fatalf("labels.ip is %T, want string", labels["ip"])
+	}
+	if got := len([]byte(label)); got != 257 {
+		t.Fatalf("oversize-label is %d UTF-8 bytes, want exactly 257", got)
+	}
+	if got := len([]rune(label)); got != 129 {
+		t.Fatalf("oversize-label is %d code points, want 129", got)
+	}
+	if !signatureCoversItsOwnBytes(t, "oversize-label") {
+		t.Fatal("oversize-label signature does not cover its own bytes")
+	}
+	if _, err := DecodeText(strings.TrimSpace(string(text))); err == nil ||
+		!strings.Contains(err.Error(), "longer than 256 bytes") {
+		t.Fatalf("257-byte label was not refused by the value cap: %v", err)
+	}
+}
+
 func shippedNet(t *testing.T) []byte {
 	t.Helper()
 	raw, err := os.ReadFile(filepath.Join(vectorRoot(), "keys.json"))
@@ -358,6 +459,39 @@ func TestEveryPositiveRequestVectorIsAccepted(t *testing.T) {
 				t.Fatalf("unknown form %q", c.Form)
 			}
 		})
+	}
+}
+
+func TestReservedHintRequestVectorKeepsMalformedValuesOpaque(t *testing.T) {
+	var found bool
+	for _, c := range positiveRequestCases(t) {
+		if c.Name == "req-reserved-hints" && c.Form == "canonical" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("no positive request vector pins malformed reserved hints")
+	}
+
+	path := filepath.Join(vectorRoot(), "requests", "req-reserved-hints.txt")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request, err := DecodeText(strings.TrimSuffix(string(raw), "\n"))
+	if err != nil {
+		t.Fatalf("malformed advisory hints must not invalidate a request: %v", err)
+	}
+	if err := Check(request, shippedNet(t)); err != nil {
+		t.Fatalf("malformed advisory hints must not invalidate a request: %v", err)
+	}
+	if !Verify(request) {
+		t.Fatal("the malformed-hints request must carry a valid device signature")
+	}
+	for key, want := range map[string]string{"ip": "not-a-cidr", "endpoint": "not-an-endpoint"} {
+		if got := request.Labels[key]; got != want {
+			t.Errorf("labels[%q] = %q, want %q", key, got, want)
+		}
 	}
 }
 

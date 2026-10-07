@@ -50,7 +50,11 @@ ESCAPE_TORTURE = (
 
 #: Label keys and values exercising recursive object-key sorting over UTF-8.
 UNICODE_LABELS = {
-    'ip': '10.9.0.42/32',
+    # D18a: these are opaque advisory hints at request validation and replay.
+    # Keep malformed values in the accepted log so a reader that adds syntax
+    # checks cannot silently diverge from the reference state.
+    'ip': 'not-a-cidr',
+    'endpoint': 'not-an-endpoint',
     's\u00edtio': 'Bah\u00eda Blanca',
     '\u8a18\u9332': '\u3066\u3059\u3068',
     'a<b&c': 'x>y',
@@ -1091,12 +1095,25 @@ def policy_grammar() -> list[tuple[str, str, bool, str]]:
     log = f"log {log_vkey()} {LOG_URLS[0]}"
     pi = f"witness pi {witness_vkey('pi')} {WITNESS_URLS['pi']}"
     vps = f"witness vps {witness_vkey('vps')} {WITNESS_URLS['vps']}"
+    witness_alias = note.vkey(
+        "norn-witness/alias", KEYS["witness-pi"].public, note.ALG_COSIGNATURE)
+    log_alias = note.vkey("norn/alias", KEYS["logkey"].public)
+    log_as_witness = note.vkey(
+        "norn-witness/log-alias", KEYS["logkey"].public, note.ALG_COSIGNATURE)
+    bad_log_id = _vkey_with_wrong_id()
+    bad_witness_id = _witness_vkey_with_wrong_id("pi")
 
     return [
         ("minimal", f"{log}\n{pi}\nquorum pi\n", True,
          "one log, one witness, one quorum"),
-        ("no-trailing-newline", f"{log}\n{pi}\nquorum pi", True,
-         "the final line's newline is optional"),
+        ("bad-no-trailing-newline", f"{log}\n{pi}\nquorum pi", False,
+         "every directive line, including the final one, ends in line feed"),
+        ("quorum-none-empty", "quorum none\n", True,
+         "the predefined `none` quorum needs neither logs nor witnesses"),
+        ("reserved-words-as-names",
+         f"witness all {witness_vkey('pi')}\nwitness spare {witness_vkey('vps')}\n"
+         "group any any all spare\nquorum any\n", True,
+         "`all` and `any` are special only in the threshold position"),
         ("blank-and-whitespace-lines",
          f"{log}\n\n{pi}\n \t \nquorum pi\n", True,
          "a line that is empty, or only spaces and tabs, is ignored"),
@@ -1123,6 +1140,21 @@ def policy_grammar() -> list[tuple[str, str, bool, str]]:
         ("bad-forward-reference",
          f"{log}\ngroup g all pi\n{pi}\nquorum g\n", False,
          "a group names previously-defined members only"),
+        ("bad-quorum-forward-reference",
+         f"{log}\n{pi}\nquorum home\ngroup home any pi\n", False,
+         "the quorum names a previously-defined witness or group"),
+        ("bad-witness-name-none",
+         f"{log}\nwitness none {witness_vkey('pi')}\nquorum none\n", False,
+         "`none` is predefined and cannot be defined as a witness or group"),
+        ("bad-group-name-none",
+         f"{log}\n{pi}\ngroup none any pi\nquorum none\n", False,
+         "`none` is predefined and cannot be defined as a witness or group"),
+        ("bad-none-group-member",
+         f"{log}\n{pi}\ngroup home any none\nquorum home\n", False,
+         "the predefined `none` is not a group member"),
+        ("bad-group-witness-name-collision",
+         f"{log}\n{pi}\n{vps}\ngroup pi any vps\nquorum pi\n", False,
+         "witness and group names share one namespace"),
         ("bad-two-quorums", f"{log}\n{pi}\nquorum pi\nquorum pi\n", False,
          "there is exactly one quorum line"),
         ("bad-no-quorum", f"{log}\n{pi}\n", False,
@@ -1139,6 +1171,12 @@ def policy_grammar() -> list[tuple[str, str, bool, str]]:
          False, "no member twice -- `2 of pi pi` is met by one witness"),
         ("bad-k-zero", f"{log}\n{pi}\n{vps}\ngroup home 0 pi vps\nquorum home\n",
          False, "1 <= k <= n -- k=0 is met by nobody, so an uncosigned head passes"),
+        ("threshold-at-size",
+         f"{log}\n{pi}\n{vps}\ngroup home 2 pi vps\nquorum home\n", True,
+         "the inclusive upper threshold `k = n` is valid"),
+        ("bad-k-above-size",
+         f"{log}\n{pi}\n{vps}\ngroup home 3 pi vps\nquorum home\n", False,
+         "a numeric threshold MUST satisfy `k ≤ n`"),
         ("bad-k-leading-zero",
          f"{log}\n{pi}\n{vps}\ngroup home 02 pi vps\nquorum home\n", False,
          "k is canonical decimal: two spellings of a quorum are two policies "
@@ -1171,9 +1209,36 @@ def policy_grammar() -> list[tuple[str, str, bool, str]]:
          "a verifier key appears once: under two names, one cosignature line "
          "would count as two witnesses"),
         ("bad-log-key-as-witness",
+         f"{log}\nwitness pi {log_as_witness}\nquorum pi\n", False,
+         "the same public key cannot appear on a `log` and a `witness` line"),
+        ("bad-duplicate-witness-public-key-alias",
+         f"{log}\n{pi}\nwitness alias {witness_alias}\nquorum pi\n", False,
+         "vkey names and IDs do not make one public key into two witnesses"),
+        ("bad-duplicate-log-public-key-alias",
+         f"{log}\nlog {log_alias}\n{pi}\nquorum pi\n", False,
+         "a duplicate log is detected by its public key, despite another vkey name"),
+        ("bad-log-vkey-malformed",
+         f"log not-a-vkey {LOG_URLS[0]}\n{pi}\nquorum pi\n", False,
+         "each log field is a parsed C2SP verifier key"),
+        ("bad-log-vkey-id",
+         f"log {bad_log_id} {LOG_URLS[0]}\n{pi}\nquorum pi\n", False,
+         "a verifier key's declared key ID matches its name, algorithm and public key"),
+        ("bad-witness-vkey-id",
+         f"{log}\nwitness pi {bad_witness_id}\nquorum pi\n", False,
+         "a verifier key's declared key ID matches its name, algorithm and public key"),
+        ("bad-witness-vkey-malformed",
+         f"{log}\nwitness pi not-a-vkey\nquorum pi\n", False,
+         "each witness field is a parsed C2SP verifier key"),
+        ("bad-log-vkey-algorithm",
+         f"log {witness_vkey('pi')} {LOG_URLS[0]}\n{pi}\nquorum pi\n", False,
+         "a log verifier key uses algorithm `0x01`"),
+        ("bad-witness-vkey-algorithm",
          f"{log}\nwitness pi {log_vkey()}\nquorum pi\n", False,
-         "the same rule across directives: the log's key on a `witness` line "
-         "is the key twice"),
+         "a witness verifier key uses algorithm `0x04`"),
+        ("bad-vkey-name-space",
+         f"log {note.vkey(ORIGIN + ' bad', KEYS['logkey'].public)} {LOG_URLS[0]}\n"
+         f"{pi}\nquorum pi\n", False,
+         "a verifier key name contains no Unicode spaces"),
         # The other half of the same row: the grammar permits more than one
         # `log` line. A trust file cannot carry two (each must be `log_key`,
         # and the key rule refuses a repeat), but a `policy` entry has no such
@@ -1183,6 +1248,12 @@ def policy_grammar() -> list[tuple[str, str, bool, str]]:
          f"{log}\nlog {note.vkey(ORIGIN, KEYS['logkey2'].public)}\n{pi}\nquorum pi\n",
          True, "the grammar permits more than one `log` line; only a trust file's "
          "correspondence rule limits it to one"),
+        ("bad-duplicate-log-line",
+         f"{log}\nlog {log_vkey()}\n{pi}\nquorum pi\n", False,
+         "multiple log lines with the same public key are forbidden"),
+        ("bad-log-lines-same-key-alias",
+         f"{log}\nlog {log_alias}\n{pi}\nquorum pi\n", False,
+         "multiple log lines with the same public key are forbidden"),
         # Cold gate run 11, D12. "Any other whitespace character" was not a
         # set. This parser refused all of str.isspace() that can occur in a
         # line -- 26 characters -- and the Go one refused three of them, so the
@@ -1208,6 +1279,24 @@ def policy_grammar() -> list[tuple[str, str, bool, str]]:
         ("bad-carriage-return-in-url",
          f"{log}\nwitness pi {witness_vkey('pi')} https://example/w\rx\nquorum pi\n",
          False, "0x0D is an error, not content: kept as content, this URL parses"),
+        ("bad-crlf",
+         f"{log}\r\n{pi}\nquorum pi\n", False,
+         "carriage return is forbidden; a directive line ends with line feed only"),
+        ("bad-control-nul",
+         f"{log}\nwitness pi {witness_vkey('pi')} https://example/\x00x\nquorum pi\n", False,
+         "ASCII controls other than tab and line feed are forbidden in every line"),
+        ("bad-control-unit-separator",
+         f"{log}\nwitness pi {witness_vkey('pi')} https://example/\x1fx\nquorum pi\n", False,
+         "ASCII controls other than tab and line feed are forbidden in every line"),
+        ("bad-control-del",
+         f"{log}\nwitness pi {witness_vkey('pi')} https://example/\x7fx\nquorum pi\n", False,
+         "ASCII controls other than tab and line feed are forbidden in every line"),
+        ("bad-control-in-comment",
+         f"{log}\n# ignored comment\x00\n{pi}\nquorum pi\n", False,
+         "control bytes are refused before comment lines are ignored"),
+        ("u0085-is-content",
+         f"{log}\nwitness pi {witness_vkey('pi')} https://example/w\u0085x\nquorum pi\n",
+         True, "non-ASCII octets are content, even when Unicode labels them whitespace"),
         ("nbsp-is-content",
          f"{log}\nwitness pi {witness_vkey('pi')} https://example/w x\nquorum pi\n",
          True, "U+00A0 is not in the closed set, so it is content: a reader that "
@@ -1265,9 +1354,14 @@ def trust_rejections() -> list[tuple[str, dict[str, Any]]]:
         ("04-origin-mismatch", damaged(origin="norn/wrongorigin")),
         ("05-short-genesis-hash", damaged(genesis_hash=b"\x00" * 8)),
         ("06-bad-log-key", damaged(log_key="not-a-verifier-key")),
-        ("07-no-witnesses", damaged(witnesses=[])),
+        # Isolated: no witnesses and no policy witness names. `quorum none`
+        # needs no cosignatures, so only the explicit witness minimum refuses.
+        ("07-no-witnesses", damaged(
+            witnesses=[], policy=f"log {log_vkey()} {LOG_URLS[0]}\nquorum none\n")),
+        # Isolated: retain every expected witness plus one duplicate `pi`;
+        # names and keys still correspond, so only uniqueness refuses.
         ("08-duplicate-witness-name", damaged(witnesses=[
-            dict(base["witnesses"][0]), dict(base["witnesses"][0])])),
+            *[dict(w) for w in base["witnesses"]], dict(base["witnesses"][0])])),
         ("09-policy-without-quorum", damaged(policy="log x\nwitness pi y\n")),
         ("10-missing-policy", damaged(policy=_REMOVE)),
         # Isolated the same way `13` is, and for the same reason: the policy
@@ -1287,10 +1381,9 @@ def trust_rejections() -> list[tuple[str, dict[str, Any]]]:
         # can reject this. The policy was the half this case forgot, which left
         # the derivation rule deletable (cold gate run 10, D12/V90).
         ("13-origin-only", damaged(
-            origin="norn/aaaaaaaaaaaaaaaaaaaaaaaaaa",
-            log_key=note.vkey("norn/aaaaaaaaaaaaaaaaaaaaaaaaaa", KEYS["logkey"].public),
-            policy=_policy_with(log_key=note.vkey(
-                "norn/aaaaaaaaaaaaaaaaaaaaaaaaaa", KEYS["logkey"].public)))),
+            origin=ORIGIN + "a",
+            log_key=note.vkey(ORIGIN + "a", KEYS["logkey"].public),
+            policy=_policy_with(log_key=note.vkey(ORIGIN + "a", KEYS["logkey"].public)))),
         # Isolated: a missing key that no other rule also catches.
         ("14-missing-name", damaged(name=_REMOVE)),
         # The two kinds of key are not interchangeable: a witness signs
@@ -1350,18 +1443,6 @@ def trust_rejections() -> list[tuple[str, dict[str, Any]]]:
         # `24-missing-log-urls` covers absent. Present-and-empty is a different
         # code path in both implementations.
         ("28-empty-log-urls", damaged(log_urls=[])),
-        # "A file with no witnesses MUST be rejected". `07-no-witnesses` also
-        # breaks the policy/witness correspondence, and that rule decides, so
-        # the MUST itself was unreachable. Here the policy names no witnesses
-        # either -- `quorum none` is the one quorum that needs none -- so the
-        # two agree and only the minimum can refuse the file.
-        ("29-no-witnesses-only", damaged(
-            witnesses=[],
-            policy=f"log {log_vkey()} {LOG_URLS[0]}\nquorum none\n")),
-        # A witness `name` is unique within the file. `08` lists `pi` twice and
-        # nothing else, so the policy names two witnesses the file does not.
-        # This file lists all three *and* a byte-identical second `pi`: the
-        # names and keys correspond exactly, and only uniqueness is broken.
         # Cold gate run 8, D22: seven §9.1 members the table shows and never
         # constrains. Three were live disagreements -- the witness-name cap,
         # the anchor's completeness, and `anchor.mode`, which neither side
@@ -1420,13 +1501,39 @@ def trust_rejections() -> list[tuple[str, dict[str, Any]]]:
         # and only its size can refuse it.
         ("38-oversize", damaged(log_urls=base["log_urls"] + [
             f"https://mirror{i}.norn.example/testnet" for i in range(2000)])),
-        ("30-duplicate-witness-name-only", damaged(
-            witnesses=base["witnesses"] + [dict(base["witnesses"][0])])),
         # Cold gate run 12, D16. `38-oversize` is thousands of bytes over, so
         # a cap one byte too lax passed. Exactly one byte past, and correct in
         # every other respect: only the size refuses it.
         ("41-one-past-the-cap", trust_of_size(trust.MAX_TRUST_BYTES + 1)),
+        # D10(b): all names correspond and only pi's key differs between the
+        # witness array and policy. The stranger key is valid and unique.
+        ("42-witness-key-mismatch", damaged(
+            witnesses=[dict(base["witnesses"][0], key=note.vkey(
+                "norn-witness/stranger", KEYS["stranger"].public,
+                note.ALG_COSIGNATURE))] + [dict(w) for w in base["witnesses"][1:]])),
+        # D10(c): the required anchor members remain intact; only an unknown
+        # nested member violates the closed-map rule.
+        ("43-anchor-unknown-member", damaged(anchor={
+            "type": "opentimestamps", "max_lag": 86400, "mode": "advisory",
+            "note": "unexpected",
+        })),
+        # D14a/D-062. A verifier key holds 33 bytes (algorithm plus Ed25519
+        # public key), so its base64 has no padding bits. Go's decoder ignored
+        # a CR inside the data. The policy's optional log line is omitted here
+        # so correspondence cannot refuse this file instead; removing only
+        # the CR then leaves a valid trust anchor.
+        ("44-log-key-base64-cr", damaged(
+            log_key=_vkey_with_ignored_cr(log_vkey()),
+            policy="".join(line for line in base["policy"].splitlines(keepends=True)
+                           if not line.startswith("log ")))),
     ]
+
+
+def _vkey_with_ignored_cr(vkey: str) -> str:
+    name, key_id, data = vkey.split("+", 2)
+    if len(data) != 44 or "=" in data:
+        raise ValueError("fixture verifier-key data must encode exactly 33 bytes")
+    return f"{name}+{key_id}+{data[:12]}\r{data[12:]}"
 
 
 def _vkey_with_wrong_id() -> str:
@@ -1480,15 +1587,21 @@ def _policy_with(**subs: str) -> str:
 def trust_acceptances() -> list[tuple[str, dict[str, Any]]]:
     """Trust files §9.1 permits, which only a positive can show.
 
-    A reader that requires a witness `url`, or refuses an `anchor` type it does
-    not recognise, rejects files this document allows -- and run 8's variants
-    for both passed the suite, because every shipped file had a url and a known
-    type (D22).
+    These pin optional witness URLs, unknown advisory anchor types, and
+    application-specific URL text that the trust parser leaves opaque.
     """
     base = trust_file()
     without_url = [{k: v for k, v in base["witnesses"][0].items() if k != "url"}]
+    urls = dict(base)
+    urls["log_urls"] = ["http://[invalid"]
+    urls["witnesses"] = [dict(w) for w in base["witnesses"]]
+    urls["witnesses"][0]["url"] = ""
+    urls["witnesses"][1]["url"] = "http://[invalid"
+    urls["policy"] = base["policy"].replace(LOG_URLS[0], "http://[invalid", 1).replace(
+        WITNESS_URLS["vps"], "http://other.invalid", 1)
     return [
         ("witness-without-url", dict(base, witnesses=without_url + base["witnesses"][1:])),
+        ("url-fields-are-opaque", urls),
         # Anchoring is advisory (D-009): a reader that cannot check an unknown
         # type simply does not check it. An unknown `mode` is different and is
         # refused, because an unrecognised enforcement mode is not ignorable.
@@ -1900,6 +2013,17 @@ def _request(device: str, key_name: str, wg_name: str, ts_offset: int,
     return enrollreq.sign(req, KEYS[key_name])
 
 
+def _padding_request() -> dict[str, Any]:
+    """A valid 203-byte request whose 5-bit encoding has one padding bit."""
+    return _request("pi-ca", "pi-cam", "pi-cam", 10)
+
+
+def _label_cap_request() -> dict[str, Any]:
+    """A valid request with one label value exactly 256 UTF-8 bytes long."""
+    return _request("pi-cam", "pi-cam", "pi-cam", 10,
+                    labels={"ip": "é" * 128})
+
+
 def enroll_requests() -> list[tuple[str, dict[str, Any]]]:
     """Requests a signer MUST accept, once it has verified the signature."""
     return [
@@ -1914,6 +2038,15 @@ def enroll_requests() -> list[tuple[str, dict[str, Any]]]:
                                  labels={"site": "buenos-aires ñ", "emoji": "\U0001f512"})),
         # §2 boundary: 64 bytes is the longest device_id there is.
         ("req-long-id", _request("d" + "e" * 63, "printer", "printer", 40)),
+        # D15: 8*203 mod 5 = 4, so its text form has one zero padding bit.
+        ("req-padding-base", _padding_request()),
+        # D16: exactly 256 UTF-8 bytes, distinct from a 256-character limit.
+        ("req-label-at-cap", _label_cap_request()),
+        # D18a: reserved label names do not make their advisory values a
+        # second schema; the signed request remains valid with opaque text.
+        ("req-reserved-hints", _request(
+            "pi-cam", "pi-cam", "pi-cam", 50,
+            labels={"ip": "not-a-cidr", "endpoint": "not-an-endpoint"})),
     ]
 
 
@@ -1951,7 +2084,7 @@ def request_negatives() -> list[tuple[str, str, str]]:
 
     good = _request("pi-cam", "pi-cam", "pi-cam", 10)
     base = cbor.encode(good)
-    _pad_excess, _pad_nonzero = _padding_negatives(good)
+    _pad_excess, _pad_nonzero = _padding_negatives(_padding_request())
 
     # A request whose signature is by another key: syntactically perfect and
     # cryptographically wrong. Without it, a decoder that never calls Ed25519
@@ -1973,9 +2106,10 @@ def request_negatives() -> list[tuple[str, str, str]]:
         ("bool-expires", mutate(expires=True), "a CBOR bool where a uint is required"),
         ("expires-at-ts", _expires_at_ts(), "expires must be after ts"),
         ("too-many-labels", mutate(labels={f"k{i}": "v" for i in range(33)}), "over 32 labels"),
-        # Run 11, D6: multi-byte, so 258 bytes and 129 characters -- over the
-        # 256-byte cap and under it counted in runes.
-        ("oversize-label", mutate(labels={"ip": "é" * 129}), "label over 256 bytes"),
+        # Run 12, D16: 257 bytes but only 129 code points, so the one-past
+        # vector distinguishes the byte cap from a character-counting reader.
+        ("oversize-label", mutate(labels={"ip": "é" * 128 + "x"}),
+         "label over 256 bytes"),
         ("non-string-label", mutate(labels={"ip": 1}), "label value is not text"),
         ("ts-is-text", mutate(ts="now"), "ts is not a uint"),
         ("unsorted-keys", text_of_unsorted(base), "map keys out of §4.0 order"),
@@ -1986,7 +2120,7 @@ def request_negatives() -> list[tuple[str, str, str]]:
         ("mixed-case", _mixed_case(text(good)), "mixed case (SPEC §16.2)"),
         ("corrupt-character", _corrupt(text(good)), "one character changed"),
         ("excess-padding", _pad_excess,
-         "five bits of padding where SPEC 16.2 allows under five"),
+         "six unused bits after an extra zero group, where SPEC 16.2 permits under five"),
         ("non-zero-padding", _pad_nonzero,
          "a padding bit set where SPEC 16.2 requires zero"),
     ]
@@ -2052,11 +2186,11 @@ def hostile_inputs() -> list[tuple[str, bytes, str]]:
     past_size = b"\x59" + (cbor.MAX_ENTRY_BYTES - 2).to_bytes(2, "big") + \
         b"\x00" * (cbor.MAX_ENTRY_BYTES - 2)
 
-    # §4.0's third limit: every map key is 1-23 bytes. Its only vector was
-    # `requests-bad/oversize-label-key`, which the `labels` *field* rule
-    # refuses first -- so the decoder-level cap was unobservable and cold gate
-    # run 7's `no-key-cap` passed (J12). A one-pair map with a uint value, so
-    # the key length is the only thing about it that can be wrong.
+    # §4.0's third limit: every map key is 1-23 bytes. The signed request
+    # negative `requests-bad/oversize-label-key` already reaches this decoder
+    # rule before request-field validation. Keep this schema-free one-pair map
+    # with a uint value too, so its key length is the only thing that can be
+    # wrong.
     # Cold gate run 9, D18: both boundary keys were ASCII, so `1-23 bytes` and
     # `1-23 characters` gave the same answer and `key-cap-runes` passed. These
     # are multi-byte: 11 two-byte characters plus one ASCII is 23 bytes and 12

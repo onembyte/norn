@@ -1,6 +1,7 @@
 package proof
 
 import (
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"os"
@@ -19,6 +20,94 @@ import (
 	"github.com/onembyte/norn/internal/tlog"
 	"github.com/onembyte/norn/internal/trust"
 )
+
+func TestRightEdgeInclusionProofAtSize127(t *testing.T) {
+	root := filepath.Join("..", "..", "testdata", "vectors", "proofs")
+	var manifest struct {
+		RightEdge struct {
+			File  string `json:"file"`
+			Size  int64  `json:"size"`
+			Index int64  `json:"index"`
+		} `json:"right_edge_inclusion"`
+	}
+	caseBytes, err := os.ReadFile(filepath.Join(root, "cases.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(caseBytes, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	if manifest.RightEdge.File == "" || manifest.RightEdge.Size != 127 ||
+		manifest.RightEdge.Index != 126 || manifest.RightEdge.Index != manifest.RightEdge.Size-1 {
+		t.Fatalf("cases.json does not name the last leaf at size 127: %+v", manifest.RightEdge)
+	}
+	var vector struct {
+		Size     int64    `json:"size"`
+		Index    int64    `json:"index"`
+		EntryB64 string   `json:"entry_b64"`
+		LeafHash string   `json:"leaf_hash"`
+		Root     string   `json:"root"`
+		Proof    []string `json:"proof"`
+	}
+	vectorBytes, err := os.ReadFile(filepath.Join(root, manifest.RightEdge.File))
+	if err != nil {
+		t.Fatalf("read right-edge proof: %v", err)
+	}
+	if err := json.Unmarshal(vectorBytes, &vector); err != nil {
+		t.Fatal(err)
+	}
+	if vector.Size != manifest.RightEdge.Size || vector.Index != manifest.RightEdge.Index {
+		t.Fatalf("proof file describes size/index %d/%d, cases.json says %d/%d",
+			vector.Size, vector.Index, manifest.RightEdge.Size, manifest.RightEdge.Index)
+	}
+	entryBytes, err := base64.StdEncoding.DecodeString(vector.EntryB64)
+	if err != nil {
+		t.Fatalf("entry_b64: %v", err)
+	}
+	leaf := tlog.LeafHash(entryBytes)
+	if hex.EncodeToString(leaf[:]) != vector.LeafHash {
+		t.Fatalf("leaf hash is %s, vector says %s", hex.EncodeToString(leaf[:]), vector.LeafHash)
+	}
+	rootBytes, err := hex.DecodeString(vector.Root)
+	if err != nil || len(rootBytes) != len(upstream.Hash{}) {
+		t.Fatalf("root is not a 32-byte hex hash: %q (%v)", vector.Root, err)
+	}
+	var head upstream.Hash
+	copy(head[:], rootBytes)
+	proof := make(upstream.RecordProof, len(vector.Proof))
+	for i, encoded := range vector.Proof {
+		hash, err := hex.DecodeString(encoded)
+		if err != nil || len(hash) != len(upstream.Hash{}) {
+			t.Fatalf("proof[%d] is not a 32-byte hex hash: %q (%v)", i, encoded, err)
+		}
+		copy(proof[i][:], hash)
+	}
+	if err := upstream.CheckRecord(proof, vector.Size, head, vector.Index, leaf); err != nil {
+		t.Fatalf("right-edge proof at %d of %d does not verify: %v", vector.Index, vector.Size, err)
+	}
+}
+
+func TestRightEdgeProofIsNamedInSpecCoverage(t *testing.T) {
+	spec, err := os.ReadFile(filepath.Join("..", "..", "SPEC.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(spec)
+	start := strings.Index(text, "### 12.1")
+	if start < 0 {
+		t.Fatal("SPEC.md has no §12.1 coverage table")
+	}
+	end := strings.Index(text[start:], "\n## 13.")
+	if end < 0 {
+		t.Fatal("SPEC.md §12.1 has no end")
+	}
+	coverage := text[start : start+end]
+	for _, phrase := range []string{"proofs/right-edge.json", "index 126", "127-entry", "D13b"} {
+		if !strings.Contains(coverage, phrase) {
+			t.Errorf("§12.1 does not name the right-edge proof and its boundary: missing %q", phrase)
+		}
+	}
+}
 
 // Cold-model gate run 5, defect G12. §8.1 said the bundle format carries
 // "domain `norn/proof/v1`", and the six-key table below that sentence has no

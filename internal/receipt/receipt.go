@@ -24,6 +24,61 @@ import (
 	"github.com/onembyte/norn/internal/note"
 )
 
+// Code is one of §7's closed receipt refusal reasons. The order is the order
+// Check evaluates them, so a receipt with multiple faults has one stable answer.
+type Code string
+
+const (
+	Note          Code = "note"
+	LogSignature  Code = "log-signature"
+	ReceiptFormat Code = "receipt"
+	Origin        Code = "origin"
+	LeafHash      Code = "leaf-hash"
+	Deadline      Code = "deadline"
+	Entry         Code = "entry"
+	Expired       Code = "expired"
+)
+
+var codes = []Code{Note, LogSignature, ReceiptFormat, Origin, LeafHash, Deadline, Entry, Expired}
+
+// All returns §7's refusal codes in check order. The returned slice is a copy.
+func All() []Code { return append([]Code(nil), codes...) }
+
+// Known reports whether c belongs to §7's closed refusal vocabulary.
+func Known(c Code) bool {
+	for _, known := range codes {
+		if c == known {
+			return true
+		}
+	}
+	return false
+}
+
+// Error is a receipt refusal with its stable reason attached.
+type Error struct {
+	Code Code
+	Err  error
+}
+
+func (e *Error) Error() string { return e.Err.Error() }
+func (e *Error) Unwrap() error { return e.Err }
+
+// CodeOf returns the outermost receipt refusal code, if err carries one.
+func CodeOf(err error) (Code, bool) {
+	var refusal *Error
+	if errors.As(err, &refusal) {
+		return refusal.Code, true
+	}
+	return "", false
+}
+
+func refusalf(code Code, format string, args ...any) error {
+	if !Known(code) {
+		panic(fmt.Sprintf("receipt: %q is not a §7 receipt code", code))
+	}
+	return &Error{Code: code, Err: fmt.Errorf("receipt: "+format, args...)}
+}
+
 // Receipt is the promise a log made.
 type Receipt struct {
 	Origin   string
@@ -36,10 +91,6 @@ type Receipt struct {
 // Deadline as a time, for printing and for waiting on.
 func (r *Receipt) DeadlineTime() time.Time { return time.Unix(int64(r.Deadline), 0) }
 
-func receiptErrorf(format string, args ...any) error {
-	return fmt.Errorf("receipt: "+format, args...)
-}
-
 // Check verifies a receipt under the log's keys and binds it to one entry.
 //
 // `leaf` is the leaf hash of the entry that was submitted. Passing nil skips
@@ -51,34 +102,42 @@ func receiptErrorf(format string, args ...any) error {
 // against **witness time**, not against whatever the machine holding the
 // receipt happens to think.
 func Check(signed string, logKeys []string, origin string, leaf []byte, now time.Time) (*Receipt, error) {
+	// Note framing precedes trust lookup: malformed signed-note structure is
+	// `note`, even when no key could verify it.
+	if _, _, err := note.Split(signed); err != nil {
+		return nil, refusalf(Note, "malformed signed note: %v", err)
+	}
 	if len(logKeys) == 0 {
-		return nil, receiptErrorf("no log key to check the signature against")
+		return nil, refusalf(LogSignature, "no log key to check the signature against")
 	}
 	text, err := note.Verify(signed, logKeys)
 	if err != nil {
-		return nil, receiptErrorf("not signed by a key this anchor trusts: %w", err)
+		return nil, refusalf(LogSignature, "not signed by a key this anchor trusts: %w", err)
 	}
 
 	lines := strings.Split(strings.TrimSuffix(text, "\n"), "\n")
 	if len(lines) != 4 {
-		return nil, receiptErrorf("a receipt has 4 lines, this one has %d", len(lines))
+		return nil, refusalf(ReceiptFormat, "a receipt has 4 lines, this one has %d", len(lines))
 	}
 	if lines[0] != note.ReceiptHeader {
-		return nil, receiptErrorf("first line is %q, want %q", lines[0], note.ReceiptHeader)
+		return nil, refusalf(ReceiptFormat, "first line is %q, want %q", lines[0], note.ReceiptHeader)
 	}
 	if lines[1] != origin {
-		return nil, receiptErrorf("it is for %q, not %q", lines[1], origin)
+		return nil, refusalf(Origin, "it is for %q, not %q", lines[1], origin)
 	}
-	hash, err := base64.StdEncoding.DecodeString(lines[2])
+	hash, err := base64.StdEncoding.Strict().DecodeString(lines[2])
 	if err != nil {
-		return nil, receiptErrorf("the leaf hash is not base64: %w", err)
+		return nil, refusalf(LeafHash, "the leaf hash is not base64: %w", err)
+	}
+	if base64.StdEncoding.EncodeToString(hash) != lines[2] {
+		return nil, refusalf(LeafHash, "the leaf hash is not canonical base64")
 	}
 	if len(hash) != 32 {
-		return nil, receiptErrorf("the leaf hash is %d bytes, want 32", len(hash))
+		return nil, refusalf(LeafHash, "the leaf hash is %d bytes, want 32", len(hash))
 	}
 	deadline, err := strconv.ParseUint(lines[3], 10, 64)
 	if err != nil {
-		return nil, receiptErrorf("the deadline is not a unix timestamp: %w", err)
+		return nil, refusalf(Deadline, "the deadline is not a unix timestamp: %w", err)
 	}
 	// Canonical decimal, exactly as §6's size line: no leading zeroes, no
 	// sign. §7 calls a receipt non-repudiable proof of log misbehaviour, which
@@ -86,18 +145,18 @@ func Check(signed string, logKeys []string, origin string, leaf []byte, now time
 	// with two spellings is a comparison with two answers (cold gate run 11,
 	// D4). `ParseUint` alone accepts `00123`.
 	if lines[3] != strconv.FormatUint(deadline, 10) {
-		return nil, receiptErrorf("the deadline %q is not canonical decimal", lines[3])
+		return nil, refusalf(Deadline, "the deadline %q is not canonical decimal", lines[3])
 	}
 
 	if leaf != nil && string(leaf) != string(hash) {
-		return nil, receiptErrorf("it promises a different entry than the one submitted")
+		return nil, refusalf(Entry, "it promises a different entry than the one submitted")
 	}
 	// Compared as signed. `now.Unix()` is negative before 1970 and the zero
 	// `time.Time` is year 1; casting that to uint64 wrapped it to something
 	// enormous, which made every receipt look expired -- silently, and in the
 	// direction that turns a valid promise into a refusal.
 	if !now.IsZero() && int64(deadline) <= now.Unix() {
-		return nil, receiptErrorf("the deadline has already passed (%s); a promise "+
+		return nil, refusalf(Expired, "the deadline has already passed (%s); a promise "+
 			"about the past promises nothing",
 			time.Unix(int64(deadline), 0).Format(time.RFC3339))
 	}

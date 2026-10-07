@@ -46,6 +46,53 @@ func trustBad(t *testing.T, name string) map[string]any {
 	return doc
 }
 
+func TestNoncanonicalLogVerifierKeyIsTheOnlyTrustFault(t *testing.T) {
+	const name = "44-log-key-base64-cr"
+	doc := trustBad(t, name)
+	key, ok := doc["log_key"].(string)
+	if !ok || strings.Count(key, "\r") != 1 {
+		t.Fatalf("%s must change one verifier-key data character only", name)
+	}
+	policyText, ok := doc["policy"].(string)
+	if !ok {
+		t.Fatal("policy is not text")
+	}
+	for _, line := range strings.Split(policyText, "\n") {
+		if strings.HasPrefix(line, "log ") {
+			t.Fatal("a log line would make key correspondence a second fault")
+		}
+	}
+
+	// Removing only the ignored CR repairs the file. This proves the omitted
+	// optional policy log line does not itself cause the refusal.
+	doc["log_key"] = strings.ReplaceAll(key, "\r", "")
+	repaired, err := cbor.Encode(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	anchor, err := Parse(repaired)
+	if err == nil {
+		err = anchor.Validate()
+	}
+	if err != nil {
+		t.Fatalf("removing the CR did not repair the anchor: %v", err)
+	}
+
+	raw, err := os.ReadFile(filepath.Join("..", "..", "testdata", "vectors",
+		"trust-bad", name+".cbor"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	anchor, err = Parse(raw)
+	if err == nil {
+		err = anchor.Validate()
+	}
+	if err == nil || !strings.Contains(err.Error(), "log_key:") ||
+		!strings.Contains(err.Error(), "base64") {
+		t.Errorf("noncanonical verifier key was not refused at log_key base64: %v", err)
+	}
+}
+
 func TestTheLogKeyNegativesDoNotAlsoBreakTheCorrespondenceRule(t *testing.T) {
 	for _, name := range []string{
 		"11-log-key-name-mismatch",
@@ -190,6 +237,78 @@ func honestWitnessKey(t *testing.T, name string) string {
 	}
 	t.Fatalf("the anchor lists no witness %q", name)
 	return ""
+}
+
+// Cold gate run 12, D10. Each trust rule needs a file that reaches only that
+// rule; otherwise a stricter earlier check can hide its removal.
+func TestRunTwelveTrustNegativesAreIsolated(t *testing.T) {
+	t.Run("origin is not a prefix comparison", func(t *testing.T) {
+		doc := parseBad(t, isolated(t, "origin-only"))
+		derived, err := OriginFor(doc.Net)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if doc.Origin != derived+"a" {
+			t.Fatalf("origin %q is not the derived origin plus one character %q", doc.Origin, derived+"a")
+		}
+		key, err := parseKey(doc.LogKey)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if key.Name != doc.Origin {
+			t.Errorf("log key name %q differs from the damaged origin %q", key.Name, doc.Origin)
+		}
+		for _, line := range strings.Split(doc.Policy, "\n") {
+			fields := strings.Fields(line)
+			if len(fields) >= 2 && fields[0] == "log" && fields[1] != doc.LogKey {
+				t.Errorf("policy log key %q differs from log_key %q", fields[1], doc.LogKey)
+			}
+		}
+	})
+
+	t.Run("witness key correspondence", func(t *testing.T) {
+		doc := parseBad(t, isolated(t, "witness-key-mismatch"))
+		policyKeys := map[string]string{}
+		for _, line := range strings.Split(doc.Policy, "\n") {
+			fields := strings.Fields(line)
+			if len(fields) >= 3 && fields[0] == "witness" {
+				policyKeys[fields[1]] = fields[2]
+			}
+		}
+		if len(policyKeys) != len(doc.Witnesses) {
+			t.Fatalf("%d policy witness names for %d records", len(policyKeys), len(doc.Witnesses))
+		}
+		mismatches := 0
+		for _, witness := range doc.Witnesses {
+			parsed, err := parseKey(witness.Key)
+			if err != nil || !parsed.IsCosigner() {
+				t.Errorf("witness %q does not carry a valid cosignature key: %v", witness.Name, err)
+			}
+			key, ok := policyKeys[witness.Name]
+			if !ok {
+				t.Errorf("witness %q has no policy definition", witness.Name)
+				continue
+			}
+			if key != witness.Key {
+				mismatches++
+			}
+		}
+		if mismatches != 1 {
+			t.Errorf("%d witness keys disagree between the array and policy; want exactly one", mismatches)
+		}
+	})
+
+	t.Run("anchor is closed", func(t *testing.T) {
+		doc := parseBad(t, isolated(t, "anchor-unknown-member"))
+		if len(doc.Anchor) != 4 || doc.Anchor["note"] != "unexpected" {
+			t.Fatalf("anchor = %#v; want the three required members and one unknown", doc.Anchor)
+		}
+		for _, key := range []string{"type", "max_lag", "mode"} {
+			if _, ok := doc.Anchor[key]; !ok {
+				t.Errorf("anchor is also missing required member %q", key)
+			}
+		}
+	})
 }
 
 // D7's third variant: the log key's note name "MUST equal `origin`", and

@@ -182,11 +182,10 @@ func policyWitnessNames(t *testing.T, policy string) []string {
 }
 
 func TestTheTrustRulesEachHaveAnIsolatedNegative(t *testing.T) {
-	// §9.1: "A file with no witnesses MUST be rejected." `07-no-witnesses`
-	// breaks the policy/witness correspondence at the same time, and that rule
-	// fires first, so the MUST itself was never reached.
+	// `07-no-witnesses` has no witness names in the policy and uses `quorum none`,
+	// so only the explicit witness minimum refuses this otherwise corresponding file.
 	t.Run("no witnesses, and a policy that agrees", func(t *testing.T) {
-		doc := parseBad(t, isolated(t, "no-witnesses-only"))
+		doc := parseBad(t, isolated(t, "no-witnesses"))
 		if len(doc.Witnesses) != 0 {
 			t.Fatalf("%d witnesses: this is not the no-witness case", len(doc.Witnesses))
 		}
@@ -196,11 +195,10 @@ func TestTheTrustRulesEachHaveAnIsolatedNegative(t *testing.T) {
 		}
 	})
 
-	// §9.1: a witness `name` is unique within the file. `08` lists only `pi`
-	// twice, so the policy names two witnesses the file does not, and the
-	// correspondence rule decides.
+	// `08` carries all policy-listed witnesses plus a second byte-identical `pi`;
+	// only the witness-name uniqueness rule is broken.
 	t.Run("a duplicate name that agrees with the policy", func(t *testing.T) {
-		doc := parseBad(t, isolated(t, "duplicate-witness-name-only"))
+		doc := parseBad(t, isolated(t, "duplicate-witness-name"))
 		seen, dup := map[string]int{}, ""
 		keys := map[string]string{}
 		for _, w := range doc.Witnesses {
@@ -357,6 +355,7 @@ func TestEveryTrustMemberRuleHasItsCase(t *testing.T) {
 		{"witness-name-too-long", "a witness name is bounded, as the network name is"},
 		{"log-url-empty-string", "`log_urls` holds non-empty strings"},
 		{"anchor-missing-member", "when `anchor` is present all three members are required"},
+		{"anchor-unknown-member", "the anchor map is closed"},
 		{"anchor-unknown-mode", "an unknown enforcement mode is not safely ignorable"},
 		{"policy-log-key-mismatch", "the policy's `log` line names this network's log"},
 	} {
@@ -378,12 +377,14 @@ func TestEveryTrustMemberRuleHasItsCase(t *testing.T) {
 	}
 }
 
-// ...and the two that must be ACCEPTED, which only a positive can show: a
-// reader that requires `url`, or that refuses an anchor type it does not know,
-// rejects files this document permits. An unknown anchor *type* is ignorable —
-// anchoring is advisory (D-009) — where an unknown *mode* is not.
+// Positives pin optional members and open URL values: a reader that requires a
+// witness `url`, refuses an unknown anchor type, validates URL syntax, or
+// requires policy/trust URL equality rejects files this document permits. An
+// unknown anchor *type* is ignorable — anchoring is advisory (D-009) — where
+// an unknown *mode* or member is not.
 func TestTheOptionalTrustMembersAreOptional(t *testing.T) {
-	for _, name := range []string{"witness-without-url", "anchor-unknown-type"} {
+	for _, name := range []string{"witness-without-url", "anchor-unknown-type",
+		"url-fields-are-opaque"} {
 		t.Run(name, func(t *testing.T) {
 			raw, err := os.ReadFile(filepath.Join(vectorRoot(), "trust-good", name+".cbor"))
 			if err != nil {
@@ -397,6 +398,47 @@ func TestTheOptionalTrustMembersAreOptional(t *testing.T) {
 				t.Fatalf("refused a file §9.1 permits: %v", err)
 			}
 		})
+	}
+}
+
+func TestOpaqueURLFieldsPreserveAnExplicitEmptyWitnessURL(t *testing.T) {
+	name := "url-fields-are-opaque"
+	raw, err := os.ReadFile(filepath.Join(vectorRoot(), "trust-good", name+".cbor"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, err := Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := doc.Validate(); err != nil {
+		t.Fatalf("the URL values are opaque application data: %v", err)
+	}
+	if len(doc.LogURLs) != 1 || doc.LogURLs[0] != "http://[invalid" {
+		t.Errorf("log_urls = %q, want the opaque non-empty value", doc.LogURLs)
+	}
+	var emptyURL *Witness
+	for i := range doc.Witnesses {
+		if doc.Witnesses[i].Name == "pi" {
+			emptyURL = &doc.Witnesses[i]
+		}
+	}
+	if emptyURL == nil || !emptyURL.HasURL || emptyURL.URL != "" {
+		t.Fatalf("the explicit empty witness URL was lost: %+v", emptyURL)
+	}
+	encoded, err := doc.Encode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(encoded) != string(raw) {
+		t.Error("re-encoding changed an explicitly present empty witness URL")
+	}
+	toml, err := doc.ToTOML()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(toml, "url  = \"\"\n") {
+		t.Error("the TOML rendering omitted the explicitly empty witness URL")
 	}
 }
 

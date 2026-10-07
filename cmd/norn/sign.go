@@ -36,6 +36,15 @@ func signCmd(args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
+	// §16.3: `--yes` MUST NOT exist for the root role. A root's authority is
+	// the one thing in this protocol that cannot be scripted away, because a
+	// script that can mint it is indistinguishable from a stolen signer with
+	// better manners. Refused before anything is read, so the combination
+	// costs nothing to try and nothing to automate.
+	if *yes && *role == "root" {
+		return errors.New("--yes cannot be combined with --role root: a root's " +
+			"authority is never exercised by a script")
+	}
 	if *trustPath == "" {
 		fs.Usage()
 		return errors.New("-trust is required: signing means deciding for a network, " +
@@ -320,9 +329,9 @@ func confirm() error {
 	return nil
 }
 
-// printSignSummary is `ENROLLMENT.md` part 7 rule 1: what you sign is what you
-// see. Every field the signature will cover appears here, including the ones
-// the signer cannot change.
+// printSignSummary is §16.1's what-you-sign-is-what-you-see rule: every
+// field the signature will cover appears here, including the ones the
+// signer cannot change.
 func printSignSummary(env *entry.Envelope, request *enrollreq.Request, anchor *trust.Trust,
 	observed *state.State, signer crypto.Signer, keySource string, noAfter, fresh bool) {
 

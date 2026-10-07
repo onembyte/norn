@@ -94,19 +94,67 @@ class TrustRejections(unittest.TestCase):
     def test_the_undamaged_file_still_validates(self):
         trust.validate(fixture.trust_file())
 
+    def test_run_twelve_trust_cases_isolate_the_named_rules(self):
+        cases = dict(fixture.trust_rejections())
+        no_witnesses = cases["07-no-witnesses"]
+        self.assertEqual(no_witnesses["witnesses"], [])
+        no_witness_policy = [line.split() for line in no_witnesses["policy"].splitlines()]
+        self.assertFalse(any(fields and fields[0] == "witness" for fields in no_witness_policy))
+        self.assertIn(["quorum", "none"], no_witness_policy)
+
+        duplicate = cases["08-duplicate-witness-name"]
+        policy_keys = {fields[1]: fields[2]
+                       for line in duplicate["policy"].splitlines()
+                       if len(fields := line.split()) >= 3 and fields[0] == "witness"}
+        seen = {}
+        for witness in duplicate["witnesses"]:
+            self.assertIn(witness["name"], policy_keys)
+            self.assertEqual(witness["key"], policy_keys[witness["name"]])
+            seen[witness["name"]] = seen.get(witness["name"], 0) + 1
+        self.assertEqual(sum(count > 1 for count in seen.values()), 1)
+
+        origin = cases["13-origin-only"]
+        self.assertEqual(origin["origin"], fixture.ORIGIN + "a")
+        self.assertEqual(origin["log_key"].split("+", 1)[0], origin["origin"])
+        policy_log = next(line.split() for line in origin["policy"].splitlines()
+                          if line.startswith("log "))
+        self.assertEqual(policy_log[1], origin["log_key"])
+
+        mismatch = cases["42-witness-key-mismatch"]
+        keys = {fields[1]: fields[2]
+                for line in mismatch["policy"].splitlines()
+                if len(fields := line.split()) >= 3 and fields[0] == "witness"}
+        self.assertEqual(len(keys), len(mismatch["witnesses"]))
+        self.assertEqual(sum(w["key"] != keys[w["name"]] for w in mismatch["witnesses"]), 1)
+
+        anchor = cases["43-anchor-unknown-member"]["anchor"]
+        self.assertEqual(set(anchor), {"type", "max_lag", "mode", "note"})
+
 
 class TrustAcceptances(unittest.TestCase):
     """The positives, through the same `parse` the negatives go through.
 
-    Nothing read `trust-good/` here: the generator validated each document
-    (`trust.validate`), which never sees the bytes, so a size cap one byte too
-    strict passed the reference's whole suite (6.5l-vii-d-iv-b).
+    The generator validates each document (`trust.validate`), which never
+    sees the bytes, so parse-level rules and byte-exact URL round-trips need
+    these reference checks too.
     """
 
     def test_every_acceptable_trust_file_is_accepted(self):
         for name, doc in fixture.trust_acceptances():
             with self.subTest(case=name):
                 trust.parse(cbor.encode(doc))
+
+    def test_url_values_are_opaque_and_independent(self):
+        _, doc = next((name, doc) for name, doc in fixture.trust_acceptances()
+                      if name == "url-fields-are-opaque")
+        raw = cbor.encode(doc)
+        parsed = trust.parse(raw)
+        self.assertEqual(trust.encode(parsed), raw)
+        self.assertEqual(parsed["log_urls"], ["http://[invalid"])
+        self.assertEqual(parsed["witnesses"][0]["url"], "")
+        self.assertEqual(parsed["witnesses"][1]["url"], "http://[invalid")
+        self.assertIn("http://other.invalid", parsed["policy"])
+        self.assertNotEqual(parsed["witnesses"][1]["url"], "http://other.invalid")
 
     def test_one_is_exactly_at_the_cap(self):
         sizes = [len(cbor.encode(doc)) for _, doc in fixture.trust_acceptances()]

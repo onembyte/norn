@@ -1,6 +1,7 @@
 package tlog
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"os"
@@ -99,6 +100,93 @@ func TestVerifyKeepsTheErrorsItAlwaysReturned(t *testing.T) {
 	}
 	if _, err := Verify(read(t, "served", "checkpoint"), keys); err != nil {
 		t.Fatalf("the honest checkpoint does not verify: %v", err)
+	}
+}
+
+// The checkpoint root is 32 bytes, so its padded base64 has unused low bits
+// in the final data character. Those bits must be zero even when the decoded
+// root is unchanged.
+func TestParseCheckpointRejectsNonzeroRootPadBits(t *testing.T) {
+	body, _, err := note.Split(read(t, "served", "checkpoint"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSuffix(body, "\n"), "\n")
+	canonical := lines[2]
+	raw, err := base64.StdEncoding.DecodeString(canonical)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bad := withNonzeroPadBits(t, canonical)
+	decoded, err := base64.StdEncoding.DecodeString(bad)
+	if err != nil || string(decoded) != string(raw) {
+		t.Fatalf("mutated root does not decode to the same bytes: %v", err)
+	}
+	lines[2] = bad
+	if _, err := ParseCheckpoint(strings.Join(lines, "\n") + "\n"); !errors.Is(err, ErrFormat) {
+		t.Errorf("ParseCheckpoint accepted nonzero root pad bits: %v", err)
+	}
+}
+
+func withNonzeroPadBits(t *testing.T, encoded string) string {
+	t.Helper()
+	raw, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil || base64.StdEncoding.EncodeToString(raw) != encoded {
+		t.Fatalf("input is not canonical base64: %v", err)
+	}
+	padding := len(encoded) - len(strings.TrimRight(encoded, "="))
+	if padding == 0 {
+		t.Fatal("test input has no padding bits")
+	}
+	const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+	position := len(encoded) - padding - 1
+	value := strings.IndexByte(alphabet, encoded[position])
+	unused := padding * 2
+	mask := (1 << unused) - 1
+	mutated := []byte(encoded)
+	mutated[position] = alphabet[(value&^mask)|1]
+	return string(mutated)
+}
+
+// D14b. The terminator on the final signature line is exactly one LF. The
+// parser must not trim an extra blank line, and must not accept an unterminated
+// final line.
+func TestSignatureBlockRequiresExactlyOneFinalLineFeed(t *testing.T) {
+	signed := read(t, "served", "checkpoint")
+	origin := originOf(signed)
+	keys := []string{logVerifierKey(t, origin)}
+	for name, input := range map[string]string{
+		"missing final LF": strings.TrimSuffix(signed, "\n"),
+		"extra final LF":   signed + "\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := Verify(input, keys)
+			if code, ok := refusal.CodeOf(err); err == nil || !ok || code != refusal.Note {
+				t.Errorf("Verify error = %v (code %q, coded %t), want note framing", err, code, ok)
+			}
+		})
+	}
+}
+
+// D14c. A 76-byte payload is a valid framed payload in isolation, but it is
+// not a valid signature for the trusted log key (whose algorithm requires 68
+// bytes). Since its name and key ID match that key, it is a verification
+// failure at step 3, even beside another valid line from that key.
+func TestOtherAlgorithmLengthUnderTheTrustedLogKeyIsLogSignature(t *testing.T) {
+	signed := read(t, "served", "checkpoint")
+	origin := originOf(signed)
+	key := logVerifierKey(t, origin)
+	v, err := note.ParseVerifierKey(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A signature line carries key ID plus an eight-byte timestamp and a
+	// 64-byte signature, the other supported payload length.
+	payload := append(append([]byte(nil), v.ID()...), make([]byte, 8+64)...)
+	line := note.SigPrefix + v.Name + " " + base64.StdEncoding.EncodeToString(payload) + "\n"
+	_, err = Verify(signed+line, []string{key})
+	if code, ok := refusal.CodeOf(err); err == nil || !ok || code != refusal.LogSignature {
+		t.Errorf("Verify error = %v (code %q, coded %t), want log-signature", err, code, ok)
 	}
 }
 

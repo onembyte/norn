@@ -160,8 +160,25 @@ func TestVerifyAnchoredReportsAMismatchedProof(t *testing.T) {
 // place, which is the layout SPEC §6 describes: `anchors/<size>.ots`.
 func anchoredLog(t *testing.T) string {
 	t.Helper()
+	dir := servedCopy(t, "served")
+	if err := os.MkdirAll(filepath.Join(dir, "anchors"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	proof, err := os.ReadFile(anchorProof(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "anchors", servedSize(t)+".ots"), proof, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+// servedCopy is a writable copy of one served log in the vector suite.
+func servedCopy(t *testing.T, name string) string {
+	t.Helper()
 	dir := t.TempDir()
-	src := filepath.Join(vectors(), "served")
+	src := filepath.Join(vectors(), name)
 	err := filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -183,17 +200,41 @@ func anchoredLog(t *testing.T) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Join(dir, "anchors"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	proof, err := os.ReadFile(anchorProof(t))
+	return dir
+}
+
+// servedBadLog is a writable copy of the honest log `served-bad/` is written
+// over. The manifest names it in `serve_over`: since 6.5l-vii-d-viii-a that is
+// the 300-entry `served-large/`, whose paths (`tile/entries/001.p/44`, …) the
+// 138-entry `served/` does not have, and this harness copying `served/`
+// regardless is what made every served negative fail to apply.
+func servedBadLog(t *testing.T) string {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(vectors(), "served-bad", "cases.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "anchors", servedSize(t)+".ots"), proof, 0o644); err != nil {
+	var doc struct {
+		ServeOver string `json:"serve_over"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
 		t.Fatal(err)
 	}
-	return dir
+	if doc.ServeOver == "" {
+		doc.ServeOver = "served"
+	}
+	return servedCopy(t, doc.ServeOver)
+}
+
+// The control for every served negative: the same harness, with nothing
+// replaced, is accepted. Without it a harness that refused everything -- a
+// wrong base log, say -- would look exactly like one that works.
+func TestTheHonestServedBadBaseIsAccepted(t *testing.T) {
+	out, err := exec.Command(nornBinary(t), "verify",
+		"-trust", filepath.Join(vectors(), "trust.cbor"), "-log", servedBadLog(t)).CombinedOutput()
+	if err != nil {
+		t.Fatalf("the honest log served-bad/ is written over was refused: %v\n%s", err, out)
+	}
 }
 
 // --- Cold-model gate run 5, defect G2 (6.5b) -----------------------------
@@ -329,7 +370,7 @@ func TestEveryServedNegativeIsRefused(t *testing.T) {
 
 	for _, c := range doc.Cases {
 		t.Run(c.Name, func(t *testing.T) {
-			log := anchoredLog(t)
+			log := servedBadLog(t)
 			target := filepath.Join(log, filepath.FromSlash(c.Path))
 			switch {
 			case c.Remove:
@@ -467,7 +508,7 @@ func TestATamperedHashTileIsRefusedByTheTileRule(t *testing.T) {
 		}
 		found = true
 		t.Run(c.Name, func(t *testing.T) {
-			log := anchoredLog(t)
+			log := servedBadLog(t)
 			body, err := os.ReadFile(filepath.Join(dir, c.File))
 			if err != nil {
 				t.Fatal(err)
@@ -744,7 +785,7 @@ func TestAConsistentlyTamperedLogIsCaughtOnlyByTheHeadComparison(t *testing.T) {
 	}
 
 	// And it is still refused — by the one rule left.
-	log := anchoredLog(t)
+	log := servedBadLog(t)
 	for path, body := range byPath {
 		if err := os.WriteFile(filepath.Join(log, filepath.FromSlash(path)), body, 0o644); err != nil {
 			t.Fatal(err)

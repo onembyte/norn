@@ -101,8 +101,8 @@ func ParseCheckpoint(text string) (Checkpoint, error) {
 	if err != nil || size < 0 {
 		return Checkpoint{}, formatErrorf("size %q is not a non-negative integer", lines[1])
 	}
-	raw, err := base64.StdEncoding.DecodeString(lines[2])
-	if err != nil {
+	raw, err := base64.StdEncoding.Strict().DecodeString(lines[2])
+	if err != nil || base64.StdEncoding.EncodeToString(raw) != lines[2] {
 		return Checkpoint{}, formatErrorf("root is not base64")
 	}
 	var root upstream.Hash

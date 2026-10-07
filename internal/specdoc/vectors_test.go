@@ -16,8 +16,10 @@ import (
 	entrypkg "github.com/onembyte/norn/internal/entry"
 	"github.com/onembyte/norn/internal/evrefusal"
 	"github.com/onembyte/norn/internal/forkevidence"
+	"github.com/onembyte/norn/internal/note"
 	"github.com/onembyte/norn/internal/policy"
 	"github.com/onembyte/norn/internal/proof"
+	receiptpkg "github.com/onembyte/norn/internal/receipt"
 	"github.com/onembyte/norn/internal/refusal"
 	"github.com/onembyte/norn/internal/tlog"
 	"github.com/onembyte/norn/internal/trust"
@@ -198,6 +200,319 @@ func TestSpecVectorCitationsResolve(t *testing.T) {
 		}
 		if !suffixes[quoted] {
 			t.Errorf("§12.1 cites vector %q, which no manifest entry matches", quoted)
+		}
+	}
+}
+
+func TestExcessPaddingCoverageDescribesItsDistinguishingShape(t *testing.T) {
+	doc := load(t)
+	section, ok := doc.Section("12.1")
+	if !ok {
+		t.Fatal("§12.1 is missing")
+	}
+	row := ""
+	for _, line := range strings.Split(section.Body, "\n") {
+		if strings.Contains(line, "§16.2 padding") {
+			row = line
+			break
+		}
+	}
+	if row == "" {
+		t.Fatal("§12.1 has no padding coverage row")
+	}
+	for _, phrase := range []string{"req-padding-base", "203-byte", "one zero 5-bit group",
+		"six unused bits", "§16.2 alone"} {
+		if !strings.Contains(row, phrase) {
+			t.Errorf("padding coverage row omits %q: %s", phrase, row)
+		}
+	}
+	if strings.Contains(row, "payload is the valid request with its encoding corrupted") {
+		t.Error("padding coverage still claims the old vector is refused by the padding rule")
+	}
+}
+
+func TestLabelValueCoveragePinsBothUtf8ByteBoundaries(t *testing.T) {
+	doc := load(t)
+	section, ok := doc.Section("12.1")
+	if !ok {
+		t.Fatal("§12.1 is missing")
+	}
+	row := ""
+	for _, line := range strings.Split(section.Body, "\n") {
+		if strings.Contains(line, "§4.0 label-value byte cap") {
+			row = line
+			break
+		}
+	}
+	if row == "" {
+		t.Fatal("§12.1 has no label-value byte-cap coverage row")
+	}
+	for _, phrase := range []string{"req-label-at-cap", "256 UTF-8 bytes", "oversize-label",
+		"257-byte value", "character-counting reader accepts it"} {
+		if !strings.Contains(row, phrase) {
+			t.Errorf("label-value coverage row omits %q: %s", phrase, row)
+		}
+	}
+}
+
+func TestReservedHintSyntaxIsUnvalidatedAndPositivelyCovered(t *testing.T) {
+	doc := load(t)
+	section, ok := doc.Section("4.0")
+	if !ok {
+		t.Fatal("§4.0 is missing")
+	}
+	normative := strings.Join(strings.Fields(section.Body), " ")
+	for _, phrase := range []string{"hint syntax MUST NOT be validated",
+		"MUST NOT by itself invalidate the request", "embedded request in an `enroll` entry",
+		"ordinary UTF-8, type, and byte-length constraints still apply"} {
+		if !strings.Contains(normative, phrase) {
+			t.Errorf("§4.0 does not state %q", phrase)
+		}
+	}
+
+	coverage, ok := doc.Section("12.1")
+	if !ok {
+		t.Fatal("§12.1 is missing")
+	}
+	for _, phrase := range []string{"requests/req-reserved-hints",
+		`ip = "not-a-cidr"`, `endpoint = "not-an-endpoint"`,
+		"enroll-unicode-labels", "through replay into `state.json`"} {
+		if !strings.Contains(coverage.Body, phrase) {
+			t.Errorf("§12.1 does not positively pin malformed hint behavior with %q", phrase)
+		}
+	}
+}
+
+func TestOversizeRequestLabelKeyCoverageNamesTheDecoderLayer(t *testing.T) {
+	doc := load(t)
+	section, ok := doc.Section("12.1")
+	if !ok {
+		t.Fatal("§12.1 is missing")
+	}
+	row := ""
+	for _, line := range strings.Split(section.Body, "\n") {
+		if strings.Contains(line, "§4.0 the map-key cap, at the decoder") {
+			row = line
+			break
+		}
+	}
+	if row == "" {
+		t.Fatal("§12.1 has no decoder-level map-key coverage row")
+	}
+	for _, phrase := range []string{"oversize-label-key", "24-byte label key",
+		"decoder before the `labels` field rule"} {
+		if !strings.Contains(row, phrase) {
+			t.Errorf("map-key coverage row omits %q: %s", phrase, row)
+		}
+	}
+	if strings.Contains(row, "field rule first") {
+		t.Errorf("map-key coverage misattributes the request refusal: %s", row)
+	}
+}
+
+func TestSpecGenesisHashExampleMatchesTrustVector(t *testing.T) {
+	doc := load(t)
+	section, ok := doc.Section("9.2")
+	if !ok {
+		t.Fatal("§9.2 is missing")
+	}
+	trust, err := os.ReadFile(filepath.Join(vectorRoot(t), "trust.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	hashRE := regexp.MustCompile(`(?m)^genesis_hash\s*=\s*"([0-9a-f]{64})"`)
+	trustHash := hashRE.FindSubmatch(trust)
+	if len(trustHash) != 2 {
+		t.Fatal("trust.toml has no full genesis_hash")
+	}
+	specHash := hashRE.FindAllSubmatch([]byte(section.Body), -1)
+	if len(specHash) != 1 {
+		t.Fatalf("§9.2 has %d full genesis_hash examples, want one", len(specHash))
+	}
+	if string(specHash[0][1]) != string(trustHash[1]) {
+		t.Errorf("§9.2's genesis_hash %s differs from trust.toml %s",
+			specHash[0][1], trustHash[1])
+	}
+}
+
+func TestSpecTitleMatchesItsFrozenVersion(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "SPEC.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(string(raw), "\n")
+	if len(lines) < 2 {
+		t.Fatal("SPEC.md has no title and status")
+	}
+	if lines[0] != "# Norn — Specification v1" {
+		t.Errorf("SPEC title is %q; the frozen document is v1", lines[0])
+	}
+	preamble := strings.Join(lines[:min(5, len(lines))], " ")
+	if !strings.Contains(preamble, "Status: **v1**, frozen") {
+		t.Errorf("SPEC preamble does not state the frozen v1 status: %q", preamble)
+	}
+}
+
+func TestProcedureOrderingListsFiveVectors(t *testing.T) {
+	doc := load(t)
+	section, ok := doc.Section("5.1")
+	if !ok {
+		t.Fatal("§5.1 is missing")
+	}
+	body := strings.Join(strings.Fields(section.Body), " ")
+	if !strings.Contains(body, "The five vectors that carry the weight are") {
+		t.Error("§5.1 does not say that five vectors pin the ordering")
+	}
+	for _, vector := range []string{
+		"log/99-bad-precedence-decode-before-unknown-type",
+		"log/100-bad-precedence-decode-before-after",
+		"log/101-bad-precedence-after-before-threshold",
+		"log/102-bad-precedence-threshold-before-dup-id",
+		"log/103-bad-precedence-threshold-before-dup-wg",
+	} {
+		if !strings.Contains(body, "`"+vector+"`") {
+			t.Errorf("§5.1 does not name %s as an ordering vector", vector)
+		}
+	}
+}
+
+func TestTrustCoverageExplainsTheIsolatedWitnessNegatives(t *testing.T) {
+	doc := load(t)
+	section, ok := doc.Section("12.1")
+	if !ok {
+		t.Fatal("§12.1 is missing")
+	}
+	row := ""
+	for _, line := range strings.Split(section.Body, "\n") {
+		if strings.Contains(line, "§9.1 four rules that another rule used to decide") {
+			row = strings.Join(strings.Fields(line), " ")
+			break
+		}
+	}
+	if row == "" {
+		t.Fatal("§12.1 has no trust witness-minimum and uniqueness row")
+	}
+	for _, phrase := range []string{"07-no-witnesses",
+		"only the explicit witness minimum can refuse it",
+		"08-duplicate-witness-name", "only uniqueness is broken"} {
+		if !strings.Contains(row, phrase) {
+			t.Errorf("trust coverage row omits why %q is isolated: %s", phrase, row)
+		}
+	}
+}
+
+func TestRun12CoverageFindingsAreNamedOrAdmitted(t *testing.T) {
+	doc := load(t)
+	section, ok := doc.Section("12.1")
+	if !ok {
+		t.Fatal("§12.1 is missing")
+	}
+	for _, vector := range []string{
+		"127-bad-repeated-kid", "bad-held-root-at-same-size",
+		"fork-on-a-longer-branch", "tampered-bundle-under-a-stored-head",
+		"bad-none-group-member",
+		"log/99-bad-precedence-decode-before-unknown-type",
+		"log/100-bad-precedence-decode-before-after",
+		"log/101-bad-precedence-after-before-threshold",
+		"log/102-bad-precedence-threshold-before-dup-id",
+		"log/103-bad-precedence-threshold-before-dup-wg",
+		"13-origin-only", "receipt-bad/", "served-large/",
+		"proofs/right-edge.json", "23-extra-final-newline", "req-padding-base",
+		"req-label-at-cap", "bad-size-above-held", "req-reserved-hints",
+		"enroll-astral-labels", "rotate-entry-other-device",
+	} {
+		if !strings.Contains(section.Body, vector) {
+			t.Errorf("§12.1 no longer accounts for run 12 coverage finding %q", vector)
+		}
+	}
+}
+
+func TestBooleanProfileAndForkSchemaLayerAreSpecified(t *testing.T) {
+	doc := load(t)
+	encoding, ok := doc.Section("4.0")
+	if !ok {
+		t.Fatal("§4.0 is missing")
+	}
+	encodingText := strings.Join(strings.Fields(encoding.Body), " ")
+	for _, phrase := range []string{
+		"valid CBOR items; schemas MUST reject them outside `params.rotate_needs_signer`",
+	} {
+		if !strings.Contains(encodingText, phrase) {
+			t.Errorf("§4.0 does not define the boolean profile/schema boundary: missing %q", phrase)
+		}
+	}
+	evidence, ok := doc.Section("11.1")
+	if !ok {
+		t.Fatal("§11.1 is missing")
+	}
+	evidenceText := strings.Join(strings.Fields(evidence.Body), " ")
+	if !strings.Contains(evidenceText, "the `size` field is a boolean rather than a uint") {
+		t.Error("§11.1 does not classify a boolean `size` as a schema refusal")
+	}
+
+	coverage, ok := doc.Section("12.1")
+	if !ok {
+		t.Fatal("§12.1 is missing")
+	}
+	row := ""
+	for _, line := range strings.Split(coverage.Body, "\n") {
+		if strings.Contains(line, "§4.0 booleans are profile items") {
+			row = line
+			break
+		}
+	}
+	if row == "" {
+		t.Fatal("§12.1 has no boolean profile/schema coverage row")
+	}
+	for _, phrase := range []string{"fork/bad-bool-size.cbor", "valid CBOR", "`schema`"} {
+		if !strings.Contains(row, phrase) {
+			t.Errorf("boolean coverage row omits %q: %s", phrase, row)
+		}
+	}
+}
+
+func TestQuorumTimePolicyScopeIsExplicit(t *testing.T) {
+	doc := load(t)
+	for id, phrases := range map[string][]string{
+		"5.3": {
+			"The policy is the one under which this checkpoint was accepted",
+			"A `policy` entry in this checkpoint's replay range MUST NOT change this checkpoint's `T`",
+		},
+		"9.4": {
+			"for every checkpoint a node accepts after replaying it",
+			"does not apply retroactively to the checkpoint that carried it",
+		},
+	} {
+		section, ok := doc.Section(id)
+		if !ok {
+			t.Fatalf("§%s is missing", id)
+		}
+		body := strings.Join(strings.Fields(section.Body), " ")
+		for _, phrase := range phrases {
+			if !strings.Contains(body, phrase) {
+				t.Errorf("§%s does not resolve the scope of policy for T: missing %q", id, phrase)
+			}
+		}
+	}
+
+	coverage, ok := doc.Section("12.1")
+	if !ok {
+		t.Fatal("§12.1 is missing")
+	}
+	row := ""
+	for _, line := range strings.Split(coverage.Body, "\n") {
+		if strings.Contains(line, "§5.3 policy for the checkpoint's `T`") {
+			row = line
+			break
+		}
+	}
+	if row == "" {
+		t.Fatal("§12.1 has no coverage row for which policy computes the checkpoint's T")
+	}
+	for _, phrase := range []string{"proofs/cases.json", "checkpoint_quorum_time",
+		"replayed_policy_quorum_time", "1760003607", "1760003600"} {
+		if !strings.Contains(row, phrase) {
+			t.Errorf("§12.1 quorum-time row omits %q: %s", phrase, row)
 		}
 	}
 }
@@ -827,7 +1142,7 @@ func TestEveryVectoredRuleIsStatedWhereItLives(t *testing.T) {
 // *hand-written*: the guard added in 6.5i-ii asserts every listed name is a
 // real case and never computes the set. So adding `16-two-log-signatures` --
 // whose only defect is a signature that does not verify -- silently falsified
-// the claim that those four are the set "and nothing else here".
+// the claim that those five are the set "and nothing else here".
 //
 // This computes it. A reader that never calls Ed25519 sees exactly the note's
 // body and the *names* on its signature lines, so a case is blind-accepted iff
@@ -844,6 +1159,10 @@ func TestTheSignatureBlindSetIsComputedNotAsserted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	logKey, err := note.ParseVerifierKey(anchor.LogKey)
+	if err != nil {
+		t.Fatal(err)
+	}
 	named := map[string]bool{}
 	for _, w := range rules.Witnesses {
 		named[w.Name] = true
@@ -851,7 +1170,7 @@ func TestTheSignatureBlindSetIsComputedNotAsserted(t *testing.T) {
 
 	// blindly reads a note the way a reader that checks no signature does --
 	// and no other way. "Blind" means it never calls Ed25519; it still enforces
-	// everything §7's framing decides without a key, so
+	// §7's framing and the matched key's public algorithm length, so
 	// `14-unterminated-signature-block` is refused by such a reader and is not
 	// part of this set. Modelling blind as "ignores the note format too" put it
 	// in, which would have been a wrong answer arrived at by a computation
@@ -861,23 +1180,31 @@ func TestTheSignatureBlindSetIsComputedNotAsserted(t *testing.T) {
 		if !found || !strings.HasSuffix(block, "\n") {
 			return "", nil
 		}
-		for _, line := range strings.Split(strings.TrimRight(block, "\n"), "\n") {
+		// A block has exactly one final LF. Remove only that terminator, so an
+		// extra blank line remains an empty framing line and is refused.
+		block = strings.TrimSuffix(block, "\n")
+		for _, line := range strings.Split(block, "\n") {
 			rest, ok := strings.CutPrefix(line, "— ")
 			if !ok {
 				return "", nil // unparseable framing: refused without any signature
 			}
-			// The payload's encoding and length need no key either, so a
+			// The payload's encoding and general length need no key, so a
 			// blind reader still enforces them: §7 makes the base64 standard
 			// and padded and the decoded payload exactly 68 or 76 bytes, and
-			// `18`, `19` and `20` break one of those each. Leaving them out
-			// of the model would have put three cases in this set that no
-			// reader of any kind accepts (cold gate run 10, D13).
+			// `18`, `19` and `20` break one of those each; D14a's nonzero
+			// pad-bit cases are also malformed framing. Leaving either group
+			// out of the model would put cases no conforming reader accepts
+			// in this set.
 			name, blob, ok := strings.Cut(rest, " ")
 			if !ok {
 				return "", nil
 			}
-			raw, err := base64.StdEncoding.DecodeString(blob)
-			if err != nil || (len(raw) != 68 && len(raw) != 76) {
+			raw, err := base64.StdEncoding.Strict().DecodeString(blob)
+			if err != nil || base64.StdEncoding.EncodeToString(raw) != blob ||
+				(len(raw) != 68 && len(raw) != 76) {
+				return "", nil
+			}
+			if name == logKey.Name && string(raw[:4]) == string(logKey.ID()) && len(raw) != 68 {
 				return "", nil
 			}
 			who = append(who, rules.Label(name))
@@ -983,7 +1310,7 @@ func TestEveryNegativeDeclaresTheSectionThatStatesItsRule(t *testing.T) {
 	// a `rules` map, and can never leave it.
 	for _, dir := range []string{
 		"checkpoints-bad", "proofs-bad", "served-bad", "fork",
-		"entries-hostile", "policies", "genesis", "trust-bad",
+		"entries-hostile", "policies", "genesis", "trust-bad", "receipt-bad",
 	} {
 		t.Run(dir, func(t *testing.T) {
 			var manifest struct {
@@ -1242,7 +1569,359 @@ func TestTheThreeSeparableFramingRulesAreVectored(t *testing.T) {
 	}
 }
 
-func TestTheTwoUnseparableFramingRulesAreAdmitted(t *testing.T) {
+func TestCanonicalBase64PadBitsAreSpecifiedAndVectored(t *testing.T) {
+	doc := load(t)
+	for sectionNumber, label := range map[string]string{
+		"6": "checkpoint root",
+		"7": "signed-note payload",
+	} {
+		section, ok := doc.Section(sectionNumber)
+		if !ok {
+			t.Fatalf("§%s is missing", sectionNumber)
+		}
+		for _, phrase := range []string{"RFC 4648 §3.5", "unused pad bits MUST be zero"} {
+			if !strings.Contains(section.Body, phrase) {
+				t.Errorf("§%s does not state canonical base64 for the %s: missing %q",
+					sectionNumber, label, phrase)
+			}
+		}
+	}
+
+	var manifest struct {
+		Cases []string          `json:"cases"`
+		Codes map[string]string `json:"codes"`
+		Rules map[string]struct {
+			Section string `json:"section"`
+			Says    string `json:"says"`
+		} `json:"rules"`
+	}
+	readJSON(t, filepath.Join(vectorRoot(t), "checkpoints-bad", "cases.json"), &manifest)
+	want := map[string]struct{ code, section string }{
+		"25-signature-nonzero-pad-bits":   {"note", "7"},
+		"26-cosignature-nonzero-pad-bits": {"note", "7"},
+		"27-root-nonzero-pad-bits":        {"checkpoint", "6"},
+	}
+	seen := map[string]bool{}
+	for _, name := range manifest.Cases {
+		if rule, ok := want[name]; ok {
+			seen[name] = true
+			if manifest.Codes[name] != rule.code {
+				t.Errorf("%s is refused as %q, want %q", name, manifest.Codes[name], rule.code)
+			}
+			if got := manifest.Rules[name].Section; got != rule.section {
+				t.Errorf("%s cites §%s, want §%s", name, got, rule.section)
+			}
+		}
+	}
+	for name := range want {
+		if !seen[name] {
+			t.Errorf("checkpoints-bad/cases.json does not name %s", name)
+		}
+	}
+	coverage, ok := doc.Section("12.1")
+	if !ok {
+		t.Fatal("§12.1 is missing")
+	}
+	for name := range want {
+		if !strings.Contains(coverage.Body, "checkpoints-bad/"+name) {
+			t.Errorf("§12.1 does not cite checkpoints-bad/%s", name)
+		}
+	}
+}
+
+func TestVerifierKeyCanonicalBase64UsesTheActualKeyLength(t *testing.T) {
+	doc := load(t)
+	for _, sectionNumber := range []string{"7", "9.1"} {
+		section, ok := doc.Section(sectionNumber)
+		if !ok {
+			t.Fatalf("§%s is missing", sectionNumber)
+		}
+		if !strings.Contains(section.Body, "verifier-key data MUST be canonical RFC 4648 base64") {
+			t.Errorf("§%s does not require canonical verifier-key data", sectionNumber)
+		}
+	}
+	noteSection, _ := doc.Section("7")
+	if !strings.Contains(noteSection.Body, "33 bytes encode to 44 base64 characters without padding") {
+		t.Error("§7 does not explain why verifier keys have no pad bits")
+	}
+	coverage, ok := doc.Section("12.1")
+	if !ok {
+		t.Fatal("§12.1 is missing")
+	}
+	const path = "trust-bad/44-log-key-base64-cr"
+	if !strings.Contains(coverage.Body, path) {
+		t.Errorf("§12.1 does not cite %s", path)
+	}
+	if strings.Contains(coverage.Body, "Canonical base64 pad bits in policy verifier keys") {
+		t.Error("§12.1 still claims a 33-byte verifier key has unused pad bits")
+	}
+	var manifest struct {
+		Cases []string `json:"cases"`
+		Rules map[string]struct {
+			Section string `json:"section"`
+			Says    string `json:"says"`
+		} `json:"rules"`
+	}
+	readJSON(t, filepath.Join(vectorRoot(t), "trust-bad", "cases.json"), &manifest)
+	const name = "44-log-key-base64-cr"
+	found := false
+	for _, candidate := range manifest.Cases {
+		found = found || candidate == name
+	}
+	if !found {
+		t.Errorf("trust-bad/cases.json does not name %s", name)
+	}
+	rule := manifest.Rules[name]
+	if rule.Section != "9.1" || rule.Says != "verifier-key data MUST be canonical RFC 4648 base64" {
+		t.Errorf("%s names rule %+v, want §9.1's canonical verifier-key data", name, rule)
+	}
+}
+
+func TestReceiptLeafHashCanonicalBase64IsNormativeAndVectored(t *testing.T) {
+	doc := load(t)
+	section, ok := doc.Section("7")
+	if !ok {
+		t.Fatal("§7 is missing")
+	}
+	const rule = "unused pad bits in the leaf hash MUST be zero"
+	if !strings.Contains(section.Body, rule) ||
+		!strings.Contains(section.Body, "decoding then re-encoding MUST reproduce the exact line") {
+		t.Error("§7 does not require canonical receipt leaf-hash base64")
+	}
+	coverage, ok := doc.Section("12.1")
+	if !ok {
+		t.Fatal("§12.1 is missing")
+	}
+	const name = "leaf-hash-nonzero-pad-bits.note"
+	if !strings.Contains(coverage.Body, "receipt-bad/"+name) {
+		t.Errorf("§12.1 does not cite receipt-bad/%s", name)
+	}
+	var manifest struct {
+		Codes map[string]string `json:"codes"`
+		Rules map[string]struct {
+			Section string `json:"section"`
+			Says    string `json:"says"`
+		} `json:"rules"`
+	}
+	readJSON(t, filepath.Join(vectorRoot(t), "receipt-bad", "cases.json"), &manifest)
+	if manifest.Codes[name] != "leaf-hash" || manifest.Rules[name].Section != "7" ||
+		manifest.Rules[name].Says != rule {
+		t.Errorf("%s does not name §7's leaf-hash canonicality rule", name)
+	}
+}
+
+func TestCheckpointAcquisitionIsSelfContainedAndSourceNeutral(t *testing.T) {
+	doc := load(t)
+	section, ok := doc.Section("15")
+	if !ok {
+		t.Fatal("§15 is missing")
+	}
+	for _, phrase := range []string{
+		"Checkpoint source does not change trust",
+		"MUST pass the same §10 verifier",
+		"MUST NOT store a candidate checkpoint",
+		"compare the two branches before applying the rollback rule",
+		"fork-on-a-shorter-branch",
+		"refuse-shrunk",
+		"detect/cases.json",
+	} {
+		if !strings.Contains(section.Body, phrase) {
+			t.Errorf("§15 does not state the acquisition rule %q", phrase)
+		}
+	}
+	coverage, ok := doc.Section("12.1")
+	if !ok {
+		t.Fatal("§12.1 is missing")
+	}
+	if !strings.Contains(coverage.Body, "Source-neutral checkpoint acquisition") ||
+		!strings.Contains(coverage.Body, "cannot be demonstrated by static vectors alone") {
+		t.Error("§12.1 claims no limit for source-neutral acquisition coverage")
+	}
+}
+
+func TestWitnessClockAndPeerGossipAreSelfContained(t *testing.T) {
+	doc := load(t)
+	section, ok := doc.Section("15")
+	if !ok {
+		t.Fatal("§15 is missing")
+	}
+	for _, phrase := range []string{
+		"newest quorum time",
+		"monotonic elapsed",
+		"quorum none",
+		"CLOCK_SKEW",
+		"direct log fetch",
+		"5 minutes",
+		"T_g = 30 seconds",
+		"r = 3 random proven peers",
+		"even when the direct log is healthy",
+		"GET /norn/checkpoint",
+		"GET /norn/tile/",
+		"GET /norn/evidence",
+		"WireGuard interface address",
+		"independently of checkpoint polling",
+	} {
+		if !strings.Contains(section.Body, phrase) {
+			t.Errorf("§15 does not state witness-time or gossip rule %q", phrase)
+		}
+	}
+	coverage, ok := doc.Section("12.1")
+	if !ok || !strings.Contains(coverage.Body, "polling cadence and endpoint access") {
+		t.Error("§12.1 does not state the limits of static gossip vectors")
+	}
+}
+
+func TestEnforcementContractIsSelfContained(t *testing.T) {
+	doc := load(t)
+	section, ok := doc.Section("13")
+	if !ok {
+		t.Fatal("§13 is missing")
+	}
+	body := section.Body
+	for _, number := range []string{"13.1", "13.2", "13.3"} {
+		part, ok := doc.Section(number)
+		if !ok {
+			t.Fatalf("§%s is missing", number)
+		}
+		body += part.Body
+	}
+	// Flattened, because prose wraps: a forbidden phrase split across a line
+	// break is still forbidden, and a raw Contains misses it there.
+	body = strings.Join(strings.Fields(body), " ")
+	for _, phrase := range []string{
+		"proven.json", "age_seconds", "written_at_local_clock",
+		"observe", "owner", "watchdog", "UNPROVEN_PEER",
+		"MISSING_PEER", "EVICTED_PEER", "ReplacePeers",
+		"UpdateOnly", "CONTROL_PLANE_FIGHT", "quarantine",
+		"missing or invalid trust file", "last verified set",
+	} {
+		if !strings.Contains(body, phrase) {
+			t.Errorf("§13 omits enforcement rule %q", phrase)
+		}
+	}
+	if strings.Contains(body, "normative in `ENFORCEMENT.md`") ||
+		strings.Contains(body, "schema in `ENFORCEMENT.md`") {
+		t.Error("§13 still delegates its normative contract to ENFORCEMENT.md")
+	}
+	bundles, ok := doc.Section("8.1")
+	if !ok || !strings.Contains(bundles.Body, "degraded retains the last verified set") {
+		t.Error("§8.1 still conflates stale views with unproven identities")
+	}
+	coverage, ok := doc.Section("12.1")
+	if !ok || !strings.Contains(coverage.Body, "interface reconciliation and `proven.json` publication cannot be") {
+		t.Error("§12.1 does not state the limits of static enforcement vectors")
+	}
+}
+
+func TestKeyHandlingAndEnrollmentBootstrapAreSelfContained(t *testing.T) {
+	doc := load(t)
+	section, ok := doc.Section("16.3")
+	if !ok {
+		t.Fatal("§16.3 is missing")
+	}
+	// Flattened, because prose wraps: a forbidden phrase split across a line
+	// break is still forbidden, and a raw Contains misses it there.
+	body := strings.Join(strings.Fields(section.Body), " ")
+	for _, phrase := range []string{
+		"ssh-agent protocol",
+		"SSH_AUTH_SOCK",
+		"Ed25519",
+		"verify every signature the agent returns",
+		"skipped, not refused",
+		"unencrypted",
+		"readable by other users",
+		"ssh-add",
+		"root ceremony",
+		"not normative",
+		"MUST NOT rewrite",
+		"`--yes` MUST NOT exist for the root role",
+		"informative",
+	} {
+		if !strings.Contains(body, phrase) {
+			t.Errorf("§16.3 omits key-handling rule %q", phrase)
+		}
+	}
+	if strings.Contains(body, "normative in `ENROLLMENT.md`") {
+		t.Error("§16.3 still delegates its normative contract to ENROLLMENT.md")
+	}
+	intro, ok := doc.Section("16")
+	if !ok {
+		t.Fatal("§16 is missing")
+	}
+	if strings.Contains(intro.Body, "ENROLLMENT.md") {
+		t.Error("§16's introduction still cites ENROLLMENT.md")
+	}
+	rotation, ok := doc.Section("9.4")
+	if !ok {
+		t.Fatal("§9.4 is missing")
+	}
+	if !strings.Contains(rotation.Body, "never retired") {
+		t.Error("§9.4 does not state that a learned log key is never retired")
+	}
+	bodies, ok := doc.Section("4.3")
+	if !ok {
+		t.Fatal("§4.3 is missing")
+	}
+	if strings.Contains(bodies.Body, "`ENROLLMENT.md`") {
+		t.Error("§4.3 still cites ENROLLMENT.md for rotation or device-flow rules")
+	}
+	requests, ok := doc.Section("16.1")
+	if !ok {
+		t.Fatal("§16.1 is missing")
+	}
+	if !strings.Contains(requests.Body, "what you sign is what you see") {
+		t.Error("§16.1 does not own the what-you-sign-is-what-you-see rule")
+	}
+	if strings.Contains(requests.Body, "ENROLLMENT.md") {
+		t.Error("§16.1 still cites ENROLLMENT.md for its display rule")
+	}
+	coverage, ok := doc.Section("12.1")
+	if !ok || !strings.Contains(coverage.Body, "key handling cannot be demonstrated") {
+		t.Error("§12.1 does not state the limits of static key-handling vectors")
+	}
+}
+
+// D-064 made the companions informative and the SPEC self-sufficient, and the
+// row that closed it (d-xii-v) guards the whole document rather than one
+// section: delegation hides anywhere, and the last live one was a bare
+// parenthetical on the tail of a §6 sentence about serving tiles onward —
+// pointing at `GOSSIP.md` where §15 could be cited instead. The forbidden
+// phrases below are the ways a rule quietly moves out of the spec —
+// "normative in", "defined in", "per", "see" — flattened with the same
+// Fields join the section guards use, because prose wraps and a phrase split
+// across a line break is still a phrase.
+func TestTheSpecReadingNeedsNoCompanion(t *testing.T) {
+	flat := strings.Join(strings.Fields(specText(t)), " ")
+	for _, forbidden := range []string{
+		"normative in `GOSSIP.md`",
+		"normative in `ENFORCEMENT.md`",
+		"normative in `ENROLLMENT.md`",
+		"defined in `GOSSIP.md`",
+		"defined in `ENFORCEMENT.md`",
+		"defined in `ENROLLMENT.md`",
+		"per `GOSSIP.md`",
+		"per `ENFORCEMENT.md`",
+		"per `ENROLLMENT.md`",
+		"see `GOSSIP.md`",
+		"see `ENFORCEMENT.md`",
+		"see `ENROLLMENT.md`",
+	} {
+		if strings.Contains(flat, forbidden) {
+			t.Errorf("SPEC.md still delegates a rule to a companion: %q", forbidden)
+		}
+	}
+	for _, required := range []string{
+		"The companion documents — `GOSSIP.md`, `ENFORCEMENT.md` and `ENROLLMENT.md` — are **informative**",
+		"no rule lives in them (D-064)",
+		"onward to its peers (§15)",
+	} {
+		if !strings.Contains(flat, required) {
+			t.Errorf("SPEC.md does not say where its companions stand: %q", required)
+		}
+	}
+}
+
+func TestTheUnseparableBlankLineInsideNoteTextIsAdmitted(t *testing.T) {
 	doc := load(t)
 	section, ok := doc.Section("12.1")
 	if !ok {
@@ -1253,9 +1932,6 @@ func TestTheTwoUnseparableFramingRulesAreAdmitted(t *testing.T) {
 			"every note text in Norn has a fixed line count, so an embedded blank " +
 				"line is refused by the count as well and no file separates the " +
 				"first-blank reading from the last"},
-		{"note with no signature lines",
-			"something has to verify, so a note with none is refused by §10's " +
-				"requirement before §7's framing is reached"},
 	} {
 		if !strings.Contains(section.Body, c.needle) {
 			t.Errorf("§12.1's `What is not vectored` list does not mention %q — %s",
@@ -1555,7 +2231,7 @@ func TestTheVectorsREADMEStatesTheRightCounts(t *testing.T) {
 		12: "twelve", 13: "thirteen", 14: "fourteen", 15: "fifteen",
 		16: "sixteen", 17: "seventeen", 18: "eighteen", 19: "nineteen",
 		20: "twenty", 21: "twenty-one", 22: "twenty-two", 23: "twenty-three",
-		24: "twenty-four", 25: "twenty-five",
+		24: "twenty-four", 25: "twenty-five", 26: "twenty-six", 27: "twenty-seven",
 	}
 	for _, c := range []struct{ dir, noun string }{
 		{"checkpoints-bad", "checkpoints that MUST be refused"},
@@ -2081,6 +2757,7 @@ func TestEveryCodedManifestKeepsItsCodesInCodes(t *testing.T) {
 	for dir, known := range map[string]func(string) bool{
 		"checkpoints-bad": inRefusal, "served-bad": inRefusal,
 		"proofs-bad": inRefusal, "fork": inEvidence,
+		"receipt-bad": func(c string) bool { return receiptpkg.Known(receiptpkg.Code(c)) },
 	} {
 		t.Run(dir, func(t *testing.T) {
 			var manifest struct {
@@ -2122,10 +2799,41 @@ func TestEveryCodedManifestKeepsItsCodesInCodes(t *testing.T) {
 	}
 }
 
+func TestReceiptCodesAreDeclaredInCheckOrder(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "SPEC.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec := string(raw)
+	start := strings.Index(spec, "### Checking a receipt")
+	if start < 0 {
+		t.Fatal("SPEC.md has no complete receipt-checking section")
+	}
+	end := strings.Index(spec[start:], "\n## 8.")
+	if end < 0 {
+		t.Fatal("SPEC.md has no complete receipt-checking section")
+	}
+	section := spec[start : start+end]
+	previous := -1
+	for _, code := range receiptpkg.All() {
+		row := "| `" + string(code) + "` |"
+		at := strings.Index(section, row)
+		if at < 0 {
+			t.Errorf("§7 does not declare receipt code %q", code)
+			continue
+		}
+		if at <= previous {
+			t.Errorf("§7 receipt code %q is out of Check order", code)
+		}
+		previous = at
+	}
+}
+
 func TestEveryServedAndBundleNegativeCitesTheRuleOfItsCode(t *testing.T) {
 	for dir, citeFor := range map[string]map[string][]string{
 		"served-bad": {
 			"head":     {"that comparison is what binds the entries to the head"},
+			"entries":  {"A partial bundle holds **exactly** the number of entries its path declares"},
 			"tiles":    {"checking them is not optional"},
 			"unserved": {"any file a later step needs and cannot fetch"},
 		},
@@ -2136,6 +2844,16 @@ func TestEveryServedAndBundleNegativeCitesTheRuleOfItsCode(t *testing.T) {
 			"quorum":        {"a satisfied witness quorum"},
 			"inclusion":     {"reach that checkpoint's root at `index`"},
 			"binding":       {"`device` is the `device_id` the `entry` names"},
+		},
+		"receipt-bad": {
+			"note":          {"a second `0x0A` after the final signature creates a forbidden blank line"},
+			"log-signature": {"The note MUST verify under the anchored log key"},
+			"receipt":       {"The first line MUST be"},
+			"origin":        {"The origin line MUST equal the anchored origin"},
+			"leaf-hash":     {"The leaf hash MUST be standard base64 and decode to exactly 32 bytes", "unused pad bits in the leaf hash MUST be zero"},
+			"deadline":      {"The deadline MUST be canonical decimal"},
+			"entry":         {"the submitted entry's leaf hash MUST equal the receipt's leaf hash"},
+			"expired":       {"A nonzero checking time at or after the deadline MUST refuse the receipt"},
 		},
 	} {
 		t.Run(dir, func(t *testing.T) {

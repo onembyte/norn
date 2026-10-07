@@ -69,12 +69,9 @@ func (a *Agent) loadFreeze() {
 // seen. It is T1b: "a node that never saw the second branch freezes via peer
 // evidence".
 //
-// This is a **different mechanism** from checkpoint gossip, not a variation of
-// it. Checkpoints are fetched from peers when the log cannot be used; evidence
-// is needed precisely when everything looks fine. A node being served one
-// consistent history has no reason to doubt it and would never ask anybody
-// anything — while two other nodes have already proved that history is a fork.
-// So this runs on its own schedule, whatever the log is doing.
+// Evidence is checked independently of checkpoint gossip. A proven fork can
+// reach a node even when its own log and the sampled peer checkpoints look
+// consistent, so evidence polling runs on its own T_g schedule.
 //
 // A peer's evidence is believed only because it is **checked**, by the same
 // `forkevidence.Check` a stranger would run against the same trust file.
@@ -85,10 +82,10 @@ func (a *Agent) pollEvidence() {
 		return
 	}
 	mono := a.cfg.Mono()
-	if a.evidenceAsked != 0 && mono-a.evidenceAsked < a.cfg.GossipEvery {
+	if a.evidenceAskedSet && mono-a.evidenceAsked < a.cfg.GossipEvery {
 		return
 	}
-	a.evidenceAsked = mono
+	a.evidenceAsked, a.evidenceAskedSet = mono, true
 
 	for _, addr := range gossip.Choose(a.cfg.Peers(), a.fanout(), a.peerOrder) {
 		raw, err := gossip.Peer(addr).Fetch("evidence")

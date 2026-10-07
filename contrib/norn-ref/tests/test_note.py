@@ -49,6 +49,21 @@ class VerifierKey(unittest.TestCase):
             with self.subTest(bad=bad), self.assertRaises(note.NoteError):
                 note.parse_vkey(bad)
 
+    def test_vkey_data_rejects_ignored_line_breaks(self):
+        for alg in (note.ALG_ED25519, note.ALG_COSIGNATURE):
+            key = note.vkey(self.name, self.key.public, alg)
+            name, key_id, data = key.split("+", 2)
+            self.assertEqual(len(data), 44)
+            self.assertNotIn("=", data)
+            original = base64.b64decode(data)
+            self.assertEqual(len(original), 33)
+            for line_break in ("\r", "\n"):
+                with self.subTest(alg=alg, line_break=repr(line_break)):
+                    mutated_data = data[:12] + line_break + data[12:]
+                    self.assertEqual(base64.b64decode(mutated_data), original)
+                    with self.assertRaises(note.NoteError):
+                        note.parse_vkey(f"{name}+{key_id}+{mutated_data}")
+
 
 class SignAndVerify(unittest.TestCase):
     TEXT = "norn/receipt/v1\nnorn/abc\ndGVzdA==\n1760000000\n"
@@ -68,6 +83,13 @@ class SignAndVerify(unittest.TestCase):
         self.assertEqual(body + "\n", self.TEXT)
         self.assertTrue(sigblock.startswith(note.SIG_PREFIX))
         self.assertTrue(sigblock.endswith("\n"))
+
+    def test_signature_block_requires_exactly_one_final_newline(self):
+        signed = note.sign(self.TEXT, self.name, self.key)
+        with self.assertRaises(note.NoteError):
+            note.split(signed[:-1])
+        with self.assertRaises(note.NoteError):
+            note.split(signed + "\n")
 
     def test_verify_accepts_its_own_signature(self):
         signed = note.sign(self.TEXT, self.name, self.key)
@@ -90,6 +112,23 @@ class SignAndVerify(unittest.TestCase):
         line = signed.split("\n\n", 1)[1].strip()
         raw = base64.b64decode(line[len(note.SIG_PREFIX):].split(" ", 1)[1])
         self.assertTrue(keys.verify(self.key.public, self.TEXT.encode(), raw[4:]))
+
+    def test_split_rejects_nonzero_signature_payload_pad_bits(self):
+        signed = note.sign(self.TEXT, self.name, self.key)
+        body, separator, block = signed.partition("\n\n")
+        self.assertTrue(separator)
+        prefix, blob = block[:-1].rsplit(" ", 1)
+        raw = base64.b64decode(blob, validate=True)
+        alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+        padding = len(blob) - len(blob.rstrip("="))
+        position = len(blob) - padding - 1
+        value = alphabet.index(blob[position])
+        mask = (1 << (padding * 2)) - 1
+        mutated = blob[:position] + alphabet[(value & ~mask) | 1] + blob[position + 1:]
+        self.assertEqual(base64.b64decode(mutated, validate=True), raw)
+        malformed = body + "\n\n" + prefix + " " + mutated + "\n"
+        with self.assertRaises(note.NoteError):
+            note.split(malformed)
 
 
 class Receipt(unittest.TestCase):

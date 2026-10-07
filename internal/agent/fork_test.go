@@ -328,17 +328,48 @@ func TestAForkedPeerIsAForkNotABrokenNeighbour(t *testing.T) {
 	}
 }
 
+func TestHealthyButSplitLogFindsTheOtherBranchByCheckpointGossip(t *testing.T) {
+	real, _, entries := writableLog(t)
+	forked := forkedLog(t, entries, 40)
+	peer := httptest.NewServer(gossip.Handler(forked, ""))
+	t.Cleanup(peer.Close)
+	var mono time.Duration
+	runDir := t.TempDir()
+	rec := &recorder{}
+	a, err := New(Config{
+		Anchor: anchor(t), Fetcher: logclient.Dir(real), Device: peertable.NewFake(),
+		Mode: reconcile.Owner, RunDir: runDir, Emit: rec.emit,
+		Now:         func() time.Time { return time.Unix(fixtureCosignedAt, 0).Add(mono) },
+		Mono:        func() time.Duration { return mono },
+		Peers:       func() []string { return []string{peer.URL} },
+		GossipEvery: 30 * time.Second,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Once(); err != nil {
+		t.Fatal(err)
+	}
+	held := a.last.Checkpoint
+	mono = 30 * time.Second
+	_ = a.Once()
+	if rec.kinds()[Fork] == 0 || !a.Frozen() {
+		t.Fatalf("healthy but split log did not detect its peer's branch: %v", rec.kinds())
+	}
+	files, _ := filepath.Glob(filepath.Join(runDir, ForkDir, "*.evidence"))
+	if len(files) != 1 {
+		t.Errorf("evidence files = %v, want one", files)
+	}
+	if a.last.Checkpoint != held {
+		t.Error("a peer fork changed the stored checkpoint")
+	}
+}
+
 // T1b: "a node that never saw the second branch freezes via peer evidence".
 //
-// This is the case that makes evidence propagation a *different mechanism*
-// from checkpoint gossip, not a variation of it. Node3's log is healthy. It is
-// being served one consistent history and has no reason to doubt it — so
-// under the rule that governs checkpoints ("ask peers when the log cannot be
-// used") it would never ask anybody anything, and would go on enforcing a
-// branch two other nodes have already proved is a fork.
-//
-// Evidence is needed precisely when everything looks fine. That is why it is
-// polled on its own schedule rather than as a fallback.
+// Evidence polling runs independently from checkpoint gossip. Node3 may miss
+// the conflicting branch in its sampled checkpoint round but can still learn
+// the proof from a peer; both paths run while its direct log is healthy.
 func TestANodeFreezesOnEvidenceFromAPeer(t *testing.T) {
 	real, _, entries := writableLog(t)
 	runDir := t.TempDir()

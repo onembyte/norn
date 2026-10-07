@@ -253,7 +253,8 @@ func TestAGivenPolicyIsUsedVerbatim(t *testing.T) {
 // the generator cannot know which of the two the operator meant.
 func TestAnInconsistentPolicyIsRefused(t *testing.T) {
 	ceremony, rootPrivs := aCeremony(t)
-	ceremony.Policy = "witness elsewhere x+11111111+AAAA\nquorum elsewhere\n"
+	witnessKey := note.CosignerVerifierKey("norn-witness/pi", ceremony.Witnesses[0].Key)
+	ceremony.Policy = "witness elsewhere " + witnessKey + "\nquorum elsewhere\n"
 
 	if _, err := Build(ceremony, signersOf(rootPrivs[0], rootPrivs[1])); err == nil {
 		t.Fatal("built a network whose policy names a witness it does not have")

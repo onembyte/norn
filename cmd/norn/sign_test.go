@@ -241,6 +241,7 @@ func TestSignRefusals(t *testing.T) {
 	dir := t.TempDir()
 	trustFile := filepath.Join(vectors(), "trust.cbor")
 	key := signerKeyFile(t, dir, "signer1")
+	root := signerKeyFile(t, dir, "root1")
 
 	requestText, _, err := enrollRun(t, bin, "-name", "refusals", "-net", fixtureNetOrigin(t),
 		"-key", filepath.Join(dir, "device.key"), "-gen")
@@ -292,6 +293,12 @@ func TestSignRefusals(t *testing.T) {
 			"-after", "90", "-yes", foreign}, "another network"},
 		{"no way to learn the log size", []string{"sign", "-trust", trustFile, "-key", key,
 			"-log", filepath.Join(dir, "absent"), "-yes", good}, "-after"},
+		// §16.3: `--yes` MUST NOT exist for the root role. The key here is a
+		// real root's, so on a broken build this case does not merely mislabel
+		// an entry — it mints a scripted root authorization, the exact thing
+		// the rule exists to prevent.
+		{"--yes for the root role", []string{"sign", "-trust", trustFile, "-key", root,
+			"-after", "90", "-yes", "-role", "root", good}, "never exercised by a script"},
 	}
 	for _, c := range cases {
 		t.Run(c.why, func(t *testing.T) {
@@ -339,8 +346,8 @@ func TestSignSummaryShowsEverythingTheSignatureCovers(t *testing.T) {
 	}
 }
 
-// Signing through a real ssh-agent, which `ENROLLMENT.md` part 1 makes the
-// default for signers and the only option for a hardware root. This closes the
+// Signing through a real ssh-agent, which §16.3 makes the default for signers
+// and the only option for a hardware root. This closes the
 // loop: a key file Norn wrote, loaded by ssh-add, used by norn sign, producing
 // an entry the log accepts.
 func TestSignThroughARealAgent(t *testing.T) {

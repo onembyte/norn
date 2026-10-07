@@ -433,8 +433,10 @@ func witnessedTrust(t *testing.T, anchor *trust.Trust, url string) string {
 	for i := range doc.Witnesses {
 		if doc.Witnesses[i].Name == "pi" {
 			doc.Witnesses[i].URL = url
+			doc.Witnesses[i].HasURL = true
 		} else {
 			doc.Witnesses[i].URL = ""
+			doc.Witnesses[i].HasURL = false
 		}
 	}
 	raw, err := doc.Encode()

@@ -1,0 +1,16 @@
+{
+  "comment": "right-edge inclusion proof for the last leaf of a 127-entry tree (D13b)",
+  "entry_b64": "p2F0aHJvb3RfYWRkYXYBYnRzGmjnlYhjbmV0UG5vcm4tdGVzdG5ldC0wMDFkYm9keaFicGtYILD2qcy1c7LtEzpi2zrtAnJUuR9oJDZ94RIBS4TX5tS9ZHNpZ3ODo2NraWRwMjk5M2FhMGIyYWY4MmRkZmNzaWdYQD0xI7FMzdc6AteZs/7CxKgDGM8cHCpJjMKlzID7AADfy9GsfIYARoiSoTHhntscK84QFfWFK6mCyrw+vj6sZwhkcm9sZWRyb290o2NraWRwNjVkMGExMGQ2NGY3ZWYzYWNzaWdYQJMCCZfsanNsqplEAFRZrtoaBv2vBeLTvY7TjOaPaBtjAxh/92zBTNm1+vgLRz+8/vE3M8DQzhamY51gbZ2IewNkcm9sZWRyb290o2NraWRwZDFhNjllZjg2MTFhZjUzMmNzaWdYQDBxctAOY7g/9+Sa7eGDIG2qRtIkgoLwm5+ouMypv1mcSBGKZklYTBtXVxunjamZycDFef7ifpIP64zVgK1ZXQtkcm9sZWRyb290ZWFmdGVyGH4=",
+  "index": 126,
+  "leaf_hash": "80a0b82bc99545a18d8aad6947490baa36377d9038eb4a5f30fed5a97baa3ca4",
+  "proof": [
+    "f0e169836733bdb16c32b3d8cc92bb5252d174408a0763a365d8043a69aead81",
+    "87e91778be962bde4523b5a524f922655cdd28d8bf99385bda723d606c38ad6e",
+    "9485e8a1381ff9c8fbe7f37c94fb2efcd0ad8edc67c8f1d99477e393ce8eacf4",
+    "dc9991bed632c9616aa4441947a7fca836316657adc1166902f808664fff8008",
+    "45f1121830520e2b6cae2e0be660087f581ac09aad9afbdc0f14d2c05132efc4",
+    "0934bea7a1a2b11c40ef46f9aa9c3ff5c26070ee7503686d36ed401a6392d056"
+  ],
+  "root": "6f6148d32dbc58cad07fd38ad575ef879a300c6402a617f3b372d95a235b6e78",
+  "size": 127
+}

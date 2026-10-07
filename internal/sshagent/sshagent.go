@@ -4,7 +4,7 @@
 // Why an agent at all: it is the one abstraction under which a Tillitis TKey,
 // a YubiKey behind gpg-agent, a password manager and a software key all look
 // identical, so Norn needs no key store of its own and invents no key format
-// (`ENROLLMENT.md` part 1). For Ed25519 an agent returns a plain Ed25519
+// (§16.3). For Ed25519 an agent returns a plain Ed25519
 // signature, which is exactly what §4.2 wants.
 //
 // Why not golang.org/x/crypto/ssh/agent: measured at five modules

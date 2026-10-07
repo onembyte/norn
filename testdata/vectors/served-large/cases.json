@@ -1,0 +1,18 @@
+{
+  "comment": "a 300-entry, signed and cosigned served log. It exercises a full level-0 tile, a partial level-0 tile, and the level-1 tile; every listed path and width is implied by the checkpoint",
+  "size": 300,
+  "tiles": [
+    {
+      "path": "tile/0/000",
+      "width": 256
+    },
+    {
+      "path": "tile/0/001.p/44",
+      "width": 44
+    },
+    {
+      "path": "tile/1/000.p/1",
+      "width": 1
+    }
+  ]
+}

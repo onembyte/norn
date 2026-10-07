@@ -1,7 +1,7 @@
 {
   "cases": [
     {
-      "digest": "ba7d26432c2b9640cab2f738ea095f9680e6f66f9f13e945941d30c64d636527",
+      "digest": "7bc1fc582f713b74f5d307afb535cbe403ae2d6b774e8eae3288eeb423979d5c",
       "name": "checkpoint-138.ots",
       "over": "served/checkpoint",
       "range": "through the newline that terminates the blank separator line",

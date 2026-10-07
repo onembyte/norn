@@ -1,24 +1,35 @@
 package policy_test
 
 import (
+	"crypto/ed25519"
+	"crypto/sha256"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/onembyte/norn/internal/note"
 	. "github.com/onembyte/norn/internal/policy"
 	"github.com/onembyte/norn/internal/trust"
 )
 
-const homelab = `# the homelab default: no single place and no single person
-log     log+11111111+AAAA http://10.0.0.155:8099/norn
-witness pi     pi+22222222+BBBB  http://10.0.0.153:8100
-witness vps    vps+33333333+CCCC https://w.example.net
-witness friend friend+44444444+DDDD https://bastion.example.net/x
+func testVKey(name string, alg byte) string {
+	seed := sha256.Sum256([]byte("norn/policy-test/" + name))
+	private := ed25519.NewKeyFromSeed(seed[:])
+	return note.VerifierKeyFor(name, private.Public().(ed25519.PublicKey), alg)
+}
+
+var homelab = fmt.Sprintf(`# the homelab default: no single place and no single person
+log     %s http://10.0.0.155:8099/norn
+witness pi     %s  http://10.0.0.153:8100
+witness vps    %s https://w.example.net
+witness friend %s https://bastion.example.net/x
 
 group   home 2 pi vps friend
 quorum  home
-`
+`, testVKey("norn/log", note.AlgEd25519), testVKey("norn-witness/pi", note.AlgCosignature),
+	testVKey("norn-witness/vps", note.AlgCosignature), testVKey("norn-witness/friend", note.AlgCosignature))
 
 func mustParse(t *testing.T, text string) *Policy {
 	t.Helper()
@@ -74,14 +85,15 @@ func TestTwoOfThree(t *testing.T) {
 }
 
 func TestAllAnyAndNested(t *testing.T) {
-	text := `witness a a+11111111+AAAA
-witness b b+22222222+BBBB
-witness c c+33333333+CCCC
+	text := fmt.Sprintf(`witness a %s
+witness b %s
+witness c %s
 group pair all a b
 group either any b c
 group both all pair either
 quorum both
-`
+`, testVKey("a", note.AlgCosignature), testVKey("b", note.AlgCosignature),
+		testVKey("c", note.AlgCosignature))
 	p := mustParse(t, text)
 	cases := []struct {
 		cosigners []string
@@ -102,7 +114,7 @@ quorum both
 // `none` is a real option in the grammar, and a node that reads it should know
 // it is running without corroboration -- not discover it from behaviour.
 func TestQuorumNone(t *testing.T) {
-	p := mustParse(t, "witness a a+11111111+AAAA\nquorum none\n")
+	p := mustParse(t, "quorum none\n")
 	if p.RequiresCosignatures() {
 		t.Error("quorum none still required cosignatures")
 	}
@@ -112,7 +124,8 @@ func TestQuorumNone(t *testing.T) {
 }
 
 func TestCommentsAndBlankLinesAndWhitespace(t *testing.T) {
-	text := "\n  # a comment\n\n\twitness  a   a+11111111+AAAA  \n  quorum a  \n\n"
+	text := fmt.Sprintf("\n  # a comment\n\n\twitness  a   %s  \n  quorum a  \n\n",
+		testVKey("a", note.AlgCosignature))
 	p := mustParse(t, text)
 	if len(p.Witnesses) != 1 || p.Witnesses[0].Name != "a" {
 		t.Errorf("witnesses = %+v", p.Witnesses)
@@ -125,19 +138,21 @@ func TestCommentsAndBlankLinesAndWhitespace(t *testing.T) {
 // A policy is where a network says how much corroboration it wants, so a line
 // nobody understood is a requirement nobody is enforcing.
 func TestPoliciesThatMustBeRefused(t *testing.T) {
+	keyA := testVKey("a", note.AlgCosignature)
+	keyB := testVKey("b", note.AlgCosignature)
 	cases := map[string]string{
-		"no quorum line":         "witness a a+1+A\n",
-		"two quorum lines":       "witness a a+1+A\nquorum a\nquorum a\n",
-		"quorum names nothing":   "witness a a+1+A\nquorum ghost\n",
-		"unknown keyword":        "witness a a+1+A\nkeeper b\nquorum a\n",
-		"forward reference":      "group g 1 a\nwitness a a+1+A\nquorum g\n",
-		"duplicate witness":      "witness a a+1+A\nwitness a a+2+B\nquorum a\n",
-		"duplicate key":          "witness a k+1+A\nwitness b k+1+A\nquorum a\n",
-		"group member twice":     "witness a a+1+A\ngroup g 1 a a\nquorum g\n",
-		"threshold above size":   "witness a a+1+A\ngroup g 2 a\nquorum g\n",
-		"threshold of zero":      "witness a a+1+A\ngroup g 0 a\nquorum g\n",
-		"threshold not a number": "witness a a+1+A\ngroup g most a\nquorum g\n",
-		"group with no members":  "witness a a+1+A\ngroup g 1\nquorum g\n",
+		"no quorum line":         fmt.Sprintf("witness a %s\n", keyA),
+		"two quorum lines":       fmt.Sprintf("witness a %s\nquorum a\nquorum a\n", keyA),
+		"quorum names nothing":   fmt.Sprintf("witness a %s\nquorum ghost\n", keyA),
+		"unknown keyword":        fmt.Sprintf("witness a %s\nkeeper b\nquorum a\n", keyA),
+		"forward reference":      fmt.Sprintf("group g 1 a\nwitness a %s\nquorum g\n", keyA),
+		"duplicate witness":      fmt.Sprintf("witness a %s\nwitness a %s\nquorum a\n", keyA, keyB),
+		"duplicate key":          fmt.Sprintf("witness a %s\nwitness b %s\nquorum a\n", keyA, keyA),
+		"group member twice":     fmt.Sprintf("witness a %s\ngroup g 1 a a\nquorum g\n", keyA),
+		"threshold above size":   fmt.Sprintf("witness a %s\ngroup g 2 a\nquorum g\n", keyA),
+		"threshold of zero":      fmt.Sprintf("witness a %s\ngroup g 0 a\nquorum g\n", keyA),
+		"threshold not a number": fmt.Sprintf("witness a %s\ngroup g most a\nquorum g\n", keyA),
+		"group with no members":  fmt.Sprintf("witness a %s\ngroup g 1\nquorum g\n", keyA),
 		"witness with no key":    "witness a\nquorum a\n",
 		"log with no key":        "log\nquorum none\n",
 	}

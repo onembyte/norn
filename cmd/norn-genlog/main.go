@@ -261,17 +261,24 @@ func run(root string) error {
 		"log_key": "keys.json ed25519.logkey — the key trust.cbor names",
 		"size":    store.Size(),
 		"devices": ids,
-		// §5.3's evaluation time, derived from this checkpoint's cosignature
-		// timestamps under the shipped 2-of-3 policy. Recorded so a second
-		// implementer can check their derivation rather than only their
-		// proven set.
-		"checkpoint_quorum_time": QuorumTimeOf(2),
+		"right_edge_inclusion": map[string]any{
+			"file": "right-edge.json", "size": 127, "index": 126,
+		},
+		// §5.3's evaluation time is derived under the policy that accepted this
+		// checkpoint: the shipped trust policy is 2-of-3. The checkpoint also
+		// replays a 3-of-3 policy; record that alternate calculation so the
+		// vector distinguishes it from a retroactive policy change.
+		"checkpoint_quorum_time":      QuorumTimeOf(2),
+		"replayed_policy_quorum_time": QuorumTimeOf(3),
 	}
 	blob, err := json.MarshalIndent(meta, "", "  ")
 	if err != nil {
 		return err
 	}
 	if err := os.WriteFile(filepath.Join(bundles, "cases.json"), append(blob, '\n'), 0o644); err != nil {
+		return err
+	}
+	if err := writeRightEdgeProof(bundles, entries); err != nil {
 		return err
 	}
 	// §12.1 named four proof refusals and two served-log refusals and shipped
@@ -288,7 +295,11 @@ func run(root string) error {
 		first, firstIndex, firstProof); err != nil {
 		return err
 	}
-	if err := writeBadServed(root, served, store.Size()); err != nil {
+	largeServed := filepath.Join(root, "served-large")
+	if err := writeServedLarge(root, origin, anchor.Net, entries, key, signers); err != nil {
+		return err
+	}
+	if err := writeBadServed(root, largeServed, 300); err != nil {
 		return err
 	}
 	if err := writeRotatedHead(root, origin, signed, st, signers); err != nil {
@@ -312,6 +323,125 @@ func run(root string) error {
 
 	fmt.Printf("served %d entries to %s, %d proof bundles\n", store.Size(), served, len(ids))
 	return nil
+}
+
+// writeServedLarge exercises the real paths a log reaches after one tile.
+// The ordinary replay fixture is intentionally compact; append unique signed
+// note entries to a copy so the generated head crosses both tile boundaries
+// without changing the protocol state exercised by the other vectors.
+func writeServedLarge(root, origin string, net []byte, entries [][]byte,
+	logKey ed25519.PrivateKey, signers []cosignpkg.Signer) error {
+	const size = 300
+	if len(entries) > size {
+		return fmt.Errorf("the replay fixture has %d entries, more than the scale log", len(entries))
+	}
+	scaleEntries := append([][]byte(nil), entries...)
+	signerKey, err := seedKey(root, "signer1")
+	if err != nil {
+		return err
+	}
+	for index := len(scaleEntries); index < size; index++ {
+		after := uint64(index)
+		env := &entry.Envelope{
+			V: entry.Version, T: "note", Net: append([]byte(nil), net...),
+			TS: uint64(CosignedAt + int64(index)), After: &after,
+			Body: map[string]any{"text": fmt.Sprintf("multi-tile scale entry %03d", index)},
+		}
+		if err := entry.Sign(env, signerKey, "signer"); err != nil {
+			return fmt.Errorf("sign scale entry %d: %w", index, err)
+		}
+		raw, err := entry.Encode(env)
+		if err != nil {
+			return fmt.Errorf("encode scale entry %d: %w", index, err)
+		}
+		scaleEntries = append(scaleEntries, raw)
+	}
+
+	dir := filepath.Join(root, "served-large")
+	if err := os.RemoveAll(dir); err != nil {
+		return err
+	}
+	store, err := tlogstore.Open(dir, origin, logKey, tlogstore.WithCosigner(
+		tlogstore.CosignerFunc(staggeredCosigner(signers))))
+	if err != nil {
+		return err
+	}
+	for index, raw := range scaleEntries {
+		if _, err := store.Append(raw); err != nil {
+			return fmt.Errorf("append scale entry %d: %w", index, err)
+		}
+	}
+
+	tree, err := tlog.Build(scaleEntries)
+	if err != nil {
+		return err
+	}
+	tiles, err := tree.Tiles()
+	if err != nil {
+		return err
+	}
+	type tileCase struct {
+		Path  string `json:"path"`
+		Width int    `json:"width"`
+	}
+	listed := make([]tileCase, 0, len(tiles))
+	for _, tile := range tiles {
+		listed = append(listed, tileCase{Path: tile.Path(), Width: tile.Width})
+	}
+	meta := map[string]any{
+		"size":  size,
+		"tiles": listed,
+		"comment": "a 300-entry, signed and cosigned served log. It exercises a full " +
+			"level-0 tile, a partial level-0 tile, and the level-1 tile; every listed " +
+			"path and width is implied by the checkpoint",
+	}
+	blob, err := json.MarshalIndent(meta, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, "cases.json"), append(blob, '\n'), 0o644)
+}
+
+// writeRightEdgeProof records the RFC 6962 shape D13b found missing: the last
+// leaf of a 127-entry tree, where a parity-only inclusion reader answers
+// differently. The entry, root and proof are all shipped so a second reader
+// can check the path without rebuilding this generator's tree.
+func writeRightEdgeProof(dir string, entries [][]byte) error {
+	const size, index = 127, 126
+	if len(entries) < size {
+		return fmt.Errorf("right-edge proof needs %d entries, fixture has %d", size, len(entries))
+	}
+	tree, err := tlog.Build(entries[:size])
+	if err != nil {
+		return err
+	}
+	proof, err := tree.InclusionProof(index)
+	if err != nil {
+		return err
+	}
+	leaf := tlog.LeafHash(entries[index])
+	head := tree.Head()
+	if err := upstream.CheckRecord(proof, size, head, index, leaf); err != nil {
+		return fmt.Errorf("generated right-edge proof does not verify: %w", err)
+	}
+	proofHex := make([]string, len(proof))
+	for i, hash := range proof {
+		proofHex[i] = hex.EncodeToString(hash[:])
+	}
+	doc := map[string]any{
+		"comment":   "right-edge inclusion proof for the last leaf of a 127-entry tree (D13b)",
+		"size":      size,
+		"index":     index,
+		"entry_b64": base64.StdEncoding.EncodeToString(entries[index]),
+		"leaf_hash": hex.EncodeToString(leaf[:]),
+		"root":      hex.EncodeToString(head[:]),
+		"proof":     proofHex,
+	}
+	blob, err := json.MarshalIndent(doc, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, "right-edge.json"), append(blob, '\n'), 0o644)
 }
 
 // writeRotatedHead ships §9.4's rotation case: the same head, signed by a key
@@ -1167,9 +1297,31 @@ func writeBadServed(root, served string, size int64) error {
 		return err
 	}
 
-	bundlePath := tlog.EntryBundlePath(0, int(size%tlog.TileWidth))
+	if size <= 0 {
+		return fmt.Errorf("cannot build served-bad vectors for an empty log")
+	}
+	lastBundleIndex := (size - 1) / tlog.TileWidth
+	lastBundleWidth := int((size-1)%tlog.TileWidth) + 1
+	bundlePath := tlog.EntryBundlePath(lastBundleIndex, lastBundleWidth)
 	honest, err := os.ReadFile(filepath.Join(served, filepath.FromSlash(bundlePath)))
 	if err != nil {
+		return err
+	}
+	lastEntries, err := tlog.DecodeBundle(honest)
+	if err != nil {
+		return fmt.Errorf("decode last bundle %s: %w", bundlePath, err)
+	}
+	if len(lastEntries) != lastBundleWidth {
+		return fmt.Errorf("last bundle %s holds %d entries, want %d",
+			bundlePath, len(lastEntries), lastBundleWidth)
+	}
+	tooMany := append(append([][]byte(nil), lastEntries...), lastEntries[len(lastEntries)-1])
+	overfull, err := tlog.EncodeBundle(tooMany)
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(dir, "overfull-entry-bundle.bin"),
+		overfull, 0o644); err != nil {
 		return err
 	}
 	// One byte inside an entry, so the bundle still frames correctly and only
@@ -1187,7 +1339,7 @@ func writeBadServed(root, served string, size int64) error {
 	// -- reproduced the whole manifest. One byte inside one leaf hash leaves
 	// the entries and the signed head untouched, so the tile rule of SPEC 6
 	// is the only thing that can refuse it.
-	tilePath := tlog.TilePath(0, 0, int(size%tlog.TileWidth))
+	tilePath := tlog.TilePath(0, lastBundleIndex, lastBundleWidth)
 	honestTile, err := os.ReadFile(filepath.Join(served, filepath.FromSlash(tilePath)))
 	if err != nil {
 		return err
@@ -1236,6 +1388,7 @@ func writeBadServed(root, served string, size int64) error {
 		"missing-entry-bundle":    refusal.Unserved,
 		"consistent-tampered-log": refusal.Head,
 		"tampered-hash-tile":      refusal.Tiles,
+		"overfull-entry-bundle":   refusal.Entries,
 	}
 	servedCases := []map[string]any{
 		{"name": "tampered-entry-bundle", "path": bundlePath,
@@ -1259,6 +1412,10 @@ func writeBadServed(root, served string, size int64) error {
 				"head are untouched, so a verifier that reaches the head without " +
 				"opening `tile/0/...` sees nothing wrong, and serves the corrupt " +
 				"tile onward to peers asking it for proofs"},
+		{"name": "overfull-entry-bundle", "path": bundlePath,
+			"file": "overfull-entry-bundle.bin",
+			"says": "the bundle decodes but holds one more entry than the checkpoint " +
+				"size and its path imply"},
 	}
 	if err := checkCodes("served-bad", namesOf(servedCases), servedCodes, refusal.Known); err != nil {
 		return err
@@ -1273,12 +1430,14 @@ func writeBadServed(root, served string, size int64) error {
 			"missing-entry-bundle":    {"section": "10.1", "says": "any file a later step needs and cannot fetch"},
 			"tampered-hash-tile":      {"section": "6", "says": "checking them is not optional"},
 			"consistent-tampered-log": {"section": "6", "says": "that comparison is what binds the entries to the head"},
+			"overfull-entry-bundle":   {"section": "6", "says": "A partial bundle holds **exactly** the number of entries its path declares"},
 		},
-		"cases": servedCases,
-		"codes": servedCodes,
+		"cases":      servedCases,
+		"codes":      servedCodes,
+		"serve_over": "served-large",
 		"comment": "a served log is a directory, so each case names the path to replace " +
 			"with `file`, the paths to replace with `files`, or the path to delete " +
-			"with `remove`, over an otherwise honest copy of `served/`. Every one " +
+			"with `remove`, over an otherwise honest copy of `served-large/`. Every one " +
 			"MUST be refused, with the SPEC §10.1 code `codes` names for it",
 	}
 	blob, err := json.MarshalIndent(meta, "", "  ")
@@ -1946,6 +2105,32 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 		return err
 	}
 
+	// Cold gate run 13, D22. Booleans are valid CBOR profile items; the
+	// evidence schema still requires `size` to be an unsigned integer. Start
+	// with sound evidence so this file reaches that schema check with every
+	// other field and proof intact.
+	rawBoolSize, err := evidence.Encode()
+	if err != nil {
+		return err
+	}
+	decodedBoolSize, err := cbor.DecodeWithin(rawBoolSize, forkevidence.MaxEvidenceBytes)
+	if err != nil {
+		return err
+	}
+	boolSizeMap, ok := decodedBoolSize.(map[string]any)
+	if !ok {
+		return fmt.Errorf("sound fork evidence decoded as %T, want map", decodedBoolSize)
+	}
+	boolSizeMap["size"] = true
+	rawBoolSize, err = cbor.Encode(boolSizeMap)
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(dir, "bad-bool-size.cbor"),
+		rawBoolSize, 0o644); err != nil {
+		return err
+	}
+
 	// `says` is what §12 makes it, a semantic hint. These are the phrases
 	// each case carried until 6.5l-vi-b-iv overwrote them with code names --
 	// two reworded to match the refusal as it now reads: the oversize
@@ -1964,6 +2149,7 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 		{"name": "bad-size-zero", "says": "at size 0"},
 		{"name": "bad-one-past-the-cap", "says": "MAX_EVIDENCE_BYTES"},
 		{"name": "bad-size-above-held", "says": "can only speak for what it holds"},
+		{"name": "bad-bool-size", "says": "size is bool, want uint"},
 		{"name": "bad-policy-says-quorum-none", "says": "no quorum cosigned it"},
 		{"name": "bad-policy-unparseable", "says": "not a `tlog-policy`"},
 		{"name": "bad-proof-at-same-size", "says": "requires none"},
@@ -1989,6 +2175,7 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 		"bad-size-zero":                           evrefusal.Proof,
 		"bad-one-past-the-cap":                    evrefusal.Oversize,
 		"bad-size-above-held":                     evrefusal.Size,
+		"bad-bool-size":                           evrefusal.Schema,
 		"bad-policy-says-quorum-none":             evrefusal.Held,
 		"bad-policy-unparseable":                  evrefusal.Policy,
 		"bad-proof-at-same-size":                  evrefusal.Proof,
@@ -2016,6 +2203,7 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 			"bad-size-zero":                           {"section": "11.1", "says": "no file can show a disagreement at size 0"},
 			"bad-one-past-the-cap":                    {"section": "11.1", "says": "MAX_EVIDENCE_BYTES"},
 			"bad-size-above-held":                     {"section": "11.1", "says": "not above `held`'s own size"},
+			"bad-bool-size":                           {"section": "11.1", "says": "the `size` field is a boolean rather than a uint"},
 			"bad-policy-says-quorum-none":             {"section": "11.1", "says": "never the one in the file"},
 			"bad-policy-unparseable":                  {"section": "11.1", "says": "MUST parse as `c2sp.org/tlog-policy`"},
 			"bad-proof-at-same-size":                  {"section": "11.1", "says": "Empty when `size` equals"},
@@ -2292,6 +2480,48 @@ func dropPadding(line string) string {
 	rest := strings.TrimPrefix(line, note.SigPrefix)
 	name, blob, _ := strings.Cut(rest, " ")
 	return note.SigPrefix + name + " " + strings.TrimRight(blob, "=")
+}
+
+// nonzeroPadBits changes only the unused low bits of the last base64 data
+// character. A permissive decoder gets the same bytes; RFC 4648 §3.5 refuses
+// the alternate spelling.
+func nonzeroPadBits(encoded string) (string, error) {
+	raw, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil || base64.StdEncoding.EncodeToString(raw) != encoded {
+		return "", fmt.Errorf("input is not canonical padded base64")
+	}
+	padding := len(encoded) - len(strings.TrimRight(encoded, "="))
+	if padding == 0 {
+		return "", fmt.Errorf("base64 input has no unused pad bits")
+	}
+	const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+	position := len(encoded) - padding - 1
+	value := strings.IndexByte(alphabet, encoded[position])
+	if value < 0 {
+		return "", fmt.Errorf("base64 final data character is invalid")
+	}
+	mask := (1 << (padding * 2)) - 1
+	mutated := []byte(encoded)
+	mutated[position] = alphabet[(value&^mask)|1]
+	return string(mutated), nil
+}
+
+func rewriteSignaturePadBits(signed, whose string) (string, error) {
+	lines := strings.Split(strings.TrimRight(signed, "\n"), "\n")
+	prefix := note.SigPrefix + whose + " "
+	for i := len(lines) - 1; i >= 0; i-- {
+		if !strings.HasPrefix(lines[i], prefix) {
+			continue
+		}
+		blob := strings.TrimPrefix(lines[i], prefix)
+		bad, err := nonzeroPadBits(blob)
+		if err != nil {
+			return "", err
+		}
+		lines[i] = prefix + bad
+		return strings.Join(lines, "\n") + "\n", nil
+	}
+	return "", fmt.Errorf("no signature line for %q", whose)
 }
 
 // appendByte adds one byte to the decoded payload, so it is 69 bytes where §7
@@ -2730,6 +2960,61 @@ func buildBadCheckpoints(root, origin string, key ed25519.PrivateKey,
 			"case accepts it, and §2's origin is lowercase base32 by construction",
 		folded})
 
+	// D14b. The final signature line already has its required LF. A second
+	// one creates an empty line and is malformed note framing, not a terminator
+	// that a parser may trim away.
+	out = append(out, badCheckpoint{"23-extra-final-newline",
+		"the final signature line ends in one LF and an extra LF adds a forbidden blank line",
+		allThree + "\n"})
+
+	// D14c. Framing permits both supported payload sizes before a key is
+	// matched. Once name and key ID identify the trusted 0x01 log key, however,
+	// a 76-byte payload cannot be its signature and must fail at log-signature.
+	logVerifier, err := note.ParseVerifierKey(note.VerifierKey(origin,
+		key.Public().(ed25519.PublicKey)))
+	if err != nil {
+		return nil, err
+	}
+	otherLength := append(append([]byte(nil), logVerifier.ID()...), make([]byte, 8+64)...)
+	out = append(out, badCheckpoint{"24-log-key-other-algorithm-length",
+		"a 76-byte payload under the log key's name and key ID is a log-signature failure, even beside its valid line",
+		allThree + note.SignatureLine(logVerifier.Name, otherLength) + "\n"})
+
+	// D14a. These mutations preserve the decoded bytes and every signature,
+	// so the refusal belongs to canonical encoding rather than verification.
+	badLogPayload, err := rewriteSignaturePadBits(allThree, origin)
+	if err != nil {
+		return nil, err
+	}
+	out = append(out, badCheckpoint{"25-signature-nonzero-pad-bits",
+		"the log signature payload has nonzero unused base64 pad bits but decodes to the same valid signature",
+		badLogPayload})
+	badCosignature, err := rewriteSignaturePadBits(allThree, "norn-witness/friend")
+	if err != nil {
+		return nil, err
+	}
+	out = append(out, badCheckpoint{"26-cosignature-nonzero-pad-bits",
+		"a witness cosignature payload has nonzero unused base64 pad bits but decodes to the same valid cosignature",
+		badCosignature})
+	rootLines := strings.Split(strings.TrimSuffix(body, "\n"), "\n")
+	badRootEncoding, err := nonzeroPadBits(rootLines[2])
+	if err != nil {
+		return nil, err
+	}
+	rootLines[2] = badRootEncoding
+	badRootBody := strings.Join(rootLines, "\n") + "\n"
+	badRoot, err := note.Sign(badRootBody, origin, key)
+	if err != nil {
+		return nil, err
+	}
+	badRoot, err = cosignWith(badRoot, signers...)
+	if err != nil {
+		return nil, err
+	}
+	out = append(out, badCheckpoint{"27-root-nonzero-pad-bits",
+		"the root line has nonzero unused base64 pad bits but decodes to the same signed tree root",
+		badRoot})
+
 	out = append(out, badCheckpoint{"08-forged-cosignature",
 		"two cosignature lines, both naming witnesses the policy lists, one of which does not verify: " +
 			"the quorum is met only by a verifier that does not check them", forgedCosig})
@@ -2815,6 +3100,11 @@ func writeBadCheckpoints(root, origin string, key ed25519.PrivateKey,
 		"17-root-wrong-length":              {"section": "6", "says": "32 bytes once decoded"},
 		"21-origin-with-a-suffix":           {"section": "10", "says": "cp.origin == norn.trust.origin"},
 		"22-origin-case-changed":            {"section": "10", "says": "cp.origin == norn.trust.origin"},
+		"23-extra-final-newline":            {"section": "7", "says": "a second `0x0A` after the final signature creates a forbidden blank line"},
+		"24-log-key-other-algorithm-length": {"section": "10", "says": "A 76-byte payload under the log's `0x01` key fails here"},
+		"25-signature-nonzero-pad-bits":     {"section": "7", "says": "unused pad bits MUST be zero"},
+		"26-cosignature-nonzero-pad-bits":   {"section": "7", "says": "unused pad bits MUST be zero"},
+		"27-root-nonzero-pad-bits":          {"section": "6", "says": "unused pad bits MUST be zero"},
 		"18-signature-name-with-space":      {"section": "7", "says": "contains no space"},
 		"19-signature-unpadded-base64":      {"section": "7", "says": "standard base64 **with padding**"},
 		"20-signature-payload-too-long":     {"section": "7", "says": "The decoded payload is **exactly** that length"},
@@ -2853,6 +3143,11 @@ func writeBadCheckpoints(root, origin string, key ed25519.PrivateKey,
 		"20-signature-payload-too-long":     refusal.Note,
 		"21-origin-with-a-suffix":           refusal.Origin,
 		"22-origin-case-changed":            refusal.Origin,
+		"23-extra-final-newline":            refusal.Note,
+		"24-log-key-other-algorithm-length": refusal.LogSignature,
+		"25-signature-nonzero-pad-bits":     refusal.Note,
+		"26-cosignature-nonzero-pad-bits":   refusal.Note,
+		"27-root-nonzero-pad-bits":          refusal.Checkpoint,
 	}
 	if err := checkCodes("checkpoints-bad", names, codes, refusal.Known); err != nil {
 		return err

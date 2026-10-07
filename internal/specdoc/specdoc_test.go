@@ -736,14 +736,15 @@ func TestEveryNumberedVectorCitationResolves(t *testing.T) {
 	}
 }
 
-// notVectors are hyphenated names in §12 that are external specifications and
-// third-party packages rather than files in this suite. The same "is it rooted
-// in the suite" judgement the path check above makes for directories -- a
-// checker that cannot tell the difference invents work.
+// notVectors are hyphenated names in §12 that are external specifications,
+// third-party packages and real tools rather than files in this suite. The
+// same "is it rooted in the suite" judgement the path check above makes for
+// directories -- a checker that cannot tell the difference invents work.
 var notVectors = map[string]bool{
 	"tlog-tiles": true, "tlog-checkpoint": true, "tlog-cosignature": true,
 	"tlog-witness": true, "tlog-policy": true, "signed-note": true,
 	"python-opentimestamps": true, "transparency-dev": true,
+	"ssh-agent": true, "ssh-keygen": true,
 }
 
 // And the bare names: §12.1 cites vectors by name rather than by index, so a

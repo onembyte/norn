@@ -87,7 +87,16 @@ func TestTheFixturePinsHowTheQuorumTimeIsDerived(t *testing.T) {
 // none. A reader applying §5.3's definition literally got an unbounded
 // supremum and dropped every expiring device.
 func TestQuorumNoneYieldsNoClockRatherThanAnInfiniteOne(t *testing.T) {
-	rules, err := policy.Parse("log k\nquorum none\n")
+	anchorRaw, err := os.ReadFile(filepath.Join(vectorRoot(), "trust.cbor"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	anchor, err := trust.Parse(anchorRaw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	policyText := strings.SplitN(anchor.Policy, "quorum ", 2)[0] + "quorum none\n"
+	rules, err := policy.Parse(policyText)
 	if err != nil {
 		t.Fatal(err)
 	}

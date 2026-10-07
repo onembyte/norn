@@ -82,7 +82,7 @@ func TestEveryPolicyGrammarCaseIsDecidedTheSameWay(t *testing.T) {
 // splits on every Unicode space -- so a vertical tab was a separator here and
 // an error in the reference.
 func TestOnlySpaceAndTabSeparateFields(t *testing.T) {
-	good := "log k1 https://example/l\nwitness pi k2 https://example/w\nquorum pi\n"
+	good := policyText(t, "minimal")
 	if _, err := Parse(good); err != nil {
 		t.Fatalf("the control policy does not parse: %v", err)
 	}
@@ -94,7 +94,8 @@ func TestOnlySpaceAndTabSeparateFields(t *testing.T) {
 		{"vertical tab", "\v"}, {"form feed", "\f"}, {"carriage return", "\r"},
 	} {
 		t.Run(ws.name, func(t *testing.T) {
-			bad := strings.Replace(good, "https://example/w", "https://example/"+ws.ch+"w", 1)
+			bad := strings.Replace(good, "https://log.norn.example/testnet",
+				"https://log.norn.example/"+ws.ch+"testnet", 1)
 			if _, err := Parse(bad); err == nil {
 				t.Errorf("a %s passed as ordinary content; §9.1 says any whitespace "+
 					"other than space and tab is an error", ws.name)
@@ -167,7 +168,7 @@ func TestEveryPolicyEvaluationCaseGetsTheStatedVerdict(t *testing.T) {
 // ...and the parse rules §9.1 states that had no negative at all.
 func TestTheQuorumArithmeticRulesHaveNegatives(t *testing.T) {
 	for _, want := range []string{
-		"bad-duplicate-member", "bad-k-zero", "bad-k-leading-zero",
+		"bad-duplicate-member", "bad-k-zero", "bad-k-leading-zero", "bad-k-above-size",
 		"bad-carriage-return", "bad-uppercase-keyword",
 	} {
 		t.Run(want, func(t *testing.T) {
@@ -337,7 +338,7 @@ func TestTheCommentRuleIsPinnedInBothDirections(t *testing.T) {
 		}
 		stripped += line + "\n"
 	}
-	if _, err := Parse(strings.TrimSuffix(stripped, "\n")); err != nil {
+	if _, err := Parse(stripped); err != nil {
 		t.Errorf("stripping from the `#` still does not parse (%v), so the vector "+
 			"does not separate the comment readings", err)
 	}
@@ -359,10 +360,9 @@ func TestTheCommentRuleIsPinnedInBothDirections(t *testing.T) {
 //	two `log` lines            Go accepts     · reference accepts   (nobody)
 //	U+00A0 inside a URL        Go accepts     · reference refuses
 //
-// The last is D12: §9.1 names `\r`, `\v`, `\f` after an em dash, which reads
-// as examples. Go took it as the whole set; the reference used Unicode
-// `isspace`, which makes a non-breaking space an error. The set is closed —
-// those three bytes and nothing else — so every other byte is content.
+// D-066 follows C2SP's byte rule: only tab and line feed are permitted ASCII
+// controls. High-bit UTF-8 content, including Unicode whitespace, remains
+// opaque content and never becomes a field separator.
 //
 // None of this is cosmetic. Policy text is carried verbatim in a `policy` log
 // entry, which is `decode` unless it parses, so a policy one implementation
@@ -394,47 +394,44 @@ func TestAKeyIsUsedOnceInAPolicy(t *testing.T) {
 // second `log` line -- the correspondence rule requires a present one to name
 // `norn.trust.log_key` -- but that is the trust file's rule, not the grammar's.
 func TestLogLinesFollowTheUpstreamGrammar(t *testing.T) {
-	const a = "norn/x+bea4a666+AV6v97lmGyW99eHglI8syFAU2uY+/HuHHq0VYz9Rmio1"
-	const b = "norn/y+11111111+AV6v97lmGyW99eHglI8syFAU2uY+/HuHHq0VYz9Rmio2"
-	const key = "norn-witness/pi+051d1c51+BHeagefoK0s3F5shdMl1Ahsd1ZCE9MC5F5gvM3cLTnZa"
-
-	two := "log " + a + "\nlog " + b + "\nwitness w " + key + "\nquorum w\n"
+	two := policyText(t, "two-log-lines")
 	if _, err := Parse(two); err != nil {
 		t.Errorf("two `log` lines with distinct keys were refused (%v); upstream "+
 			"allows them and §9.1 says the grammar is not redefined here", err)
 	}
-	same := "log " + a + "\nlog " + a + "\nwitness w " + key + "\nquorum w\n"
+	lines := strings.Split(two, "\n")
+	lines[1] = lines[0]
+	same := strings.Join(lines, "\n")
 	if _, err := Parse(same); err == nil {
 		t.Error("two `log` lines with the SAME key were accepted; that is the one " +
 			"thing upstream rules out")
 	}
 }
 
-func TestTheWhitespaceBanIsAClosedSetOfThreeBytes(t *testing.T) {
+func TestOnlyTabAndLineFeedAreAllowedASCIIControls(t *testing.T) {
 	const key = "norn-witness/pi+051d1c51+BHeagefoK0s3F5shdMl1Ahsd1ZCE9MC5F5gvM3cLTnZa"
 	line := func(mid string) string {
 		return "witness a " + key + " https://example/" + mid + "w\nquorum a\n"
 	}
-	// The three that are errors, named in §9.1.
+	// Boundary and formerly-unvectored controls inside ordinary URL content.
 	for _, c := range []struct{ name, ch string }{
-		{"carriage return", "\r"}, {"vertical tab", "\v"}, {"form feed", "\f"},
+		{"NUL", "\x00"}, {"backspace", "\x08"}, {"vertical tab", "\v"},
+		{"form feed", "\f"}, {"carriage return", "\r"},
+		{"unit separator", "\x1f"}, {"DEL", "\x7f"},
 	} {
 		if _, err := Parse(line(c.ch)); err == nil {
-			t.Errorf("a %s passed as content; §9.1 bans it by name", c.name)
+			t.Errorf("ASCII control %s passed; C2SP permits only tab and line feed", c.name)
 		}
 	}
-	// ...and everything else is content, including bytes a Unicode-aware
-	// `isspace` would call whitespace. Closing the set is the point: an open
-	// one leaves each implementer to pick a different definition.
+	// High-bit content, including code points Unicode categorizes as spaces,
+	// is opaque to the C2SP grammar and must not be split or rejected.
 	for _, c := range []struct{ name, ch string }{
-		{"non-breaking space", " "},
-		{"en quad", " "},
-		{"ideographic space", "　"},
+		{"non-breaking space", " "}, {"next-line", "\u0085"},
+		{"en quad", " "}, {"ideographic space", "　"},
 	} {
 		if _, err := Parse(line(c.ch)); err != nil {
-			t.Errorf("a %s was refused (%v); §9.1's ban is three bytes and every "+
-				"other byte is content, so a Unicode whitespace definition "+
-				"refuses policies this document allows", c.name, err)
+			t.Errorf("a %s was refused (%v); high-bit bytes are content, not "+
+				"field separators", c.name, err)
 		}
 	}
 }

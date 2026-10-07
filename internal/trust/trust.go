@@ -51,9 +51,10 @@ func trustErrorf(format string, args ...any) error {
 
 // Witness is one entry of the witnesses array.
 type Witness struct {
-	Name string
-	Key  string
-	URL  string // optional; absent is the empty string
+	Name   string
+	Key    string
+	URL    string // opaque optional text; an explicitly present empty value is allowed
+	HasURL bool   // preserves the distinction between an absent URL and empty text
 }
 
 // Trust is a parsed trust file.
@@ -157,6 +158,7 @@ func Parse(raw []byte) (*Trust, error) {
 				w.Key = text
 			case "url":
 				w.URL = text
+				w.HasURL = true
 			default:
 				return nil, trustErrorf("unknown witness field %q", key)
 			}
@@ -181,7 +183,7 @@ func (t *Trust) Encode() ([]byte, error) {
 	witnesses := make([]any, 0, len(t.Witnesses))
 	for _, w := range t.Witnesses {
 		m := map[string]any{"name": w.Name, "key": w.Key}
-		if w.URL != "" {
+		if w.HasURL || w.URL != "" {
 			m["url"] = w.URL
 		}
 		witnesses = append(witnesses, m)
@@ -321,6 +323,14 @@ func (t *Trust) Validate() error {
 		}
 	}
 	if t.Anchor != nil {
+		if len(t.Anchor) != 3 {
+			return trustErrorf("anchor must contain exactly type, max_lag and mode")
+		}
+		for key := range t.Anchor {
+			if key != "type" && key != "max_lag" && key != "mode" {
+				return trustErrorf("unknown anchor field %q", key)
+			}
+		}
 		// An unknown `type` is ignorable -- anchoring is advisory (D-009), so a
 		// reader that cannot check it simply does not -- but an unknown `mode`
 		// is not: guessing what an unrecognised enforcement mode means is how a
@@ -460,7 +470,7 @@ func (t *Trust) ToTOML() (string, error) {
 		b.WriteString("\n[[witness]]\n")
 		fmt.Fprintf(&b, "name = %s\n", tomlString(w.Name))
 		fmt.Fprintf(&b, "key  = %s\n", tomlString(w.Key))
-		if w.URL != "" {
+		if w.HasURL || w.URL != "" {
 			fmt.Fprintf(&b, "url  = %s\n", tomlString(w.URL))
 		}
 	}

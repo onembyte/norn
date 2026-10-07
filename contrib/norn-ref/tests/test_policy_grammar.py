@@ -1,33 +1,19 @@
-"""SPEC §9.1's restated `tlog-policy` grammar, at the reference parser.
+"""C2SP tlog-policy grammar rules at the independent Python parser.
 
-Cold gate run 11, defects D2 and D12. §9.1's `log lines` row argues that a
-Norn policy carries at most one `log` line "since a `log` line that is present
-must name `norn.trust.log_key` and no key may appear twice in one policy, a
-second one cannot be written". Both premises are rules and neither was written
-down anywhere else -- so, measured before the fix:
-
-    same key under two names   Go refuses   · this parser accepted
-    two `log` lines            Go accepts   · this parser accepted   (both right:
-                                                                upstream allows it)
-    U+00A0 inside a URL        Go accepts   · this parser refused
-
-The last is D12: §9.1 names \\r, \\v, \\f after an em dash, which reads as
-examples. This parser used Python's `str.isspace()`, which is Unicode-aware,
-so a non-breaking space was an error here and content in Go. The set is closed
--- those three bytes and nothing else.
-
-A policy that one implementation refuses and the other accepts is a `policy`
-log entry that is `decode` for one and applied by the other, which splits
-`state.json` and every quorum after it.
+The cases pin definition order, names, verifier keys, line endings, controls,
+and duplicate public keys, alongside the original quorum grammar.
 """
 
 import unittest
 
-from nornref import policy
+from nornref import fixture, note, policy
 
-KEY = "norn-witness/pi+051d1c51+BHeagefoK0s3F5shdMl1Ahsd1ZCE9MC5F5gvM3cLTnZa"
-LOG_A = "norn/x+bea4a666+AV6v97lmGyW99eHglI8syFAU2uY+/HuHHq0VYz9Rmio1"
-LOG_B = "norn/y+11111111+AV6v97lmGyW99eHglI8syFAU2uY+/HuHHq0VYz9Rmio2"
+KEY = fixture.witness_vkey("pi")
+LOG_A = fixture.log_vkey()
+LOG_B = note.vkey("norn/second-log", fixture.KEYS["logkey2"].public)
+LOG_ALIAS = note.vkey("norn/alias", fixture.KEYS["logkey"].public)
+LOG_AS_WITNESS = note.vkey("norn-witness/log-alias", fixture.KEYS["logkey"].public,
+                           note.ALG_COSIGNATURE)
 
 
 class KeysAreUsedOnce(unittest.TestCase):
@@ -43,7 +29,7 @@ class KeysAreUsedOnce(unittest.TestCase):
 
     def test_a_key_on_both_a_log_and_a_witness_line_is_refused(self):
         with self.assertRaises(policy.PolicyError):
-            policy.parse(f"log {KEY}\nwitness a {KEY}\nquorum a\n")
+            policy.parse(f"log {LOG_A}\nwitness a {LOG_AS_WITNESS}\nquorum a\n")
 
 
 class LogLinesFollowTheUpstreamGrammar(unittest.TestCase):
@@ -60,26 +46,36 @@ class LogLinesFollowTheUpstreamGrammar(unittest.TestCase):
         with self.assertRaises(policy.PolicyError):
             policy.parse(f"log {LOG_A}\nlog {LOG_A}\nwitness w {KEY}\nquorum w\n")
 
+    def test_same_public_key_with_another_name_is_still_duplicate(self):
+        with self.assertRaises(policy.PolicyError):
+            policy.parse(f"log {LOG_A}\nlog {LOG_ALIAS}\nwitness w {KEY}\nquorum w\n")
 
-class TheWhitespaceBanIsThreeBytes(unittest.TestCase):
+class OnlyTabAndLineFeedAreAllowedASCIIControls(unittest.TestCase):
     @staticmethod
     def _line(mid: str) -> str:
         return f"witness a {KEY} https://example/{mid}w\nquorum a\n"
 
-    def test_the_three_named_bytes_are_errors(self):
-        for name, ch in (("carriage return", "\r"),
-                         ("vertical tab", "\v"),
-                         ("form feed", "\f")):
+    def test_all_other_ascii_controls_are_errors(self):
+        chars = [*(chr(n) for n in range(0x20) if n not in (0x09, 0x0A)), "\x7f"]
+        for ch in chars:
+            name = f"U+{ord(ch):04X}"
             with self.subTest(name=name), self.assertRaises(policy.PolicyError):
                 policy.parse(self._line(ch))
 
-    def test_every_other_byte_is_content(self):
-        """A Unicode whitespace definition refuses policies §9.1 allows."""
-        for name, ch in (("non-breaking space", " "),
+    def test_non_ascii_whitespace_is_content(self):
+        for name, ch in (("non-breaking space", " "), ("next-line", "\u0085"),
                          ("en quad", " "),
                          ("ideographic space", "　")):
             with self.subTest(name=name):
                 policy.parse(self._line(ch))
+
+    def test_final_line_feed_is_required(self):
+        with self.assertRaises(policy.PolicyError):
+            policy.parse(f"witness a {KEY}\nquorum a")
+
+    def test_quorum_must_follow_its_definition(self):
+        with self.assertRaises(policy.PolicyError):
+            policy.parse(f"quorum a\nwitness a {KEY}\n")
 
 
 if __name__ == "__main__":

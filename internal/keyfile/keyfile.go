@@ -1,7 +1,7 @@
 // Package keyfile reads and writes Ed25519 keys in the OpenSSH private-key
 // format ("openssh-key-v1"), unencrypted.
 //
-// Norn invents no key format (`ENROLLMENT.md` part 1), and this is the reason
+// Norn invents no key format (§16.3), and this is the reason
 // the promise survives contact with a daemon: `nornd` on a device signs
 // `rotate` and self-`revoke` entries with a key nobody can type a passphrase
 // for at boot, so that key lives in a file. Using OpenSSH's format rather than

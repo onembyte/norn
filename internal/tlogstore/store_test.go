@@ -79,6 +79,33 @@ func TestAppendedEntriesReadBackInOrder(t *testing.T) {
 	}
 }
 
+func TestFullTileRemovesItsSupersededPartialPath(t *testing.T) {
+	dir := t.TempDir()
+	store, err := Open(dir, "norn/test", testLogKey(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < tlog.TileWidth-1; i++ {
+		if _, err := store.Append([]byte{byte(i)}); err != nil {
+			t.Fatalf("append %d: %v", i, err)
+		}
+	}
+	partial := filepath.Join(dir, filepath.FromSlash(tlog.TilePath(0, 0, tlog.TileWidth-1)))
+	if _, err := os.Stat(partial); err != nil {
+		t.Fatalf("width %d partial tile is missing: %v", tlog.TileWidth-1, err)
+	}
+	if _, err := store.Append([]byte{0xff}); err != nil {
+		t.Fatalf("append the tile's final leaf: %v", err)
+	}
+	full := filepath.Join(dir, filepath.FromSlash(tlog.TilePath(0, 0, tlog.TileWidth)))
+	if _, err := os.Stat(full); err != nil {
+		t.Fatalf("full tile is missing: %v", err)
+	}
+	if _, err := os.Stat(filepath.Dir(partial)); !os.IsNotExist(err) {
+		t.Errorf("superseded partial tile path %s still exists (stat error %v)", filepath.Dir(partial), err)
+	}
+}
+
 func TestReopeningReproducesTheSameHead(t *testing.T) {
 	dir := t.TempDir()
 	entries := suiteEntries(t)

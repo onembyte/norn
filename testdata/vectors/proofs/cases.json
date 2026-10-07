@@ -19,5 +19,11 @@
   },
   "log_key": "keys.json ed25519.logkey — the key trust.cbor names",
   "origin": "norn/nzxxe3rnorsxg5domv2c2mbqge",
+  "replayed_policy_quorum_time": 1760003600,
+  "right_edge_inclusion": {
+    "file": "right-edge.json",
+    "index": 126,
+    "size": 127
+  },
   "size": 138
 }

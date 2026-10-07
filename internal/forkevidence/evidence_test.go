@@ -45,7 +45,7 @@ func trustKeys(t *testing.T) (logVKey string, witnessVKeys []string, policy stri
 	t.Helper()
 	logVKey = note.VerifierKey(origin, logKey(t).Public().(ed25519.PublicKey))
 	var b strings.Builder
-	b.WriteString("log " + origin + " " + logVKey + "\n")
+	b.WriteString("log " + logVKey + "\n")
 	for _, name := range []string{"pi", "vps"} {
 		vkey := note.CosignerVerifierKey("norn-witness/"+name,
 			witnessKey(t, name).Public().(ed25519.PublicKey))

@@ -81,6 +81,48 @@ func TestFreshnessIsUnknownWithoutWitnesses(t *testing.T) {
 	}
 }
 
+func TestEmptyProvenSetPublishesAnEmptyDeviceArray(t *testing.T) {
+	result, _ := verified(t)
+	result.State.Devices = map[string]state.Device{}
+	set, err := FromResult(result, time.Unix(1_760_000_000, 0), freshnessOf(t, result))
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := json.Marshal(set)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), `"devices":[]`) {
+		t.Errorf("empty proven set did not publish an array: %s", body)
+	}
+}
+
+func TestDeviceWithoutLabelsPublishesAnEmptyLabelObject(t *testing.T) {
+	result, _ := verified(t)
+	for id, device := range result.State.Devices {
+		if !IsProven(device, EvaluationTime(result)) {
+			continue
+		}
+		device.Labels = nil
+		result.State.Devices = map[string]state.Device{id: device}
+		break
+	}
+	set, err := FromResult(result, time.Unix(1_760_000_000, 0), freshnessOf(t, result))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(set.Devices) != 1 {
+		t.Fatalf("devices = %d, want one", len(set.Devices))
+	}
+	body, err := json.Marshal(set)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), `"labels":{}`) {
+		t.Errorf("device without labels did not publish an object: %s", body)
+	}
+}
+
 // Proven is active *and* unexpired. The difference is one line, and two copies
 // of it is how a contractor's laptop stays in somebody's peer table.
 func TestProvenExcludesTheExpired(t *testing.T) {

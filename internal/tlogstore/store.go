@@ -249,6 +249,17 @@ func (s *Store) writeTiles() error {
 		return err
 	}
 	for _, tile := range tiles {
+		if tile.Width == tlog.TileWidth {
+			// A full path supersedes the partial-width directory for this tile.
+			// Without removing it, a log that crosses 256 leaves serves both
+			// tile/0/000.p/255 and tile/0/000, leaving an obsolete path beside
+			// the canonical one (D12).
+			partial := filepath.Join(s.dir,
+				filepath.FromSlash(tlog.TilePath(tile.Level, tile.Index, tlog.TileWidth))+".p")
+			if err := os.RemoveAll(partial); err != nil {
+				return fmt.Errorf("remove superseded partial tile %s: %w", partial, err)
+			}
+		}
 		if err := s.writeFile(tile.Path(), tile.Data); err != nil {
 			return err
 		}

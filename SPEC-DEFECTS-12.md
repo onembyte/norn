@@ -246,11 +246,19 @@ All variants pass 1212/1212 and each witness diverges:
 
 ### D14 (M/L). One checkpoint can still be spelled more than one way
 
-§6 and §7 argue that two spellings of one head make gossip and caches keyed on bytes chosen by an attacker, and they closed that hole for the size line and the payload length. These cases remain open:
+§6 and §7 argue that two spellings of one head make gossip and caches keyed on bytes chosen by an attacker, and they closed that hole for the size line and the payload length. The gate identified these cases:
 
 - **(a) Non-zero base64 pad bits.** "Standard base64 with padding" (l.585, l.635) doesn't say whether the pad bits must be zero (canonical).
   - Witness: the served head re-signed and cosigned with its root line spelled using non-zero pad bits. Base (strict) `refused:checkpoint`, `b64.nonstrict` `accepted`.
-  - The same ambiguity applies to signature payloads, vkeys and receipts.
+  - The same ambiguity applies to signature payloads and receipts. Verifier
+    keys encode 33 bytes, so they have no padding or unused pad bits; their
+    alternate spelling was a carriage return inside the base64 data.
+  - **Resolved in d-xi-iii:** §6 root lines and §7's 68-byte note and
+    76-byte cosignature payloads require canonical pad bits, with three refusal
+    vectors. §7 and §9.1 now require canonical verifier-key data, pinned by
+    `trust-bad/44-log-key-base64-cr`. §7 now requires canonical receipt leaf
+    hashes too; `receipt-bad/leaf-hash-nonzero-pad-bits.note` is re-signed and
+    refuses as `leaf-hash` while decoding to the good receipt's hash.
 - **(b) A blank line after the last signature line.** l.629 says "ends in **one** `0x0A`".
   - Witness: `served/checkpoint` + `\n`. Base `refused:note`, `note.trailing-blank-ok` `accepted`.
 - **(c) Which code for a known key's line of the wrong length?** E.g. a 76-byte payload under the log key's name and id. §10.1 is a closed list, so the code is part of the contract.
@@ -297,6 +305,11 @@ Every variant below passes 1212/1212 and diverges on an exact-boundary input:
 
 **Fix.** Say "not validated" for each, explicitly.
 
+- **D18a resolved in d-ix-iii:** §4.0 now says reserved hint syntax is not
+  validated during request checking or replay. A valid signed request and an
+  accepted enrollment both carry malformed `ip` and `endpoint` values, and the
+  Go and Python readers preserve them.
+
 ### D19 (M). U+2028 and U+2029 in canonical JSON
 
 - **Prose.** §14.2 l.1558–1564: everything else verbatim, including non-ASCII. §14 says "nothing here may be left to a JSON library's defaults, because they differ".
@@ -317,14 +330,18 @@ Every variant below passes 1212/1212 and diverges on an exact-boundary input:
 - **(d)** §9.2's example shows `genesis_hash = "4e18d55c…"` next to the real fingerprint `Y2KM-WGEJ-5GCD-X3HA`. The file that fingerprint belongs to has `f168d197…`.
 - **(e)** §5.1 l.374 says "The four that carry the weight" and then lists five.
 - **(f)** The title says "v0 (draft)"; the status line says frozen v1.
-- **(g)** `trust-bad/07` and `/08` each break two §9.1 rules and name one. §9.1 gives trust validation no order and no codes, so "refused for its own rule" can't be held against a second implementation for these files. §12.1 acknowledges only `04`.
-- **(h)** §12.1's "What is not vectored" list misses every rule in D1, D2, D4, D5 and D8–D20.
+- **(g; resolved in d-vi).** The run-12 reading counted two faults in `trust-bad/07` and `/08`; the regenerated cases now isolate the witness minimum and duplicate-name uniqueness, and §12.1 explains why each is the only failing rule.
+- **(h; resolved in d-x-iii).** At run 12, §12.1 omitted the findings in D1, D2, D4, D5 and D8–D20. Later coverage work added most of them; the final audit added the same-size held-root and replay-order rows and guards representative cases across that range.
+
+- **D21(b), (d)–(h) resolved in d-x-i/ii/iii:** the request key-cap refusal is
+  attributed to the decoder, §9.2's example matches the shipped `trust.toml`,
+  §5.1 names five precedence vectors, the title says frozen v1, the trust
+  negatives are isolated, and §12.1 accounts for the reviewed run-12 findings.
 
 ### D22 (L/M). Further choices the suite neither pins nor punishes
 
-- **`cbor.bool-is-profile`.** Is §4.0's "Booleans allowed (`params.rotate_needs_signer` only)" a decoder rule or a schema rule? It matters wherever codes are closed.
-  - Witness: `fork/evidence.cbor` with `size: true`. Base `schema`, variant `cbor`.
-- **Normative content outside the document.** "Every cross-reference resolves" (l.6) is not true for a reader holding only `SPEC.md` and `vectors/`. §15, §13 and §16.3 make `GOSSIP.md` (checkpoint acquisition order, the witness-time clock, gossip endpoints), `ENFORCEMENT.md` and `ENROLLMENT.md` (overlap rules, bootstrap) normative, and none of them ships.
+- **`cbor.bool-is-profile` (resolved in d-x-iv).** §4.0 admits booleans as CBOR profile items and assigns field-type rejection to schemas, which MUST reject them outside `params.rotate_needs_signer`. `fork/bad-bool-size.cbor` decodes in both generic CBOR readers and the fork evidence reader refuses `size: true` as `schema`.
+- **Normative content outside the document (closed in d-xii).** "Every cross-reference resolves" (l.6) was not true for a reader holding only `SPEC.md` and `vectors/`. §15 now owns source-neutral checkpoint acquisition and §10's verification-before-adoption order (d-xii-i), plus the witness-time clock, peer polling and gossip endpoints (d-xii-ii). §§8.1 and 13 now own enforcement modes, failure semantics, and the published proven-set interface (d-xii-iii). §§9.4 and 16.3 now own rotation, overlap and key handling, with `ENROLLMENT.md` aligned and its unbuilt flows marked planned (d-xii-iv). The final audit (d-xii-v) declared all three companions informative in their own headers, redirected §6's last live pointer to §15, and guarded the whole document against delegation. A reader holding the spec and the vectors needs no other document.
 
 ---
 
@@ -335,7 +352,7 @@ These were written down before I opened the vectors; see `DECISIONS-PRE-VECTORS.
 | # | decision | outcome |
 |---|---|---|
 | P1 | Simple values other than true/false/null/undefined are refused | unvectored; a typed model refuses them anyway |
-| P2 | Booleans: decoder rule or schema rule | **open, divergent** (D22) |
+| P2 | Booleans: decoder rule or schema rule | resolved in d-x-iv: valid profile item; wrong field type is `schema` (`fork/bad-bool-size`) |
 | P3 | Depth 8 accepted, 9 refused | vector-resolved (`at-/past-the-depth-limit`) |
 | P4 | `MAX_ENTRY_BYTES` measured on input length vs a declared length | no consequence; the oversize vector is also long |
 | P5/P6 | Key cap applies to `labels`; non-text keys refused | vector-resolved |
@@ -354,12 +371,12 @@ These were written down before I opened the vectors; see `DECISIONS-PRE-VECTORS.
 | T9 | Policy URLs not validated | unvectored |
 | S1/S3 | All four `params` keys always emitted; abort state | vector-resolved |
 | S2 | The `.json` entry mirror renders `request` as hex bytes | vector-resolved, not stated in prose |
-| Q1 | **Which policy computes `T`?** I chose the policy the checkpoint was *accepted* under (the trust file's for a fresh node), not the one replayed from that checkpoint. §5.3 says "the policy (§9)"; §9.4 says a policy entry supersedes "for every checkpoint a node accepts after replaying it, **and for §5.3's `T`**", which reads naturally the other way. Under the other reading, `served/checkpoint`'s `T` is 1760003600, not 1760003607. | vector-resolved, but only by a JSON number (`proofs/cases.json` `checkpoint_quorum_time`, and `served-twice-cosigned`). `T.replayed-policy` is caught. **The prose should say it.** |
+| Q1 | **Which policy computes `T`?** The policy under which the checkpoint was accepted: the trust file's policy for a first read, or the previously replayed policy thereafter. A `policy` entry in the checkpoint's own replay range applies to the next checkpoint and does not retroactively change its `T`. | resolved in d-x-v: §5.3/§9.4 say this, and `proofs/cases.json` plus Go checks distinguish 1760003607 under the acceptance policy from 1760003600 under the checkpoint's replayed policy |
 | Q2 | Expired iff `expires != 0 && expires <= T` | stated; vectored |
 | N1 | A known key's line with the other algorithm's length is a verification failure, not framing | **open, divergent** (D14c) |
 | N2 | `+` in a signature-line name not checked at framing | no consequence |
 | N3 | Empty note text is `note` | unvectored |
-| N4 | Strict base64 (zero pad bits) | **open, divergent** (D14a) |
+| N4 | Strict base64 (zero pad bits) | resolved in d-xi-i/ii/iii: root, note payload, verifier-key data and receipt leaf-hash spellings are canonical, with refusal vectors |
 | N5/N6 | Size fits in uint64; every trusted-key line must verify | vectored |
 | N7 | A hash tile of the wrong length is `tiles` | unvectored |
 | — | A learned log key signs under the name `origin` | vector-resolved (`served-rotated`); not stated in prose |
@@ -376,7 +393,7 @@ These were written down before I opened the vectors; see `DECISIONS-PRE-VECTORS.
 | — | Order of trust-file checks | **unspecified**; matters only for `says` (D21g) |
 | — | Request refusal layers (text, CBOR, schema, signature) for a missing or short `sig` and a short `device_pk` | unspecified; no vocabulary |
 | Q-R1 | A `.txt` file's trailing newline is not part of the text | resolved by a `cases.json` comment, not by SPEC |
-| Q-R2 | Reserved labels not validated | **open, divergent** (D18a) |
+| Q-R2 | Reserved labels not validated | resolved in §4.0 and positively vectored at request and replay layers (D18a) |
 | Q-R3 | bech32m case rules | vectored |
 | — | `detect/`: the node's own branch is `served/`'s entries truncated at the stored size | inferred from a `cases.json` comment |
 | M1 | No `cases.json` schema is specified anywhere in SPEC | harness only, but every runner has to reverse-engineer about 20 file formats |

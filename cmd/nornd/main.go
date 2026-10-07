@@ -183,8 +183,8 @@ func build(config Config, logger *slog.Logger) (*agent.Agent, time.Duration, err
 		}
 	}
 
-	// A node asks its proven peers when the log cannot be used, at the same
-	// port it serves them on. The closure is filled in after the agent exists
+	// A node asks its proven peers on T_g and when the log cannot be used,
+	// at the same port it serves them on. The closure is filled in after the agent exists
 	// because the peers it may ask are the ones the agent itself has proven --
 	// there is no separate list to keep in step, and an unproven peer can
 	// never end up on it.

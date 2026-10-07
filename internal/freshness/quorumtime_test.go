@@ -36,7 +36,7 @@ func vkey(name string) string {
 func rules(t *testing.T, names []string, tail string) *policy.Policy {
 	t.Helper()
 	var b strings.Builder
-	fmt.Fprintf(&b, "log norn/test %s\n", note.VerifierKey("norn/test",
+	fmt.Fprintf(&b, "log %s\n", note.VerifierKey("norn/test",
 		witnessKey("log").Public().(ed25519.PublicKey)))
 	for _, name := range names {
 		fmt.Fprintf(&b, "witness %s %s\n", name, vkey(name))

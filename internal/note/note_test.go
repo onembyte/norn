@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -59,6 +60,35 @@ func TestParseVerifierKeyRejectsMalformed(t *testing.T) {
 	for _, bad := range []string{"", "a+b", "a+zz+AAAA", "name+00000000+not base64!"} {
 		if _, err := ParseVerifierKey(bad); err == nil {
 			t.Errorf("ParseVerifierKey(%q) should have failed", bad)
+		}
+	}
+}
+
+func TestVerifierKeyBase64RejectsIgnoredLineBreaks(t *testing.T) {
+	public := ed25519.NewKeyFromSeed(make([]byte, 32)).Public().(ed25519.PublicKey)
+	for _, key := range []string{
+		VerifierKey("norn/test", public),
+		CosignerVerifierKey("norn-witness/test", public),
+	} {
+		parts := strings.SplitN(key, "+", 3)
+		data := parts[2]
+		if len(data) != 44 || strings.Contains(data, "=") {
+			t.Fatalf("33-byte verifier-key data must have 44 base64 characters and no padding: %q", data)
+		}
+		original, err := base64.StdEncoding.DecodeString(data)
+		if err != nil || len(original) != 33 {
+			t.Fatalf("canonical key data does not decode to 33 bytes: %v", err)
+		}
+		for _, lineBreak := range []string{"\r", "\n"} {
+			mutatedData := data[:12] + lineBreak + data[12:]
+			decoded, err := base64.StdEncoding.DecodeString(mutatedData)
+			if err != nil || !equal(decoded, original) {
+				t.Fatalf("lax decoding changed the key bytes: %v", err)
+			}
+			mutated := parts[0] + "+" + parts[1] + "+" + mutatedData
+			if _, err := ParseVerifierKey(mutated); err == nil {
+				t.Errorf("ParseVerifierKey accepted a line break in %d-byte key data: %q", len(original), mutated)
+			}
 		}
 	}
 }
@@ -146,4 +176,67 @@ func TestSignRejectsTextWithoutATrailingNewline(t *testing.T) {
 	if _, err := Sign("no newline", "norn/test", priv); err == nil {
 		t.Error("note text must end with a newline")
 	}
+}
+
+// RFC 4648 §3.5 requires unused base64 pad bits to be zero. DecodeString
+// accepts alternate final characters with the same bytes, so Split must
+// reject the alternate spelling in both payload sizes it frames.
+func TestSplitRejectsNonzeroSignaturePayloadPadBits(t *testing.T) {
+	checkpoint, err := os.ReadFile(filepath.Join(vectorRoot(), "served", "checkpoint"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	signed := string(checkpoint)
+	lines := strings.Split(strings.TrimSuffix(signed, "\n"), "\n")
+	found := map[int]bool{}
+	for i, line := range lines {
+		if !strings.HasPrefix(line, SigPrefix) {
+			continue
+		}
+		cut := strings.LastIndex(line, " ") + 1
+		blob := line[cut:]
+		raw, err := base64.StdEncoding.DecodeString(blob)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(raw) != 68 && len(raw) != 76 {
+			t.Fatalf("unexpected signature payload length %d", len(raw))
+		}
+		bad := withNonzeroPadBits(t, blob)
+		decoded, err := base64.StdEncoding.DecodeString(bad)
+		if err != nil || !equal(decoded, raw) {
+			t.Fatalf("mutated %d-byte payload does not decode to the same bytes: %v", len(raw), err)
+		}
+		mutated := append([]string(nil), lines...)
+		mutated[i] = line[:cut] + bad
+		if _, _, err := Split(strings.Join(mutated, "\n") + "\n"); !errors.Is(err, ErrNote) {
+			t.Errorf("Split accepted nonzero pad bits in the %d-byte payload: %v", len(raw), err)
+		}
+		found[len(raw)] = true
+	}
+	for _, length := range []int{68, 76} {
+		if !found[length] {
+			t.Errorf("served checkpoint has no %d-byte signature payload", length)
+		}
+	}
+}
+
+func withNonzeroPadBits(t *testing.T, encoded string) string {
+	t.Helper()
+	canonical, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil || base64.StdEncoding.EncodeToString(canonical) != encoded {
+		t.Fatalf("input is not canonical base64: %v", err)
+	}
+	padding := len(encoded) - len(strings.TrimRight(encoded, "="))
+	if padding == 0 {
+		t.Fatal("test input has no padding bits")
+	}
+	const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+	position := len(encoded) - padding - 1
+	value := strings.IndexByte(alphabet, encoded[position])
+	unused := padding * 2
+	mask := (1 << unused) - 1
+	mutated := []byte(encoded)
+	mutated[position] = alphabet[(value&^mask)|1]
+	return string(mutated)
 }

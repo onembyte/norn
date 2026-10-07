@@ -167,7 +167,8 @@ func Build(c Ceremony, signers []crypto.Signer) (*Result, error) {
 		witnesses = append(witnesses, trust.Witness{
 			// A witness publishes a cosignature key (algorithm 0x04), not a
 			// note key: the log signs checkpoints, a witness cosigns them.
-			Name: w.Name, Key: note.CosignerVerifierKey(w.noteName(), w.Key), URL: w.URL,
+			Name: w.Name, Key: note.CosignerVerifierKey(w.noteName(), w.Key),
+			URL: w.URL, HasURL: w.URL != "",
 		})
 	}
 

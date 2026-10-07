@@ -718,3 +718,63 @@ remaining gate is close. The layers that strangers check against each other —
 the verifier, evidence, receipts — have codes (D-061, D-063); these are read
 by the node that loads them (cold gate run 12, §5 M2).
 
+## D-066 · Match the policy parser to C2SP `tlog-policy` (2026-10-02)
+Norn's policy grammar follows the current [C2SP `tlog-policy`](https://c2sp.org/tlog-policy) format for line endings, definition order, reserved names, verifier keys, duplicate keys, and allowed control bytes. Every directive line, including the last, MUST end in line feed. A `quorum` MUST refer to a witness or group defined earlier, except for the predefined `none`; `none` cannot be defined as a witness or group and cannot be a group member. Witness and group names share one namespace. Names `all` and `any` remain legal in name positions; they are special only in the threshold position. Every verifier key MUST parse with its key ID recomputed, and its algorithm MUST match its directive (`0x01` for `log`, `0x04` for `witness`). Repeated keys are detected by the underlying public key, even when vkey names or IDs differ. The only allowed ASCII control bytes are tab and line feed; other ASCII controls, including DEL and carriage return, are refused.
+
+**Why.** The implementation review found that Go accepted forward quorum references while Python refused them; both accepted definitions shadowing `none`; neither parser validated vkeys or algorithm roles; and both compared duplicate keys as text. The current C2SP document settles those points explicitly. It also defines duplicate vkeys by underlying public key, requires a final line feed, and closes the byte-level control set. Those requirements and the policy's opaque-byte rule were not all captured by the local wording. This aligns the format with the source Norn already claims to use (cold gate run 12, D7–D8).
+
+**Rejected.** *Preserve the earlier `SPEC-DECISIONS-12.md` readings where they conflict with C2SP* — a policy that is accepted by Norn but refused by another `tlog-policy` reader is not interoperable. *Require canonical base64 here* — D-062 assigns that cross-format change to 6.5l-vii-d-xi; this decision requires successful key decoding and a matching key ID, while canonical pad bits remain that later checkpoint's work.
+
+**Cost, accepted.** Go tightens forward-reference and key validation; both implementations refuse previously accepted policy text that violates C2SP. The policy grammar remains a verifier input with no closed refusal-code vocabulary (D-065).
+
+## D-067 · Trust-file URLs are opaque application data (2026-10-02)
+Trust-file URL fields are text and are not checked for URI syntax. `log_urls`
+must still be a non-empty array of non-empty strings. A witness `url` is
+optional text; if present, an empty string is permitted. Optional URLs on
+C2SP `log` and `witness` policy lines are application-specific and do not have
+to equal `log_urls` or `witnesses[].url`. Key and witness-name correspondence
+rules remain unchanged.
+
+**Why.** C2SP `tlog-policy` makes the meaning of a policy URL
+application-specific and says offline verification does not require URLs. The
+trust parser already treats URL values as text rather than applying URI
+validation. Only `log_urls` has an explicit non-empty constraint in §9.1; an
+optional witness URL is a distinct case. Preserving a present empty URL also
+requires Go to retain field presence, since absence and empty text serialize
+differently in canonical CBOR.
+
+**Rejected.** *URI-validate every URL or require policy URLs to match the trust
+file's URL fields* — endpoint syntax and use belong to the application, and a
+policy URL is not part of the key or witness correspondence rule.
+
+**Cost, accepted.** A trust file can carry text that a network client cannot
+use as an endpoint; the trust parser does not reinterpret or rewrite it.
+
+## D-068 · The cold-model gate converges on behaviour, not on a verdict string (2026-10-07)
+`PLAN.md` Phase 6's line "Cold-model gate repeated on frozen spec" passes on
+**two consecutive sealed runs with zero behaviour-changing defects** — a
+defect the run's own report rates high or medium — with every low-severity
+finding of both runs recorded in `SPEC.md` §12.1's not-vectored list. Each run
+keeps the existing protocol: a fresh agent, a new sealed copy made with `git
+archive` from the pushed head, run 11's prompt, and a transcript audit showing
+no access to this repository and no web access.
+
+**Why.** Thirteen runs have shown that a stochastic reader always finds
+something to say about a large document: runs 11–13 passed every check
+(622/622, 1,212/1,212, then 1,353/1,353) and still could not return
+`SPEC SUFFICIENT`, because the verdict also rates prose a second implementer
+would never diverge on. A gate that no run can pass is not a gate. What the line exists to
+prove is that two implementers given only `SPEC.md` and the vectors build the
+same thing; a high or medium finding is exactly a place where they would not.
+Two runs in a row guards against one lucky reader.
+
+**Rejected.** *Keep requiring the exact string `SPEC SUFFICIENT`* — it never
+terminates, and each round adds normative text that is itself new surface for
+the next reader. *One clean run* — a single reader can miss what the next one
+finds; each of runs 11–13 raised defects the run before it had not. *Drop the gate* — it
+is the only check in the project that no session author can game.
+
+**Cost, accepted.** A low-severity ambiguity can ship in v1, recorded and
+visible in §12.1 rather than fixed. The severity rating is the reader's own,
+so the transcript audit also checks that no finding is rated low while its
+text describes two implementations disagreeing on an outcome.

@@ -173,6 +173,23 @@ func TestWatchdogEvictsWhatTheLogDoesNotProve(t *testing.T) {
 	}
 }
 
+func TestFailedWatchdogEvictionDoesNotClaimSuccess(t *testing.T) {
+	rec := &recorder{}
+	fake := peertable.NewFake(provenKeys(t)...)
+	fake.Inject(rogue(t))
+	fake.FailWrite = peertable.ErrDown
+	a := newAgent(t, reconcile.Watchdog, servedLog(t), fake, rec)
+	if err := a.Once(); err == nil {
+		t.Fatal("failed eviction was reported as a successful cycle")
+	}
+	if rec.kinds()[reconcile.UnprovenPeer] != 1 {
+		t.Errorf("unproven peer not reported: %v", rec.kinds())
+	}
+	if rec.kinds()[reconcile.EvictedPeer] != 0 {
+		t.Errorf("failed eviction was reported as completed: %v", rec.kinds())
+	}
+}
+
 func TestOwnerInstallsTheProvenSet(t *testing.T) {
 	rec := &recorder{}
 	fake := peertable.NewFake()

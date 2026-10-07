@@ -17,7 +17,9 @@ import (
 	"time"
 
 	"github.com/onembyte/norn/internal/cosign"
+	"github.com/onembyte/norn/internal/freshness"
 	"github.com/onembyte/norn/internal/note"
+	"github.com/onembyte/norn/internal/policy"
 	"github.com/onembyte/norn/internal/refusal"
 	"github.com/onembyte/norn/internal/replay"
 	"github.com/onembyte/norn/internal/state"
@@ -173,6 +175,100 @@ func TestVerifyOverAServedDirectoryReproducesStateJSON(t *testing.T) {
 	}
 	if int(result.State.Size) != len(entries) {
 		t.Errorf("replayed size %d, want %d", result.State.Size, len(entries))
+	}
+}
+
+func TestVerifyLargeServedDirectoryChecksAllTileShapes(t *testing.T) {
+	dir := filepath.Join(vectorRoot(), "served-large")
+	var manifest struct {
+		Size  int `json:"size"`
+		Tiles []struct {
+			Path  string `json:"path"`
+			Width int    `json:"width"`
+		} `json:"tiles"`
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, "cases.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(raw, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	if manifest.Size != 300 {
+		t.Fatalf("served-large says size %d, want 300", manifest.Size)
+	}
+	want := map[string]int{
+		"tile/0/000":      256,
+		"tile/0/001.p/44": 44,
+		"tile/1/000.p/1":  1,
+	}
+	if len(manifest.Tiles) != len(want) {
+		t.Fatalf("served-large lists %d tile shapes, want %d", len(manifest.Tiles), len(want))
+	}
+	listed := make(map[string]bool, len(manifest.Tiles))
+	for _, tile := range manifest.Tiles {
+		width, ok := want[tile.Path]
+		if !ok || width != tile.Width || listed[tile.Path] {
+			t.Errorf("cases.json has unexpected tile %s width %d", tile.Path, tile.Width)
+		}
+		listed[tile.Path] = true
+	}
+
+	result, err := Verify(Dir(dir), shippedLogAnchor(t))
+	if err != nil {
+		t.Fatalf("verify the 300-entry served log: %v", err)
+	}
+	if result.Checkpoint.Size != int64(manifest.Size) || len(result.Served) != manifest.Size ||
+		int(result.State.Size) != manifest.Size {
+		t.Fatalf("verified size=%d, served=%d, state=%d; want %d throughout",
+			result.Checkpoint.Size, len(result.Served), result.State.Size, manifest.Size)
+	}
+	tiles, err := result.Tree.Tiles()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tiles) != len(want) {
+		t.Fatalf("the 300-entry tree implies %d tiles, want %d: %+v", len(tiles), len(want), tiles)
+	}
+	for _, tile := range tiles {
+		width, ok := want[tile.Path()]
+		if !ok || tile.Width != width {
+			t.Errorf("tile %s has width %d; want %d", tile.Path(), tile.Width, width)
+		}
+		if _, err := os.Stat(filepath.Join(dir, filepath.FromSlash(tile.Path()))); err != nil {
+			t.Errorf("served tile %s is missing: %v", tile.Path(), err)
+		}
+	}
+	expectedFiles := map[string]bool{
+		"tile/0/000":            true,
+		"tile/0/001.p/44":       true,
+		"tile/1/000.p/1":        true,
+		"tile/entries/000":      true,
+		"tile/entries/001.p/44": true,
+	}
+	actualFiles := map[string]bool{}
+	err = filepath.WalkDir(filepath.Join(dir, "tile"), func(path string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		rel, err := filepath.Rel(dir, path)
+		if err != nil {
+			return err
+		}
+		name := filepath.ToSlash(rel)
+		actualFiles[name] = true
+		if !expectedFiles[name] {
+			t.Errorf("served-large has stale or unexpected path %s", name)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name := range expectedFiles {
+		if !actualFiles[name] {
+			t.Errorf("served-large is missing implied path %s", name)
+		}
 	}
 }
 
@@ -607,7 +703,7 @@ func TestAForgedCosignatureIsRefused(t *testing.T) {
 // overriding the operator's own policy.
 func TestQuorumNoneAcceptsAnUncosignedCheckpoint(t *testing.T) {
 	dir, anchor := cosignedLog(t, nil, 2)
-	anchor.Policy = "log norn/test " + verifierKey(t, logKey(t), "norn/test") + "\nquorum none\n"
+	anchor.Policy = "log " + verifierKey(t, logKey(t), "norn/test") + "\nquorum none\n"
 
 	result, err := Verify(Dir(dir), anchor)
 	if err != nil {
@@ -641,11 +737,72 @@ func TestVerifyReportsTheWitnessTime(t *testing.T) {
 	}
 }
 
+func TestCheckpointTimeUsesThePolicyThatAcceptedIt(t *testing.T) {
+	anchor := shippedLogAnchor(t)
+	result, err := Verify(Dir(filepath.Join(vectorRoot(), "served")), anchor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.QuorumTime == nil {
+		t.Fatal("the accepted checkpoint has no quorum time")
+	}
+
+	acceptedPolicy, err := policy.Parse(anchor.Policy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	acceptedTime, ok := freshness.QuorumTime(acceptedPolicy, result.Cosignatures)
+	if !ok {
+		t.Fatal("the policy that accepted the checkpoint has no quorum time")
+	}
+
+	replayedPolicy, err := policy.Parse(PolicyFrom(result.State))
+	if err != nil {
+		t.Fatalf("the checkpoint's replayed policy does not parse: %v", err)
+	}
+	replayedSignatures, err := cosign.Verify(result.SignedCheckpoint, replayedPolicy.Keys())
+	if err != nil {
+		t.Fatalf("the replayed policy cannot verify the checkpoint's witness lines: %v", err)
+	}
+	replayedTime, ok := freshness.QuorumTime(replayedPolicy, replayedSignatures)
+	if !ok {
+		t.Fatal("the replayed policy has no quorum time for this checkpoint")
+	}
+
+	raw, err := os.ReadFile(filepath.Join(vectorRoot(), "proofs", "cases.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var times struct {
+		CheckpointQuorumTime     int64 `json:"checkpoint_quorum_time"`
+		ReplayedPolicyQuorumTime int64 `json:"replayed_policy_quorum_time"`
+	}
+	if err := json.Unmarshal(raw, &times); err != nil {
+		t.Fatal(err)
+	}
+	if times.CheckpointQuorumTime == 0 || times.ReplayedPolicyQuorumTime == 0 {
+		t.Fatal("proofs/cases.json does not distinguish acceptance and replayed-policy times")
+	}
+	if acceptedTime.Unix() != times.CheckpointQuorumTime {
+		t.Errorf("acceptance-policy time = %d, vector says %d", acceptedTime.Unix(), times.CheckpointQuorumTime)
+	}
+	if replayedTime.Unix() != times.ReplayedPolicyQuorumTime {
+		t.Errorf("replayed-policy comparison = %d, vector says %d", replayedTime.Unix(), times.ReplayedPolicyQuorumTime)
+	}
+	if result.QuorumTime.Unix() != acceptedTime.Unix() {
+		t.Errorf("verifier reported T=%d, want the policy that accepted the checkpoint: %d",
+			result.QuorumTime.Unix(), acceptedTime.Unix())
+	}
+	if acceptedTime.Equal(replayedTime) {
+		t.Fatal("the policies give the same time, so the fixture cannot distinguish the readings")
+	}
+}
+
 // A network that asked for no corroboration has no witness clock, and the
 // result says so by carrying no time rather than by inventing one.
 func TestQuorumNoneReportsNoWitnessTime(t *testing.T) {
 	dir, anchor := cosignedLog(t, nil, 2)
-	anchor.Policy = "log norn/test " + verifierKey(t, logKey(t), "norn/test") + "\nquorum none\n"
+	anchor.Policy = "log " + verifierKey(t, logKey(t), "norn/test") + "\nquorum none\n"
 
 	result, err := Verify(Dir(dir), anchor)
 	if err != nil {

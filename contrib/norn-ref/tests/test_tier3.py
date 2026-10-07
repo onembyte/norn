@@ -155,7 +155,7 @@ class D29_PolicyHasOneHome(unittest.TestCase):
         self.assertEqual(state.rejected[-1], {"index": n, "reason": "decode"})
 
     def test_policy_entries_still_work(self):
-        text = "log x\nwitness pi y\nquorum pi\n"
+        text = fixture.policy_text()
         raw = build("policy", {"text": text}, ROOTS3, after=49)
         state, n = state_with([raw])
         self.assertEqual([r for r in state.rejected if r["index"] == n], [])
@@ -218,6 +218,20 @@ class CanonicalJsonEscaping(unittest.TestCase):
             "testdata/vectors/state.json").read_bytes()
         self.assertTrue(raw.endswith(b"}\n"))
         self.assertFalse(raw.endswith(b"\n\n"))
+
+
+class D18a_ReservedHints(unittest.TestCase):
+    def test_malformed_reserved_hints_survive_enrollment_replay(self):
+        items = fixture.log()
+        enroll_index = next(i for i, item in enumerate(items)
+                            if item.name == "51-enroll-unicode-labels")
+        raw = [item.raw for item in items[:enroll_index + 1]]
+        state = replay.replay(
+            replay.Anchor(fixture.NET, entry.leaf_hash(raw[0])), raw)
+        device = state.devices["escaped"]
+        self.assertEqual(device["status"], "active")
+        self.assertEqual(device["labels"]["ip"], "not-a-cidr")
+        self.assertEqual(device["labels"]["endpoint"], "not-an-endpoint")
 
 
 def json_key(key: str) -> str:

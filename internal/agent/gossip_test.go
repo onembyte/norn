@@ -142,9 +142,8 @@ func TestABrokenPeerIsSurvivable(t *testing.T) {
 	}
 }
 
-// A node with a healthy log does not need its peers, and asking them anyway
-// would put a poll on every neighbour on every cycle of every node -- which on
-// a 200 ms poll is a lot of traffic to protect against nothing.
+// A healthy log does not cause peer requests on every local poll. The separate
+// gossip cadence is checked below.
 func TestPeersAreNotAskedWhenTheLogAnswers(t *testing.T) {
 	full, _, _ := writableLog(t)
 	peerURL, asked := peerServing(t, full)
@@ -165,7 +164,64 @@ func TestPeersAreNotAskedWhenTheLogAnswers(t *testing.T) {
 		}
 	}
 	if asked() != 0 {
-		t.Errorf("peers were polled %d times while the log was answering", asked())
+		t.Errorf("peers were polled %d times before the first gossip interval", asked())
+	}
+}
+
+func TestPeerCheckpointDoesNotTriggerClockSkew(t *testing.T) {
+	full, _, _ := writableLog(t)
+	peerURL, _ := peerServing(t, full)
+	rec := &recorder{}
+	a, err := New(Config{
+		Anchor: anchor(t), Fetcher: logclient.Dir(t.TempDir()),
+		Device: peertable.NewFake(), Mode: reconcile.Observe, Emit: rec.emit,
+		Now:   func() time.Time { return time.Unix(fixtureCosignedAt, 0).Add(2 * time.Hour) },
+		Mono:  func() time.Duration { return 0 },
+		Peers: func() []string { return []string{peerURL} },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Once(); err != nil {
+		t.Fatal(err)
+	}
+	if got := rec.kinds()[ClockSkew]; got != 0 {
+		t.Errorf("peer checkpoint triggered %d clock-skew alarms", got)
+	}
+}
+
+// A healthy log is not proof that another node sees the same history. Ask
+// proven peers on the gossip cadence, without turning a 200 ms local poll into
+// a 200 ms network poll.
+func TestHealthyLogChecksPeerCheckpointAtGossipInterval(t *testing.T) {
+	full, _, _ := writableLog(t)
+	peerURL, asked := peerServing(t, full)
+	var mono time.Duration
+	a, err := New(Config{
+		Anchor: anchor(t), Fetcher: logclient.Dir(full), Device: peertable.NewFake(),
+		Mode: reconcile.Observe, Emit: (&recorder{}).emit,
+		Now:         func() time.Time { return time.Unix(fixtureCosignedAt, 0).Add(mono) },
+		Mono:        func() time.Duration { return mono },
+		Peers:       func() []string { return []string{peerURL} },
+		GossipEvery: 30 * time.Second,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		at   time.Duration
+		want int
+	}{
+		{0, 0}, {29 * time.Second, 0}, {30 * time.Second, 1},
+		{31 * time.Second, 1}, {60 * time.Second, 2},
+	} {
+		mono = tc.at
+		if err := a.Once(); err != nil {
+			t.Fatalf("cycle at %s: %v", mono, err)
+		}
+		if got := asked(); got != tc.want {
+			t.Errorf("checkpoint requests at %s = %d, want %d", mono, got, tc.want)
+		}
 	}
 }
 
