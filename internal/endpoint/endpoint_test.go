@@ -81,11 +81,40 @@ func TestAProvenDeviceWithNoHintsIsStillInstalled(t *testing.T) {
 	}
 }
 
+func TestLabelsReadIPAndIgnoreAllowedIPs(t *testing.T) {
+	for _, label := range []string{"ip", "allowed_ips"} {
+		t.Run(label, func(t *testing.T) {
+			labels := &Labels{}
+			hints, found := labels.Hints(device(t, "laptop", 5, map[string]string{
+				label: "10.9.0.5/32,fd00::5/128",
+			}))
+			if label == "allowed_ips" {
+				if found || len(hints.AllowedIPs) != 0 {
+					t.Errorf("allowed_ips label produced hints: %+v, found = %v", hints, found)
+				}
+				return
+			}
+			want := []netip.Prefix{
+				netip.MustParsePrefix("10.9.0.5/32"),
+				netip.MustParsePrefix("fd00::5/128"),
+			}
+			if !found || len(hints.AllowedIPs) != len(want) {
+				t.Fatalf("ip label allowed-ips = %v, found = %v; want %v", hints.AllowedIPs, found, want)
+			}
+			for i, prefix := range want {
+				if hints.AllowedIPs[i] != prefix {
+					t.Errorf("allowed-ips[%d] = %v, want %v", i, hints.AllowedIPs[i], prefix)
+				}
+			}
+		})
+	}
+}
+
 func TestLabelsCarryHints(t *testing.T) {
 	proven := []Device{device(t, "laptop", 4, map[string]string{
-		LabelAllowedIPs: "10.9.0.4/32, fd00::4/128",
-		LabelEndpoint:   "198.51.100.4:51820",
-		LabelKeepalive:  "25",
+		LabelIP:        "10.9.0.4/32, fd00::4/128",
+		LabelEndpoint:  "198.51.100.4:51820",
+		LabelKeepalive: "25",
 	})}
 
 	labels := &Labels{}
@@ -110,9 +139,9 @@ func TestLabelsCarryHints(t *testing.T) {
 // A typo in a signed label must not evict a peer the log proves.
 func TestAMalformedLabelIsReportedNotFatal(t *testing.T) {
 	proven := []Device{device(t, "typo", 5, map[string]string{
-		LabelAllowedIPs: "10.9.0.5/32",
-		LabelEndpoint:   "not-an-endpoint",
-		LabelKeepalive:  "soon",
+		LabelIP:        "10.9.0.5/32",
+		LabelEndpoint:  "not-an-endpoint",
+		LabelKeepalive: "soon",
 	})}
 
 	labels := &Labels{}
@@ -141,8 +170,8 @@ func TestLabelsKnowsNothingItWasNotGiven(t *testing.T) {
 
 func TestFirstPrefersTheEarlierProvider(t *testing.T) {
 	proven := []Device{
-		device(t, "pinned", 6, map[string]string{LabelAllowedIPs: "10.9.0.66/32"}),
-		device(t, "by-label", 7, map[string]string{LabelAllowedIPs: "10.9.0.7/32"}),
+		device(t, "pinned", 6, map[string]string{LabelIP: "10.9.0.66/32"}),
+		device(t, "by-label", 7, map[string]string{LabelIP: "10.9.0.7/32"}),
 	}
 	static := Static{Peers: map[string]Hints{"pinned": {
 		AllowedIPs: []netip.Prefix{netip.MustParsePrefix("10.9.0.6/32")}}}}

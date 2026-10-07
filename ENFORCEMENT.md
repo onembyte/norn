@@ -124,7 +124,7 @@ which is deliberately *untrusted for keys*:
 | Provider | Source | Notes |
 |---|---|---|
 | `static` | `[[peer]]` blocks in `nornd.toml` keyed by `device_id` | homelab default; a `wg-quick` file with only `[Interface]` plus Norn is a complete setup |
-| `labels` | `labels.allowed_ips`, `labels.endpoint` in the `enroll` entry | advisory hints signed by a signer; good enough for static-IP labs |
+| `labels` | `labels.ip`, `labels.endpoint` in the `enroll` entry | advisory hints signed by a signer; good enough for static-IP labs |
 | `file` | a JSON file some other daemon writes | escape hatch for any control plane |
 | `netbird` / `headscale` | adapter reading the control plane's view (Phase 7) | control plane becomes an endpoint directory |
 

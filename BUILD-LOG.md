@@ -633,13 +633,13 @@ plan before the first line of code, and stops at **[decision]** and **[user]**.
 | 6.5m-sec-024 | HS-024 | [codex: gpt-6.1-sol/medium, lane A] A key file's halves are checked against its seed (SEC-024) | a file whose seed and stored public half disagree is refused | ✅ |
 | 6.5m-sec-025 | HS-025 | [codex: gpt-6.1-sol/medium, lane A] Key files are never overwritten, and are synced (SEC-025) | exclusive publication with no check-then-act window, synced | ✅ |
 | 6.5m-sec-021 | HS-021 | [codex: gpt-6.1-sol/high, lane B] Every event kind has a deliberate log level (SEC-021, SEC-033) | `FORK`, `FROZEN_BY_FORK`, `HARD_STALE` at error; `DEGRADED`, `MIRROR_UNUSABLE` and the rest at warn; a test that no kind falls through to a default | ✅ |
-| 6.5m-sec-034 | HS-034 | [codex: gpt-6.1-sol/high, lane B] `norn-log`'s HTTP server has timeouts (SEC-034) | header, read, write and idle timeouts and a header cap; a slow-headers client is cut off | ⬜ |
+| 6.5m-sec-034 | HS-034 | `norn-log`'s HTTP server has timeouts (SEC-034) — built here: its red test needs a listener the lane sandbox forbids | header, read, write and idle timeouts and a header cap; a slow-headers client is cut off | ⬜ |
 | 6.5m-sec-002 | HS-002 | [codex: gpt-6.1-sol/high] The quorum bound stated right, and warned about (SEC-002) | README G2 and `THREAT-MODEL.md` A9 say 2k−N; `norn init` and trust validation warn on a policy whose quorums need not intersect | ⬜ |
 | 6.5m-sec-002m | HS-002m | [codex: gpt-6.1-sol/high] The monitor compares heads (SEC-002, SEC-007) | each node's head against the log's and its own previous view; a fork between two nodes is an alert | ⬜ |
 | 6.5m-sec-009 | HS-009 | [codex: gpt-6.1-sol/high] Cosignatures are attributed by the key that verified them (SEC-009) | the four quorum callers stop mapping by note name; a vector with two witnesses sharing a name | ⬜ |
 | 6.5m-sec-012 | HS-012 | [codex: gpt-6-astra/high] Owner mode converges on a real interface (SEC-012, SEC-019) | the interface's own key left out of the desired set and of gossip addresses; prefixes masked; a fake that behaves like the kernel; the no-writes gate rerun against it | ⬜ |
 | 6.5m-sec-016 | HS-016 | [codex: gpt-6.1-sol/high] The reference refuses a bool where a uint belongs, everywhere (SEC-016) | thresholds, `overlap`, genesis; vectors — *needs:* 6.5m-sec-010 and 001b, which regenerate the log first | ⬜ |
-| 6.5m-sec-018 | HS-018 | [codex: gpt-6.1-sol/medium] The endpoint provider reads the `ip` label (SEC-018) | — | ⬜ |
+| 6.5m-sec-018 | HS-018 | [codex: gpt-6.1-sol/medium] The endpoint provider reads the `ip` label (SEC-018) | — | ✅ |
 | 6.5m-sec-030 | HS-030 | [codex: gpt-6.1-sol/medium] The monitor does not describe a rejected entry as done (SEC-030) | — | ⬜ |
 | 6.5m-sec-035 | HS-035 | [codex: gpt-6.1-sol/high] Preshared keys kept; overlapping allowed-ips refused; `norn status` judges expiry in witness time (SEC-035) | — | ⬜ |
 | 6.5m-sec-008 | HS-008 | [codex: gpt-6-astra/high] `norn revoke`, `norn rotate` and a governance builder (SEC-008) | through the existing sign and submit flow; `-yes` refused for root | ⬜ |
@@ -661,6 +661,12 @@ plan before the first line of code, and stops at **[decision]** and **[user]**.
 | 7.0 | H17 | `ACTION-PLAN.md` and the email draft | a test plan for the owner; an email drafted in the form `wireguard.com` asks for, read from the page at the time; a pre-send checklist; **nothing sent** | ⬜ |
 | U1 | — | Observe mode on the homelab mesh (6.5m-vii) | **[user]** one node a day, then every node for seven days | ⬜ |
 | U2–U7 | — | Lab, nginx, OpenTimestamps, NAS, phone enrollment, LocalAPI on a real node, outside people | **[user]** `HARDENING-PLAN.md` Stage G | ⬜ |
+
+- **6.5m-sec-018 — the endpoint provider reads the `ip` label (Codex lane D).**
+  - **What was wrong.** §4.0 reserves two label keys as owner-mode hints (D-026): `ip`, a comma-separated CIDR list used as allowed-ips, and `endpoint`. The fixture, `norn enroll` and the reference write `ip`. The labels provider read `allowed_ips`, a key nothing writes, so a device enrolled as documented was installed with no route — fail closed, and silent.
+  - **What lane D built** (`gpt-6.1-sol`, reasoning medium). The constant is `LabelIP = "ip"`; `allowed_ips` was never specified and is not kept as an alias; the hints-file JSON field of the same name is a different format and is untouched. `ENFORCEMENT.md` §5's `labels` row says `labels.ip`. The test uses the literal keys: a device labelled `ip` gets both prefixes, one labelled `allowed_ips` gets nothing.
+  - **Reviewed here.** Every line read; the package green under race; the lane's control — the constant back to `allowed_ips` — fails both subtests. The remaining `allowed_ips` mentions are the daemon's log attribute and §4's pseudocode, which name the WireGuard field, not a label.
+  - **Gate:** generators first (no change under `testdata/`), then `make test` (race) alone, green in all 49 packages with tests — 914 tests — `vectors-check`, 221 reference tests, `lint`, `fmt-check`, `vet` clean.
 
 - **6.5m-sec-025 — key files are published exclusively and synced (Codex lane A, row 3 of 3).**
   - **What was wrong.** `keyfile.Write` and `wgkey.WritePrivate` checked with `os.Stat` that no file existed, then later renamed a temporary over the path: a key created in between — by a second `norn enroll`, say — was silently replaced, and the refusal that protects an identity from being destroyed held only when nobody raced it. Neither the bytes nor the directory entry were ever synced.

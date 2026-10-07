@@ -142,9 +142,9 @@ type Labels struct {
 
 // Label keys read by this provider.
 const (
-	LabelAllowedIPs = "allowed_ips"
-	LabelEndpoint   = "endpoint"
-	LabelKeepalive  = "keepalive"
+	LabelIP        = "ip"
+	LabelEndpoint  = "endpoint"
+	LabelKeepalive = "keepalive"
 )
 
 // Name implements Provider.
@@ -159,10 +159,10 @@ func (l *Labels) Hints(device Device) (Hints, bool) {
 	var hints Hints
 	var found bool
 
-	if text, ok := device.Labels[LabelAllowedIPs]; ok {
+	if text, ok := device.Labels[LabelIP]; ok {
 		prefixes, err := ParsePrefixes(text)
 		if err != nil {
-			l.Malformed = append(l.Malformed, fmt.Sprintf("%s.%s: %v", device.ID, LabelAllowedIPs, err))
+			l.Malformed = append(l.Malformed, fmt.Sprintf("%s.%s: %v", device.ID, LabelIP, err))
 		} else {
 			hints.AllowedIPs, found = prefixes, true
 		}
