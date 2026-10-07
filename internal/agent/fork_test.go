@@ -2,6 +2,7 @@ package agent
 
 import (
 	"crypto/ed25519"
+	"fmt"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -480,5 +481,79 @@ func writeEvidenceFor(t *testing.T, dir, logDir string, entries [][]byte) {
 	}
 	if err := os.WriteFile(filepath.Join(dir, "1760000000.evidence"), raw, 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// evidenceAgent is a node with a state directory and a clock that does not
+// move, so everything it files is filed in the same second.
+func evidenceAgent(t *testing.T) (*Agent, string) {
+	t.Helper()
+	dir, _, _ := writableLog(t)
+	stateDir := t.TempDir()
+	a, err := New(Config{
+		Anchor: anchor(t), Fetcher: logclient.Dir(dir), Device: peertable.NewFake(),
+		StateDir: stateDir, Emit: (&recorder{}).emit,
+		Now: func() time.Time { return time.Unix(fixtureCosignedAt, 0) },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return a, filepath.Join(stateDir, ForkDir)
+}
+
+// Evidence was filed under the second it was written in, so a second piece
+// filed in the same second truncated the first -- and the first may be the
+// only proof an operator has, or evidence about the network this node ran
+// before a reset (§11), which is kept for exactly that reason. A file already
+// there is never rewritten: a later piece takes the next free second, which
+// keeps §11's `<unix>.evidence` names and their chronological order.
+func TestEvidenceFiledInTheSameSecondIsNotOverwritten(t *testing.T) {
+	a, forkDir := evidenceAgent(t)
+	first, err := a.storeEvidence([]byte("the first proof"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := a.storeEvidence([]byte("the second proof"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first == second {
+		t.Fatalf("two different pieces of evidence were filed under one name, %s", first)
+	}
+	if got, _ := os.ReadFile(first); string(got) != "the first proof" {
+		t.Errorf("the first piece of evidence now holds %q", got)
+	}
+	want := filepath.Join(forkDir, fmt.Sprintf("%d.evidence", fixtureCosignedAt+1))
+	if second != want {
+		t.Errorf("the second piece was filed as %s, want the next second, %s", second, want)
+	}
+}
+
+// The same evidence filed twice is one file, and a file that is already
+// there -- even one torn by a crash under the code before this -- is left
+// exactly as it is rather than refilled in place.
+func TestEvidenceNeverRewritesAFile(t *testing.T) {
+	a, forkDir := evidenceAgent(t)
+	torn := filepath.Join(forkDir, fmt.Sprintf("%d.evidence", fixtureCosignedAt))
+	if err := os.MkdirAll(forkDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(torn, []byte("a torn pr"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	path, err := a.storeEvidence([]byte("a whole proof"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := os.ReadFile(torn); string(got) != "a torn pr" {
+		t.Errorf("a file already there was rewritten; it holds %q", got)
+	}
+	again, err := a.storeEvidence([]byte("a whole proof"))
+	if err != nil || again != path {
+		t.Errorf("the same evidence was filed as %s, then %s (%v)", path, again, err)
+	}
+	if entries, _ := os.ReadDir(forkDir); len(entries) != 2 {
+		t.Errorf("the fork directory holds %v, want the torn file and one proof", entries)
 	}
 }

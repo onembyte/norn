@@ -1,13 +1,16 @@
 package agent
 
 import (
+	"bytes"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/onembyte/norn/internal/durable"
 	"github.com/onembyte/norn/internal/forkevidence"
 	"github.com/onembyte/norn/internal/gossip"
 	"github.com/onembyte/norn/internal/logclient"
@@ -128,7 +131,17 @@ func (a *Agent) adoptEvidence(from string, raw []byte) {
 			"is unchanged.", from, path)})
 }
 
-// storeEvidence writes evidence this node did not produce.
+// storeEvidence files evidence, whoever produced it, as §11's
+// `fork/<unix>.evidence`.
+//
+// Its presence is the freeze, so it is written durably (internal/durable): a
+// power cut leaves the file whole or absent, never torn. And a file already
+// there is never rewritten. The same evidence filed again is the same file;
+// anything else -- a second fork in the same second, the evidence of the
+// network this node ran before a reset, a copy torn by a crash before writes
+// were durable -- keeps its name, and this piece takes the next free second.
+// Names stay unix seconds, so their order is still the order they were filed
+// in, which is how gossip picks the newest (internal/gossip).
 func (a *Agent) storeEvidence(raw []byte) (string, error) {
 	if a.stateDir() == "" {
 		return "", errors.New("no state directory to keep evidence in")
@@ -137,12 +150,29 @@ func (a *Agent) storeEvidence(raw []byte) (string, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}
-	path := filepath.Join(dir, fmt.Sprintf("%d.evidence", a.cfg.Now().Unix()))
-	if err := os.WriteFile(path, raw, 0o644); err != nil {
-		return "", err
+	start := a.cfg.Now().Unix()
+	for second := start; second < start+maxEvidenceProbe; second++ {
+		path := filepath.Join(dir, fmt.Sprintf("%d.evidence", second))
+		existing, err := os.ReadFile(path)
+		switch {
+		case errors.Is(err, fs.ErrNotExist):
+			if err := durable.WriteFile(path, raw, 0o644); err != nil {
+				return "", err
+			}
+			return path, nil
+		case err != nil:
+			return "", err
+		case bytes.Equal(existing, raw):
+			return path, nil
+		}
 	}
-	return path, nil
+	return "", fmt.Errorf("no free evidence name in %s within %d seconds of now", dir, maxEvidenceProbe)
 }
+
+// maxEvidenceProbe bounds the search for a free name. A node files evidence
+// once per fork, so reaching it means the directory holds something other
+// than what this node wrote, and saying so beats looping.
+const maxEvidenceProbe = 1 << 10
 
 // recordFork carries out §11: evidence, alarm, freeze. The caller is
 // responsible for the fourth duty -- leaving the stored checkpoint and the
@@ -198,12 +228,8 @@ func (a *Agent) writeEvidence(fork *logclient.ForkError) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	dir := filepath.Join(a.stateDir(), ForkDir)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "", err
-	}
-	path := filepath.Join(dir, fmt.Sprintf("%d.evidence", a.cfg.Now().Unix()))
-	if err := os.WriteFile(path, raw, 0o644); err != nil {
+	path, err := a.storeEvidence(raw)
+	if err != nil {
 		return "", err
 	}
 	a.frozenBy = path

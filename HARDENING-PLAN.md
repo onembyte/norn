@@ -251,6 +251,10 @@ entries and fifty nodes that is a self-inflicted denial of service.
   re-verify from H3).
 - e. Controls for each: a wrong tile offset, a skipped consistency check, a
   replay resumed without its seen-set — each must fail a named test.
+- f. The mirror writes only the bundles and tiles that changed, each through
+  `internal/durable` (H1-d-iii), checkpoint last: today it rewrites every file
+  on every new head and syncs none, so after a power cut its head can name a
+  file the disk never received, and the restart it exists for is unprotected.
 
 ### Stage C — the spec gate under D-068
 
