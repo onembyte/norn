@@ -41,12 +41,12 @@ func (a *Agent) Frozen() bool { return a.frozen }
 // anchor is a different network to this node, and the old evidence stays on
 // disk, because it is still what an operator takes to the witness operators.
 func (a *Agent) loadFreeze() {
-	if a.cfg.RunDir == "" {
-		return
-	}
-	matches, err := filepath.Glob(filepath.Join(a.cfg.RunDir, ForkDir, "*.evidence"))
-	if err != nil {
-		return
+	var matches []string
+	for _, dir := range a.stateDirs() {
+		found, err := filepath.Glob(filepath.Join(dir, ForkDir, "*.evidence"))
+		if err == nil {
+			matches = append(matches, found...)
+		}
 	}
 	for _, path := range matches {
 		raw, err := os.ReadFile(path)
@@ -130,10 +130,10 @@ func (a *Agent) adoptEvidence(from string, raw []byte) {
 
 // storeEvidence writes evidence this node did not produce.
 func (a *Agent) storeEvidence(raw []byte) (string, error) {
-	if a.cfg.RunDir == "" {
-		return "", errors.New("no run directory to keep evidence in")
+	if a.stateDir() == "" {
+		return "", errors.New("no state directory to keep evidence in")
 	}
-	dir := filepath.Join(a.cfg.RunDir, ForkDir)
+	dir := filepath.Join(a.stateDir(), ForkDir)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}
@@ -169,8 +169,8 @@ func (a *Agent) recordFork(fork *logclient.ForkError) {
 
 // writeEvidence builds the artifact and puts it where an operator will find it.
 func (a *Agent) writeEvidence(fork *logclient.ForkError) (string, error) {
-	if a.cfg.RunDir == "" {
-		return "", errors.New("no run directory to write evidence to")
+	if a.stateDir() == "" {
+		return "", errors.New("no state directory to write evidence to")
 	}
 	held := a.held()
 	if held == nil {
@@ -198,7 +198,7 @@ func (a *Agent) writeEvidence(fork *logclient.ForkError) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	dir := filepath.Join(a.cfg.RunDir, ForkDir)
+	dir := filepath.Join(a.stateDir(), ForkDir)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}

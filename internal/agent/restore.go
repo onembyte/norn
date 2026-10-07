@@ -29,15 +29,21 @@ import (
 // verifies becomes the held head only, never the enforced one -- see
 // Agent.restored.
 func (a *Agent) restoreHead() {
-	if a.cfg.RunDir == "" {
-		return
+	// The first directory holding a mirror is the one to restore: the state
+	// directory, or the run directory a version before the split wrote to. A
+	// first start has no mirror, and neither does a node that crashed before
+	// its first copy finished -- the checkpoint is written last
+	// (mirror.Write) -- so without one there is no head to restore and
+	// nothing worth saying.
+	var dir string
+	for _, candidate := range a.stateDirs() {
+		mirrorDir := filepath.Join(candidate, proven.MirrorDir)
+		if _, err := os.Stat(filepath.Join(mirrorDir, "checkpoint")); !errors.Is(err, fs.ErrNotExist) {
+			dir = mirrorDir
+			break
+		}
 	}
-	dir := filepath.Join(a.cfg.RunDir, proven.MirrorDir)
-	// A first start has no mirror, and neither does a node that crashed
-	// before its first copy finished: the checkpoint is written last
-	// (mirror.Write), so without one there is no head to restore and nothing
-	// worth saying.
-	if _, err := os.Stat(filepath.Join(dir, "checkpoint")); errors.Is(err, fs.ErrNotExist) {
+	if dir == "" {
 		return
 	}
 	mirror := logclient.Dir(dir)

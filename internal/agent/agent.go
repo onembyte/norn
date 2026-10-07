@@ -128,6 +128,12 @@ type Config struct {
 	Mode     reconcile.Mode
 	// RunDir receives proven.json and its bundles; empty means do not publish.
 	RunDir string
+	// StateDir keeps what must outlive a reboot, not just a process: the
+	// mirror this node verified, whose head it holds across a restart
+	// (D-069), and the evidence of a fork, whose presence is the freeze
+	// (§11). `/run` is cleared at boot, so the two cannot share it. Empty
+	// means RunDir, which is what a node did before the two were separated.
+	StateDir string
 	// Now is this node's wall clock. It is used for expiry (§5.3 `expires` is
 	// written in wall time by whoever signed the entry) and for the
 	// `written_at_local_clock` field -- never for freshness.
@@ -274,6 +280,28 @@ func New(cfg Config) (*Agent, error) {
 	agent.loadFreeze()
 	agent.restoreHead()
 	return agent, nil
+}
+
+// stateDir is where this node keeps what must outlive a reboot: Config.StateDir,
+// or the run directory when none was given.
+func (a *Agent) stateDir() string {
+	if a.cfg.StateDir != "" {
+		return a.cfg.StateDir
+	}
+	return a.cfg.RunDir
+}
+
+// stateDirs is where state may be found at start: the state directory, then
+// the run directory, where a version before the two were separated kept it.
+// An upgrade is a restart too, and must not be the one that forgets.
+func (a *Agent) stateDirs() []string {
+	var dirs []string
+	for _, dir := range []string{a.stateDir(), a.cfg.RunDir} {
+		if dir != "" && (len(dirs) == 0 || dirs[0] != dir) {
+			dirs = append(dirs, dir)
+		}
+	}
+	return dirs
 }
 
 // Mode reports the mode this agent runs in.
@@ -444,13 +472,15 @@ func (a *Agent) Once() error {
 		if err := proven.Write(a.cfg.RunDir, set, result); err != nil {
 			return err
 		}
+	}
+	if verifyErr == nil && a.stateDir() != "" {
 		// Keep what was verified, so this node can serve it to peers rather
 		// than only vouch for it (GOSSIP part 6). Every mode does this,
 		// including observe: a node that only watches is exactly the one you
 		// want serving the mesh, because it is the one nobody is worried
 		// about. A failure here is worth reporting and not worth stopping a
 		// cycle for -- enforcement does not depend on it.
-		if err := mirror.Write(filepath.Join(a.cfg.RunDir, proven.MirrorDir),
+		if err := mirror.Write(filepath.Join(a.stateDir(), proven.MirrorDir),
 			result.Checkpoint, result.SignedCheckpoint, result.Served); err != nil {
 			a.emit(Event{Kind: MirrorFailed, Message: err.Error()})
 		}

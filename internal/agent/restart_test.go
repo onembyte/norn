@@ -24,9 +24,18 @@ import (
 func restartable(t *testing.T, logDir, runDir string, device peertable.Device,
 	rec *recorder) *Agent {
 	t.Helper()
+	return rebootable(t, logDir, runDir, "", device, rec)
+}
+
+// rebootable is restartable with the state directory apart from the run
+// directory, as `nornd` lays them out: a reboot empties the one and not the
+// other.
+func rebootable(t *testing.T, logDir, runDir, stateDir string, device peertable.Device,
+	rec *recorder) *Agent {
+	t.Helper()
 	a, err := New(Config{
 		Anchor: anchor(t), Fetcher: logclient.Dir(logDir), Device: device,
-		Mode: reconcile.Owner, RunDir: runDir, Emit: rec.emit,
+		Mode: reconcile.Owner, RunDir: runDir, StateDir: stateDir, Emit: rec.emit,
 		Now:  func() time.Time { return time.Unix(fixtureCosignedAt, 0) },
 		Mono: func() time.Duration { return 0 },
 	})
@@ -318,4 +327,98 @@ func TestARestartKeepsARaisedQuorum(t *testing.T) {
 	if code, _ := refusal.CodeOf(err); code != refusal.Quorum {
 		t.Errorf("refused as %q, want %q: %v", code, refusal.Quorum, err)
 	}
+}
+
+// SEC-006, and D-069's other half. `nornd`'s run directory is `/run/norn`, a
+// tmpfs on every systemd host, so a freeze and a held head kept there survived
+// a process restart and vanished at a reboot -- and power-cycling a host is a
+// restart an attacker can cause too. A reboot here is a new, empty run
+// directory and the same state directory.
+func TestAFreezeAndAHeldHeadSurviveAReboot(t *testing.T) {
+	t.Run("the held head", func(t *testing.T) {
+		dir, store, entries := writableLog(t)
+		runDir, stateDir := t.TempDir(), t.TempDir()
+		fake := peertable.NewFake()
+		first := rebootable(t, dir, runDir, stateDir, fake, &recorder{})
+		appendRevoke(t, store, "nas", uint64(len(entries)))
+		if err := first.Once(); err != nil {
+			t.Fatal(err)
+		}
+		// What is published stays where readers look for it; what must
+		// outlive the boot goes where the boot leaves it.
+		if _, err := os.Stat(filepath.Join(runDir, proven.FileName)); err != nil {
+			t.Errorf("proven.json is not in the run directory: %v", err)
+		}
+		if _, err := os.Stat(filepath.Join(stateDir, proven.MirrorDir, "checkpoint")); err != nil {
+			t.Errorf("the mirror is not in the state directory: %v", err)
+		}
+		if _, err := os.Stat(filepath.Join(runDir, proven.MirrorDir)); err == nil {
+			t.Error("the mirror is still written to the run directory")
+		}
+
+		rebooted := rebootable(t, shorterLog(t, entries), t.TempDir(), stateDir, fake, &recorder{})
+		err := rebooted.Once()
+		if code, _ := refusal.CodeOf(err); code != refusal.Rollback {
+			t.Fatalf("after a reboot an older head was not refused as a rollback: %v", err)
+		}
+		if peers, _ := fake.Peers(); holds(peers, keyOfDevice(t, "nas")) {
+			t.Fatal("a reboot un-revoked a device")
+		}
+	})
+	t.Run("the freeze", func(t *testing.T) {
+		real, _, entries := writableLog(t)
+		stateDir := t.TempDir()
+		first := rebootable(t, real, t.TempDir(), stateDir, peertable.NewFake(), &recorder{})
+		if err := first.Once(); err != nil {
+			t.Fatal(err)
+		}
+		first.cfg.Fetcher = logclient.Dir(forkedLog(t, entries, 40))
+		_ = first.Once()
+		if !first.Frozen() {
+			t.Fatal("the fork was not caught, so nothing here is tested")
+		}
+
+		rebooted := rebootable(t, real, t.TempDir(), stateDir, peertable.NewFake(), &recorder{})
+		if !rebooted.Frozen() {
+			t.Fatal("a node that proved its log forked forgot it at a reboot")
+		}
+	})
+}
+
+// A node upgraded in place -- the process restarted, the machine did not --
+// still has its freeze and its mirror under the run directory, where the
+// version before the split kept them. Upgrading must not be the restart that
+// forgets them.
+func TestStateLeftInTheRunDirectoryIsStillHonoured(t *testing.T) {
+	t.Run("the held head", func(t *testing.T) {
+		dir, store, entries := writableLog(t)
+		runDir := t.TempDir()
+		fake := peertable.NewFake()
+		if err := func() error {
+			appendRevoke(t, store, "nas", uint64(len(entries)))
+			return restartable(t, dir, runDir, fake, &recorder{}).Once()
+		}(); err != nil {
+			t.Fatal(err)
+		}
+		upgraded := rebootable(t, shorterLog(t, entries), runDir, t.TempDir(), fake, &recorder{})
+		err := upgraded.Once()
+		if code, _ := refusal.CodeOf(err); code != refusal.Rollback {
+			t.Fatalf("after an upgrade an older head was not refused as a rollback: %v", err)
+		}
+	})
+	t.Run("the freeze", func(t *testing.T) {
+		real, _, entries := writableLog(t)
+		runDir := t.TempDir()
+		first := restartable(t, real, runDir, peertable.NewFake(), &recorder{})
+		if err := first.Once(); err != nil {
+			t.Fatal(err)
+		}
+		first.cfg.Fetcher = logclient.Dir(forkedLog(t, entries, 40))
+		_ = first.Once()
+
+		upgraded := rebootable(t, real, runDir, t.TempDir(), peertable.NewFake(), &recorder{})
+		if !upgraded.Frozen() {
+			t.Fatal("an upgrade forgot a freeze the previous version had written")
+		}
+	})
 }
