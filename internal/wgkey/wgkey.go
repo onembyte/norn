@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -110,6 +111,10 @@ func WritePrivate(path string, private []byte) error {
 		return fmt.Errorf("wgkey: %w", err)
 	}
 
+	return publishKey(path, []byte(Format(private)+"\n"), (*os.File).Sync)
+}
+
+func publishKey(path string, raw []byte, syncFile func(*os.File) error) error {
 	temp, err := os.CreateTemp(filepath.Dir(path), ".norn-wg-*")
 	if err != nil {
 		return fmt.Errorf("wgkey: %w", err)
@@ -119,14 +124,41 @@ func WritePrivate(path string, private []byte) error {
 		temp.Close()
 		return fmt.Errorf("wgkey: %w", err)
 	}
-	if _, err := temp.WriteString(Format(private) + "\n"); err != nil {
+	if _, err := temp.Write(raw); err != nil {
+		temp.Close()
+		return fmt.Errorf("wgkey: %w", err)
+	}
+	// Flush the bytes before publishing a name that another process can read.
+	if err := syncFile(temp); err != nil {
 		temp.Close()
 		return fmt.Errorf("wgkey: %w", err)
 	}
 	if err := temp.Close(); err != nil {
 		return fmt.Errorf("wgkey: %w", err)
 	}
-	if err := os.Rename(temp.Name(), path); err != nil {
+	// Linking is exclusive: a name created after Stat must never be replaced.
+	if err := os.Link(temp.Name(), path); err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return fmt.Errorf("wgkey: %s already exists; remove it deliberately if you mean to replace that key", path)
+		}
+		return fmt.Errorf("wgkey: %w", err)
+	}
+	// Remove the temporary before flushing the directory, so both name changes
+	// survive together with the already-synced key bytes.
+	if err := os.Remove(temp.Name()); err != nil {
+		return fmt.Errorf("wgkey: %w", err)
+	}
+	// Windows cannot open a directory for writing and orders its metadata
+	// itself, so the directory sync is skipped there, as internal/durable does.
+	if runtime.GOOS == "windows" {
+		return nil
+	}
+	dir, err := os.Open(filepath.Dir(path))
+	if err != nil {
+		return fmt.Errorf("wgkey: %w", err)
+	}
+	defer dir.Close()
+	if err := syncFile(dir); err != nil {
 		return fmt.Errorf("wgkey: %w", err)
 	}
 	return nil
