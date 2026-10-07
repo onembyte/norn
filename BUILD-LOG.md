@@ -611,7 +611,7 @@ plan before the first line of code, and stops at **[decision]** and **[user]**.
 | 6.5m-sec | HS | Triage the security audit that never reached master | each of SEC-001…SEC-036 on branch `claude/tender-mccarthy-bzllsp` recorded as confirmed on master (with the test that shows it), fixed on master (by what), or not reproducible (what was tried); each confirmed one a row of its own, a confirmed critical ahead of H2; protocol questions as DECISION blocks. The branch's `6.5m-i`…`6.5m-vi` commit labels are unrelated to this table | ⬜ |
 | 6.5m-sec-a | HS-a | SEC-001…SEC-015 against master | SEC-001 first | ⬜ |
 | 6.5m-sec-a-i | HS-a-i | SEC-001 against master | reproduced or refuted in Go, in the Python reference and in the shipped vectors; a DECISION block if confirmed | ✅ |
-| 6.5m-sec-a-ii | HS-a-ii | SEC-002…SEC-008 against master | one line each, with the evidence | ⬜ |
+| 6.5m-sec-a-ii | HS-a-ii | SEC-002…SEC-008 against master | one line each, with the evidence | ✅ |
 | 6.5m-sec-a-iii | HS-a-iii | SEC-009…SEC-015 against master | one line each, with the evidence | ⬜ |
 | 6.5m-sec-b | HS-b | SEC-016…SEC-036 against master | — | ⬜ |
 | 6.5m-sec-c | HS-c | Confirmed findings become rows | placed by severity in `HARDENING-PLAN.md` and here | ⬜ |
@@ -636,6 +636,14 @@ plan before the first line of code, and stops at **[decision]** and **[user]**.
 | 7.0 | H17 | `ACTION-PLAN.md` and the email draft | a test plan for the owner; an email drafted in the form `wireguard.com` asks for, read from the page at the time; a pre-send checklist; **nothing sent** | ⬜ |
 | U1 | — | Observe mode on the homelab mesh (6.5m-vii) | **[user]** one node a day, then every node for seven days | ⬜ |
 | U2–U7 | — | Lab, nginx, OpenTimestamps, NAS, phone enrollment, LocalAPI on a real node, outside people | **[user]** `HARDENING-PLAN.md` Stage G | ⬜ |
+
+- **6.5m-sec-a-ii — SEC-002…SEC-008 checked against master: two fixed, three partly fixed, and two confirmed holes that matter more than their labels.**
+  - **The table** is under "AUDIT TRIAGE" with the decision blocks; every line was checked here, by reading master's code or with a throwaway probe that was deleted after running.
+  - **The worst find: SEC-005 (a), rated medium, defeats the freeze outright.** A node holding a shorter branch and served the longer one raises FORK and freezes, but cannot build evidence. It writes no file, and after a restart it is no longer frozen. A forking log only has to show its victims the longer branch, which is the natural shape of a growing log. The branch fixed this in `bdb3086`; master never got it. It goes ahead of H2.
+  - **SEC-004's remainder:** H1 made the head survive, not the clock. A view the same process called `degraded` two hours on is `fresh` again after a restart on the same head, because the witness clock starts at the first head it sees. And a restarted node asks no peers until something verifies, so a node rebooted while its log is down cannot use gossip.
+  - **SEC-002:** the gossip half was fixed by 6.5l-vii-d-xii-ii. What is left is a wrong number in README G2: two k-of-N quorums share 2k−N witnesses, not k. There is also a policy nothing warns about, and a monitor that never compares heads.
+  - **Fixed already:** SEC-006 (by H1-d), SEC-007 for nodes (by d-xii-ii). **Confirmed:** SEC-003 (H2), SEC-008 (no `revoke`, `rotate` or governance tooling, while the runbooks document them).
+  - **Gate:** generators first (no change under `testdata/`), then `make test` (race) alone, green in all 49 packages with tests; `vectors-check`, 221 reference tests, `lint`, `fmt-check`, `vet` clean. No code changed in this step.
 
 - **6.5m-sec-a-i — SEC-001 is real on master, in both implementations and in the vectors; a decision is raised and the documents stop claiming otherwise.**
   - **Read from the branch, not checked out:** `git show origin/claude/tender-mccarthy-bzllsp:docs/audit/SECURITY_AUDIT.md`. The claim: re-appending a past entry with one junk signature re-applies it, because `dup-entry` hashes raw bytes and `sigs` is outside every preimage.
@@ -2099,6 +2107,23 @@ verifier (§10) and the fork-evidence checker (§11.1) each get a closed
 vocabulary in §5.2's style, and `cases.json` names codes instead of substrings.
 The question as it was put, and the two rejected options, are in `DECISIONS.md`
 under D-061.
+
+---
+
+## AUDIT TRIAGE — SEC-001…SEC-036 against master (6.5m-sec, from 2026-10-07)
+
+The audit lives on branch `claude/tender-mccarthy-bzllsp` (`docs/audit/SECURITY_AUDIT.md`) and was read with `git show`, never checked out. Every line below was checked against master, not taken from the audit. A **probe** is a throwaway test, run and deleted, never committed. "Row" names where the work goes; HS-c places each row.
+
+| SEC | Audit's severity | On master | Evidence | Row |
+|---|---|---|---|---|
+| 001 | critical | **Confirmed.** A past entry re-appended with one junk signature applies again: `spare` returns, the 3-of-3 quorum falls to 2-of-3 | probes in Go and Python; `log/70` and `log/89` share a preimage and are both accepted | 6.5m-sec-001a, 001b **[decision]** |
+| 002 | critical (composite) | **Partly fixed.** Periodic checkpoint gossip landed in 6.5l-vii-d-xii-ii, so nodes on two branches compare heads every `T_g` (`TestHealthyButSplitLogFindsTheOtherBranchByCheckpointGossip`). **Open:** (1) README G2 says "fewer than k witnesses colluding", but two k-of-N quorums share only 2k−N witnesses — one under a 2-of-3 policy; (2) genesis and trust validation accept a policy whose quorums need not intersect, and say nothing; (3) the monitor verifies each node alone and never compares a node's head with the log's | README line 91; `internal/monitor/watch.go` has no stored head and no comparison | new: bound and policy warning; monitor cross-check |
+| 003 | high | **Confirmed open.** `gossip.Peer.Fetch` uses `http.Get`, with no timeout | `internal/gossip/server.go` | H2, porting the branch's `4f7732d` |
+| 004 | high | **Mostly fixed by H1** (D-069). **Open:** (1) the witness clock restarts at the first head seen — a view the same process called `degraded` two hours later is `fresh` again after a restart on the same head; (2) a restarted node asks no peers until something verifies, because `PeerAddresses` reads only what verified in this process, so a node rebooted while its log is down cannot use gossip | probe (freshness: `degraded` → restart → `fresh`); `agent.go` `PeerAddresses` | new: conservative clock at restart; peers from the held head |
+| 005 | medium | **(a) Confirmed:** a node holding a 16-entry forked branch, served the real 138-entry log, raises FORK and freezes, but "the evidence could not be written" (0 files), and after a restart it is **not frozen**. A forking log only has to show the longer branch. The branch fixed this in `bdb3086`. **(b) Confirmed by reading:** `forkevidence.Check` takes one log key, and the agent, `pollEvidence` and `verify-evidence` pass the trust file's, so after a rotation a node's own evidence fails its self-check. **(c) Confirmed by reading:** peer evidence is checked under the trust file's policy, not the published one. **Also open:** no freeze marker when evidence cannot be built; `loadFreeze` runs no `Check`. **Fixed:** both writers are durable (H1-d-iii) | probe (FORK, 0 files, unfrozen after restart); `evidence.go` `Check(ev, origin, logVKey, readerPolicy)` | new, ahead of H2: longer-branch evidence and a freeze that cannot be lost; then keys and policy for `Check` |
+| 006 | medium | **Fixed by H1-d**: `state_dir` defaults to `/var/lib/norn`, evidence is durable, and tmpfs is warned about. Refusing to start was rejected in D-069 | 6.5m-i-d-i…iv | — |
+| 007 | medium | **Fixed for nodes** by 6.5l-vii-d-xii-ii. The monitor half is SEC-002 (3) | as 002 | as 002 |
+| 008 | medium | **Confirmed.** `norn sign` refuses every type but `enroll` (`sign.go`); there is no `revoke`, `rotate` or governance command (`main.go` lists ten); `ENROLLMENT.md` §4–5 and runbooks R1–R10 document commands that do not exist | `cmd/norn/main.go`, `sign.go` | new: the tools, and until then the documents say only `enroll` exists |
 
 ---
 
