@@ -181,6 +181,20 @@ wholesale; a finding is believed only when reproduced against master.
   its name. Findings that change what a conforming implementation accepts
   wait on a DECISION per §1 rule 7.
 
+#### HS-001 · 6.5m-sec-001a/b · SEC-001, confirmed 2026-10-07 ⏱3 🔒
+*Confirmed in Go, in the Python reference and in the vectors (6.5m-sec-a-i):*
+a past entry re-appended with one unresolvable signature is accepted again.
+- a. **No decision needed:** `norn-log` refuses a submission whose
+  signature preimage it already holds (409, naming the index); `norn monitor`
+  alarms on any entry whose preimage repeats an earlier one. Red first for
+  both; controls. Closes the outsider's route through an honest log; does not
+  stop a malicious one.
+- b. **[decision]** The protocol fix, as the DECISION block settles —
+  recommended: `dup-entry` keyed on the signed content. Both implementations,
+  §4.0/§5.1/§5.2/§12.1, the log regenerated once with the negatives, vector 89
+  re-declared, the "open defect" notes removed from README and
+  `THREAT-MODEL.md`.
+
 #### H2 · 6.5m-ii · Network budgets: no fetch can stall enforcement (F2) ⏱2 🔒
 *Why:* `gossip.Peer.Fetch` (`internal/gossip/server.go:111`) uses
 `http.Get` — Go's default client, no timeout — inside `Once()`, which the

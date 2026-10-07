@@ -89,7 +89,7 @@ twelve adversaries, is `THREAT-MODEL.md`.
 |---|---|---|
 | **G1** | Every peer in the table has an inclusion proof under a checkpoint the node accepted, and replays to `active`. | correct verifier · intact `norn.trust` · fewer than k faulty witnesses |
 | **G2** | Two honest nodes never accept incompatible histories; a fork yields non-repudiable proof and is held forever. | fewer than k witnesses colluding with the log · Ed25519 + SHA-256 |
-| **G3** | The log can publish garbage; it cannot grant access. Replay admits only entries valid under the signer state at that point. | signer keys not compromised |
+| **G3** | The log can publish garbage; it cannot grant access. Replay admits only entries valid under the signer state at that point. **Open defect SEC-001:** a past entry re-appended with one junk signature applies again — a fix awaits a decision (`BUILD-LOG.md`). | signer keys not compromised |
 | **G4** | A node on a stale checkpoint goes `degraded` and alarms; a revocation lands within a bounded window or somebody is told. | one honest path to a fresh checkpoint — the log **or** a peer |
 | **G5** | Every accepted key traces to an entry signed by an identifiable signer. | a monitor exists and runs |
 | **G6** | A node never trusts a log, witness set or genesis it was not provisioned with. | an out-of-band channel |

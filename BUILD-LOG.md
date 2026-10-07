@@ -610,8 +610,13 @@ plan before the first line of code, and stops at **[decision]** and **[user]**.
 | 6.5m-i-e | H1-e | D-069 written down | `DECISIONS.md` D-069; `SPEC.md` §13.2 says the stored checkpoint and what the node learned from it persist across a restart and a reboot and are compared before anything is adopted; `ENFORCEMENT.md` §8's crash row; a `docclaims` guard | ✅ |
 | 6.5m-sec | HS | Triage the security audit that never reached master | each of SEC-001…SEC-036 on branch `claude/tender-mccarthy-bzllsp` recorded as confirmed on master (with the test that shows it), fixed on master (by what), or not reproducible (what was tried); each confirmed one a row of its own, a confirmed critical ahead of H2; protocol questions as DECISION blocks. The branch's `6.5m-i`…`6.5m-vi` commit labels are unrelated to this table | ⬜ |
 | 6.5m-sec-a | HS-a | SEC-001…SEC-015 against master | SEC-001 first | ⬜ |
+| 6.5m-sec-a-i | HS-a-i | SEC-001 against master | reproduced or refuted in Go, in the Python reference and in the shipped vectors; a DECISION block if confirmed | ✅ |
+| 6.5m-sec-a-ii | HS-a-ii | SEC-002…SEC-008 against master | one line each, with the evidence | ⬜ |
+| 6.5m-sec-a-iii | HS-a-iii | SEC-009…SEC-015 against master | one line each, with the evidence | ⬜ |
 | 6.5m-sec-b | HS-b | SEC-016…SEC-036 against master | — | ⬜ |
 | 6.5m-sec-c | HS-c | Confirmed findings become rows | placed by severity in `HARDENING-PLAN.md` and here | ⬜ |
+| 6.5m-sec-001a | HS-001a | SEC-001's outside route closed, and its use seen | `norn-log` refuses a submission whose signature preimage it already holds (409 naming the index), and `norn monitor` raises an alarm on any entry whose preimage repeats an earlier one. Neither changes what a verifier accepts, so neither waits on the decision; neither is the fix either — a malicious log can still append | ⬜ |
+| 6.5m-sec-001b | HS-001b | SEC-001 fixed in the protocol **[decision]** | as the DECISION block on SEC-001 settles: both implementations, §4.0/§5.1/§5.2/§12.1, the log grown with the negatives, vector 89 re-declared | ⬜ |
 | 6.5m-ii | H2 | Network budgets (F2, SEC-003) | a peer or log that never answers cannot stop a cycle from reconciling: the branch's `4f7732d` client and tests ported first, then a per-round and a per-verify budget, each with a hanging-server test | ⬜ |
 | 6.5m-iii | H3 | An unchanged head is a reconcile-only cycle (F3a) | 50 cycles over an unchanged log fetch the checkpoint 50 times and no bundle or tile; a periodic full re-verify still catches tiles corrupted later | ⬜ |
 | 6.5m-iv | H4 | Incremental fetch and replay (F3b–c) | a resumable replayer equal to a full replay at every split point; `VerifyFrom` equal to `Verify` code for code on every served, detect and checkpoint negative; one new entry fetches one bundle and the changed tiles | ⬜ |
@@ -631,6 +636,14 @@ plan before the first line of code, and stops at **[decision]** and **[user]**.
 | 7.0 | H17 | `ACTION-PLAN.md` and the email draft | a test plan for the owner; an email drafted in the form `wireguard.com` asks for, read from the page at the time; a pre-send checklist; **nothing sent** | ⬜ |
 | U1 | — | Observe mode on the homelab mesh (6.5m-vii) | **[user]** one node a day, then every node for seven days | ⬜ |
 | U2–U7 | — | Lab, nginx, OpenTimestamps, NAS, phone enrollment, LocalAPI on a real node, outside people | **[user]** `HARDENING-PLAN.md` Stage G | ⬜ |
+
+- **6.5m-sec-a-i — SEC-001 is real on master, in both implementations and in the vectors; a decision is raised and the documents stop claiming otherwise.**
+  - **Read from the branch, not checked out:** `git show origin/claude/tender-mccarthy-bzllsp:docs/audit/SECURITY_AUDIT.md`. The claim: re-appending a past entry with one junk signature re-applies it, because `dup-entry` hashes raw bytes and `sigs` is outside every preimage.
+  - **Reproduced** with throwaway probes, deleted after running and never committed. Go: `37-enroll-spare` plus one unresolvable `signer` signature appended at index 138 is accepted, and `spare` goes from revoked to **active**. `28-policy` the same way is accepted, and the quorum falls from 3-of-3 to **2-of-3**. The first probe's junk `kid` sorted first and was refused `decode`, because `sigs` must be sorted by `kid` (6.5k). Sorted last, it passes, as the audit says. The Python reference gives the same two results. In the shipped log, `70-profile-base` and `89-two-sig-base` share a preimage and are both accepted, so the suite pins the behaviour. The other repeated preimages in the fixture (1/13, 4/85, 0/113) are exact byte repeats and are refused `dup-entry`, which is D-031 working as written.
+  - **Raised:** DECISION NEEDED — 6.5m-sec-001b, recommending that duplicates be keyed on the signed content (option A), which is what D-031 was for. Two rows follow from it: 6.5m-sec-001a, an interim mitigation that needs no decision, and 6.5m-sec-001b, the fix.
+  - **Documents corrected now, not after the fix.** README G3 and `THREAT-MODEL.md` A2 ("Harmless") and G3 each carry an "open defect SEC-001" note. A security claim known to be false does not stay on the page while a decision is pending.
+  - **The audit's "deferred by the maintainer"** cannot be traced to a decision by the owner. It is recorded as the branch's claim, not as a fact.
+  - **Gate:** generators first (no change under `testdata/`), then `make test` (race) alone, green in all 49 packages with tests; `vectors-check`, 221 reference tests, `lint`, `fmt-check`, `vet` clean. No code changed in this step.
 
 - **6.5m-i-e — D-069 written down where each reader looks; H1 closes.**
   - **`DECISIONS.md` D-069.** What a node held outlives a restart and a reboot: the stored checkpoint (as the mirror), the keys and policy it learned, and fork evidence, all in a persistent state directory. The restored head is held and not enforced until something verifies. It records the four rejected readings (enforce at once; refuse to start on tmpfs; persist only the checkpoint; hash-named evidence) and the cost, including the one thing not yet true: the mirror surviving a power cut (H4-f).
@@ -2086,6 +2099,33 @@ verifier (§10) and the fork-evidence checker (§11.1) each get a closed
 vocabulary in §5.2's style, and `cases.json` names codes instead of substrings.
 The question as it was put, and the two rejected options, are in `DECISIONS.md`
 under D-061.
+
+---
+
+## DECISION NEEDED — 6.5m-sec-001b: an entry re-appended with one junk signature applies again (audit SEC-001, confirmed 2026-10-07)
+
+**What is true on master today**, reproduced three ways (6.5m-sec-a-i):
+
+- **Go:** the shipped 138-entry log plus `37-enroll-spare` re-appended with one extra, correctly sorted `signer` signature whose `kid` resolves to nothing. It is **accepted**, and `spare`, revoked at entry 39, is **active** again. `28-policy` re-appended the same way is accepted, and the quorum falls from three of three to **two of three** — the rotation at entry 49 is undone.
+- **The Python reference**, the same two entries: the same results.
+- **The vectors:** `log/70-profile-base` and `log/89-two-sig-base` have the same signature preimage and different `sigs`, and the manifest requires both accepted. The conformance suite pins the behaviour.
+
+**Why.** `dup-entry` (§5.1 step 1, D-031) is keyed on the entry's bytes. `sigs` is outside every signature's preimage (§4.2), and a signature whose `kid` does not resolve is ignored rather than fatal (§5.2). So any past entry plus one unresolvable signature — or minus a surplus one, or with a role changed — is a new entry hash whose original signatures still count. No key is needed, and `norn-log`'s `/add` takes no credentials: its acceptance check is replay. G3 ("the log can publish garbage; it cannot grant access") is false, and so is D-031's own purpose — it was written to stop exactly this resurrection, and keyed "exact entry" on the wrong bytes.
+
+**The question:** what makes two entries the same entry, for `dup-entry`?
+
+| Option | What changes | Cost |
+|---|---|---|
+| **A. The signed content (recommended).** Key the seen set on SHA-256 of the signature preimage — the envelope without `sigs` — for every entry that decodes, and on the raw bytes for one that does not. Accepted or rejected, as D-031 already says. | §4.0 names the hash; §5.1 step 1 uses it; §5.2's `dup-entry` reads "an entry whose signed content was already seen". D-031 is superseded by its own intent. Both implementations. `norn-log` refuses a sig-variant resubmission. `log/89` becomes `dup-entry`. New negatives: an extra unresolvable signature, a dropped surplus signature and a changed role, each on enroll-after-revoke, a rotate rollback, `signer_add` after `signer_remove`, and a policy rollback. | An under-signed entry that reaches the log burns its preimage: the signers re-issue it with a new `ts`. That is already true of an exact rejected entry under D-031, so the rule gets simpler, not stricter in kind. |
+| B. Refuse any signature that does not verify or resolve, as `decode`. | Closes the junk-signature route only. | A dropped surplus signature or a changed role still re-applies, so the hole stays open. Rejected. |
+| C. Remember preimages of accepted entries only. | Closes re-application of accepted entries. | Re-opens D-031's window: a rejected entry plus a junk signature is re-evaluated later against a changed state. Rejected. |
+| D. Document it and defer it (the branch's `docs/audit/ROADMAP.md` "D-a"). | Nothing. | G3 stays false and the suite keeps requiring the vulnerable behaviour. I have found no record that you chose this; the branch says "deferred by the maintainer", and that session's records have been wrong before (6.5l-vii-a). |
+
+**Recommendation: A.** It is the smallest rule that closes every variant, and it is what D-031 meant.
+
+**What goes ahead without waiting** (row 6.5m-sec-001a): `norn-log` refuses a submission whose preimage it already holds, and `norn monitor` alarms on a repeated preimage. Neither changes what a verifier accepts. They close the outsider's route through an honest log, and they make a malicious log's use of it visible. They are not the fix.
+
+**The documents now say so.** README G3, `THREAT-MODEL.md` A2 and G3 carry an "open defect SEC-001" note until 6.5m-sec-001b lands.
 
 ---
 
