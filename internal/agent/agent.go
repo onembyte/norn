@@ -197,9 +197,13 @@ type Agent struct {
 	// node's only clock for deciding whether what it holds is current.
 	clock freshness.Clock
 	// frozen means this node has proof its log forked and will accept nothing
-	// further under this anchor (§11). frozenBy names the evidence.
-	frozen   bool
-	frozenBy string
+	// further under this anchor (§11). frozenBy names the evidence, and
+	// frozenNote says why that file is not itself proof when it is not: a
+	// marker's reason, or evidence that no longer verifies under this trust
+	// file. The freeze does not depend on either.
+	frozen     bool
+	frozenBy   string
+	frozenNote string
 	// evidenceAsked is the monotonic reading of the last evidence round.
 	evidenceAsked    time.Duration
 	evidenceAskedSet bool
@@ -377,10 +381,14 @@ func (a *Agent) Once() error {
 	// evidence that this log signs whatever suits it, and "it looks fine
 	// again" is not a reason to believe it.
 	if a.frozen {
+		note := ""
+		if a.frozenNote != "" {
+			note = "; " + a.frozenNote
+		}
 		a.emit(Event{Kind: Frozen, Message: fmt.Sprintf(
 			"refusing every checkpoint: this node holds proof that its log forked "+
-				"(%s). The peer table is left exactly as it is. Only a new trust "+
-				"file clears this (§11).", a.frozenBy)})
+				"(%s%s). The peer table is left exactly as it is. Only a new trust "+
+				"file clears this (§11).", a.frozenBy, note)})
 		return errors.New("agent: frozen by a proven fork; the interface is untouched")
 	}
 

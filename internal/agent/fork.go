@@ -64,6 +64,9 @@ func (a *Agent) loadFreeze() {
 			lines := strings.SplitN(string(raw), "\n", 3)
 			if len(lines) >= 2 && lines[0] == freezeMagic && lines[1] == a.cfg.Anchor.Origin {
 				a.frozen, a.frozenBy = true, path
+				if len(lines) == 3 {
+					a.frozenNote = "a marker, not evidence: " + strings.TrimSpace(lines[2])
+				}
 				return
 			}
 			continue // torn, or somebody else's network
@@ -75,7 +78,18 @@ func (a *Agent) loadFreeze() {
 		if !strings.HasPrefix(evidence.Held, a.cfg.Anchor.Origin+"\n") {
 			continue // somebody else's network
 		}
+		// Checked as a stranger would check it -- and the freeze holds either
+		// way. This node wrote the file when it had proof; the usual way it
+		// stops verifying is a rotated trust file (SEC-005 b), and a file that
+		// would not convince anybody else is something the operator has to
+		// know before carrying it to the witness operators, not a reason to
+		// start enforcing again.
 		a.frozen, a.frozenBy = true, path
+		if _, err := forkevidence.Check(evidence, a.cfg.Anchor.Origin,
+			a.cfg.Anchor.LogKey, a.cfg.Anchor.Policy); err != nil {
+			a.frozenNote = fmt.Sprintf("the evidence does not verify under this trust "+
+				"file (%v), so it would not convince anybody else; the freeze stands", err)
+		}
 		return
 	}
 }
@@ -134,6 +148,7 @@ func (a *Agent) adoptEvidence(from string, raw []byte) {
 		if marker, markErr := a.freezeWithoutEvidence(fmt.Sprintf(
 			"peer %s proved a fork; its evidence could not be kept: %v", from, err)); markErr == nil {
 			a.frozenBy, kept = marker, "a freeze marker is kept at "+marker
+			a.frozenNote = "a marker, not evidence: " + err.Error()
 		} else {
 			kept += " (" + markErr.Error() + ")"
 		}
@@ -230,6 +245,7 @@ func (a *Agent) recordFork(fork *logclient.ForkError) {
 		kept := "and no freeze marker could be kept either"
 		if marker, markErr := a.freezeWithoutEvidence(fmt.Sprintf("%v: %v", fork, err)); markErr == nil {
 			a.frozenBy, kept = marker, "a freeze marker is kept at "+marker
+			a.frozenNote = "a marker, not evidence: " + err.Error()
 		} else {
 			kept += " (" + markErr.Error() + ")"
 		}

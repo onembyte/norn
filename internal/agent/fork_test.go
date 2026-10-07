@@ -681,3 +681,98 @@ func TestAFreezeMarkerIsHonouredOnlyForItsOwnNetwork(t *testing.T) {
 		t.Error("a freeze marker for another network froze this node")
 	}
 }
+
+// rotatedAnchor is this network's trust file after a log-key rotation: the
+// same origin, a different log key, and the policy's `log` line to match
+// (§9.1). It is what an operator provisions after R7, and it is **not** a
+// new network -- §11's reset is a new trust file for a different origin, not
+// a rotated one for the same.
+func rotatedAnchor(t *testing.T) *trust.Trust {
+	t.Helper()
+	doc := *anchor(t)
+	rotated := note.VerifierKey(doc.Origin, fixtureKey(t, "logkey2").Public().(ed25519.PublicKey))
+	doc.Policy = strings.Replace(doc.Policy, doc.LogKey, rotated, 1)
+	doc.LogKey = rotated
+	return &doc
+}
+
+func frozenMessage(rec *recorder) string {
+	for _, e := range rec.events {
+		if e.Kind == Frozen {
+			return e.Message
+		}
+	}
+	return ""
+}
+
+// SEC-005 (a), last part. A freeze file found at start is checked, as a
+// stranger would check it. But a file that no longer proves the fork is not
+// a reason to run: it was written by this node when it had proof, and the
+// usual way it stops verifying is a rotated trust file (SEC-005 b) -- so the
+// node stays frozen and the alarm says the file would not convince anybody
+// else, which is what the operator has to know before carrying it anywhere.
+func TestEvidenceThatNoLongerVerifiesStillFreezesAndSaysSo(t *testing.T) {
+	real, _, entries := writableLog(t)
+	stateDir := t.TempDir()
+	a := rebootable(t, real, t.TempDir(), stateDir, peertable.NewFake(), &recorder{})
+	if err := a.Once(); err != nil {
+		t.Fatal(err)
+	}
+	a.cfg.Fetcher = logclient.Dir(forkedLog(t, entries, 40))
+	_ = a.Once()
+	if files, _ := filepath.Glob(filepath.Join(stateDir, ForkDir, "*.evidence")); len(files) != 1 {
+		t.Fatalf("evidence files = %v, want one", files)
+	}
+
+	rec := &recorder{}
+	restarted, err := New(Config{Anchor: rotatedAnchor(t), Fetcher: logclient.Dir(real),
+		Device: peertable.NewFake(), StateDir: stateDir, Emit: rec.emit,
+		Now: func() time.Time { return time.Unix(fixtureCosignedAt, 0) }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !restarted.Frozen() {
+		t.Fatal("a rotated trust file for the same network unfroze the node")
+	}
+	_ = restarted.Once()
+	if msg := frozenMessage(rec); !strings.Contains(msg, "does not verify") {
+		t.Errorf("the alarm should say the evidence no longer verifies under this trust "+
+			"file: %q", msg)
+	}
+}
+
+// And evidence that does verify is reported as proof, with no doubt attached.
+func TestEvidenceThatVerifiesCarriesNoDoubt(t *testing.T) {
+	real, _, entries := writableLog(t)
+	stateDir := t.TempDir()
+	a := rebootable(t, real, t.TempDir(), stateDir, peertable.NewFake(), &recorder{})
+	if err := a.Once(); err != nil {
+		t.Fatal(err)
+	}
+	a.cfg.Fetcher = logclient.Dir(forkedLog(t, entries, 40))
+	_ = a.Once()
+
+	rec := &recorder{}
+	restarted := rebootable(t, real, t.TempDir(), stateDir, peertable.NewFake(), rec)
+	_ = restarted.Once()
+	msg := frozenMessage(rec)
+	if msg == "" || strings.Contains(msg, "does not verify") {
+		t.Errorf("verifying evidence should be reported as proof, plainly: %q", msg)
+	}
+}
+
+// A marker has no proof in it, only a reason; the alarm carries the reason.
+func TestAFreezeMarkersReasonReachesTheAlarm(t *testing.T) {
+	dir, _, _ := writableLog(t)
+	stateDir := t.TempDir()
+	a := rebootable(t, dir, t.TempDir(), stateDir, peertable.NewFake(), &recorder{})
+	if _, err := a.freezeWithoutEvidence("the witnesses' keys had rotated under us"); err != nil {
+		t.Fatal(err)
+	}
+	rec := &recorder{}
+	restarted := rebootable(t, dir, t.TempDir(), stateDir, peertable.NewFake(), rec)
+	_ = restarted.Once()
+	if msg := frozenMessage(rec); !strings.Contains(msg, "the witnesses' keys had rotated under us") {
+		t.Errorf("the alarm should carry the marker's reason: %q", msg)
+	}
+}
