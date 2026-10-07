@@ -424,3 +424,42 @@ func fixtureSize(t *testing.T) int64 {
 	}
 	return int64(len(m.Entries))
 }
+
+// SEC-001 (D-070). `sigs` sits outside every signature's preimage, and an
+// unresolvable signature is ignored, so a past entry plus one junk signature
+// is new bytes with the original signatures still counting. `37-enroll-spare`
+// re-appended that way re-enrols a device revoked at entry 39, and this
+// log's own replay would accept it today. The log refuses it by its signed
+// content, naming where that content already is -- which is not the
+// idempotent resubmission above: those bytes are already in the log.
+func TestAReSignedCopyOfAnEntryIsRefusedNamingTheOriginal(t *testing.T) {
+	_, ts, _, _ := theLog(t)
+	raw, err := os.ReadFile(filepath.Join(vectorRoot(), "log", "37-enroll-spare.cbor"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	env, err := entry.Decode(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Sorted last, so the decoder's ordering rule does not refuse it first.
+	env.Sigs = append(env.Sigs, entry.Signature{Kid: "ffffffffffffffff", Role: "signer",
+		Sig: make([]byte, ed25519.SignatureSize)})
+	copy, err := entry.Encode(env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Equal(copy, raw) {
+		t.Fatal("the copy is byte-identical; nothing here is tested")
+	}
+
+	resp := post(t, ts.URL, copy, ContentType)
+	body := readBody(t, resp)
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("a re-signed copy of entry 37 was answered %d: %s", resp.StatusCode, body)
+	}
+	if !strings.Contains(body, "37") || !strings.Contains(body, "signed content") {
+		t.Errorf("the refusal should name the index that already holds this signed "+
+			"content: %q", body)
+	}
+}

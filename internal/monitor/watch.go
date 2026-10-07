@@ -1,6 +1,7 @@
 package monitor
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"time"
 
@@ -55,6 +56,15 @@ type Watcher struct {
 	reported int64
 	// rejectedSeen counts the rejections already reported, for the same reason.
 	rejectedSeen int
+	// preimages maps the hash of each reported entry's signed content to the
+	// index it first appeared at, so a re-signed copy is recognised whenever
+	// it lands, across rounds (SEC-001).
+	preimages map[string]int64
+	// exact holds the entry hashes already seen. An exact repeat is
+	// `dup-entry`, which every verifier refuses and the rejected-entry rule
+	// reports; only a copy with the same content and different bytes is a
+	// re-signed one.
+	exact map[string]bool
 	// lastSeen is when each node last answered.
 	lastSeen map[string]time.Time
 }
@@ -102,6 +112,26 @@ func (w *Watcher) readLog(result *logclient.Result) []Alert {
 			Summary: plainlog.Describe(env)})
 		if ok {
 			alerts = append(alerts, alert)
+		}
+		// The same signed content under a new signature list is a re-signed
+		// copy (SEC-001, D-070), and the log's history is the only place it
+		// shows.
+		if pre, err := entry.Preimage(env); err == nil {
+			sum := sha256.Sum256(pre)
+			hash := string(entry.EntryHash(result.Served[index]))
+			if w.preimages == nil {
+				w.preimages, w.exact = map[string]int64{}, map[string]bool{}
+			}
+			first, seen := w.preimages[string(sum[:])]
+			switch {
+			case !seen:
+				w.preimages[string(sum[:])] = index
+			case !w.exact[hash]:
+				if alert, ok := w.rules.RepeatedEntry(index, first, env.T); ok {
+					alerts = append(alerts, alert)
+				}
+			}
+			w.exact[hash] = true
 		}
 	}
 	w.reported = int64(len(result.Served))

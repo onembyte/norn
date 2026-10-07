@@ -615,8 +615,10 @@ plan before the first line of code, and stops at **[decision]** and **[user]**.
 | 6.5m-sec-a-iii | HS-a-iii | SEC-009…SEC-015 against master | one line each, with the evidence | ✅ |
 | 6.5m-sec-b | HS-b | SEC-016…SEC-036 against master | — | ✅ |
 | 6.5m-sec-c | HS-c | Confirmed findings become rows | placed by severity in `HARDENING-PLAN.md` and here; the rows for SEC-005(a), SEC-010, SEC-011 and SEC-029 carry 🧠 (§1 rule 11) | ✅ |
-| 6.5m-sec-001a | HS-001a | 🧠 SEC-001's outside route closed, and its use seen | `norn-log` refuses a submission whose signature preimage it already holds (409 naming the index), and `norn monitor` raises an alarm on any entry whose preimage repeats an earlier one. Neither changes what a verifier accepts, so neither waits on the decision; neither is the fix either — a malicious log can still append | ⬜ |
-| 6.5m-sec-001b | HS-001b | 🧠 SEC-001 fixed in the protocol **[decision]** | as the DECISION block on SEC-001 settles: both implementations, §4.0/§5.1/§5.2/§12.1, the log grown with the negatives, vector 89 re-declared | ⬜ |
+| 6.5m-sec-001a | HS-001a | 🧠 SEC-001's outside route closed, and its use seen | `norn-log` refuses a submission whose signature preimage it already holds (409 naming the index), and `norn monitor` raises an alarm on any entry whose preimage repeats an earlier one. Neither changes what a verifier accepts, so neither waits on the decision; neither is the fix either — a malicious log can still append | ✅ |
+| 6.5m-sec-001a-i | HS-001a-i | 🧠 `norn-log` refuses a re-signed copy | a submission whose signature preimage matches an entry already in the log — accepted or rejected — is refused 409 naming that index; an exact resubmission still gets its receipt | ✅ |
+| 6.5m-sec-001a-ii | HS-001a-ii | 🧠 `norn monitor` sees a re-signed copy | a `repeated-entry` Critical alert naming both indexes, kept across rounds; the shipped log's 70/89 pair is reported | ✅ |
+| 6.5m-sec-001b | HS-001b | 🧠 SEC-001 fixed in the protocol (D-070, option A) | as D-070 says: both implementations, §4.0/§5.1/§5.2/§12.1, the log grown with the negatives, vector 89 re-declared | ⬜ |
 | 6.5m-sec-005a | HS-005a | 🧠 A freeze no fork can shake off (SEC-005 a) | a node shown the longer branch of a fork writes evidence (roles swapped, as the branch's `bdb3086` did), a freeze is persisted even when evidence cannot be built, and `loadFreeze` checks what it loads; red first from the triage probe (FORK, no file, unfrozen after a restart) | ⬜ |
 | 6.5m-sec-029 | HS-029 | 🧠 A log for another genesis never empties the table (SEC-029) | the agent refuses a state whose replay aborted at entry 0 — the table untouched, an alarm raised; red first from the triage probe (no error, 6 peers → 0). The refusal code waits on run 13's D12 | ⬜ |
 | 6.5m-sec-010 | HS-010 | 🧠 A rejected `params` entry changes nothing, in either implementation (SEC-010) | validate into a copy and merge on success, Go and Python; a mixed-validity vector (the log grows once); a test that 200 replays agree | ⬜ |
@@ -663,6 +665,15 @@ plan before the first line of code, and stops at **[decision]** and **[user]**.
 | 7.0 | H17 | `ACTION-PLAN.md` and the email draft | a test plan for the owner; an email drafted in the form `wireguard.com` asks for, read from the page at the time; a pre-send checklist; **nothing sent** | ⬜ |
 | U1 | — | Observe mode on the homelab mesh (6.5m-vii) | **[user]** one node a day, then every node for seven days | ⬜ |
 | U2–U7 | — | Lab, nginx, OpenTimestamps, NAS, phone enrollment, LocalAPI on a real node, outside people | **[user]** `HARDENING-PLAN.md` Stage G | ⬜ |
+
+- **6.5m-sec-001a — SEC-001's outside route is closed at the log's door, and its use is seen by the monitor; D-070 taken.**
+  - **The decision, first.** The owner chose option A, recorded as D-070: `dup-entry` is keyed on the signed content for every entry, accepted or rejected; per-device sequence numbers (option E) are recorded for v1.1; C is a strict subset of A. The protocol change itself is 001b. This row is what needs no decision and protects a deployment today.
+  - **`norn-log` refuses a re-signed copy.** `add` already returned the receipt for an exact resubmission, by entry hash. Now, right after that, a submission whose signature preimage (§4.2, the envelope without `sigs`) matches any stored entry that decodes is refused 409, naming the index that already holds that content and citing D-070. The courtesy replay stays as it was. Red: a copy of `37-enroll-spare` with one unresolvable signature was answered 200 with a receipt — the exact attack, accepted. Exact resubmission is still idempotent.
+  - **`norn monitor` sees the copy.** A `repeated-entry` Critical rule names the copy, its type and the entry whose content it repeats, and says why it matters. The watcher remembers the hash of every reported entry's preimage, and the hash of its bytes, across rounds. Only a copy with the same content and **different bytes** is reported: the first implementation flagged entries 13, 85 and 113 too, which are exact repeats that every verifier refuses as `dup-entry` and the rejected-entry rule already reports. The shipped log's 70/89 pair is reported once on a first round and not again on an unchanged log.
+  - **A control that proved nothing, made to.** "Memory not kept across rounds" ran uncaught: the test's second round read nothing new. A test was added where a copy of entry 37 lands after the monitor has watched the whole log, built on a writable, cosigned copy of the fixture (`fixtureLog`), and the control now fails it.
+  - **Five controls**, each alone and restored byte for byte: the server's check removed; the server comparing bytes rather than content; the rule demoted to Warning; exact repeats flagged too; the memory dropped between rounds.
+  - **Also in this commit:** D-070 in `DECISIONS.md` and the decision block closed; `HARDENING-PLAN.md` §1 rule 12 gains the order-by-model rule (a Mythos firing takes 🧠 rows first and lets lanes wait; an Opus firing integrates lanes and untagged rows) — the previous Mythos session was spent integrating lanes C, D and E, which is Opus work.
+  - **Gate:** generators first (no change under `testdata/`), then `make test` (race) alone, green in all 49 packages with tests — 929 tests — `vectors-check`, 221 reference tests, `lint`, `fmt-check`, `vet` clean.
 
 - **6.5m-sec-009 — a cosignature is attributed to the witness whose key verified it (Codex lane E).**
   - **What was wrong.** `cosign.Verify` matches a line on the witness's note name and key id, as §10 requires, and returns the key that verified it. But the four places that evaluate the quorum — the verifier, proof bundles, fork evidence and the witness clock — mapped each cosignature to a policy label by note name alone, through `Policy.Label`, which returns the first witness whose key carries that name. Two keys sharing a note name are legal under C2SP (and stay so: the parser refuses duplicate public keys and duplicate short names, not duplicate note names). The lane's red output shows both halves: under a flat `group g 2 a b` where a and b share a name, a valid a+b was refused as `[a a]` — fail-closed — and under `quorum a`, b alone was **accepted** as a. A party counted as another.
@@ -2256,7 +2267,9 @@ The audit lives on branch `claude/tender-mccarthy-bzllsp` (`docs/audit/SECURITY_
 
 ---
 
-## DECISION NEEDED — 6.5m-sec-001b: an entry re-appended with one junk signature applies again (audit SEC-001, confirmed 2026-10-07)
+## DECISION TAKEN — 6.5m-sec-001b: an entry re-appended with one junk signature applies again (audit SEC-001, confirmed 2026-10-07; answered 2026-10-07)
+
+**Answered 2026-10-07: option A, recorded as D-070**, with E (per-device sequence numbers) recorded for v1.1; C is a strict subset of A and so is covered by it. The question as it was put follows.
 
 **What is true on master today**, reproduced three ways (6.5m-sec-a-i):
 

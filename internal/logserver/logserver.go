@@ -14,6 +14,7 @@
 package logserver
 
 import (
+	"bytes"
 	"crypto/ed25519"
 	"encoding/json"
 	"errors"
@@ -125,6 +126,21 @@ func (s *Server) add(raw []byte) (receipt string, status int, err error) {
 		return text, http.StatusOK, err
 	}
 
+	// A different entry with the same signed content is not a resubmission:
+	// it is a re-signed copy, and a verifier that keys duplicates on bytes
+	// applies it again -- SEC-001, settled by D-070 as `dup-entry` on the
+	// signed content. The log refuses it by name whether the original was
+	// accepted or rejected, so the only way to re-apply an entry is to sign a
+	// new one. This is the log's own door; a verifier must not rely on it
+	// (§6), which is why D-070 changes replay as well.
+	if index, found, err := s.preimageIndexOf(env); err != nil {
+		return "", http.StatusInternalServerError, err
+	} else if found {
+		return "", http.StatusConflict, fmt.Errorf(
+			"that entry's signed content is already in the log at index %d; a copy "+
+				"under a different signature list is not a new entry (D-070)", index)
+	}
+
 	// The courtesy check (§6): would our own replay accept this entry?
 	entries, err := s.entries()
 	if err != nil {
@@ -193,6 +209,35 @@ func (s *Server) indexOf(raw []byte) (int64, bool, error) {
 	}
 	for index, existing := range entries {
 		if string(entry.EntryHash(existing)) == want {
+			return int64(index), true, nil
+		}
+	}
+	return 0, false, nil
+}
+
+// preimageIndexOf finds a stored entry with the same signature preimage
+// (§4.2) as env -- the same content under any signature list. A stored entry
+// that does not decode has no preimage and is passed over; indexOf already
+// catches an exact repeat of its bytes.
+func (s *Server) preimageIndexOf(env *entry.Envelope) (int64, bool, error) {
+	want, err := entry.Preimage(env)
+	if err != nil {
+		return 0, false, err
+	}
+	entries, err := s.entries()
+	if err != nil {
+		return 0, false, err
+	}
+	for index, existing := range entries {
+		stored, err := entry.Decode(existing)
+		if err != nil {
+			continue
+		}
+		have, err := entry.Preimage(stored)
+		if err != nil {
+			continue
+		}
+		if bytes.Equal(have, want) {
 			return int64(index), true, nil
 		}
 	}

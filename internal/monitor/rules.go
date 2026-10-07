@@ -154,6 +154,20 @@ func (r Rules) RejectedEntry(index int64, reason string) (Alert, bool) {
 			index, reason)}, true
 }
 
+// RepeatedEntry reports an entry whose signed content already appeared
+// earlier in the log: a re-signed copy. A verifier that counts duplicates by
+// bytes applies it again, which can bring a revoked device back or roll a
+// policy back (SEC-001, D-070), and nothing but the log's own history shows
+// it. Critical, because the thing it may have undone is a revocation.
+func (r Rules) RepeatedEntry(index, first int64, entryType string) (Alert, bool) {
+	return Alert{Rule: "repeated-entry", Level: Critical, Subject: entryType,
+		Message: fmt.Sprintf("the log published entry %d, a %s whose signed content "+
+			"first appeared at entry %d under a different signature list. A verifier "+
+			"that counts duplicates by bytes applies it again: a revoked device may be "+
+			"back, or a policy rolled back. Check what entry %d did, and who submitted "+
+			"the copy.", index, entryType, first, first)}, true
+}
+
 // Heartbeat reports a node that has not been heard from.
 func (r Rules) Heartbeat(node string, since time.Duration) (Alert, bool) {
 	if since <= r.HeartbeatMissing {

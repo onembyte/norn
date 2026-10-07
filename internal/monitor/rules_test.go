@@ -203,3 +203,25 @@ func TestEveryAlertNamesItsRule(t *testing.T) {
 }
 
 func firstOf(alert Alert, _ bool) Alert { return alert }
+
+// SEC-001 (D-070): an entry whose signed content already appeared is a
+// re-signed copy, and a verifier that does not key duplicates on content
+// applies it again -- a revoked device may be back. Nothing in the log says
+// so except the monitor.
+func TestARepeatedSignedContentIsCritical(t *testing.T) {
+	alert, ok := Default().RepeatedEntry(89, 70, "enroll")
+	if !ok {
+		t.Fatal("no alert")
+	}
+	if alert.Level != Critical {
+		t.Errorf("level = %s, want critical", alert.Level)
+	}
+	if alert.Rule != "repeated-entry" {
+		t.Errorf("rule = %q", alert.Rule)
+	}
+	for _, want := range []string{"89", "70", "enroll"} {
+		if !strings.Contains(alert.Message, want) {
+			t.Errorf("the message should carry %q: %q", want, alert.Message)
+		}
+	}
+}

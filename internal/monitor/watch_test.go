@@ -1,6 +1,9 @@
 package monitor
 
 import (
+	"crypto/ed25519"
+	"encoding/hex"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -9,8 +12,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/onembyte/norn/internal/cosign"
+	"github.com/onembyte/norn/internal/entry"
 	"github.com/onembyte/norn/internal/gossip"
 	"github.com/onembyte/norn/internal/logclient"
+	"github.com/onembyte/norn/internal/tlogstore"
 	"github.com/onembyte/norn/internal/trust"
 )
 
@@ -254,5 +260,135 @@ func TestTheWatcherKeepsTheAnchorKeyAfterLearningOthers(t *testing.T) {
 	if !held {
 		t.Error("the monitor dropped the anchor's key once it had learned others; " +
 			"§9.4 says a checkpoint is acceptable under either, so both are kept")
+	}
+}
+
+// The shipped log carries exactly this: `70-profile-base` and
+// `89-two-sig-base` are one signed content under two signature lists. A first
+// round over it must say so, and a later round must not say so again.
+func TestAReSignedCopyInTheLogIsReportedOnce(t *testing.T) {
+	w := New(anchorOf(t), Default())
+	w.Now = func() time.Time { return time.Unix(fixtureCosigned, 0) }
+	served := logclient.Dir(filepath.Join(vectors(), "served"))
+
+	var repeated []Alert
+	for _, a := range w.Round(served, nil) {
+		if a.Rule == "repeated-entry" {
+			repeated = append(repeated, a)
+		}
+	}
+	if len(repeated) != 1 {
+		t.Fatalf("repeated-entry alerts = %d, want 1 (entry 89 re-signs entry 70): %+v",
+			len(repeated), repeated)
+	}
+	if !strings.Contains(repeated[0].Message, "89") || !strings.Contains(repeated[0].Message, "70") {
+		t.Errorf("the alert should name both entries: %q", repeated[0].Message)
+	}
+	for _, a := range w.Round(served, nil) {
+		if a.Rule == "repeated-entry" {
+			t.Fatal("an unchanged log reported the same repeated entry twice")
+		}
+	}
+}
+
+// fixtureSeedKey is one of the fixture's Ed25519 keys by its keys.json name.
+func fixtureSeedKey(t *testing.T, name string) ed25519.PrivateKey {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(vectors(), "keys.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var keys struct {
+		Ed25519 map[string]struct{ Seed string } `json:"ed25519"`
+	}
+	if err := json.Unmarshal(raw, &keys); err != nil {
+		t.Fatal(err)
+	}
+	seed, err := hex.DecodeString(keys.Ed25519[name].Seed)
+	if err != nil || len(seed) != ed25519.SeedSize {
+		t.Fatalf("no seed for %q", name)
+	}
+	return ed25519.NewKeyFromSeed(seed)
+}
+
+// fixtureLog is the shipped log in a writable store, cosigned exactly as the
+// shipped one is so the monitor's verifier accepts it, ready to grow.
+func fixtureLog(t *testing.T) (string, *tlogstore.Store, [][]byte) {
+	t.Helper()
+	doc := anchorOf(t)
+	var signers []cosign.Signer
+	for _, name := range []string{"pi", "vps", "friend"} {
+		signers = append(signers, cosign.Signer{Name: "norn-witness/" + name,
+			Key: fixtureSeedKey(t, "witness-"+name)})
+	}
+	dir := t.TempDir()
+	store, err := tlogstore.Open(dir, doc.Origin, fixtureSeedKey(t, "logkey"),
+		tlogstore.WithCosigner(tlogstore.CosignerFunc(
+			cosign.Append(signers, cosign.At(time.Unix(fixtureCosigned, 0))))))
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(filepath.Join(vectors(), "log", "manifest.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest struct {
+		Entries []struct{ Name string } `json:"entries"`
+	}
+	if err := json.Unmarshal(raw, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	var entries [][]byte
+	for _, e := range manifest.Entries {
+		body, err := os.ReadFile(filepath.Join(vectors(), "log", e.Name+".cbor"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.Append(body); err != nil {
+			t.Fatal(err)
+		}
+		entries = append(entries, body)
+	}
+	return dir, store, entries
+}
+
+// A re-signed copy that lands after the monitor has been watching for a
+// while is the realistic shape of the attack, and it is only recognisable if
+// the monitor remembers what it has already seen.
+func TestAReSignedCopyLandingLaterIsStillRecognised(t *testing.T) {
+	dir, store, entries := fixtureLog(t)
+	w := New(anchorOf(t), Default())
+	w.Now = func() time.Time { return time.Unix(fixtureCosigned, 0) }
+	w.Round(logclient.Dir(dir), nil) // the whole log, remembered
+
+	// Entry 37 enrolled `spare`, revoked at 39. The same signed content under
+	// one more, unresolvable signature is new bytes to a byte-keyed replay.
+	env, err := entry.Decode(entries[37])
+	if err != nil {
+		t.Fatal(err)
+	}
+	env.Sigs = append(env.Sigs, entry.Signature{Kid: "ffffffffffffffff", Role: "signer",
+		Sig: make([]byte, ed25519.SignatureSize)})
+	copy, err := entry.Encode(env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Append(copy); err != nil {
+		t.Fatal(err)
+	}
+
+	var repeated []Alert
+	for _, a := range w.Round(logclient.Dir(dir), nil) {
+		if a.Rule == "repeated-entry" {
+			repeated = append(repeated, a)
+		}
+	}
+	if len(repeated) != 1 {
+		t.Fatalf("repeated-entry alerts = %d, want 1 for the copy of entry 37: %+v",
+			len(repeated), repeated)
+	}
+	if !strings.Contains(repeated[0].Message, "37") ||
+		!strings.Contains(repeated[0].Message, formatUint(int64(len(entries)))) {
+		t.Errorf("the alert should name the copy and the original: %q", repeated[0].Message)
 	}
 }

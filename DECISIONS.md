@@ -822,3 +822,39 @@ serve peers. *Name evidence by content hash* — §11 names
 does not yet survive a power cut, because it syncs nothing; its head can then
 name a file the disk never received, and the node reports it unusable and holds
 nothing. That is `HARDENING-PLAN.md` H4-f. The freeze does survive one.
+
+## D-070 · Two entries are the same entry when their signed content is the same (2026-10-07)
+`dup-entry` (§5.1 step 1) is keyed on SHA-256 of the entry's **signature
+preimage** — the envelope encoded without `sigs` (§4.2) — for every entry that
+decodes, and on the raw bytes for one that does not. Accepted or rejected, as
+D-031 already says: the first appearance of a signed content is the only one
+replay will ever apply. `norn-log` refuses a submission whose preimage it
+already holds. Supersedes D-031's key, not its intent.
+
+**Why.** D-031 was written to stop a revoked device's original `enroll` from
+being re-inserted later. It keyed "exact entry" on the bytes as received, and
+`sigs` is outside every signature's preimage while an unresolvable signature is
+ignored (§5.2). So any past entry plus one junk signature — or minus a surplus
+one, or with a role label changed — was a new entry whose original signatures
+still counted. On the shipped log, `spare` (revoked at 39) came back and the
+3-of-3 quorum fell to 2-of-3; no key was needed (audit SEC-001, confirmed
+2026-10-07 in Go, in the reference and in the vectors, where `log/70` and
+`log/89` share a preimage and were both required accepted).
+
+**Rejected.** *Refuse any signature that does not resolve* — closes one
+variant; a dropped surplus signature still replays. *Remember accepted content
+only* — reopens D-031's window for a rejected entry re-tried against a changed
+state; it is a strict subset of this rule. *Document and defer* — leaves G3
+false. *A validity window per entry* — replays inside it still work, and
+honest entries expire behind a slow log.
+
+**Recorded for v1.1, not rejected.** *Per-device sequence numbers* — each
+`enroll`, `rotate` and `revoke` carries the device's next counter and replay
+requires exactly it. Structurally stronger, and the owner wants it; it is a new
+field, a device-side signing change and a full regeneration, so it is a v1.1
+design beside D-065's closed codes, not a v1 fix.
+
+**Cost, accepted.** An under-signed entry that reaches the log burns its
+content: the signers re-issue with a new `ts`. That was already true of an
+exact repeat under D-031, so the rule becomes simpler, not stricter in kind.
+`log/89-two-sig-base` becomes `dup-entry`.

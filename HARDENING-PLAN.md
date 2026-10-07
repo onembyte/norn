@@ -107,8 +107,12 @@ incident that produced it. Read that section before the first firing.
       entry and tick the row, push. A lane whose work does not survive review
       is sent back with the reason, or redone here.
     - At most **two lanes at once**, on files disjoint from each other and
-      from the row the loop is on; integrating a finished lane is allowed
-      while the loop waits for Mythos.
+      from the row the loop is on.
+    - **Order by model (owner's instruction, 2026-10-07):** a firing on
+      Mythos takes the first 🧠 row and lets finished lanes wait; a firing on
+      Opus integrates finished lanes and takes untagged rows, and stops with a
+      notification at the first 🧠 row. No Mythos firing is spent on work
+      Opus can do.
 
 ---
 
@@ -120,6 +124,10 @@ incident that produced it. Read that section before the first firing.
   not-vectored list. Replaces "a run's verdict reads exactly `SPEC
   SUFFICIENT`", which four runs have shown a stochastic reader cannot
   deliver.
+- **D-070 (taken 2026-10-07): `dup-entry` is keyed on the signed content**
+  — the preimage without `sigs` — for every entry, accepted or rejected
+  (audit SEC-001, option A); per-device sequence numbers are recorded for
+  v1.1.
 - **D-069 (recorded 2026-10-07 in H1-e): a node's stored checkpoint, and what it
   learned from it, survive a restart and a reboot.**
   §10's `stored_cp` and §11 rule 4's "forever" already imply it; the node did
