@@ -3,6 +3,7 @@ package forkevidence
 import (
 	"crypto/ed25519"
 	"crypto/sha256"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +12,8 @@ import (
 
 	"github.com/onembyte/norn/internal/cosign"
 	"github.com/onembyte/norn/internal/note"
+	"github.com/onembyte/norn/internal/policy"
+	"github.com/onembyte/norn/internal/refusal"
 	"github.com/onembyte/norn/internal/tlog"
 	"github.com/onembyte/norn/internal/trust"
 )
@@ -377,5 +380,51 @@ func TestAForeignPolicyFieldDoesNotBreakSoundEvidence(t *testing.T) {
 	if _, err := Check(ev, anchor.Origin, anchor.LogKey, anchor.Policy); err != nil {
 		t.Fatalf("refused sound evidence because of a field it must not verify "+
 			"under: %v", err)
+	}
+}
+
+func TestEvidenceWitnessesSharingANoteNameKeepTheirOwnLabels(t *testing.T) {
+	const name = "norn-witness/shared"
+	for _, tc := range []struct {
+		name   string
+		labels []string
+		tail   string
+		want   bool
+	}{
+		{"both meet two", []string{"a", "b"}, "group g 2 a b\nquorum g\n", true},
+		{"b alone is short of two", []string{"b"}, "group g 2 a b\nquorum g\n", false},
+		{"b cannot stand for a", []string{"b"}, "quorum a\n", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			text := fmt.Sprintf("witness a %s\nwitness b %s\n%s",
+				note.CosignerVerifierKey(name, witnessKey(t, "a").Public().(ed25519.PublicKey)),
+				note.CosignerVerifierKey(name, witnessKey(t, "b").Public().(ed25519.PublicKey)), tc.tail)
+			rules, err := policy.Parse(text)
+			if err != nil {
+				t.Fatal(err)
+			}
+			tree, _ := branch(t, entriesNamed("mine-", 10))
+			signed, err := tree.Checkpoint(origin).Sign(logKey(t))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var signers []cosign.Signer
+			for _, label := range tc.labels {
+				signers = append(signers, cosign.Signer{Name: name, Key: witnessKey(t, label)})
+			}
+			signed, err = cosign.Append(signers, cosign.At(time.Unix(1_760_003_600, 0)))(signed)
+			if err != nil {
+				t.Fatal(err)
+			}
+			logVKey := note.VerifierKey(origin, logKey(t).Public().(ed25519.PublicKey))
+			_, err = verified(signed, origin, logVKey, rules)
+			if tc.want {
+				if err != nil {
+					t.Fatalf("a and b were refused: %v", err)
+				}
+			} else if code, _ := refusal.CodeOf(err); code != refusal.Quorum {
+				t.Fatalf("evidence checkpoint refusal = %q (%v), want quorum", code, err)
+			}
+		})
 	}
 }

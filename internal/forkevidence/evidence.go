@@ -281,7 +281,9 @@ func verified(signed, origin, logVKey string, rules *policy.Policy) (tlog.Checkp
 	}
 	names := make([]string, 0, len(cosignatures))
 	for _, c := range cosignatures {
-		names = append(names, rules.Label(c.Name))
+		if label, ok := rules.LabelFor(c.Name, c.Public); ok {
+			names = append(names, label)
+		}
 	}
 	if !rules.Satisfied(names) {
 		return tlog.Checkpoint{}, refusal.Wrap(refusal.Quorum, fmt.Errorf("no quorum "+

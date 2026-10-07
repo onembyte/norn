@@ -54,8 +54,9 @@ func at(pairs ...any) []cosign.Cosignature {
 	var out []cosign.Cosignature
 	for i := 0; i < len(pairs); i += 2 {
 		out = append(out, cosign.Cosignature{
-			Name: "norn-witness/" + pairs[i].(string),
-			Time: time.Unix(int64(pairs[i+1].(int)), 0),
+			Name:   "norn-witness/" + pairs[i].(string),
+			Public: witnessKey(pairs[i].(string)).Public().(ed25519.PublicKey),
+			Time:   time.Unix(int64(pairs[i+1].(int)), 0),
 		})
 	}
 	return out
@@ -148,5 +149,40 @@ func TestQuorumNoneHasNoClock(t *testing.T) {
 
 	if _, ok := QuorumTime(p, at("pi", 300)); ok {
 		t.Error("a policy that requires no witness produced a witness clock")
+	}
+}
+
+func TestAnUnlistedKeyWithAListedNoteNameContributesNoTime(t *testing.T) {
+	p := rules(t, []string{"pi", "vps"}, "group home 2 pi vps\nquorum home\n")
+	stranger := at("stranger", 900)[0]
+	stranger.Name = "norn-witness/pi"
+	signs := append(at("pi", 300, "vps", 400), stranger)
+	got, ok := QuorumTime(p, signs)
+	if !ok || got.Unix() != 300 {
+		t.Errorf("quorum time = (%v, %v), want (300, true): an unlisted key moved the clock", got, ok)
+	}
+	p = rules(t, []string{"pi"}, "quorum pi\n")
+	if _, ok := QuorumTime(p, []cosign.Cosignature{stranger}); ok {
+		t.Error("an unlisted key supplied a witness clock alone")
+	}
+}
+
+func TestWitnessesSharingANoteNameVouchOnlyForTheirOwnLabels(t *testing.T) {
+	const name = "norn-witness/shared"
+	for _, tail := range []string{"group g 2 a b\nquorum g\n", "quorum a\n"} {
+		p, err := policy.Parse(fmt.Sprintf("witness a %s\nwitness b %s\n%s",
+			note.CosignerVerifierKey(name, witnessKey("a").Public().(ed25519.PublicKey)),
+			note.CosignerVerifierKey(name, witnessKey("b").Public().(ed25519.PublicKey)), tail))
+		if err != nil {
+			t.Fatal(err)
+		}
+		signs := at("a", 100, "b", 300)
+		for i := range signs {
+			signs[i].Name = name
+		}
+		got, ok := QuorumTime(p, signs)
+		if !ok || got.Unix() != 100 {
+			t.Errorf("policy %q: quorum time = (%v, %v), want (100, true)", tail, got, ok)
+		}
 	}
 }

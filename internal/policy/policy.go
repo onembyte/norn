@@ -12,6 +12,7 @@
 package policy
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"sort"
@@ -308,6 +309,7 @@ func (p *Policy) Keys() []string {
 // norn-witness/pi+...` -- and the quorum is evaluated over the short ones, so
 // anything holding a cosignature has to cross this boundary.
 //
+// Quorum callers must use LabelFor to distinguish keys sharing a name.
 // A name no witness line claims is returned unchanged: it belongs to somebody
 // else's network, and it will not satisfy anything.
 func (p *Policy) Label(cosignerName string) string {
@@ -335,4 +337,16 @@ func (p *Policy) CollusionBound() (colluders int, ok bool) {
 		}
 	}
 	return max(0, g.threshold-(len(g.members)-g.threshold)), true
+}
+
+// LabelFor maps a verified cosignature to the short name of its witness.
+// Independent witness keys can share a note name, so both the name and the
+// public key must match before the cosignature can count toward a quorum.
+func (p *Policy) LabelFor(noteName string, public []byte) (string, bool) {
+	for _, w := range p.Witnesses {
+		if v, err := note.ParseVerifierKey(w.Key); err == nil && v.Name == noteName && bytes.Equal(v.Public, public) {
+			return w.Name, true
+		}
+	}
+	return "", false
 }

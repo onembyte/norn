@@ -43,7 +43,9 @@ func QuorumTime(rules *policy.Policy, cosignatures []cosign.Cosignature) (time.T
 		var vouching []string
 		for _, c := range cosignatures {
 			if !c.Time.Before(t) {
-				vouching = append(vouching, rules.Label(c.Name))
+				if label, ok := rules.LabelFor(c.Name, c.Public); ok {
+					vouching = append(vouching, label)
+				}
 			}
 		}
 		if rules.Satisfied(vouching) {

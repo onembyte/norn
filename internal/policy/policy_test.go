@@ -230,3 +230,35 @@ func TestTheCollusionBoundCountsTheSmallestQuorumIntersection(t *testing.T) {
 		}
 	}
 }
+
+func TestWitnessesSharingANoteNameAreAttributedByTheirOwnKeys(t *testing.T) {
+	const name = "norn-witness/shared"
+	var keys []note.Verifier
+	for _, seedName := range []string{"a", "b", "stranger"} {
+		v, err := note.ParseVerifierKey(testVKey(seedName, note.AlgCosignature))
+		if err != nil {
+			t.Fatal(err)
+		}
+		keys = append(keys, v)
+	}
+	p := mustParse(t, fmt.Sprintf("witness a %s\nwitness b %s\ngroup g 2 a b\nquorum g\n",
+		note.CosignerVerifierKey(name, keys[0].Public),
+		note.CosignerVerifierKey(name, keys[1].Public)))
+	for _, tc := range []struct {
+		name   string
+		public []byte
+		want   string
+		ok     bool
+	}{
+		{name, keys[0].Public, "a", true},
+		{name, keys[1].Public, "b", true},
+		{name, keys[2].Public, "", false},
+		{"another-name", keys[0].Public, "", false},
+		{name, nil, "", false},
+	} {
+		if label, ok := p.LabelFor(tc.name, tc.public); label != tc.want || ok != tc.ok {
+			t.Errorf("LabelFor(%q, %x) = (%q, %v), want (%q, %v)",
+				tc.name, tc.public, label, ok, tc.want, tc.ok)
+		}
+	}
+}

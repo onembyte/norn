@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -296,6 +297,47 @@ func TestABundleAnchorFaultCarriesNoCode(t *testing.T) {
 			}
 			if !errors.Is(err, ErrProof) {
 				t.Errorf("no longer ErrProof: %v", err)
+			}
+		})
+	}
+}
+
+func TestBundleWitnessesSharingANoteNameKeepTheirOwnLabels(t *testing.T) {
+	const name = "norn-witness/shared"
+	seed := sha256.Sum256([]byte("norn/proof-test/second-witness"))
+	second := ed25519.NewKeyFromSeed(seed[:])
+	for _, tc := range []struct {
+		name string
+		keys []ed25519.PrivateKey
+		tail string
+		want bool
+	}{
+		{"both meet two", []ed25519.PrivateKey{witness(), second}, "group g 2 a b\nquorum g\n", true},
+		{"b alone is short of two", []ed25519.PrivateKey{second}, "group g 2 a b\nquorum g\n", false},
+		{"b cannot stand for a", []ed25519.PrivateKey{second}, "quorum a\n", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := newWitnessed(t)
+			w.anchor.Policy = fmt.Sprintf("witness a %s\nwitness b %s\n%s",
+				note.CosignerVerifierKey(name, witness().Public().(ed25519.PublicKey)),
+				note.CosignerVerifierKey(name, second.Public().(ed25519.PublicKey)), tc.tail)
+			signed := signAs(t, w.tree.Checkpoint(w.origin).Marshal(), w.origin, w.key)
+			var signers []cosign.Signer
+			for _, key := range tc.keys {
+				signers = append(signers, cosign.Signer{Name: name, Key: key})
+			}
+			var err error
+			w.bundle.Checkpoint, err = cosign.Append(signers, cosign.At(time.Unix(1_760_000_000, 0)))(signed)
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = w.bundle.Check(w.anchor)
+			if tc.want {
+				if err != nil {
+					t.Fatalf("a and b were refused: %v", err)
+				}
+			} else if code, _ := refusal.CodeOf(err); code != refusal.Quorum {
+				t.Fatalf("bundle refusal = %q (%v), want quorum", code, err)
 			}
 		})
 	}

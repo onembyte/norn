@@ -306,7 +306,9 @@ func checkQuorum(anchor Anchor, signed string) ([]cosign.Cosignature, *time.Time
 	}
 	names := make([]string, 0, len(cosignatures))
 	for _, c := range cosignatures {
-		names = append(names, rules.Label(c.Name))
+		if label, ok := rules.LabelFor(c.Name, c.Public); ok {
+			names = append(names, label)
+		}
 	}
 	if !rules.Satisfied(names) {
 		return nil, nil, refuse(refusal.Quorum, "the checkpoint does not satisfy the witness policy: "+

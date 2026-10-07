@@ -1366,3 +1366,51 @@ func TestTheAnchorKeyIsKeptAlongsideThePublishedOnes(t *testing.T) {
 			"them apart")
 	}
 }
+
+// Note names can be shared by independent keys, so only the key that signed
+// may determine which branch of a policy the checkpoint satisfies.
+func TestWitnessesSharingANoteNameSatisfyOnlyTheirOwnPolicyLabels(t *testing.T) {
+	const name = "norn-witness/shared"
+	for _, tc := range []struct {
+		name      string
+		cosigners []string
+		tail      string
+		want      bool
+	}{
+		{"b alone is short of two", []string{"b"}, "group g 2 a b\nquorum g\n", false},
+		{"a and b meet two", []string{"a", "b"}, "group g 2 a b\nquorum g\n", true},
+		{"b cannot stand for a", []string{"b"}, "group g 1 a\nquorum g\n", false},
+		{"a meets its own quorum", []string{"a"}, "group g 1 a\nquorum g\n", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir, anchor := cosignedLog(t, nil, 2)
+			anchor.Policy = fmt.Sprintf("witness a %s\nwitness b %s\n%s",
+				note.CosignerVerifierKey(name, witnessKey(t, "a").Public().(ed25519.PublicKey)),
+				note.CosignerVerifierKey(name, witnessKey(t, "b").Public().(ed25519.PublicKey)), tc.tail)
+			path := filepath.Join(dir, "checkpoint")
+			raw, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var signers []cosign.Signer
+			for _, label := range tc.cosigners {
+				signers = append(signers, cosign.Signer{Name: name, Key: witnessKey(t, label)})
+			}
+			signed, err := cosign.Append(signers, cosign.At(cosignedAt))(string(raw))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, []byte(signed), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			_, err = Verify(Dir(dir), anchor)
+			if tc.want {
+				if err != nil {
+					t.Fatalf("the witnesses required by their own labels were refused: %v", err)
+				}
+			} else if code, _ := refusal.CodeOf(err); code != refusal.Quorum {
+				t.Fatalf("checkpoint refusal = %q (%v), want quorum", code, err)
+			}
+		})
+	}
+}
