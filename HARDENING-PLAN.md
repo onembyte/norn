@@ -80,14 +80,21 @@ incident that produced it. Read that section before the first firing.
       on branch `codex/<lane>`), under `-s workspace-write`, so it can write
       nothing outside that clone, push nowhere, and reach no network. Its brief
       (`~/norn-lanes/BRIEF-<lane>.md`, outside the repository) carries these
-      rules: TDD with the red output kept, a control per behaviour, the full
-      gate, one commit per row, no edits to `BUILD-LOG.md`,
+      rules: TDD with the red output kept, a control per behaviour, one commit
+      per row, no edits to `BUILD-LOG.md`,
       `HARDENING-PLAN.md`, `DECISIONS.md`, `SPEC.md` or any generated file.
     - **Models, by how much a mistake would cost:** `gpt-6-astra` (frontier)
       for rows whose correctness is subtle; `gpt-6.1-sol` (the workhorse) at
       `medium` for well-specified fixes and `high` where the behaviour has
       edges; `gpt-6-luna` for documents only. 🧠 rows and DECISION write-ups are
       never delegated.
+    - **The lane's own gate is narrower, and the full gate runs here.** Parts
+      of the suite bind sockets the sandbox forbids without network (lane A's
+      first run stopped on `bind: operation not permitted`), and giving the
+      sandbox network was refused as a weakening. So a lane runs the tests of
+      every package it touches, plus `vet`, `gofmt` and `staticcheck` on them,
+      and commits on that; nothing reaches `master` without the full gate run
+      here on integration.
     - **Integration is a loop sub-checkpoint, done here, never by Codex:**
       fetch the branch, read every line of the diff, rerun each control the
       report names, rebase onto `master`, run the full gate, write the journal
