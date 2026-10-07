@@ -1265,7 +1265,7 @@ Deterministic CBOR per §4.0, a closed map of exactly these seven keys:
 | key | type | meaning |
 |---|---|---|
 | `version` | uint | `1` |
-| `held` | text | the signed checkpoint the accuser was holding — the branch it can speak for, because it has the entries |
+| `held` | text | the signed checkpoint the accuser was holding — the branch it can speak for, because it has the entries. When the branch the accuser stored is the **shorter** one, the branch it can speak for is the served one, whose entries it has just fetched: that head is `held`, its stored head is `conflicting`, and `size` is the stored size |
 | `conflicting` | text | the signed checkpoint that could not be reconciled with it |
 | `size` | uint | where the two disagree: the **conflicting** head's size |
 | `held_root` | bytes (32) | what the held branch had at `size` |

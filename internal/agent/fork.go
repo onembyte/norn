@@ -206,11 +206,28 @@ func (a *Agent) writeEvidence(fork *logclient.ForkError) (string, error) {
 	if held == nil {
 		return "", errors.New("nothing held to compare against")
 	}
-	// Built from **this node's** branch, not the served one: the served tree
-	// is the one under suspicion, and evidence drawn from it would be the
-	// accused certifying the accusation.
-	evidence, err := forkevidence.Build(fork.Held, held.SignedCheckpoint,
-		fork.Signed, fork.Conflicting)
+	// §11.1's `held` is the branch the accuser can speak for, because it has
+	// the entries. At or below the stored size that is this node's own
+	// branch, and the served tree -- the one under suspicion -- is what it is
+	// accused with: evidence drawn from the accused would be the accused
+	// certifying the accusation. When the served branch is the LONGER one,
+	// this node's branch does not reach the conflicting head's size and
+	// cannot speak for it -- but the node has just fetched every served
+	// entry, so that is the branch it can now speak for: the served head is
+	// `held`, this node's stored head is `conflicting`, and the disagreement
+	// is at the stored size. Built only one way, a log that forked and then
+	// grew past this node's head raised FORK, wrote nothing, and was unfrozen
+	// by the next restart (SEC-005 (a)) -- and growing past the victim is the
+	// natural shape of a forking log.
+	var evidence *forkevidence.Evidence
+	var err error
+	if fork.Conflicting.Size > fork.Stored.Size {
+		evidence, err = forkevidence.Build(fork.Tree, fork.Signed,
+			held.SignedCheckpoint, fork.Stored)
+	} else {
+		evidence, err = forkevidence.Build(fork.Held, held.SignedCheckpoint,
+			fork.Signed, fork.Conflicting)
+	}
 	if err != nil {
 		return "", err
 	}

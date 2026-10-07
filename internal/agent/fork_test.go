@@ -2,6 +2,7 @@ package agent
 
 import (
 	"crypto/ed25519"
+	"errors"
 	"fmt"
 	"net/http/httptest"
 	"os"
@@ -556,4 +557,62 @@ func TestEvidenceNeverRewritesAFile(t *testing.T) {
 	if entries, _ := os.ReadDir(forkDir); len(entries) != 2 {
 		t.Errorf("the fork directory holds %v, want the torn file and one proof", entries)
 	}
+}
+
+// SEC-005 (a). A fork is detected at the smaller of the two sizes, and
+// evidence was always built from this node's own tree -- which cannot speak
+// for a size it never reached. So a log that forked and then grew past this
+// node's head raised FORK, built nothing, froze in memory only, and a restart
+// unfroze it: the natural shape of a growing log defeated the freeze. The
+// node has just fetched the whole served branch, which is exactly what §11.1
+// means by `held`, so the roles swap and the evidence is written.
+func TestAForkOnTheLongerBranchStillLeavesEvidence(t *testing.T) {
+	real, _, entries := writableLog(t)
+	stateDir := t.TempDir()
+	rec := &recorder{}
+	a := rebootable(t, forkedLog(t, entries, 15), t.TempDir(), stateDir, peertable.NewFake(), rec)
+	if err := a.Once(); err != nil {
+		t.Fatal(err)
+	}
+	a.cfg.Fetcher = logclient.Dir(real) // the same network's log, forked below 16 and far longer
+
+	var fork *logclient.ForkError
+	if err := a.Once(); !errors.As(err, &fork) {
+		t.Fatalf("the longer branch was not detected as a fork: %v", err)
+	}
+	files, _ := filepath.Glob(filepath.Join(stateDir, ForkDir, "*.evidence"))
+	if len(files) != 1 {
+		t.Fatalf("evidence files = %v, want one; the FORK events say: %s", files, forkMessages(rec))
+	}
+	raw, err := os.ReadFile(files[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	evidence, err := forkevidence.Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := anchor(t)
+	finding, err := forkevidence.Check(evidence, doc.Origin, doc.LogKey, doc.Policy)
+	if err != nil {
+		t.Fatalf("the evidence this node wrote does not prove a fork to a stranger: %v", err)
+	}
+	if finding.Size != 16 {
+		t.Errorf("the fork is proved at size %d, want 16, this node's own size", finding.Size)
+	}
+
+	restarted := rebootable(t, real, t.TempDir(), stateDir, peertable.NewFake(), &recorder{})
+	if !restarted.Frozen() {
+		t.Fatal("a restart unfroze a node that had proved its log forked")
+	}
+}
+
+func forkMessages(rec *recorder) string {
+	var out []string
+	for _, e := range rec.events {
+		if e.Kind == Fork {
+			out = append(out, e.Message)
+		}
+	}
+	return strings.Join(out, " | ")
 }
