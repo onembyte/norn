@@ -45,16 +45,28 @@ func (a *Agent) Frozen() bool { return a.frozen }
 // disk, because it is still what an operator takes to the witness operators.
 func (a *Agent) loadFreeze() {
 	var matches []string
-	for _, dir := range a.stateDirs() {
-		found, err := filepath.Glob(filepath.Join(dir, ForkDir, "*.evidence"))
-		if err == nil {
-			matches = append(matches, found...)
+	// Evidence first, so a node that has both names the evidence; then the
+	// markers a node left when it had proved a fork and could not file it.
+	for _, pattern := range []string{"*.evidence", "*.frozen"} {
+		for _, dir := range a.stateDirs() {
+			found, err := filepath.Glob(filepath.Join(dir, ForkDir, pattern))
+			if err == nil {
+				matches = append(matches, found...)
+			}
 		}
 	}
 	for _, path := range matches {
 		raw, err := os.ReadFile(path)
 		if err != nil {
 			continue
+		}
+		if strings.HasSuffix(path, ".frozen") {
+			lines := strings.SplitN(string(raw), "\n", 3)
+			if len(lines) >= 2 && lines[0] == freezeMagic && lines[1] == a.cfg.Anchor.Origin {
+				a.frozen, a.frozenBy = true, path
+				return
+			}
+			continue // torn, or somebody else's network
 		}
 		evidence, err := forkevidence.Parse(raw)
 		if err != nil {
@@ -118,9 +130,16 @@ func (a *Agent) adoptEvidence(from string, raw []byte) {
 	a.frozen = true
 	path, err := a.storeEvidence(raw)
 	if err != nil {
+		kept := "and no freeze marker could be kept either"
+		if marker, markErr := a.freezeWithoutEvidence(fmt.Sprintf(
+			"peer %s proved a fork; its evidence could not be kept: %v", from, err)); markErr == nil {
+			a.frozenBy, kept = marker, "a freeze marker is kept at "+marker
+		} else {
+			kept += " (" + markErr.Error() + ")"
+		}
 		a.emit(Event{Kind: Fork, Message: fmt.Sprintf(
 			"peer %s proved this network's log forked, and the evidence could not "+
-				"be kept (%v). This node will accept nothing further (§11).", from, err)})
+				"be kept (%v); %s. This node will accept nothing further (§11).", from, err, kept)})
 		return
 	}
 	a.frozenBy = path
@@ -133,16 +152,37 @@ func (a *Agent) adoptEvidence(from string, raw []byte) {
 
 // storeEvidence files evidence, whoever produced it, as §11's
 // `fork/<unix>.evidence`.
+func (a *Agent) storeEvidence(raw []byte) (string, error) {
+	return a.fileInForkDir(".evidence", raw)
+}
+
+// freezeMagic opens a freeze marker, `fork/<unix>.frozen`: the file a node
+// writes when it has proved a fork but could not file the evidence (SEC-005
+// (a)). Its presence is the freeze, exactly as an evidence file's is -- §11's
+// "forever" cannot depend on the evidence being writable. It proves nothing
+// to anybody else, so gossip never serves it; the FORK alarm carries the
+// reason.
+const freezeMagic = "norn-freeze/v1"
+
+// freezeWithoutEvidence persists the freeze when there is no evidence to
+// persist it with: the magic line, this network's origin, and why.
+func (a *Agent) freezeWithoutEvidence(reason string) (string, error) {
+	marker := freezeMagic + "\n" + a.cfg.Anchor.Origin + "\n" + reason + "\n"
+	return a.fileInForkDir(".frozen", []byte(marker))
+}
+
+// fileInForkDir writes a file under `fork/` named by the second it was
+// written in, with the extension given.
 //
 // Its presence is the freeze, so it is written durably (internal/durable): a
 // power cut leaves the file whole or absent, never torn. And a file already
-// there is never rewritten. The same evidence filed again is the same file;
+// there is never rewritten. The same bytes filed again are the same file;
 // anything else -- a second fork in the same second, the evidence of the
 // network this node ran before a reset, a copy torn by a crash before writes
 // were durable -- keeps its name, and this piece takes the next free second.
 // Names stay unix seconds, so their order is still the order they were filed
 // in, which is how gossip picks the newest (internal/gossip).
-func (a *Agent) storeEvidence(raw []byte) (string, error) {
+func (a *Agent) fileInForkDir(ext string, raw []byte) (string, error) {
 	if a.stateDir() == "" {
 		return "", errors.New("no state directory to keep evidence in")
 	}
@@ -152,7 +192,7 @@ func (a *Agent) storeEvidence(raw []byte) (string, error) {
 	}
 	start := a.cfg.Now().Unix()
 	for second := start; second < start+maxEvidenceProbe; second++ {
-		path := filepath.Join(dir, fmt.Sprintf("%d.evidence", second))
+		path := filepath.Join(dir, fmt.Sprintf("%d%s", second, ext))
 		existing, err := os.ReadFile(path)
 		switch {
 		case errors.Is(err, fs.ErrNotExist):
@@ -166,7 +206,7 @@ func (a *Agent) storeEvidence(raw []byte) (string, error) {
 			return path, nil
 		}
 	}
-	return "", fmt.Errorf("no free evidence name in %s within %d seconds of now", dir, maxEvidenceProbe)
+	return "", fmt.Errorf("no free name in %s within %d seconds of now", dir, maxEvidenceProbe)
 }
 
 // maxEvidenceProbe bounds the search for a free name. A node files evidence
@@ -183,10 +223,18 @@ func (a *Agent) recordFork(fork *logclient.ForkError) {
 
 	path, err := a.writeEvidence(fork)
 	if err != nil {
-		// A node that could not write the file is still forked, and saying so
-		// matters more than the file does.
+		// A node that could not write the file is still forked, and the
+		// freeze must outlive this process all the same (§11): a marker
+		// stands in for the evidence, and saying so matters more than either
+		// file does.
+		kept := "and no freeze marker could be kept either"
+		if marker, markErr := a.freezeWithoutEvidence(fmt.Sprintf("%v: %v", fork, err)); markErr == nil {
+			a.frozenBy, kept = marker, "a freeze marker is kept at "+marker
+		} else {
+			kept += " (" + markErr.Error() + ")"
+		}
 		a.emit(Event{Kind: Fork, Message: fmt.Sprintf(
-			"%v -- and the evidence could not be written (%v)", fork, err)})
+			"%v -- and the evidence could not be written (%v); %s", fork, err, kept)})
 		return
 	}
 	a.emit(Event{Kind: Fork, Message: fmt.Sprintf(

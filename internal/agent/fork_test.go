@@ -616,3 +616,68 @@ func forkMessages(rec *recorder) string {
 	}
 	return strings.Join(out, " | ")
 }
+
+// SEC-005 (a), the remainder: a node that proved a fork but could not file
+// evidence froze in memory only, and a restart unfroze it. Here the evidence
+// cannot be built for a reason a real deployment produces: the node followed
+// a log-key rotation (D-020), so its held head is signed by a key the trust
+// file does not name, and its own self-check under that trust file refuses
+// the evidence it just built (SEC-005 b, fixed later). The freeze must not
+// depend on the file.
+func TestAFreezeSurvivesARestartEvenWhenEvidenceCannotBeBuilt(t *testing.T) {
+	dir, store, entries := writableLog(t)
+	stateDir := t.TempDir()
+	rec := &recorder{}
+	a := rebootable(t, dir, t.TempDir(), stateDir, peertable.NewFake(), rec)
+	if err := a.Once(); err != nil {
+		t.Fatal(err)
+	}
+	reHead(t, dir, store, "logkey2", 3)
+	if err := a.Once(); err != nil {
+		t.Fatalf("the node did not follow the rotation, so nothing here is tested: %v", err)
+	}
+
+	a.cfg.Fetcher = logclient.Dir(forkedLog(t, entries, 40))
+	var fork *logclient.ForkError
+	if err := a.Once(); !errors.As(err, &fork) {
+		t.Fatalf("the forked branch was not detected: %v", err)
+	}
+	if files, _ := filepath.Glob(filepath.Join(stateDir, ForkDir, "*.evidence")); len(files) != 0 {
+		t.Skipf("evidence was built after all (%v); this test's premise is SEC-005 (b)", files)
+	}
+	if !strings.Contains(forkMessages(rec), "could not be written") {
+		t.Fatalf("the FORK event should say the evidence could not be written: %s", forkMessages(rec))
+	}
+
+	restarted := rebootable(t, dir, t.TempDir(), stateDir, peertable.NewFake(), &recorder{})
+	if !restarted.Frozen() {
+		t.Fatal("a restart unfroze a node that had proved its log forked and could not file evidence")
+	}
+}
+
+// The marker on its own: written for this network, honoured at the next
+// start; written for another network, ignored -- §11's reset by a new trust
+// file must still work.
+func TestAFreezeMarkerIsHonouredOnlyForItsOwnNetwork(t *testing.T) {
+	dir, _, _ := writableLog(t)
+	stateDir := t.TempDir()
+	a := rebootable(t, dir, t.TempDir(), stateDir, peertable.NewFake(), &recorder{})
+	path, err := a.freezeWithoutEvidence("the evidence could not be built in this test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if filepath.Ext(path) != ".frozen" || filepath.Dir(path) != filepath.Join(stateDir, ForkDir) {
+		t.Errorf("the marker was filed as %s", path)
+	}
+	if !rebootable(t, dir, t.TempDir(), stateDir, peertable.NewFake(), &recorder{}).Frozen() {
+		t.Error("a freeze marker for this network was not honoured")
+	}
+	other, err := New(Config{Anchor: freshAnchor(t), Fetcher: logclient.Dir(dir),
+		Device: peertable.NewFake(), StateDir: stateDir, Emit: (&recorder{}).emit})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if other.Frozen() {
+		t.Error("a freeze marker for another network froze this node")
+	}
+}
