@@ -32,6 +32,7 @@ poll      = "200ms"
 trust     = "/etc/norn/norn.trust"
 log       = "https://log.example/net"
 run_dir   = "/run/norn"
+state_dir = "/var/lib/norn"
 
 [[peer]]
 device_id   = "pi-cam"
@@ -47,7 +48,8 @@ allowed_ips = ["10.9.0.2/32", "fd00::2/128"]
 	if err != nil {
 		t.Fatal(err)
 	}
-	if config.Interface != "wg0" || config.Mode != "watchdog" {
+	if config.Interface != "wg0" || config.Mode != "watchdog" ||
+		config.StateDir != "/var/lib/norn" {
 		t.Errorf("config = %+v", config)
 	}
 

@@ -30,6 +30,10 @@ type Config struct {
 	Trust  string `toml:"trust"`
 	Log    string `toml:"log"`
 	RunDir string `toml:"run_dir"`
+	// StateDir keeps what must outlive a reboot: the mirror whose head this
+	// node holds across a restart (D-069) and the evidence whose presence is
+	// a fork freeze (§11). Not under `/run`, which is cleared at boot.
+	StateDir string `toml:"state_dir"`
 	// HardStale is S_hard: the age past which this node drops every peer.
 	// Absent means never, and that default is load-bearing -- it is the one
 	// setting that lets Norn disconnect a node by itself.

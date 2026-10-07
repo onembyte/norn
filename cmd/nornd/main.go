@@ -26,6 +26,7 @@ import (
 	"github.com/onembyte/norn/internal/freshness"
 	"github.com/onembyte/norn/internal/gossip"
 	"github.com/onembyte/norn/internal/logclient"
+	"github.com/onembyte/norn/internal/peertable"
 	"github.com/onembyte/norn/internal/proven"
 	"github.com/onembyte/norn/internal/reconcile"
 	"github.com/onembyte/norn/internal/trust"
@@ -34,6 +35,10 @@ import (
 
 // DefaultRunDir is where the proven set is published (`ENFORCEMENT.md` part 9).
 const DefaultRunDir = "/run/norn"
+
+// DefaultStateDir is where what must outlive a reboot is kept (SEC-006): the
+// FHS's place for state a program keeps between runs, which `/run` is not.
+const DefaultStateDir = "/var/lib/norn"
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
@@ -50,6 +55,8 @@ func run(args []string) error {
 	trustPath := fs.String("trust", "", "path to norn.trust")
 	logLocation := fs.String("log", "", "log URL or directory; defaults to the anchor's log_urls")
 	runDir := fs.String("run-dir", "", "where to publish proven.json (default "+DefaultRunDir+")")
+	stateDir := fs.String("state-dir", "",
+		"where the mirror and fork evidence outlive a reboot (default "+DefaultStateDir+")")
 	poll := fs.String("poll", "", "how often to reconcile (default "+DefaultPoll.String()+")")
 	hardStale := fs.String("hard-stale", "",
 		"age past which every peer is dropped, e.g. 6h; off unless set")
@@ -77,6 +84,7 @@ func run(args []string) error {
 	config.Trust = pick(*trustPath, config.Trust)
 	config.Log = pick(*logLocation, config.Log)
 	config.RunDir = pick(*runDir, config.RunDir, DefaultRunDir)
+	config.StateDir = pick(*stateDir, config.StateDir, DefaultStateDir)
 	config.Poll = pick(*poll, config.Poll)
 	config.HardStale = pick(*hardStale, config.HardStale)
 	config.SetGossipPort(*gossipPort, *gossipPort != DefaultGossipPort)
@@ -132,7 +140,8 @@ func build(config Config, logger *slog.Logger) (*agent.Agent, time.Duration, err
 	}
 	logger.Info("nornd configuration",
 		"interface", config.Interface, "mode", mode, "poll", interval,
-		"trust", config.Trust, "run_dir", config.RunDir, "fight_policy", fightPolicy)
+		"trust", config.Trust, "run_dir", config.RunDir, "state_dir", config.StateDir,
+		"fight_policy", fightPolicy)
 	if fightPolicy == agent.PolicyQuarantine {
 		logger.Warn("fight policy is quarantine: a control-plane fight will take this " +
 			"interface out of service until an operator intervenes")
@@ -162,7 +171,7 @@ func build(config Config, logger *slog.Logger) (*agent.Agent, time.Duration, err
 		return nil, 0, err
 	}
 
-	device, err := wgdev.Open(config.Interface)
+	device, err := openDevice(config.Interface)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -192,7 +201,7 @@ func build(config Config, logger *slog.Logger) (*agent.Agent, time.Duration, err
 	gossipPort := config.GossipPortOrDefault()
 	cycle, err = agent.New(agent.Config{
 		Anchor: anchor, Fetcher: fetcher, Device: device, Provider: provider,
-		Mode: mode, RunDir: config.RunDir, Now: time.Now,
+		Mode: mode, RunDir: config.RunDir, StateDir: config.StateDir, Now: time.Now,
 		Hard: hard, MaxSkew: maxSkew,
 		Peers:       func() []string { return cycle.PeerAddresses(gossipPort) },
 		FightPolicy: policy, FightThreshold: threshold, FightWindow: window,
@@ -213,14 +222,26 @@ func build(config Config, logger *slog.Logger) (*agent.Agent, time.Duration, err
 		if err != nil {
 			logger.Warn("not gossiping", "reason", err)
 		} else {
-			serveGossip(logger, addr, filepath.Join(config.RunDir, proven.MirrorDir),
-				filepath.Join(config.RunDir, agent.ForkDir))
+			mirrorDir, evidenceDir := gossipDirs(config)
+			serveGossip(logger, addr, mirrorDir, evidenceDir)
 		}
 	}
 
 	logger.Info("nornd started", "network", anchor.Name, "origin", anchor.Origin,
 		"log", location, "endpoints", provider.Name())
 	return cycle, interval, nil
+}
+
+// openDevice is the kernel interface behind the agent's seam. A variable so a
+// test can run a whole cycle of this binary's wiring without a WireGuard
+// interface; nothing else replaces it.
+var openDevice = func(name string) (peertable.Device, error) { return wgdev.Open(name) }
+
+// gossipDirs is what this node serves its peers: the mirror it verified and
+// the evidence of any fork it proved, from wherever the agent keeps them.
+func gossipDirs(config Config) (mirror, evidence string) {
+	return filepath.Join(config.StateDir, proven.MirrorDir),
+		filepath.Join(config.StateDir, agent.ForkDir)
 }
 
 // providerFor assembles the endpoint providers in precedence order: what the

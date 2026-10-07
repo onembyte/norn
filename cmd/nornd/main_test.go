@@ -1,11 +1,16 @@
 package main
 
 import (
+	"io"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/onembyte/norn/internal/peertable"
+	"github.com/onembyte/norn/internal/proven"
 )
 
 func nornd(t *testing.T) string {
@@ -163,5 +168,69 @@ func TestThereIsNoWayToBindGossipToTheWorld(t *testing.T) {
 	// peers has nobody to gossip with.
 	if !strings.Contains(out, "gossip") {
 		t.Errorf("there should be a way to turn gossip off:\n%s", out)
+	}
+}
+
+// SEC-006: `/run` is cleared at boot, so what must outlive one -- the mirror
+// whose head a node holds (D-069) and the evidence whose presence is a fork
+// freeze (§11) -- lives in a state directory, by default under `/var/lib`.
+// The startup line names it, because "where is my freeze kept" is a question
+// an operator should be able to answer from the log.
+func TestStateLivesWhereARebootLeavesIt(t *testing.T) {
+	bin := nornd(t)
+	trustFile := filepath.Join(vectors(), "trust.cbor")
+	out, _ := runNornd(t, bin, "-iface", "norn-not-a-real-iface0", "-trust", trustFile, "-once")
+	if !strings.Contains(out, "state_dir="+DefaultStateDir) || DefaultStateDir != "/var/lib/norn" {
+		t.Errorf("the default state directory is not %s under /var/lib:\n%s", DefaultStateDir, out)
+	}
+
+	elsewhere := t.TempDir()
+	out, _ = runNornd(t, bin, "-iface", "norn-not-a-real-iface0", "-trust", trustFile,
+		"-state-dir", elsewhere, "-once")
+	if !strings.Contains(out, "state_dir="+elsewhere) {
+		t.Errorf("-state-dir was not used:\n%s", out)
+	}
+}
+
+// Gossip serves the mirror and the evidence from where the agent keeps them,
+// not from the run directory: a node serving a directory nothing writes to
+// would answer every peer with nothing, which looks exactly like a node with
+// nothing to say.
+func TestGossipServesFromTheStateDirectory(t *testing.T) {
+	mirror, evidence := gossipDirs(Config{RunDir: "/run/norn", StateDir: "/var/lib/norn"})
+	if mirror != filepath.Join("/var/lib/norn", "mirror") ||
+		evidence != filepath.Join("/var/lib/norn", "fork") {
+		t.Errorf("gossip serves %s and %s", mirror, evidence)
+	}
+}
+
+// The daemon's wiring, end to end for one cycle: the state directory it was
+// given is the one the agent writes its mirror to, and the run directory keeps
+// only what is published. A flag that reached the startup line and not the
+// agent would be a setting that says one thing and does another.
+func TestTheDaemonHandsItsStateDirectoryToTheAgent(t *testing.T) {
+	previous := openDevice
+	openDevice = func(string) (peertable.Device, error) { return peertable.NewFake(), nil }
+	t.Cleanup(func() { openDevice = previous })
+
+	runDir, stateDir := t.TempDir(), t.TempDir()
+	config := Config{Interface: "norn-test0", Trust: filepath.Join(vectors(), "trust.cbor"),
+		Log: filepath.Join(vectors(), "served"), RunDir: runDir, StateDir: stateDir}
+	config.SetGossipPort(0, true)
+	cycle, _, err := build(config, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cycle.Once(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(stateDir, proven.MirrorDir, "checkpoint")); err != nil {
+		t.Errorf("the agent did not keep its mirror in the state directory: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(runDir, proven.FileName)); err != nil {
+		t.Errorf("proven.json is not in the run directory: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(runDir, proven.MirrorDir)); err == nil {
+		t.Error("the mirror was written to the run directory")
 	}
 }
