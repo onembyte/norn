@@ -8,11 +8,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/onembyte/norn/internal/cosign"
 	"github.com/onembyte/norn/internal/logclient"
+	"github.com/onembyte/norn/internal/note"
 	"github.com/onembyte/norn/internal/peertable"
 	"github.com/onembyte/norn/internal/proven"
 	"github.com/onembyte/norn/internal/reconcile"
 	"github.com/onembyte/norn/internal/refusal"
+	"github.com/onembyte/norn/internal/tlogstore"
 	"github.com/onembyte/norn/internal/trust"
 )
 
@@ -232,5 +235,87 @@ func TestNoMirrorIsNotAnAlarm(t *testing.T) {
 	}
 	if rec.kinds()[MirrorUnusable] != 0 {
 		t.Errorf("a first start raised %s: %v", MirrorUnusable, rec.events)
+	}
+}
+
+// reHead replaces the log's checkpoint with its current body signed by
+// `signer` and cosigned by `witnesses` of the fixture's three -- the same
+// log, published under a different key or a different number of witnesses.
+func reHead(t *testing.T, dir string, store *tlogstore.Store, signer string, witnesses int) {
+	t.Helper()
+	doc := anchor(t)
+	signed, err := store.SignedCheckpoint()
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _, err := note.Split(signed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	head, err := note.Sign(body, doc.Origin, fixtureKey(t, signer))
+	if err != nil {
+		t.Fatal(err)
+	}
+	head, err = cosign.Append(fixtureWitnesses(t)[:witnesses],
+		cosign.At(time.Unix(fixtureCosignedAt, 0)))(head)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "checkpoint"), []byte(head), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// D-020 says a node follows a log-key rotation it has replayed, and it does
+// -- until it restarts. The trust file still names the old key (the point of
+// an in-log rotation is that nobody re-provisions), so a restarted node that
+// knew only its trust file could verify neither its own mirror nor the log:
+// it never verified again, on any node that restarted after any rotation.
+// What it learned from a log it accepted is part of what it held.
+func TestARestartAfterALogKeyRotationStillVerifies(t *testing.T) {
+	dir, store, _ := writableLog(t)
+	runDir := t.TempDir()
+	first := restartable(t, dir, runDir, peertable.NewFake(), &recorder{})
+	if err := first.Once(); err != nil {
+		t.Fatal(err)
+	}
+	reHead(t, dir, store, "logkey2", 3)
+	if err := first.Once(); err != nil {
+		t.Fatalf("the running node did not follow the rotation, so nothing here "+
+			"is tested: %v", err)
+	}
+
+	rec := &recorder{}
+	restarted := restartable(t, dir, runDir, peertable.NewFake(), rec)
+	if rec.kinds()[MirrorUnusable] != 0 || restarted.held() == nil {
+		t.Errorf("the mirror of a log this node accepted under a rotated key was "+
+			"not restored: %v", rec.events)
+	}
+	if err := restarted.Once(); err != nil {
+		t.Errorf("a node restarted after a log-key rotation can no longer verify "+
+			"its log: %v", err)
+	}
+}
+
+// The other thing a node learns from its log is the witness policy. The
+// fixture's roots raise the quorum to three of three; a restarted node that
+// fell back to the trust file's two of three would accept a head only two
+// witnesses vouched for -- the raise would bind only nodes that never
+// restart.
+func TestARestartKeepsARaisedQuorum(t *testing.T) {
+	dir, store, _ := writableLog(t)
+	runDir := t.TempDir()
+	if err := restartable(t, dir, runDir, peertable.NewFake(), &recorder{}).Once(); err != nil {
+		t.Fatal(err)
+	}
+
+	reHead(t, dir, store, "logkey", 2)
+	restarted := restartable(t, dir, runDir, peertable.NewFake(), &recorder{})
+	err := restarted.Once()
+	if err == nil {
+		t.Fatal("a restarted node accepted a head short of the quorum its roots raised")
+	}
+	if code, _ := refusal.CodeOf(err); code != refusal.Quorum {
+		t.Errorf("refused as %q, want %q: %v", code, refusal.Quorum, err)
 	}
 }

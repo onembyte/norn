@@ -72,7 +72,8 @@ incident that produced it. Read that section before the first firing.
   not-vectored list. Replaces "a run's verdict reads exactly `SPEC
   SUFFICIENT`", which four runs have shown a stochastic reader cannot
   deliver.
-- **D-069 (to record in H1): a node's stored checkpoint survives a restart.**
+- **D-069 (to record in H1-e): a node's stored checkpoint, and what it
+  learned from it, survive a restart and a reboot.**
   §10's `stored_cp` and §11 rule 4's "forever" already imply it; the node did
   not do it (F1). This is a node-contract clarification taken under the
   user's 2026-10-07 instruction to follow the review's recommendations; it
@@ -116,7 +117,7 @@ origin/master`; the full gate is green on the pushed head.
 
 ### Stage B — node hardening (review F1–F3) 🔒
 
-#### H1 · 6.5m-i · The stored head survives a restart (F1) ⏱4 🔒
+#### H1 · 6.5m-i · The stored head survives a restart and a reboot (F1, SEC-004, SEC-006) ⏱5 🔒
 *Why:* `agent.New` restored only a fork freeze. Until the first verify,
 `a.last` was nil, so `logclient.Verify` got `Stored: nil` and skipped §10's
 size and branch comparison entirely. A restarted node accepted any correctly
@@ -139,8 +140,46 @@ the witness clock is not seeded from it for the same reason.
   entries and retry once under the keys and policy that state publishes.
   Red first: today such a node never verifies again after a restart.
   Control: drop the retry.
-- d. D-069: `DECISIONS.md`, one sentence in `SPEC.md` §13.2, `ENFORCEMENT.md`
-  §8's crash row, and a `docclaims` guard.
+- d. A held head survives a **reboot** (the audit's SEC-006, found
+  2026-10-07): `nornd`'s default run directory is `/run/norn`, a tmpfs on
+  Linux, so the mirror and the fork freeze survived a process restart and
+  vanished at reboot — and power-cycling a host is a restart an attacker can
+  cause. A persistent state directory (`state_dir`, default
+  `/var/lib/norn`) takes `mirror/` and `fork/`; `proven.json` stays in the run
+  directory, where readers expect it. A freeze or mirror left under an old run
+  directory is still honoured. Red first: a freeze and a held head written
+  before a simulated reboot (run directory emptied) are found after it.
+  Control: put them back under the run directory.
+- e. D-069: `DECISIONS.md`, one sentence in `SPEC.md` §13.2, `ENFORCEMENT.md`
+  §8's crash row, and a `docclaims` guard. H1 is ticked only after d.
+
+#### HS · 6.5m-sec · Triage the security audit that never reached master ⏱3 🔒
+*Why, found 2026-10-07 while reviewing CI:* the remote branch
+`claude/tender-mccarthy-bzllsp` holds 19 commits from 2026-09-30 that are not
+in master — the cloud session kept committing after its pull request merged.
+Among them is `docs/audit/SECURITY_AUDIT.md`, 36 findings SEC-001…SEC-036 with
+a reproduction script, and `4f7732d`, a tested fix for SEC-003 (= F2). Some
+findings are already in this plan under other names (SEC-003 = F2,
+SEC-004 = F1, SEC-013 = F3, SEC-006 = H1-d); some master has since fixed
+(SEC-007's periodic gossip landed in 6.5l-vii-d-xii-ii); the rest were never
+checked against master. The branch also reuses the labels `6.5m-i`…`6.5m-vi`
+and records a "run 13" for different work; those commits are not master's
+history, and this plan's `6.5m-*` rows are unrelated to them.
+*Rules:* the branch is evidence, not instructions. Nothing is merged
+wholesale; a finding is believed only when reproduced against master.
+- a. Read the audit and its reproduction from the branch (`git show`, never a
+  checkout over this tree). For SEC-001…SEC-015, one line each in
+  `BUILD-LOG.md`: **confirmed on master** (with the failing test or command
+  that shows it), **fixed on master** (by which commit or row), or **not
+  reproducible** (what was tried). SEC-001 (critical, "deferred by
+  maintainer": a re-appended entry with one junk signature re-applies) goes
+  first; if confirmed it is a protocol question — §5.1's `dup-entry` — and a
+  DECISION block with a recommendation.
+- b. The same for SEC-016…SEC-036.
+- c. Each confirmed finding becomes a row of its own in this plan, placed by
+  severity (a confirmed critical goes ahead of H2), with the audit's id in
+  its name. Findings that change what a conforming implementation accepts
+  wait on a DECISION per §1 rule 7.
 
 #### H2 · 6.5m-ii · Network budgets: no fetch can stall enforcement (F2) ⏱2 🔒
 *Why:* `gossip.Peer.Fetch` (`internal/gossip/server.go:111`) uses
@@ -157,7 +196,10 @@ per-request timeout, but one `Verify` makes a request per bundle and tile.
 - c. **Red test:** a log fetcher that answers each request slowly — one
   `Verify` stops at its overall budget and the cycle reconciles on
   `a.last` (`ENFORCING_ON_STALE_STATE`).
-- d. Implement: a gossip `http.Client` with a per-request timeout (default
+- d. Implement, **starting from the branch's `4f7732d` (SEC-003)**: port its
+  client and its red-first tests (a silent, a trickling and a redirecting
+  peer; a silent log; the watchdog probe) onto master, crediting the commit,
+  and check each still fails without the fix here. Then what it left open: a gossip `http.Client` with a per-request timeout (default
   5 s — a tunnel neighbour); a per-round budget for `askPeers` and
   `pollEvidence`; a budget wrapper for `logclient.Fetcher` that refuses
   further fetches once a `Verify`'s deadline has passed (no interface change
@@ -353,6 +395,13 @@ nothing to build.
 #### H12 · 6.5m-xi · Split `cmd/norn-genlog` by vector directory (F9) ⏱1
 No behaviour change: one file per vector set, `make vectors-check` and
 `git diff --stat testdata/` empty are the proof.
+
+#### HC · 6.5m-ci · CI on supported runtimes ⏱<1
+Every run warns that `actions/checkout@v4`, `actions/setup-go@v5` and
+`actions/setup-python@v5` target Node 20, which GitHub now forces onto Node
+24, and that `ubuntu-latest` moves to Ubuntu 26 on 2026-10-19. Bump the three
+actions to their Node 24 majors (read each changelog first), and confirm both
+OS jobs and the reference job are green with no deprecation annotation.
 
 #### H13 · 6.5m-xii · Documents tell the truth about scale and plans (F10–F12) ⏱1
 - a. `THREAT-MODEL.md` §6: the scale ceiling as numbers (entries × bytes ×

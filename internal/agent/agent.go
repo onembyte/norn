@@ -30,7 +30,7 @@ import (
 	"github.com/onembyte/norn/internal/proven"
 	"github.com/onembyte/norn/internal/reconcile"
 	"github.com/onembyte/norn/internal/replay"
-	"github.com/onembyte/norn/internal/tlog"
+	"github.com/onembyte/norn/internal/state"
 	"github.com/onembyte/norn/internal/trust"
 )
 
@@ -296,12 +296,18 @@ func (a *Agent) held() *logclient.Result {
 // holds would accept a correctly signed, correctly cosigned view of its own
 // past -- un-revoking whoever was revoked since.
 func (a *Agent) anchorFor(held *logclient.Result) logclient.Anchor {
-	var stored *tlog.Checkpoint
-	var heldTree *tlog.Tree
-	if held != nil {
-		checkpoint := held.Checkpoint
-		stored, heldTree = &checkpoint, held.Tree
+	if held == nil {
+		return a.anchorUnder(nil)
 	}
+	anchor := a.anchorUnder(held.State)
+	checkpoint := held.Checkpoint
+	anchor.Stored, anchor.Held = &checkpoint, held.Tree
+	return anchor
+}
+
+// anchorUnder is the trust file, plus what a state this node accepted has
+// published since: log keys and the witness policy.
+func (a *Agent) anchorUnder(st *state.State) logclient.Anchor {
 	// D-020: the roots can rotate the log key inside the log, and a node
 	// learns the new one by replaying a log it already accepted. The trust
 	// file's key is kept alongside rather than replaced -- that overlap is the
@@ -309,23 +315,26 @@ func (a *Agent) anchorFor(held *logclient.Result) logclient.Anchor {
 	// than one whose is stale.
 	keys := []string{a.cfg.Anchor.LogKey}
 	policy := a.cfg.Anchor.Policy
-	if held != nil {
-		keys = append(keys, logclient.KeysFrom(a.cfg.Anchor.Origin, held.State)...)
+	if st != nil {
+		keys = append(keys, logclient.KeysFrom(a.cfg.Anchor.Origin, st)...)
 		// A published policy replaces the trust file's: one document, not two
 		// (§9.4). Raising a quorum has to bind the nodes already watching, or
 		// it protects only the ones who were not.
-		if published := logclient.PolicyFrom(held.State); published != "" {
+		if published := logclient.PolicyFrom(st); published != "" {
 			policy = published
 		}
 	}
 	return logclient.Anchor{
-		Anchor:  replay.Anchor{Net: a.cfg.Anchor.Net, GenesisHash: a.cfg.Anchor.GenesisHash},
+		Anchor:  a.replayAnchor(),
 		LogKeys: keys,
 		Origin:  a.cfg.Anchor.Origin,
 		Policy:  policy,
-		Stored:  stored,
-		Held:    heldTree,
 	}
+}
+
+// replayAnchor is the genesis this node's trust file pins.
+func (a *Agent) replayAnchor() replay.Anchor {
+	return replay.Anchor{Net: a.cfg.Anchor.Net, GenesisHash: a.cfg.Anchor.GenesisHash}
 }
 
 // Once verifies the log and reconciles the interface with it.

@@ -9,6 +9,7 @@ import (
 
 	"github.com/onembyte/norn/internal/logclient"
 	"github.com/onembyte/norn/internal/proven"
+	"github.com/onembyte/norn/internal/refusal"
 )
 
 // restoreHead reads back the head this node held before it last stopped
@@ -39,7 +40,21 @@ func (a *Agent) restoreHead() {
 	if _, err := os.Stat(filepath.Join(dir, "checkpoint")); errors.Is(err, fs.ErrNotExist) {
 		return
 	}
-	result, err := logclient.Verify(logclient.Dir(dir), a.anchorFor(nil))
+	mirror := logclient.Dir(dir)
+	result, err := logclient.Verify(mirror, a.anchorFor(nil))
+	// The trust file names the keys and policy from before any in-log
+	// rotation (D-020), and the point of rotating in the log is that nobody
+	// re-provisions. So a mirror this node accepted under a key or a policy it
+	// had learned is refused here for exactly those two reasons, and is
+	// verified once more under what its own entries publish -- the same
+	// authority the node used to accept it: a root quorum, replayed from the
+	// pinned genesis. Any other refusal is not about what the node had learned
+	// and gets no second attempt.
+	if code, _ := refusal.CodeOf(err); code == refusal.LogSignature || code == refusal.Quorum {
+		if published, perr := logclient.Published(mirror, a.replayAnchor()); perr == nil {
+			result, err = logclient.Verify(mirror, a.anchorUnder(published))
+		}
+	}
 	if err != nil {
 		// A disk fault, a half-overwritten copy, or another network's log in
 		// a reused run directory. Not a reason to refuse to start -- a node
