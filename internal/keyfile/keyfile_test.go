@@ -209,3 +209,50 @@ func withDifferentPublic(t *testing.T, pemBytes []byte) []byte {
 	copy(body[index+11+4:], other)
 	return rewrap(t, body)
 }
+
+// Agreement among stored copies cannot prove that any of them matches the seed.
+func TestThePublicCopiesMustAgreeWithTheSeed(t *testing.T) {
+	_, keyA := aKey(t)
+	pubB, keyB := aKey(t)
+	t.Run("three matching copies with another seed", func(t *testing.T) {
+		raw, err := Marshal(keyB, "seed mismatch")
+		if err != nil {
+			t.Fatal(err)
+		}
+		body := decodeBody(t, raw)
+		index := bytes.Index(body, keyB)
+		if index < 0 {
+			t.Fatal("the marshalled file contains no private key")
+		}
+		copy(body[index:index+ed25519.SeedSize], keyA.Seed())
+		if _, _, err := Parse(rewrap(t, body)); err == nil {
+			t.Fatal("accepted key A's seed with key B's three public copies")
+		}
+	})
+	for _, which := range []string{"stored half", "inner public", "declared public"} {
+		t.Run(which, func(t *testing.T) {
+			raw, err := Marshal(keyA, "public mismatch")
+			if err != nil {
+				t.Fatal(err)
+			}
+			body := decodeBody(t, raw)
+			index := bytes.Index(body, keyA)
+			if index < 0 {
+				t.Fatal("the marshalled file contains no private key")
+			}
+			switch which {
+			case "stored half":
+				index += ed25519.SeedSize
+			case "declared public":
+				index = bytes.Index(body, keyA[ed25519.SeedSize:])
+			case "inner public":
+				first := bytes.Index(body, keyA[ed25519.SeedSize:])
+				index = first + ed25519.PublicKeySize + bytes.Index(body[first+ed25519.PublicKeySize:], keyA[ed25519.SeedSize:])
+			}
+			copy(body[index:index+ed25519.PublicKeySize], pubB)
+			if _, _, err := Parse(rewrap(t, body)); err == nil {
+				t.Fatalf("accepted a %s that disagrees with the seed", which)
+			}
+		})
+	}
+}

@@ -186,12 +186,14 @@ func parseBlob(blob []byte) (ed25519.PrivateKey, string, error) {
 			len(secret), ed25519.PrivateKeySize)
 	}
 	key := ed25519.PrivateKey(secret)
-	derived := key.Public().(ed25519.PublicKey)
+	derived := ed25519.NewKeyFromSeed(secret[:ed25519.SeedSize]).Public().(ed25519.PublicKey)
 
-	// Three copies of the public key travel in this file, and they must agree.
+	// Three copies of the public key travel in this file, and each must agree
+	// with the key derived from the seed, not merely with the other copies.
 	// A file whose halves disagree is damaged or crafted, and signing with it
 	// would put an unexpected identity into the log.
-	if !bytes.Equal(innerPublic, derived) || !declared.Equal(derived) {
+	if !bytes.Equal(secret[ed25519.SeedSize:], derived) ||
+		!bytes.Equal(innerPublic, derived) || !declared.Equal(derived) {
 		return nil, "", errors.New("keyfile: the public and private halves disagree")
 	}
 	return key, string(comment), nil

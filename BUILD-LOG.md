@@ -630,7 +630,7 @@ plan before the first line of code, and stops at **[decision]** and **[user]**.
 | 6.5m-sec-028 | HS-028 | A head with no quorum time reads `unknown`, not `hard_stale` (SEC-028) | — | ⬜ |
 | 6.5m-sec-033 | HS-033 | `unknown` freshness is said out loud (SEC-033) | an alarm on a cadence, as `degraded` has | ⬜ |
 | 6.5m-sec-015 | HS-015 | [codex: gpt-6.1-sol/medium, lane A] The replay fuzzers reach a handler (SEC-015) | the genesis found from the manifest, the real anchor, a multi-entry seed corpus, and a test that fails if the target would skip | ✅ |
-| 6.5m-sec-024 | HS-024 | [codex: gpt-6.1-sol/medium, lane A] A key file's halves are checked against its seed (SEC-024) | a file whose seed and stored public half disagree is refused | ⬜ |
+| 6.5m-sec-024 | HS-024 | [codex: gpt-6.1-sol/medium, lane A] A key file's halves are checked against its seed (SEC-024) | a file whose seed and stored public half disagree is refused | ✅ |
 | 6.5m-sec-025 | HS-025 | [codex: gpt-6.1-sol/medium, lane A] Key files are never overwritten, and are synced (SEC-025) | exclusive publication with no check-then-act window, synced | ⬜ |
 | 6.5m-sec-021 | HS-021 | [codex: gpt-6.1-sol/high, lane B] Every event kind has a deliberate log level (SEC-021, SEC-033) | `FORK`, `FROZEN_BY_FORK`, `HARD_STALE` at error; `DEGRADED`, `MIRROR_UNUSABLE` and the rest at warn; a test that no kind falls through to a default | ✅ |
 | 6.5m-sec-034 | HS-034 | [codex: gpt-6.1-sol/high, lane B] `norn-log`'s HTTP server has timeouts (SEC-034) | header, read, write and idle timeouts and a header cap; a slow-headers client is cut off | ⬜ |
@@ -661,6 +661,12 @@ plan before the first line of code, and stops at **[decision]** and **[user]**.
 | 7.0 | H17 | `ACTION-PLAN.md` and the email draft | a test plan for the owner; an email drafted in the form `wireguard.com` asks for, read from the page at the time; a pre-send checklist; **nothing sent** | ⬜ |
 | U1 | — | Observe mode on the homelab mesh (6.5m-vii) | **[user]** one node a day, then every node for seven days | ⬜ |
 | U2–U7 | — | Lab, nginx, OpenTimestamps, NAS, phone enrollment, LocalAPI on a real node, outside people | **[user]** `HARDENING-PLAN.md` Stage G | ⬜ |
+
+- **6.5m-sec-024 — a key file's three public copies are checked against its seed (Codex lane A, row 2 of 3).**
+  - **What was wrong.** `keyfile.Parse` said it checked that the file's three copies of the public key agree, and it did — with each other. The derived key it compared them against was `PrivateKey.Public()`, which returns the stored second half of the private key, not a key derived from the seed. So a file carrying key A's seed and key B's public key in all three places parsed, and would have signed as an identity it did not hold.
+  - **What lane A built** (`gpt-6.1-sol`, reasoning medium). The public key is derived from the seed with `ed25519.NewKeyFromSeed`, and the stored half, the inner public key and the declared key are each compared with it. The test builds exactly the crafted file — key B's file with key A's seed spliced in — and three more with one copy replaced, and requires every one refused.
+  - **Reviewed here.** Every line read. The lane's four controls rerun with byte-verified restores — the derivation reverted, and each of the three comparisons bypassed — each fails the subtest it names. The package's race run is green here, including the real `ssh-agent` test the lane's sandbox could not start.
+  - **Gate:** generators first (no change under `testdata/`), then `make test` (race) alone, green in all 49 packages with tests — 909 tests — `vectors-check`, 221 reference tests, `lint`, `fmt-check`, `vet` clean.
 
 - **6.5m-sec-015 — the replay fuzzers reach a handler again (Codex lane A, row 1 of 3).**
   - **What was wrong.** `FuzzReplayAfterAValidGenesis` opened `00-genesis.cbor`; the fixture's file has been `0-genesis.cbor` since names became index-derived, so the target skipped on every run. `FuzzReplayNeverPanics` used an all-zero anchor, so no input ever passed the entry-0 check and no handler was ever reached. `PUBLICATION.md`'s fuzz count was true of the decoder, not of replay.
