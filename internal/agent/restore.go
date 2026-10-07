@@ -1,6 +1,10 @@
 package agent
 
 import (
+	"errors"
+	"fmt"
+	"io/fs"
+	"os"
 	"path/filepath"
 
 	"github.com/onembyte/norn/internal/logclient"
@@ -27,9 +31,24 @@ func (a *Agent) restoreHead() {
 	if a.cfg.RunDir == "" {
 		return
 	}
-	dir := logclient.Dir(filepath.Join(a.cfg.RunDir, proven.MirrorDir))
-	result, err := logclient.Verify(dir, a.anchorFor(nil))
+	dir := filepath.Join(a.cfg.RunDir, proven.MirrorDir)
+	// A first start has no mirror, and neither does a node that crashed
+	// before its first copy finished: the checkpoint is written last
+	// (mirror.Write), so without one there is no head to restore and nothing
+	// worth saying.
+	if _, err := os.Stat(filepath.Join(dir, "checkpoint")); errors.Is(err, fs.ErrNotExist) {
+		return
+	}
+	result, err := logclient.Verify(logclient.Dir(dir), a.anchorFor(nil))
 	if err != nil {
+		// A disk fault, a half-overwritten copy, or another network's log in
+		// a reused run directory. Not a reason to refuse to start -- a node
+		// with no mirror starts too -- and never a head to hold, but worth an
+		// alarm: this restart has lost the protection D-069 gives.
+		a.emit(Event{Kind: MirrorUnusable, Message: fmt.Sprintf(
+			"the mirror in %s does not verify under this trust file (%v); starting "+
+				"without the head this node held, so nothing protects this first "+
+				"cycle from an older head of the log", dir, err)})
 		return
 	}
 	a.restored = result

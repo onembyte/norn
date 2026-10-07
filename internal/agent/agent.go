@@ -59,6 +59,11 @@ const (
 	// MirrorFailed: this node could not keep a copy of the log it verified, so
 	// it has nothing to serve its peers. Nothing it enforces is affected.
 	MirrorFailed = "MIRROR_FAILED"
+	// MirrorUnusable: the copy of the log this node kept when it last ran does
+	// not verify under its trust file, so it holds no head across this
+	// restart, and its first cycle is as exposed to a rollback as every
+	// restart was before D-069. The mirror is ignored, never trusted.
+	MirrorUnusable = "MIRROR_UNUSABLE"
 	// AdoptedFromPeer: this node could not reach the log and took a checkpoint
 	// from a peer instead. It is worth saying out loud -- the log being
 	// unreachable is news even when gossip covered for it.

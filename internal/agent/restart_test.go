@@ -13,6 +13,7 @@ import (
 	"github.com/onembyte/norn/internal/proven"
 	"github.com/onembyte/norn/internal/reconcile"
 	"github.com/onembyte/norn/internal/refusal"
+	"github.com/onembyte/norn/internal/trust"
 )
 
 // restartable is an owner-mode node over runDir, as `nornd` builds one: the
@@ -127,5 +128,109 @@ func TestARestoredHeadIsNotEnforcedUntilSomethingVerifies(t *testing.T) {
 	var fork *logclient.ForkError
 	if errors.As(restarted.Once(), &fork) {
 		t.Error("an unreachable log is not a fork")
+	}
+}
+
+// mirrorFile returns one entry bundle of the mirror under runDir, for a test
+// to damage.
+func mirrorFile(t *testing.T, runDir string) string {
+	t.Helper()
+	var found string
+	root := filepath.Join(runDir, proven.MirrorDir, "tile", "entries")
+	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if err == nil && !info.IsDir() && found == "" {
+			found = path
+		}
+		return err
+	})
+	if err != nil || found == "" {
+		t.Fatalf("no entry bundle under %s: %v", root, err)
+	}
+	return found
+}
+
+// A mirror that does not verify is not a head this node held -- it is a disk
+// fault, a half-finished copy, or another network's log left in a reused run
+// directory. It is said out loud, because this restart is then exactly as
+// unprotected against a rollback as every restart was before D-069, and the
+// node starts as a node with no mirror: it neither trusts it nor refuses to
+// run because of it.
+func TestAnUnusableMirrorIsReportedAndIgnored(t *testing.T) {
+	cases := map[string]struct {
+		damage func(t *testing.T, runDir string)
+		anchor func(t *testing.T) *trust.Trust
+		// verifies is whether the restarted node's first cycle should succeed
+		// against the real log: it should whenever the log is this anchor's.
+		verifies bool
+	}{
+		"a flipped byte": {
+			damage: func(t *testing.T, runDir string) {
+				path := mirrorFile(t, runDir)
+				body, err := os.ReadFile(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				body[len(body)/2] ^= 0x01
+				if err := os.WriteFile(path, body, 0o644); err != nil {
+					t.Fatal(err)
+				}
+			},
+			anchor: anchor, verifies: true,
+		},
+		"a missing bundle": {
+			damage: func(t *testing.T, runDir string) {
+				if err := os.Remove(mirrorFile(t, runDir)); err != nil {
+					t.Fatal(err)
+				}
+			},
+			anchor: anchor, verifies: true,
+		},
+		"another network's log": {
+			damage: func(*testing.T, string) {},
+			anchor: freshAnchor, verifies: false,
+		},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			dir, _, _ := writableLog(t)
+			runDir := t.TempDir()
+			if err := restartable(t, dir, runDir, peertable.NewFake(), &recorder{}).Once(); err != nil {
+				t.Fatal(err)
+			}
+			c.damage(t, runDir)
+
+			rec := &recorder{}
+			restarted, err := New(Config{
+				Anchor: c.anchor(t), Fetcher: logclient.Dir(dir), Device: peertable.NewFake(),
+				Mode: reconcile.Owner, RunDir: runDir, Emit: rec.emit,
+				Now:  func() time.Time { return time.Unix(fixtureCosignedAt, 0) },
+				Mono: func() time.Duration { return 0 },
+			})
+			if err != nil {
+				t.Fatalf("an unusable mirror stopped the node from starting: %v", err)
+			}
+			if rec.kinds()[MirrorUnusable] != 1 {
+				t.Errorf("an unusable mirror should be reported once: %v", rec.kinds())
+			}
+			if restarted.held() != nil {
+				t.Fatal("a mirror that does not verify became the held head")
+			}
+			if err := restarted.Once(); (err == nil) != c.verifies {
+				t.Errorf("first cycle after an ignored mirror: %v", err)
+			}
+		})
+	}
+}
+
+// A node's first start has no mirror, and that is not news.
+func TestNoMirrorIsNotAnAlarm(t *testing.T) {
+	dir, _, _ := writableLog(t)
+	rec := &recorder{}
+	a := restartable(t, dir, t.TempDir(), peertable.NewFake(), rec)
+	if a.held() != nil {
+		t.Fatal("a node with an empty run directory holds a head")
+	}
+	if rec.kinds()[MirrorUnusable] != 0 {
+		t.Errorf("a first start raised %s: %v", MirrorUnusable, rec.events)
 	}
 }
