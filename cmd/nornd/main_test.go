@@ -235,6 +235,20 @@ func TestTheDaemonHandsItsStateDirectoryToTheAgent(t *testing.T) {
 	}
 }
 
+// requireTmpfs skips a test that needs a tmpfs at /dev/shm when there is none
+// -- unless NORN_REQUIRE_TMPFS=1, which the Linux CI job sets, so the one place
+// these tests can run cannot quietly stop running them.
+func requireTmpfs(t *testing.T, present bool) {
+	t.Helper()
+	if present {
+		return
+	}
+	if os.Getenv("NORN_REQUIRE_TMPFS") == "1" {
+		t.Fatal("NORN_REQUIRE_TMPFS=1 and /dev/shm is not a tmpfs")
+	}
+	t.Skip("no tmpfs at /dev/shm on this machine; the Linux CI job has one")
+}
+
 // devShmIsTmpfs reads /proc/mounts rather than asking internal/durable, so
 // the test does not grade the code with its own answer.
 func devShmIsTmpfs() bool {
@@ -294,9 +308,7 @@ func TestAStateDirectoryThatCannotKeepStateIsSaidOutLoud(t *testing.T) {
 		}
 	})
 	t.Run("a directory on a tmpfs", func(t *testing.T) {
-		if !devShmIsTmpfs() {
-			t.Skip("no tmpfs at /dev/shm on this machine; the Linux CI runner has one")
-		}
+		requireTmpfs(t, devShmIsTmpfs())
 		dir, err := os.MkdirTemp("/dev/shm", "norn-state-")
 		if err != nil {
 			t.Fatal(err)

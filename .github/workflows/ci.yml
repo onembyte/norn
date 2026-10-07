@@ -11,6 +11,9 @@ jobs:
       # agent client is hand-written, and the real-agent tests are what make
       # that defensible. They must not quietly stop running.
       NORN_REQUIRE_SSH_AGENT: "1"
+      # The tmpfs tests (state_dir warnings, durable.Volatile) can run only on
+      # Linux, and only here; a skip on this job is a failure.
+      NORN_REQUIRE_TMPFS: ${{ matrix.os == 'ubuntu-latest' && '1' || '0' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5

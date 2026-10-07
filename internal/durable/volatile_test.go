@@ -20,7 +20,12 @@ func TestAnOrdinaryDirectoryCanBeAsked(t *testing.T) {
 func TestATmpfsIsVolatile(t *testing.T) {
 	raw, err := os.ReadFile("/proc/mounts")
 	if err != nil || !strings.Contains(string(raw), " /dev/shm tmpfs ") {
-		t.Skip("no tmpfs at /dev/shm on this machine; the Linux CI runner has one")
+		// NORN_REQUIRE_TMPFS=1 is set by the Linux CI job, the one place this
+		// test can run, so that it cannot quietly stop running there.
+		if os.Getenv("NORN_REQUIRE_TMPFS") == "1" {
+			t.Fatal("NORN_REQUIRE_TMPFS=1 and /dev/shm is not a tmpfs")
+		}
+		t.Skip("no tmpfs at /dev/shm on this machine; the Linux CI job has one")
 	}
 	volatile, err := Volatile("/dev/shm")
 	if err != nil || !volatile {
