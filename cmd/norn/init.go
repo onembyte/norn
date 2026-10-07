@@ -14,6 +14,7 @@ import (
 	"github.com/onembyte/norn/internal/genesis"
 	"github.com/onembyte/norn/internal/keyfile"
 	"github.com/onembyte/norn/internal/note"
+	"github.com/onembyte/norn/internal/policy"
 	"github.com/onembyte/norn/internal/sshagent"
 )
 
@@ -195,6 +196,11 @@ func initCmd(args []string) error {
 		return err
 	}
 
+	p, err := policy.Parse(result.Trust.Policy)
+	if err != nil {
+		return err
+	}
+
 	files := map[string][]byte{
 		"genesis.cbor":    result.Entry,
 		"norn.trust":      result.TrustCBOR,
@@ -212,6 +218,17 @@ func initCmd(args []string) error {
 	}
 
 	printCeremony(result, *out, threshold, *signerThr, created)
+	// Genesis puts every witness in one flat group, so a bound below the
+	// member count means the ceremony chose k < N.
+	if colluders, ok := p.CollusionBound(); ok {
+		if colluders < len(result.Trust.Witnesses) {
+			fmt.Fprintf(os.Stderr, "quorum collusion bound: max(0, 2k-N) = %d -- that many witnesses "+
+				"colluding with the log can get two histories cosigned\n", colluders)
+		}
+		if colluders == 0 {
+			fmt.Fprintln(os.Stderr, "WARNING: two quorums need not share a witness; fork detection then rests on gossip")
+		}
+	}
 	return nil
 }
 

@@ -195,3 +195,38 @@ func TestTheShippedPolicyIsUsable(t *testing.T) {
 		t.Error("one witness alone satisfies the shipped quorum")
 	}
 }
+
+// Quorum size is not the collusion bound: a forking log needs only the
+// witnesses shared by two otherwise honest quorums to sign both branches.
+func TestTheCollusionBoundCountsTheSmallestQuorumIntersection(t *testing.T) {
+	for _, c := range []struct {
+		k, n, want int
+	}{
+		{2, 3, 1}, {3, 3, 3}, {1, 2, 0}, {2, 4, 0},
+	} {
+		t.Run(fmt.Sprintf("%d-of-%d", c.k, c.n), func(t *testing.T) {
+			var text strings.Builder
+			var members []string
+			for i := 0; i < c.n; i++ {
+				name := fmt.Sprintf("w%d", i)
+				fmt.Fprintf(&text, "witness %s %s\n", name, testVKey(name, note.AlgCosignature))
+				members = append(members, name)
+			}
+			// An unused witness does not enlarge the quorum's member set.
+			fmt.Fprintf(&text, "witness unused %s\n", testVKey("unused", note.AlgCosignature))
+			fmt.Fprintf(&text, "group g %d %s\nquorum g\n", c.k, strings.Join(members, " "))
+			p := mustParse(t, text.String())
+			if got, ok := p.CollusionBound(); !ok || got != c.want {
+				t.Errorf("CollusionBound() = (%d, %v), want (%d, true)", got, ok, c.want)
+			}
+		})
+	}
+	for _, text := range []string{
+		"quorum none\n",
+		fmt.Sprintf("witness a %s\nquorum a\n", testVKey("a", note.AlgCosignature)),
+	} {
+		if got, ok := mustParse(t, text).CollusionBound(); ok || got != 0 {
+			t.Errorf("CollusionBound() = (%d, %v) for a quorum without a group", got, ok)
+		}
+	}
+}

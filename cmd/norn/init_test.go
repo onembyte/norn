@@ -4,6 +4,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/hex"
+	"fmt"
 	"net"
 	"net/http"
 	"os"
@@ -430,5 +431,50 @@ func TestInitRefusesToInventAKeyFromAMangledKeyString(t *testing.T) {
 	}
 	if !strings.Contains(stderr, "key") {
 		t.Errorf("the error should say the value looks like a key:\n%s", stderr)
+	}
+}
+
+// A ceremony may choose availability over quorum intersection, but the
+// operator must see what that choice means before provisioning nodes.
+func TestInitExplainsTheWitnessCollusionBound(t *testing.T) {
+	bin := nornBinary(t)
+	for _, c := range []struct {
+		name, quorum string
+		n, bound     int
+		warning      bool
+	}{
+		{"2-of-4", "2", 4, 0, true},
+		{"2-of-3", "2", 3, 1, false},
+		{"3-of-3", "3", 3, 3, false},
+		{"all-by-default", "0", 3, 3, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			dir := t.TempDir()
+			args := []string{"init", "-name", "bound", "-out", dir,
+				"-root", filepath.Join(dir, "root.key"), "-signer", filepath.Join(dir, "signer.key"),
+				"-log-key", filepath.Join(dir, "log.key"), "-log-url", "http://x", "-quorum", c.quorum}
+			for i := 0; i < c.n; i++ {
+				name := fmt.Sprintf("w%d", i)
+				args = append(args, "-witness", name+"="+filepath.Join(dir, name+".key"))
+			}
+			_, stderr, err := run(t, bin, args...)
+			if err != nil {
+				t.Fatalf("init: %v\n%s", err, stderr)
+			}
+			readAnchor(t, filepath.Join(dir, "norn.trust"))
+			const warning = "WARNING: two quorums need not share a witness; fork detection then rests on gossip"
+			if got := strings.Contains(stderr, warning); got != c.warning {
+				t.Errorf("quorum warning = %v, want %v:\n%s", got, c.warning, stderr)
+			}
+			const note = "quorum collusion bound"
+			if c.bound < c.n {
+				want := fmt.Sprintf("%s: max(0, 2k-N) = %d -- that many witnesses colluding with the log can get two histories cosigned", note, c.bound)
+				if !strings.Contains(stderr, want) {
+					t.Errorf("ceremony does not say %q:\n%s", want, stderr)
+				}
+			} else if strings.Contains(stderr, note) || strings.Contains(stderr, "WARNING:") {
+				t.Errorf("an all-witness quorum carries a collusion warning:\n%s", stderr)
+			}
+		})
 	}
 }

@@ -420,3 +420,73 @@ func TestTheStoredHeadOutlivingARestartIsWrittenDown(t *testing.T) {
 		t.Error("DECISIONS.md has no D-069")
 	}
 }
+
+// SEC-002. Two k-of-N quorums overlap in only max(0, 2k−N) witnesses;
+// checking each claim separately keeps a correct formula elsewhere on the
+// page from hiding the old, stronger claim in the guarantee itself.
+func TestTheWitnessCollusionBoundIsWrittenDown(t *testing.T) {
+	for _, c := range []struct{ file, start, end string }{
+		{"README.md", "| **G2** |", "\n"},
+		{"THREAT-MODEL.md", "### A9 — Witness faults", "### A10"},
+		{"THREAT-MODEL.md", "| **G2 Non-equivocation** |", "\n"},
+	} {
+		t.Run(c.file+"/"+c.start, func(t *testing.T) {
+			raw, err := os.ReadFile(filepath.Join(root(t), c.file))
+			if err != nil {
+				t.Fatal(err)
+			}
+			doc := string(raw)
+			start := strings.Index(doc, c.start)
+			if start < 0 {
+				t.Fatalf("%s has no %s to read", c.file, c.start)
+			}
+			section := doc[start:]
+			end := strings.Index(section[len(c.start):], c.end)
+			if end < 0 {
+				t.Fatalf("%s has no end to %s", c.file, c.start)
+			}
+			section = strings.Join(strings.Fields(section[:len(c.start)+end]), " ")
+			if problem := witnessBoundClaimProblem(section); problem != "" {
+				t.Errorf("%s %s: %s (SEC-002)", c.file, c.start, problem)
+			}
+		})
+	}
+}
+
+func witnessBoundClaimProblem(claim string) string {
+	for _, old := range []string{"fewer than k", "< k", "≥ k witnesses **collude"} {
+		if strings.Contains(claim, old) {
+			return "still states the incorrect k-witness collusion bound"
+		}
+	}
+	for _, want := range []string{
+		"fewer than max(0, 2k−N) witnesses colluding with the log",
+		"2k ≤ N", "quorum alone proves nothing about a fork", "detection rests on gossip",
+		"3-of-3", "bound k", "any one witness down stalls cosigning",
+	} {
+		if !strings.Contains(claim, want) {
+			return "does not say " + want
+		}
+	}
+	return ""
+}
+
+// The guard itself must reject the old claim even when a correct bound is
+// also present, or a prose edit that leaves both answers would pass.
+func TestTheWitnessBoundGuardRejectsTheOldClaim(t *testing.T) {
+	good := "fewer than max(0, 2k−N) witnesses colluding with the log; with 2k ≤ N the quorum alone proves nothing about a fork and detection rests on gossip; a 3-of-3 policy makes the bound k, but any one witness down stalls cosigning"
+	if problem := witnessBoundClaimProblem(good); problem != "" {
+		t.Fatalf("refused the corrected claim: %s", problem)
+	}
+	for _, bad := range []string{
+		"fewer than k witnesses colluding with the log",
+		"< k witnesses faulty or malicious | No effect on correctness; policy tolerates.",
+		good + "; fewer than k witnesses have no effect on correctness",
+		strings.Replace(good, "max(0, 2k−N)", "k", 1),
+		strings.Replace(good, "2k−N", "k−N", 1),
+	} {
+		if witnessBoundClaimProblem(bad) == "" {
+			t.Errorf("guard accepted the incorrect claim %q", bad)
+		}
+	}
+}

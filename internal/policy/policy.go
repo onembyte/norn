@@ -318,3 +318,21 @@ func (p *Policy) Label(cosignerName string) string {
 	}
 	return cosignerName
 }
+
+// CollusionBound reports the minimum number of witnesses that must collude
+// with the log to cosign two histories under a flat k-of-N quorum:
+// max(0, 2k-N). It does not cover quorum none or a quorum naming one witness.
+// Nested groups are left to the operator because their overlapping member
+// sets cannot be described by a single k and N.
+func (p *Policy) CollusionBound() (colluders int, ok bool) {
+	g, ok := p.groups[p.quorum]
+	if !ok {
+		return 0, false
+	}
+	for _, member := range g.members {
+		if _, nested := p.groups[member]; nested {
+			return 0, false
+		}
+	}
+	return max(0, g.threshold-(len(g.members)-g.threshold)), true
+}

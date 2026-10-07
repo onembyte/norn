@@ -116,11 +116,13 @@ Capabilities: submits an enrollment request.
 Not prevented — they are authorized. **Every action is attributable to their key and permanent** (G5). Threshold > 1 on root operations forces collusion; monitors alert on every entry. This is accountability, not prevention, and the doc says so.
 
 ### A9 — Witness faults
+Two k-of-N quorums share at least 2k−N witnesses, so the number that must collude with the log to get two histories cosigned is max(0, 2k−N) — one under the shipped 2-of-3 policy, not k.
+
 | Case | Norn |
 |---|---|
-| < k witnesses faulty or malicious | No effect on correctness; policy tolerates. |
-| ≥ k witnesses refuse to cosign (liveness) | Log cannot advance under the node's policy → nodes hold last good checkpoint, alarm (G4). DoS. |
-| ≥ k witnesses **collude with the log** | **Split view becomes possible. Out of scope**, exactly as for CT and Sigsum. Mitigation: witnesses in independent trust domains (Pi, VPS, a friend, public witness network). |
+| fewer than max(0, 2k−N) witnesses colluding with the log | No split view under the quorum alone; correctness holds. |
+| ≥ k witnesses refuse to cosign (liveness) | Log cannot advance under the node's policy → nodes hold the last good checkpoint and alarm (G4). DoS. A 3-of-3 policy makes the bound k at the cost of exactly this: any one witness down stalls cosigning. |
+| max(0, 2k−N) or more witnesses collude with the log — with 2k ≤ N, that is none | A split view is possible: the quorum alone proves nothing about a fork, and detection rests on gossip between nodes every `T_g` (T1). `norn init` warns when 2k ≤ N. Mitigation as for CT and Sigsum: witnesses in independent trust domains (Pi, VPS, a friend, public witness network). |
 
 ### A10 — Attacker at bootstrap
 Capabilities: controls the channel that provisions a new node.
@@ -148,7 +150,7 @@ A fail-open bug admits rogue peers; a fail-closed bug takes the network down.
 | # | Guarantee | Rests on |
 |---|---|---|
 | **G1 Peer authenticity** | In enforce mode, every peer in the node's WG table has an inclusion proof, under a checkpoint the node accepted, and its replayed status is `active`. | correct verifier; intact `norn.trust`; < k faulty witnesses |
-| **G2 Non-equivocation** | Two honest nodes never accept incompatible histories. A fork yields a non-repudiable proof and is held forever (KEYTRANS rule: once forked, reject everything inconsistent with the held view). | < k witnesses colluding with the log; Ed25519 + SHA-256 sound |
+| **G2 Non-equivocation** | Two honest nodes never accept incompatible histories. A fork yields a non-repudiable proof and is held forever (KEYTRANS rule: once forked, reject everything inconsistent with the held view). | fewer than max(0, 2k−N) witnesses colluding with the log — one, under 2-of-3 (A9); Ed25519 + SHA-256 sound; with 2k ≤ N the quorum alone proves nothing about a fork and detection rests on gossip; 3-of-3 makes the bound k, but any one witness down stalls cosigning |
 | **G3 Validity independent of the log** | Replay admits only entries valid under the signer state at that point. The log can publish garbage; it cannot grant access. **Open defect SEC-001** breaks this today (see A2). | signer keys not compromised beyond A3/A4 |
 | **G4 Bounded staleness** | A node acting on a checkpoint older than S is `degraded` and alarms. A `Revoke` is effective on every honest, connected node within T_c + T_g + T_poll or that node alarms. | at least one honest path to a fresh checkpoint (log or peer) |
 | **G5 Transparency / accountability** | Every accepted key traces to a log entry signed by an identifiable signer. Monitors see every entry within T_c + monitor lag. | monitor exists and runs (procedural) |

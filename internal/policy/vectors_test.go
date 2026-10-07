@@ -435,3 +435,15 @@ func TestOnlyTabAndLineFeedAreAllowedASCIIControls(t *testing.T) {
 		}
 	}
 }
+
+// Nested groups may overlap in ways a single k-of-N intersection cannot
+// describe, so the flat-group bound must not pretend to cover them.
+func TestTheNestedFixtureHasNoFlatCollusionBound(t *testing.T) {
+	p, err := Parse(policyText(t, "nested-group"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := p.CollusionBound(); ok || got != 0 {
+		t.Errorf("CollusionBound() = (%d, %v), want (0, false)", got, ok)
+	}
+}
