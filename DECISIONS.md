@@ -939,3 +939,21 @@ per cycle while a head is uncorroborated, which ends with the first answer; a
 fresh node whose peers are reachable adopts `T_g` sooner than today. No wire
 format and no vector changes. `SPEC.md` §13.2 and §15 carry the node-contract
 sentences; `THREAT-MODEL.md` gains A13.
+
+## D-073 · A peer's allowed-ips are bounded by its enrollment's grant (2026-10-08)
+`labels.ip` stops being advisory: under `params.routes = "granted"` (the default) a
+node installs for a peer only allowed-ips within the masked prefixes its `enroll`
+carried; a provider may narrow, never widen; a device enrolled without a grant gets
+its key and no routes; `endpoint` stays overridable. Why: G1 proved the key and
+nothing proved the routes, and in WireGuard a peer's AllowedIPs is its authority to
+source those addresses — the one thing a compromised coordinator could still do was
+hand a legitimate peer `0.0.0.0/0`. Supersedes the "hint" half of D-026 and keeps its
+reason: the log bounds what a peer may claim; it does not route. Rejected: a
+first-class `routes` entry type (more protocol than the hole needs; v1.1 if
+re-enrolment proves too heavy) · leaving routes advisory (the hole).
+**Recorded for v1.1, not rejected.** *Proof-carrying admission* — a peer presents a
+fresh witnessed inclusion proof before the handshake and is installed just in time
+within its grant; the coordinator becomes an address book. *Devices as witnesses* —
+nodes cosign the heads they verified, and a policy may name k of a network's own
+devices. Each is a wire protocol with its own freshness and denial-of-service
+questions. `HARDENING-PLAN.md` H18, D-073's block in `BUILD-LOG.md`.

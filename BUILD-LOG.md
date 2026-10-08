@@ -688,6 +688,10 @@ plan before the first line of code, and stops at **[decision]** and **[user]**.
 | 6.5l-ix-e | H5-e | Fork and proofs: D14, D15, D4 (§11.1) | a sound same-size fork in `fork/`'s `sound`; `proofs/at-the-cap` and `proofs-bad/one-past-the-cap`, grown with unlisted witnesses' lines; the held-before-policy two-fault evidence; §12.1's bundle-cap bullet removed | ⬜ |
 | 6.5l-ix-b | H5-b | 🧠 One DECISION block: D2, D5, D6, D7, D8, D10, D12, D13 | a recommendation each, as the triage below states the question; the rows that need an answer wait, the rest of H5 does not | ⬜ |
 | 6.5l-ix-f | H5-f | Prose, and the decisions applied: D4's sentence, D11, D16, D19, and b's answers | "still normative, merely untested"; the name a learned key signs under; the served-rotated and served-superseded manifests; the coverage rows; each answered part of b in SPEC and both implementations | ⬜ |
+| 6.11 | H18 | Route authorization: a peer's allowed-ips are what the log granted (D-073) | the one hole a compromised coordinator keeps: a legitimate peer handed `0.0.0.0/0`. The enrollment's `ip` label becomes the grant; `params.routes` | ⬜ |
+| 6.11-a | H18-a | 🧠 SPEC: the grant, `params.routes`, the node contract in §13.2, vectors | §4.0, §4.5, §13.2; `proven/` carries each device's grant in both implementations; a `params` entry that switches `routes`; D-026's hint half superseded | ⬜ |
+| 6.11-b | H18-b | Go and the reference bound the provider by the grant | `endpoint.Desired` withholds a widened prefix and reports it; no grant → key only, said once; red first against the kernel-like fake | ⬜ |
+| 6.11-c | H18-c | The documents say it | `ENFORCEMENT.md` §5, `THREAT-MODEL.md` G7 route authenticity, README's comparison row | ⬜ |
 | 6.5l-x | H6 | Sealed runs under D-068 | see the 6.5l-x row above | ⬜ |
 | 6.5m-v | H7 | Mesh simulation: T1–T8 in CI | `internal/sim` runs N agents over real loopback gossip with a programmable log; T1, T1b, T2–T8 pass in simulated time, each with a control that disables the mechanism it proves; `make lab-sim` | ⬜ |
 | 6.5m-vi | H8 | Observe-mode deployment kit | a hardened systemd unit and example config, each checked by a test; `/metrics` with `GOSSIP.md` §9's names; a log-server Dockerfile; `OBSERVE.md` | ⬜ |
@@ -699,10 +703,23 @@ plan before the first line of code, and stops at **[decision]** and **[user]**.
 | 6.5m-xii | H13 | Documents tell the truth about scale and plans (F10–F12) | the scale ceiling stated as numbers; every "planned" checked against the code; each new factual sentence guarded | ⬜ |
 | 6.7 | H14 | `contrib/verify-py/`, kept | a cold-built standard-library verifier passes every vector, committed as written with its provenance; `make verify-py` in `make ci` | ⬜ |
 | 6.6 | H15 | Phase 6 gate audit | see the 6.6 row above | ⬜ |
+| 6.12 | H19 | `SECURITY.md`, `CONTRIBUTING.md`, release notes for v0.1 | **a** [codex: gpt-6-luna/medium] the two files; **b** `RELEASE-NOTES-v0.1.md`, the tag is U8 | ⬜ |
 | 6.10 | H16 | Hand-over material | `TRY-NORN.md` with every command run in a test; a review packet for the comparison table | ⬜ |
+| 6.13 | H20 | 🧠 `KEYTRANS-MAPPING.md` | every Norn concept against `draft-ietf-keytrans-protocol` as it stands then: equivalent, partial, none — and where each *none* belongs | ⬜ |
 | 7.0 | H17 | `ACTION-PLAN.md` and the email draft | a test plan for the owner; an email drafted in the form `wireguard.com` asks for, read from the page at the time; a pre-send checklist; **nothing sent** | ⬜ |
+| 7.1 | H21 | The IETF problem statement, as a draft nobody sends | `standards/draft-michetti-wireguard-peer-authz-problem.md`; *needs* H20 and U8's answer | ⬜ |
 | U1 | — | Observe mode on the homelab mesh (6.5m-vii) | **[user]** one node a day, then every node for seven days | ⬜ |
 | U2–U7 | — | Lab, nginx, OpenTimestamps, NAS, phone enrollment, LocalAPI on a real node, outside people | **[user]** `HARDENING-PLAN.md` Stage G | ⬜ |
+| U8 | — | The v0.1 tag; the scope email to `keytrans@ietf.org`, drafted here, sent by you | **[user]** not before the lab soak; the 2 Nov 2026 cutoff is not a target | ⬜ |
+| U9 | — | Render and, if U8's answer makes it in scope, submit the `-00` problem statement | **[user]** `kramdown-rfc`, a Datatracker account | ⬜ |
+
+- **plan — the watcher's IETF brief reviewed against the datatracker and this tree; D-073 taken; H18–H21 and U8–U9 added.**
+  - **The ask.** The owner's research watcher produced a decision brief for Mythos (Norn's distinctness, what to reuse, whether and how to approach the IETF); a friend in security read it and thought the whole thing "a mystery nobody could build". The owner asked for a review, for what would make Norn worth running, and for an IETF plan; then answered "yes" to the four additions proposed.
+  - **What was checked, not assumed.** The KEYTRANS charter, documents list and `draft-ietf-keytrans-protocol-05` (data model, deployment modes), and SCITT's charter, read today from the datatracker; a fresh search for a competing project (none: Tailnet Lock remains the only neighbour); the repo against the brief's gates (`SECURITY.md`, `CONTRIBUTING.md`, a tag, a real-kernel run, outside review and a KEYTRANS mapping are the real gaps).
+  - **Where the difficulty really is.** Not the log — everyone has one. The three edges nobody has shipped together for WireGuard: provisioning without TOFU (G6), behaviour when nothing is reachable (the staleness ladder, gossip, the held head), and enforcement without the coordinator's cooperation. Norn has them in software; what it lacks is evidence on real kernels and outside eyes, which are the U-rows.
+  - **D-073.** Route authorization now (H18): the single remaining hole a compromised coordinator keeps is the width of a legitimate peer's routes, and the signed data to close it already exists. Proof-carrying admission and devices-as-witnesses recorded for v1.1 with their reasons. The block is below the open D-072 one.
+  - **The plan.** H18 route authorization (Stage C, after H5 — its vectors ride H6's sealed runs); H19 `SECURITY.md`/`CONTRIBUTING.md`/release notes (Stage E, before H16); H20 🧠 `KEYTRANS-MAPPING.md` and H21 the problem-statement draft nobody sends (Stage F, after H17); U8 the tag and the scope email to `keytrans@ietf.org`, U9 render and submit, both yours. The November 2 cutoff is not a target. Phase 7's "an Internet-Draft" line now points here.
+  - **Gate:** documents only, and run in full anyway: generators first (no change under `testdata/`), then `make test` (race) alone — green in all 49 packages with tests, 1048 tests — `vectors-check`, 227 reference tests, `lint`, `fmt-check`, `vet` clean.
 
 - **6.5l-ix-d-i — the receipt order is held pair by pair, and an unpadded leaf hash is refused. H5-d split into i–iii.**
   - **Why split.** d named three kinds of work in two generators: receipts (the reference writes `receipt-bad/`), the served path and `checkpoints-bad/` (Go's `norn-genlog`), and two odd ones out — tile paths past index 999 and the trust file's origin case. One sitting each.
@@ -2667,6 +2684,34 @@ The audit lives on branch `claude/tender-mccarthy-bzllsp` (`docs/audit/SECURITY_
 | 036 | low | **Confirmed.** CI has no `permissions:`, pins actions by tag, installs `pynacl` unpinned, never sets `NORN_REQUIRE_WITNESS`, and has no scheduled run. The `vectors-check`/`fork/` claim was not checked | `ci.yml` | 6.5m-ci |
 
 ---
+
+## DECISION — D-073: route authorization now; proof-carrying admission and devices as witnesses recorded for v1.1 (taken 2026-10-08)
+
+Written on Mythos from the review of the watcher's IETF brief (`~/Downloads/MYTHOS_NORN_IETF_DECISION_BRIEF.md`, 2026-10-08), rechecked against the datatracker and this tree; the owner answered "yes" to the four additions the review proposed. One of them changes what a conforming node installs, so it is a decision; two are protocol work that v1 does not take.
+
+### (a) The hole a compromised coordinator keeps: routes
+
+**What is true.** `THREAT-MODEL.md` G1 proves the *key* of every installed peer. The peer's allowed-ips come from an endpoint provider that `ENFORCEMENT.md` §5 calls "untrusted for keys" — and trusted for everything else. In WireGuard, a peer's AllowedIPs is its authorization to source those addresses (cryptokey routing), so a coordinator that cannot add a peer can still hand a legitimate one `0.0.0.0/0` and take the client's traffic. The brief asks "can malicious AllowedIPs still harm a client?" and leaves it open; the answer today is yes. The data to close it is already signed and replayed: D-026's `labels.ip`, which the signers sign at enrollment and which §4.0 calls an advisory hint.
+
+| Option | What it means | Cost |
+|---|---|---|
+| **A — the enrollment's `ip` label is the grant (taken)** | Under `params.routes = "granted"` (the default), a node installs for a peer only allowed-ips within the prefixes its `enroll` carried, masked. A provider MAY narrow, MUST NOT widen; a widened prefix is withheld and reported, as an overlapping one is today. A device enrolled with no grant is installed with its key and no routes — reachable by nobody, able to source nothing — and the node says so once. `endpoint` stays overridable: reachability is not authorization. `routes = "advisory"` keeps today's behaviour for a network that wants it, and says so in its genesis. Changing a grant is `revoke` and `enroll`, as changing any label is. | §4.0, §4.5, §13.2; `proven/` vectors carry the grant; both implementations compute it; `endpoint.Desired` bounds the provider; a `PROVIDER_CLAIM` for a widened prefix; a seventh guarantee in `THREAT-MODEL.md` with its assumption (the signers granted what they meant to). Supersedes the "hint" half of D-026 and keeps its reason: the log is the authority on the *bound* a peer may claim, not on routing. |
+| B — a first-class `routes` entry type | Grants change without re-enrolment; the device need not consent to its own routes. | A new entry type, replay rule, and a device whose routes someone else changes under it; v1.1 if re-enrolment proves too heavy. |
+| C — leave routes advisory, document the hijack | — | The remaining hole stays, and `README.md`'s "refuses any peer that isn't in it" is true of keys only. |
+
+**Taken: A**, by the owner, 2026-10-08. Rejected: B (more protocol than the hole needs), C (the hole). Implementation: H18 (6.11); 6.11-a is 🧠.
+
+### (b) Recorded for v1.1: proof-carrying admission
+
+A node today installs what the log proves and the provider describes. The complete form of coordinator independence is a node that admits a peer it was never told about because the peer presents a fresh, witnessed inclusion proof — a small envelope on the WireGuard port before the handshake, then a just-in-time install within the peer's grant. The coordinator becomes an address book. It is the "mesh with authentication and trust properties" item on `wireguard.com/todo`, and the one mechanism here that two implementations must agree on byte for byte, which makes it the standards-shaped part. It is a new wire protocol with its own replay, freshness and denial-of-service questions, so it is not v1. Recorded, not rejected.
+
+### (c) Recorded for v1.1: devices as witnesses
+
+`PUBLICATION.md` §6's honest objection — why would anyone run a witness for a small network — is the deployment blocker. Nodes already gossip heads and verify consistency; a node could cosign the heads it verified, and a policy could name "k of my own devices, from different owners" alongside public C2SP witnesses when there are any. A device's cosignature key is a second key per device, a policy grammar that names devices, and a question about a log operator who also runs devices. Not v1. Recorded, not rejected.
+
+### What the brief had wrong, for the record
+
+It was written without the tree: nine of its twelve "immediate" steps were done (frozen `SPEC.md`, byte-exact vectors with a reference implementation, C2SP witnessing verbatim, freshness, fork evidence, `revoke`/`rotate`/`govern`, owner and watchdog modes, optional OpenTimestamps anchoring); its "reuse Tessera" is moot for a log already in C2SP's tile format. What it lists that is really missing is now H19–H21 and U8–U9. Rechecked on 2026-10-08: KEYTRANS's charter does say the WG "may standardize integrations"; `draft-ietf-keytrans-protocol` is at -05 (July 2026) and the architecture -10 is with the IESG, but the WG's own milestones had the core at the IESG by November 2025 and no integration document exists, not even the MLS one on its list; SCITT's charter is scoped to software supply chains. So the IETF path is **WAIT**, the artifact is most likely a problem statement rather than an integration draft, and H20's mapping is what decides.
 
 ## DECISION — 6.5m-sec-dec: five protocol questions the audit raised (written 2026-10-08; **open**, to be recorded as D-072 when answered)
 

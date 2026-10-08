@@ -140,6 +140,15 @@ incident that produced it. Read that section before the first firing.
   rule at the edges, log-key retirement, enforcing under `quorum none` — with
   a recommendation each; `BUILD-LOG.md`'s DECISION block says how to answer.
   Rows 021r–033r wait on their part; nothing else does.
+- **D-073 (taken 2026-10-08, owner's "yes" to the review of the watcher's
+  IETF brief): a peer's allowed-ips are bounded by what its enrollment
+  granted.** `labels.ip` stops being advisory: under `params.routes =
+  "granted"` (the default) a node installs for a peer only allowed-ips
+  inside the prefixes its `enroll` carried; a provider may narrow, never
+  widen; a device enrolled without a grant gets a key and no routes. The
+  remaining hole a compromised coordinator had — hand a legitimate peer
+  `0.0.0.0/0` — closes. Proof-carrying admission and devices-as-witnesses
+  are recorded for v1.1. H18; the block is in `BUILD-LOG.md`.
 - **D-071 (taken 2026-10-07, under the owner's instruction to review KEYTRANS
   -10 §7.2 and build what it shows missing): the witness clock survives a
   restart; a restarted node asks the peers its held head proves; a node with
@@ -428,6 +437,36 @@ verdict `SPEC INSUFFICIENT`. Same pattern as 6.5l-vii-d.
 - e. Two consecutive clean runs → tick 6.5l-vii and `PLAN.md` Phase 6 line 1
   with both reports' names and commits.
 
+#### H18 · 6.11 · Route authorization: a peer's allowed-ips are what the log granted ⏱3 (D-073)
+*Needs:* H5 ticked (the vectors it adds go through H6's runs with the rest).
+In WireGuard a peer's AllowedIPs *is* its authorization to source those
+addresses. Norn proved the key and took the routes from an untrusted
+provider, so a compromised coordinator could not add a peer but could
+still hand a legitimate one `0.0.0.0/0`. The data to close it is already
+signed: the enrollment's `ip` label.
+- a. 🧠 `SPEC.md`: §4.0's reserved `ip` label becomes the **grant** — the
+  prefixes the signers authorised this device to source, masked, still
+  opaque text to replay (an unparseable grant is no grant); §4.5 gains
+  `routes` ∈ {`granted`, `advisory`}, default `granted`; §13.2 states the
+  node contract: under `granted`, every allowed-ip a node installs for a
+  peer MUST lie within that peer's grant, a provider MAY narrow and MUST
+  NOT widen, a device with no grant is installed with its key and no
+  routes, and `endpoint` stays overridable (reachability is not
+  authorization). A `rotate` keeps the grant; changing it is `revoke` and
+  `enroll`. Vectors: `proven/` cases gain each device's grant, both
+  implementations compute it; a `params` entry switching `routes`.
+- b. Go and the reference: `endpoint.Desired` bounds the provider's
+  prefixes by the grant (a widened prefix is withheld and reported as a
+  `PROVIDER_CLAIM`, as overlaps are today); a device with no grant under
+  `granted` gets no allowed-ips, said once; `proven.json` carries the
+  grant. Red first against the kernel-like fake: a provider that widens a
+  peer's routes, and the peer is installed within its grant anyway.
+- c. `ENFORCEMENT.md` §5 (providers are untrusted for keys *and for the
+  width of routes*), `THREAT-MODEL.md` (a seventh guarantee: route
+  authenticity, with its assumption), the README comparison row.
+- d. `labels.ip` was D-026's "hint"; D-073 supersedes that half of D-026
+  and says why the log is the authority on the *bound*, not on routing.
+
 ### Stage D — testable and runnable without hardware
 
 #### H7 · 6.5m-v · Mesh simulation: T1–T8 in CI ⏱5 🔒
@@ -546,6 +585,18 @@ transcript audit); `make verify-py`, in `make ci`; never edited by hand.
 Each `PLAN.md` gate line and each `PUBLICATION.md` inventory row against
 what exists (✅ fails if missing, ⬜ fails if present); what needs people.
 
+#### H19 · 6.12 · `SECURITY.md`, `CONTRIBUTING.md`, release notes for v0.1 ⏱1
+What a stranger looks for before trusting a security tool, and what the
+WireGuard project list and an IETF reviewer will look for first.
+- a. `SECURITY.md` **[codex: gpt-6-luna/medium]**: how to report, what is in
+  scope (the log, the verifier, `nornd`, the trust file), what is not
+  (`THREAT-MODEL.md` §7 verbatim), supported versions (none yet: say so),
+  no bounty. `CONTRIBUTING.md`: the gate, TDD, controls, the vectors'
+  provenance, and that `SPEC.md` is frozen and changes by decision.
+- b. `RELEASE-NOTES-v0.1.md`: what v0.1 is (software complete, nothing
+  measured on a real kernel), the exact gate it passed, what it does not
+  claim. The tag itself is yours (U8).
+
 #### H16 · 6.10 · Hand-over material for the human gate lines ⏱2
 - a. `TRY-NORN.md`: a stranger goes from a clean checkout to offline
   verification, the simulation (`make lab-sim`) and an observe-mode node,
@@ -556,7 +607,7 @@ what exists (✅ fails if missing, ⬜ fails if present); what needs people.
 ### Stage F — your hand-over
 
 #### H17 · 7.0 · `ACTION-PLAN.md`: how to test Norn, and how to present it ⏱2
-*Needs:* every row H0–H16 ✅, or blocked on a recorded decision that the
+*Needs:* every row H0–H19 ✅, or blocked on a recorded decision that the
 plan then states as open.
 - a. **Your test plan**, in order, each step with what you should see and
   what to send back: offline verification; the simulation; a local witness;
@@ -575,6 +626,33 @@ plan then states as open.
 - d. After H17, the loop stops itself (`CronDelete`) and sends a one-line
   notification.
 
+#### H20 · 6.13 · `KEYTRANS-MAPPING.md` 🧠 ⏱2
+*Needs:* H18 ticked (the mapping must include the grant).
+For each Norn concept — network, device identity, WireGuard key binding,
+grant, enrollment, rotation, revocation, current state, proof bundle,
+checkpoint, witness, monitor, freshness, fork evidence, trust file — the
+KEYTRANS equivalent (`draft-ietf-keytrans-protocol`, rechecked at the
+time), *partial equivalent* or *none*, and for each *none* why it is
+WireGuard-specific and where it belongs: integration layer, Norn
+extension, separate document, or implementation policy. Honest about the
+data models: KEYTRANS is a VRF-keyed prefix tree of label/version/value
+with auditors; Norn is a replay log with a closed state machine and C2SP
+witnesses. The result decides whether an integration document is honest
+or whether the artifact is a problem statement. Written from the
+datatracker's current text, not from memory.
+
+#### H21 · 7.1 · The IETF problem statement, as a draft nobody sends ⏱2
+*Needs:* H20 ticked and U8's answer recorded.
+`standards/draft-michetti-wireguard-peer-authz-problem.md` in kramdown-rfc
+Markdown: problem statement, threat model, requirements for an
+interoperable mechanism by which a WireGuard endpoint verifies a peer
+key's **current** authorization — and its route grant — independently
+of the coordinator that distributes it; relationship to KEYTRANS; Norn as
+one implementation, named nowhere in a normative sentence. The question
+the draft asks is the brief's: whether that mechanism deserves
+standardising, not whether Norn does. Rendering needs `kramdown-rfc`
+(a Ruby gem: a download, so U9's), and nothing is submitted by this plan.
+
 ### Stage G — yours, not looped **[user]**
 
 | row | what | needs |
@@ -586,6 +664,8 @@ plan then states as open.
 | U5 · 6.9i | enrollment with a phone and a hardware key, timed | you, a phone, a key |
 | U6 | the LocalAPI watcher against a real `tailscaled`/Headscale | a Tailscale node |
 | U7 | an outside person runs it; a reviewer checks the comparison table; the email to the WireGuard team; publication per `PUBLICATION.md` | other people |
+| U8 | the v0.1 tag, and the scope conversation: an email to `keytrans@ietf.org` drafted in H17's form (problem, threat model, the WireGuard case, relationship to KEYTRANS, a working implementation, where guidance is needed), **sent by you** | a public act; the IETF 124 cutoff (2 Nov 2026) is not a target |
+| U9 | render H21's draft with `kramdown-rfc`, revise on U8's answer, and submit `-00` only if the answer makes an integration or a problem statement in scope; the next cutoff after the lab soak | a Ruby gem; a Datatracker account; your name on it |
 
 ---
 
@@ -593,7 +673,8 @@ plan then states as open.
 
 `PLAN.md`'s backlog — FIDO2 `ed25519-sk`, dual-key rotate grace, the NetBird
 upstream admission hook, macOS/Windows agents, public witness onboarding,
-multi-log validity, policy transparency, an Internet-Draft, and D-065's
+multi-log validity, policy transparency, proof-carrying admission and
+devices as witnesses (D-073 b and c), and D-065's
 closed codes for trust files, requests and policies (v1.1). None starts
 without the user choosing it.
 
