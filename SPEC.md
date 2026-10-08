@@ -696,7 +696,7 @@ spec's rules produce.
   a line's name and key id match a trusted key, verification also checks the
   length for that key's algorithm: a 76-byte payload under the log's `0x01`
   key is a `log-signature` failure, not a `note` framing failure, and MUST be
-  refused even if another line from that key verifies (`checkpoints-bad/24-log-key-other-algorithm-length`, D14c, §10.1).
+  refused even if another line from that key verifies (`checkpoints-bad/24-log-key-other-algorithm-length`, D14c, §10.1). The same holds for a listed witness: a 68-byte payload under its name and cosignature key id is a `cosignature` failure, not a line to skip (`checkpoints-bad/28-witness-key-other-algorithm-length`).
 - A note carries **at least one signature line**. A block with none is a
   malformed note rather than an unsigned one, and §10.1 refuses it as `note` —
   the framing — before any signature is looked for: there is nothing to verify
@@ -1169,6 +1169,9 @@ loop every T_g or on demand:
       # per line, not per witness: a witness that supplies one verifying line
       # and one that does not is refused, not counted. §5.3's "newest" rule
       # picks among lines that verify; it never excuses one that does not.
+      # A 68-byte payload under a listed witness's name and key id fails here
+      # as `cosignature`: once they match, the line is that witness's, and a
+      # witness speaks in 76-byte cosignatures only (§7; SEC-027).
       # A line naming anyone the policy does NOT list is IGNORED, not refused
       # and not counted -- a witness cosigning a log this node's policy does
       # not name is normal in a shared log, and a reader that refuses over one
@@ -1221,7 +1224,7 @@ these codes and no other, and the first step whose check fails decides which.
 | 3 | `log-signature` | no line whose name and key id match a trusted log key (§9.4) verifies, or any line that matches does not. The matching key's algorithm fixes the signature length too: a 76-byte payload under the log's `0x01` key fails here, even beside a valid line from that key (`checkpoints-bad/24-log-key-other-algorithm-length`, D14c). **The signature decides before the origin**: a checkpoint signed by a key this anchor does not trust is refused as `log-signature`, whatever origin it names |
 | 4 | `checkpoint` | the signed text is not a `tlog-checkpoint` body (§6): not exactly three lines, a size that is not canonical decimal, a root that is not 32 bytes of standard padded base64 |
 | 5 | `origin` | the body's origin line is not **equal** to `norn.trust.origin` — not a prefix of it, not a case variant of it |
-| 6 | `cosignature` | a cosignature line whose name **and** key id match a listed witness does not verify |
+| 6 | `cosignature` | a cosignature line whose name **and** key id match a listed witness does not verify — including one whose payload is not a cosignature's 76 bytes (`checkpoints-bad/28-witness-key-other-algorithm-length`) |
 | 7 | `quorum` | the verifying lines from listed witnesses do not satisfy the policy |
 | 8 | `entries` | the entry bundles the checkpoint's size implies do not frame (§6's big-endian uint16 length prefixes), or do not add up to that size |
 | 9 | `head` | the tree rebuilt from the served entries does not hash to the signed root |
@@ -1494,6 +1497,7 @@ this table drifted out of date the moment one was.
 | §7 note framing | `served/checkpoint` and `receipt.note`, both read with these rules | `checkpoints-bad/13-ascii-dash-signature`, `14-unterminated-signature-block`, `18-signature-name-with-space`, `19-signature-unpadded-base64`, `20-signature-payload-too-long`, and `23-extra-final-newline`; `01-unsigned` pins the requirement for at least one signature line. The generated notes isolate the stated framing rules |
 | §7 canonical signature payload base64 | `served/checkpoint` has a canonical log signature and witness cosignatures | `checkpoints-bad/25-signature-nonzero-pad-bits` and `checkpoints-bad/26-cosignature-nonzero-pad-bits`: each changes only unused pad bits, preserving the decoded valid signature bytes, and both MUST be refused as malformed note framing |
 | §10.1 a matched log key with the other valid payload length | `served/checkpoint` | `checkpoints-bad/24-log-key-other-algorithm-length` appends a 76-byte line whose name and key ID match the log's `0x01` key. It is frameable as a note but fails the matched key's signature check, so its code is `log-signature`; the failure remains observable beside the checkpoint's good log signature |
+| §10.1 a matched witness key with the other valid payload length | `served/checkpoint` | `checkpoints-bad/28-witness-key-other-algorithm-length` appends a 68-byte line whose name and cosignature key ID match the listed witness `pi`. A reader that skips it as "not a cosignature" still counts three good lines and accepts; its code is `cosignature`, the witness side of `24` (SEC-027) |
 | §8.1 a bundle's checkpoint is checked per §10 | `proofs/`, whose checkpoints carry the quorum | `proofs-bad/no-quorum` (the log's signature and nobody else's) and `proofs-bad/wrong-origin` (this network's key over another network's origin line) |
 | §8.1 condition 3, the key a node installs | `proofs/cases.json`'s `installs`: for every device, the `wg_pk` replay gives. `nas` rotated after it enrolled, so `proofs/nas.bundle` proves an entry naming a key `nas` no longer uses and `installs` names the other one. A reader that requires the bundle's key to match installs nothing for `nas` (cold gate run 11, D14) | — |
 | §8 proof bundles | `proofs/`, one per active device | `proofs-bad/`, **12 proof refusals**: a wrong entry, a foreign checkpoint, a tampered proof, a checkpoint signed by a key the anchor does not name, one with no witness quorum and one whose checkpoint names another origin — each differing from a valid bundle in exactly one thing, except `no-quorum-tampered-proof`, which differs in two so that §10.1's order decides. `rotate-entry-other-device` and `revoke-entry-other-device` prove a real `rotate` and `revoke` under another device's label: §8.1 binds those through the body's `device_id`, and until cold gate run 12 (D20) every bundle proved an `enroll`, so a reader that bound only enrolments passed |

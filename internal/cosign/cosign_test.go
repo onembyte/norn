@@ -13,6 +13,7 @@ import (
 	sumdb "golang.org/x/mod/sumdb/note"
 
 	"github.com/onembyte/norn/internal/note"
+	"github.com/onembyte/norn/internal/refusal"
 )
 
 const origin = "norn/cosign-test"
@@ -274,5 +275,37 @@ func TestAppendCosignsForEveryWitness(t *testing.T) {
 		if !c.Time.Equal(time.Unix(1_800_000_000, 0)) {
 			t.Errorf("%s cosigned at %v, want the instant asked for", c.Name, c.Time)
 		}
+	}
+}
+
+// SEC-027. §7: once a line's name and key id match a trusted key, its payload
+// is exactly that key's length. A line under a listed witness's name and key
+// id carrying 68 bytes -- a note signature's length, not a cosignature's --
+// was skipped as "not a cosignature", so beside enough good lines the head
+// was accepted. It is a line claiming that witness said something it did not
+// say in any form a witness speaks, and §10.1 refuses it as `cosignature`, as
+// the log side refuses the other length under its key (checkpoints-bad/24).
+func TestAMatchedWitnessLineOfTheOtherLengthIsRefused(t *testing.T) {
+	signed, body := signedCheckpoint(t)
+	var keys []string
+	cosigned := signed
+	for _, name := range []string{"norn-witness/pi", "norn-witness/vps"} {
+		line, err := Sign(body, name, key(t, name), time.Unix(1_800_000_000, 0))
+		if err != nil {
+			t.Fatal(err)
+		}
+		cosigned += line + "\n"
+		keys = append(keys, witnessVerifier(t, name))
+	}
+	name := "norn-witness/pi"
+	id := note.KeyIDFor(name, public(t, key(t, name)), note.AlgCosignature)
+	short := note.SignatureLine(name, append(append([]byte(nil), id...), make([]byte, ed25519.SignatureSize)...))
+
+	got, err := Verify(cosigned+short+"\n", keys)
+	if err == nil {
+		t.Fatalf("a 68-byte line under a listed witness's name and key id was skipped; got %+v", got)
+	}
+	if code, _ := refusal.CodeOf(err); code != refusal.Cosignature {
+		t.Errorf("refused as %q, want %q: %v", code, refusal.Cosignature, err)
 	}
 }

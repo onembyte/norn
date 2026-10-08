@@ -1167,6 +1167,17 @@ func TestTheSignatureBlindSetIsComputedNotAsserted(t *testing.T) {
 	for _, w := range rules.Witnesses {
 		named[w.Name] = true
 	}
+	// The listed witnesses' key ids, by note name: §7's matched-key length
+	// rule holds for a witness's 0x04 key as it does for the log's 0x01 key,
+	// and checking it needs no signature (SEC-027, checkpoints-bad/28).
+	witnessIDs := map[string][]string{}
+	for _, key := range rules.Keys() {
+		v, err := note.ParseVerifierKey(key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		witnessIDs[v.Name] = append(witnessIDs[v.Name], string(v.ID()))
+	}
 
 	// blindly reads a note the way a reader that checks no signature does --
 	// and no other way. "Blind" means it never calls Ed25519; it still enforces
@@ -1206,6 +1217,11 @@ func TestTheSignatureBlindSetIsComputedNotAsserted(t *testing.T) {
 			}
 			if name == logKey.Name && string(raw[:4]) == string(logKey.ID()) && len(raw) != 68 {
 				return "", nil
+			}
+			for _, id := range witnessIDs[name] {
+				if string(raw[:4]) == id && len(raw) != 76 {
+					return "", nil
+				}
 			}
 			who = append(who, rules.Label(name))
 		}
@@ -2232,6 +2248,7 @@ func TestTheVectorsREADMEStatesTheRightCounts(t *testing.T) {
 		16: "sixteen", 17: "seventeen", 18: "eighteen", 19: "nineteen",
 		20: "twenty", 21: "twenty-one", 22: "twenty-two", 23: "twenty-three",
 		24: "twenty-four", 25: "twenty-five", 26: "twenty-six", 27: "twenty-seven",
+		28: "twenty-eight", 29: "twenty-nine", 30: "thirty",
 	}
 	for _, c := range []struct{ dir, noun string }{
 		{"checkpoints-bad", "checkpoints that MUST be refused"},

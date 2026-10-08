@@ -81,12 +81,19 @@ func Verify(signed string, witnessKeys []string) ([]Cosignature, error) {
 
 	var out []Cosignature
 	for _, sig := range sigs {
-		if !sig.IsCosignature() {
-			continue
-		}
 		for _, v := range trusted {
 			if v.Name != sig.Name || string(v.ID()) != string(sig.KeyID) {
 				continue
+			}
+			// §7: once name and key id match a trusted key, the payload is
+			// exactly that key's length. A line under a listed witness's name
+			// and id with a note signature's length is a claim the witness
+			// cannot have made, and is refused like a forgery -- not skipped,
+			// which let a head carried by other lines through (SEC-027; the
+			// log side is checkpoints-bad/24).
+			if !sig.IsCosignature() {
+				return nil, refusal.Wrap(refusal.Cosignature,
+					cosignErrorf("%s's line is %d bytes, not a cosignature", v.Name, len(sig.KeyID)+len(sig.Sig)))
 			}
 			at := time.Unix(int64(binary.BigEndian.Uint64(sig.Sig[:8])), 0)
 			if !ed25519.Verify(v.Public, Message(at, body), sig.Sig[8:]) {
