@@ -1,9 +1,11 @@
 package logclient
 
 import (
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
 
 // The gate says "served by plain nginx". What that actually requires of Norn
@@ -73,5 +75,49 @@ func TestHTTPFetchRefusesPathEscape(t *testing.T) {
 
 	if _, err := HTTP(srv.URL).Fetch("../../../etc/passwd"); err == nil {
 		t.Error("a path that escapes the log root must be refused before it is sent")
+	}
+}
+
+// SEC-003 (H2-a). `Submit` used `http.Post` -- the default client, no
+// deadline -- so a log that accepted the connection and never answered held
+// `norn enroll` forever. Reads already had a bound; a submission gets the
+// same one.
+func TestSubmitDoesNotWaitForeverOnASilentLog(t *testing.T) {
+	was := Timeout
+	Timeout = 300 * time.Millisecond
+	t.Cleanup(func() { Timeout = was })
+
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var held []net.Conn
+	done := make(chan struct{})
+	go func() {
+		for {
+			c, err := l.Accept()
+			if err != nil {
+				close(done)
+				return
+			}
+			held = append(held, c)
+		}
+	}()
+	t.Cleanup(func() {
+		l.Close()
+		<-done
+		for _, c := range held {
+			c.Close()
+		}
+	})
+
+	started := time.Now()
+	_, _, err = Submit("http://"+l.Addr().String(), []byte("an entry"))
+	took := time.Since(started)
+	if err == nil {
+		t.Fatal("a log that never answers produced a receipt")
+	}
+	if took > 5*time.Second {
+		t.Fatalf("a silent log held the submitter for %s; the bound is %s", took, Timeout)
 	}
 }

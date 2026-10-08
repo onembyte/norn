@@ -34,8 +34,7 @@ func (h HTTP) Fetch(p string) ([]byte, error) {
 	}
 	base.Path = path.Join(base.Path, p)
 
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Get(base.String())
+	resp, err := client().Get(base.String())
 	if err != nil {
 		return nil, logErrorf("fetching %s: %v", p, err)
 	}
@@ -53,6 +52,14 @@ func (h HTTP) Fetch(p string) ([]byte, error) {
 	}
 	return body, nil
 }
+
+// Timeout bounds one exchange with a log, fetch or submission. A log is
+// something a node does not trust, and a log that accepts a request and never
+// answers must cost a bounded wait, not the cycle (SEC-003). Reads had this
+// bound; `Submit` used the default client and had none.
+var Timeout = 30 * time.Second
+
+func client() *http.Client { return &http.Client{Timeout: Timeout} }
 
 // Open returns the Fetcher for a location: an HTTP(S) URL, or a directory.
 func Open(location string) (Fetcher, error) {
@@ -76,7 +83,7 @@ func Submit(base string, raw []byte) (receipt string, status int, err error) {
 	if err != nil {
 		return "", 0, logErrorf("building the submission URL: %v", err)
 	}
-	resp, err := http.Post(endpoint, "application/cbor", bytes.NewReader(raw))
+	resp, err := client().Post(endpoint, "application/cbor", bytes.NewReader(raw))
 	if err != nil {
 		return "", 0, logErrorf("submitting: %v", err)
 	}

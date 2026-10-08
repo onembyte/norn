@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
@@ -482,5 +483,71 @@ func TestASkewedClockDoesNotChangeTheProvenSet(t *testing.T) {
 		t.Errorf("a wrong local clock changed the peer table: %d peers instead of %d. "+
 			"Expiry is judged against the checkpoint's time, not this machine's.",
 			len(got), len(expected))
+	}
+}
+
+// SEC-003 (H2-a), the finding four auditors reproduced: a proven peer that
+// accepts TCP and never answers held `Once()` forever, and with it eviction
+// and every alarm. Watchdog mode, a healthy log, one unproven key installed,
+// three silent peers: the cycle must still end and the key must still go.
+func TestASilentPeerDoesNotStallEnforcement(t *testing.T) {
+	was := gossip.FetchTimeout()
+	gossip.SetTimeout(300 * time.Millisecond)
+	t.Cleanup(func() { gossip.SetTimeout(was) })
+
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var held []net.Conn
+	done := make(chan struct{})
+	go func() {
+		for {
+			c, err := l.Accept()
+			if err != nil {
+				close(done)
+				return
+			}
+			held = append(held, c)
+		}
+	}()
+	t.Cleanup(func() {
+		l.Close()
+		<-done
+		for _, c := range held {
+			c.Close()
+		}
+	})
+	silent := "http://" + l.Addr().String()
+
+	rec := &recorder{}
+	fake := peertable.NewFake(provenKeys(t)...)
+	fake.Inject(rogue(t))
+	a, err := New(Config{
+		Anchor: anchor(t), Fetcher: logclient.Dir(servedLog(t)), Device: fake,
+		Mode: reconcile.Watchdog, Emit: rec.emit,
+		Now:   func() time.Time { return time.Unix(fixtureCosignedAt, 0) },
+		Mono:  func() time.Duration { return 0 },
+		Peers: func() []string { return []string{silent, silent, silent} },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	finished := make(chan error, 1)
+	go func() { finished <- a.Once() }()
+	select {
+	case err := <-finished:
+		if err != nil {
+			t.Fatalf("the cycle failed: %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("Once() is still blocked on a silent peer after 10s; before SEC-003 it never returned")
+	}
+	peers, _ := fake.Peers()
+	for _, peer := range peers {
+		if peer.Key == rogue(t).Key {
+			t.Fatal("the rogue key survived a watchdog cycle that a silent peer delayed")
+		}
 	}
 }
