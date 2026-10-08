@@ -70,36 +70,73 @@ func realVerify(public, message, signature []byte) bool {
 // Replay applies entries under an anchor. It never returns an error: an entry
 // that does not take effect is recorded in state.Rejected.
 func Replay(anchor Anchor, entries [][]byte) *state.State {
-	return replayWith(anchor, entries, realVerify)
+	return New(anchor).Apply(entries...)
 }
 
 func replayWith(anchor Anchor, entries [][]byte, verify verifier) *state.State {
-	st := state.New(anchor.Net)
-	if len(entries) == 0 {
-		return st
-	}
+	return newWith(anchor, verify).Apply(entries...)
+}
 
-	r := &replayer{anchor: anchor, verify: verify, seen: map[string]bool{}}
-	if err := r.applyGenesis(st, entries[0]); err != nil {
-		st = state.New(anchor.Net)
-		st.Rejected = append(st.Rejected, state.Rejection{Index: 0, Reason: ReasonBadGenesis})
-		return st
-	}
-	st.Size = 1
+// Replayer is the fold of §5 as a value that can be resumed (H4-a).
+//
+// Replay is that fold run from entry 0 to the end, and a node that re-ran it
+// on every grown head did work proportional to the whole history on every
+// cycle. What the fold has to carry between entries is the state and the
+// seen set of §5.1 step 1: a `dup-entry` copy is refused because its original
+// is remembered, and a fold resumed without that memory would apply the copy
+// -- the SEC-001 attack by another door. So the two travel together, and
+// applying a prefix and then the rest is the same as applying the whole,
+// byte for byte, at every split (resume_test.go).
+type Replayer struct {
+	r  *replayer
+	st *state.State
+	// aborted is set by a bad genesis. Nothing after it is this network's
+	// (§5.1), so the fold applies nothing further however much it is given.
+	aborted bool
+}
 
-	for i, raw := range entries[1:] {
-		index := uint64(i + 1)
-		if err := r.apply(st, raw, index); err != nil {
+// New starts a fold under an anchor.
+func New(anchor Anchor) *Replayer { return newWith(anchor, realVerify) }
+
+func newWith(anchor Anchor, verify verifier) *Replayer {
+	return &Replayer{
+		r:  &replayer{anchor: anchor, verify: verify, seen: map[string]bool{}},
+		st: state.New(anchor.Net),
+	}
+}
+
+// Apply folds more entries in, in log order, and returns the state so far.
+// The returned state is the fold's own: a caller that keeps it sees it move.
+func (p *Replayer) Apply(entries ...[]byte) *state.State {
+	for _, raw := range entries {
+		if p.aborted {
+			return p.st
+		}
+		index := p.st.Size
+		if index == 0 {
+			if err := p.r.applyGenesis(p.st, raw); err != nil {
+				p.st = state.New(p.r.anchor.Net)
+				p.st.Rejected = append(p.st.Rejected, state.Rejection{Index: 0, Reason: ReasonBadGenesis})
+				p.aborted = true
+				return p.st
+			}
+			p.st.Size = 1
+			continue
+		}
+		if err := p.r.apply(p.st, raw, index); err != nil {
 			code, ok := reasonOf(err)
 			if !ok {
 				code = ReasonDecode
 			}
-			st.Rejected = append(st.Rejected, state.Rejection{Index: index, Reason: code})
+			p.st.Rejected = append(p.st.Rejected, state.Rejection{Index: index, Reason: code})
 		}
-		st.Size = index + 1
+		p.st.Size = index + 1
 	}
-	return st
+	return p.st
 }
+
+// State is the state so far.
+func (p *Replayer) State() *state.State { return p.st }
 
 type replayer struct {
 	anchor Anchor
