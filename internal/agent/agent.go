@@ -109,6 +109,12 @@ const DefaultRoundBudget = 5 * time.Second
 // just slowly enough to hold the cycle.
 const DefaultVerifyBudget = time.Minute
 
+// DefaultFullVerifyEvery is how often a held head is re-verified in full.
+// Five minutes is HARDENING-PLAN H3's figure: a corrupt old tile is a log
+// broken for whoever fetches proofs from it, not a change to what this node
+// enforces, so minutes are the right unit.
+const DefaultFullVerifyEvery = 5 * time.Minute
+
 // DefaultDegradedAlarmEvery is GOSSIP part 5's "alarm every 5 min".
 const DefaultDegradedAlarmEvery = 5 * time.Minute
 
@@ -205,6 +211,11 @@ type Config struct {
 	// request per bundle and tile, each answered slowly, is a stall the
 	// per-request bound does not see (H2-c). Defaults to DefaultVerifyBudget.
 	VerifyBudget time.Duration
+	// FullVerifyEvery is how often a node that holds a head verifies the log
+	// in full rather than from what it holds (H4-c): verifying from a held
+	// head does not look below it, and this is what catches a bundle or tile
+	// rewritten since. Defaults to DefaultFullVerifyEvery.
+	FullVerifyEvery time.Duration
 	// RoundBudget bounds one round of asking peers -- for checkpoints, or for
 	// evidence -- start to finish, whatever r is and whatever each peer does
 	// (H2-b). Defaults to DefaultRoundBudget.
@@ -239,6 +250,10 @@ type Agent struct {
 	// clock remembers the newest instant any quorum vouched for. It is the
 	// node's only clock for deciding whether what it holds is current.
 	clock freshness.Clock
+	// fullVerified is the monotonic reading of the last verification of the
+	// log in full; between two, the log is verified from the held head (H4-c).
+	fullVerified    time.Duration
+	fullVerifiedSet bool
 	// clockWritten is the estimate of now last kept on disk (D-071 a), so a
 	// restart does not call a view fresher than this process had.
 	clockWritten    time.Time
@@ -310,6 +325,9 @@ func New(cfg Config) (*Agent, error) {
 	}
 	if cfg.VerifyBudget <= 0 {
 		cfg.VerifyBudget = DefaultVerifyBudget
+	}
+	if cfg.FullVerifyEvery <= 0 {
+		cfg.FullVerifyEvery = DefaultFullVerifyEvery
 	}
 	if cfg.Mono == nil {
 		// time.Since carries Go's monotonic reading, which does not move when
@@ -437,7 +455,35 @@ func (a *Agent) anchorUnder(st *state.State) logclient.Anchor {
 // refuses any log it cannot use. The refusal has no §10.1 code yet: that is
 // run 13's D12, a protocol question (6.5l-ix). The error is plain until then.
 func verify(f logclient.Fetcher, anchor logclient.Anchor) (*logclient.Result, error) {
-	result, err := logclient.Verify(f, anchor)
+	return checkGenesis(logclient.Verify(f, anchor))
+}
+
+// verifyLog verifies this node's log: from the head it holds when that head
+// was verified in this process, in full otherwise and every FullVerifyEvery
+// (H4-c).
+//
+// From the held head costs what grew (H4-b). In full is for every doubt: a
+// head restored from the node's own mirror was verified, but not here, and
+// nothing on disk is believed because this node wrote it (D-069); and
+// verifying from a head does not look below it, so a bundle or tile rewritten
+// since passes until the next full verification, which is why there is one
+// on a cadence. A fork or a frozen node never reaches this: Once refuses
+// first.
+func (a *Agent) verifyLog(f logclient.Fetcher, anchor logclient.Anchor) (*logclient.Result, error) {
+	mono := a.cfg.Mono()
+	full := a.last == nil || !a.fullVerifiedSet || mono-a.fullVerified >= a.cfg.FullVerifyEvery
+	if full {
+		result, err := verify(f, anchor)
+		if err == nil {
+			a.fullVerified, a.fullVerifiedSet = mono, true
+		}
+		return result, err
+	}
+	return checkGenesis(logclient.VerifyFrom(a.last, f, anchor))
+}
+
+// checkGenesis is verify's one refusal the verifier does not make.
+func checkGenesis(result *logclient.Result, err error) (*logclient.Result, error) {
 	if err != nil {
 		return nil, err
 	}
@@ -479,7 +525,7 @@ func (a *Agent) Once() error {
 
 	// One budget for the whole verification (H2-c): a log that answers each
 	// request slowly is otherwise a stall that no per-request bound sees.
-	result, verifyErr := verify(logclient.Budgeted(a.cfg.Fetcher, a.cfg.VerifyBudget), anchor)
+	result, verifyErr := a.verifyLog(logclient.Budgeted(a.cfg.Fetcher, a.cfg.VerifyBudget), anchor)
 
 	// A fork is not an ordinary verification failure: it is proof the log
 	// equivocated, and §11 gives a node four things to do about it.

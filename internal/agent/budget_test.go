@@ -165,7 +165,7 @@ func (s slowLog) Fetch(path string) ([]byte, error) {
 // verification fails like any other, and the cycle reconciles on the last
 // state that did verify.
 func TestASlowLogCannotStallACycleBeyondTheVerifyBudget(t *testing.T) {
-	dir := servedLog(t)
+	dir, store, entries := writableLog(t)
 	rec := &recorder{}
 	fake := peertable.NewFake()
 	a, err := New(Config{
@@ -186,8 +186,11 @@ func TestASlowLogCannotStallACycleBeyondTheVerifyBudget(t *testing.T) {
 		t.Fatal("the fast log was not enforced to begin with")
 	}
 
-	// The same log, 700 ms per request. A verification is several requests,
-	// so unbounded it runs for seconds; budgeted it stops after the first.
+	// The same log, grown by one entry -- an unchanged head costs one request
+	// since H4-c, and one request is never over budget -- at 700 ms per
+	// request. Verifying the growth is several requests, so unbounded it runs
+	// for seconds; budgeted it stops after the first.
+	appendRevoke(t, store, "nas", uint64(len(entries)))
 	a.cfg.Fetcher = slowLog{Fetcher: logclient.Dir(dir), delay: 700 * time.Millisecond}
 	started := time.Now()
 	err = cycleWithin(t, a, 2*time.Second)
