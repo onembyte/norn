@@ -193,6 +193,15 @@ unusable or stale log triggers an immediate peer round. The node runs §15's
 source-neutral verification on each answer. Consistency proofs are computed
 locally from tiles, so a peer serves data, never claims.
 
+Every one of these reads is bounded, and the bounds are **implementation
+defaults, not protocol** (`HARDENING-PLAN.md` H2): `nornd` gives one read from a
+peer 5 s (`peer_timeout`), one round of asking peers 5 s in all
+(`round_budget`), and one verification of the log — a request per bundle and
+tile — 60 s (`verify_budget`). A peer the round's budget did not reach was not
+asked (`PEER_ROUND_CUT`); a verification the budget cut short fails like any
+other and the node holds its last verified state. A silent neighbour therefore
+costs a cycle one budget, never the cycle.
+
 The address is **derived from the interface, never configured**: `nornd` takes a
 gossip *port* and gets the host from the WireGuard device itself, so there is no
 setting that could point it at `0.0.0.0`. The required endpoints are read-only —

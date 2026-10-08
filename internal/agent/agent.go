@@ -103,6 +103,12 @@ const (
 // The round budget makes the worst case one budget, whatever r is.
 const DefaultRoundBudget = 5 * time.Second
 
+// DefaultVerifyBudget is how long one verification of the log may take in
+// all. A healthy log answers a whole verification in well under a second; a
+// minute is room for a slow link, not for a log that answers each request
+// just slowly enough to hold the cycle.
+const DefaultVerifyBudget = time.Minute
+
 // DefaultDegradedAlarmEvery is GOSSIP part 5's "alarm every 5 min".
 const DefaultDegradedAlarmEvery = 5 * time.Minute
 
@@ -195,6 +201,10 @@ type Config struct {
 	// GossipEvery is T_g: how often to ask proven peers for checkpoints and
 	// evidence, even while the log answers. Defaults to DefaultGossipEvery.
 	GossipEvery time.Duration
+	// VerifyBudget bounds one verification of the log, start to finish: a
+	// request per bundle and tile, each answered slowly, is a stall the
+	// per-request bound does not see (H2-c). Defaults to DefaultVerifyBudget.
+	VerifyBudget time.Duration
 	// RoundBudget bounds one round of asking peers -- for checkpoints, or for
 	// evidence -- start to finish, whatever r is and whatever each peer does
 	// (H2-b). Defaults to DefaultRoundBudget.
@@ -297,6 +307,9 @@ func New(cfg Config) (*Agent, error) {
 	}
 	if cfg.RoundBudget <= 0 {
 		cfg.RoundBudget = DefaultRoundBudget
+	}
+	if cfg.VerifyBudget <= 0 {
+		cfg.VerifyBudget = DefaultVerifyBudget
 	}
 	if cfg.Mono == nil {
 		// time.Since carries Go's monotonic reading, which does not move when
@@ -464,7 +477,9 @@ func (a *Agent) Once() error {
 		return errors.New("agent: frozen by a proven fork; the interface is untouched")
 	}
 
-	result, verifyErr := verify(a.cfg.Fetcher, anchor)
+	// One budget for the whole verification (H2-c): a log that answers each
+	// request slowly is otherwise a stall that no per-request bound sees.
+	result, verifyErr := verify(logclient.Budgeted(a.cfg.Fetcher, a.cfg.VerifyBudget), anchor)
 
 	// A fork is not an ordinary verification failure: it is proof the log
 	// equivocated, and §11 gives a node four things to do about it.

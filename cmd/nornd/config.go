@@ -40,6 +40,12 @@ type Config struct {
 	HardStale string `toml:"hard_stale"`
 	// MaxSkew is Δclock. Absent means freshness.DefaultMaxSkew.
 	MaxSkew string `toml:"max_skew"`
+	// PeerTimeout, RoundBudget and VerifyBudget are the network budgets
+	// (H2-c): one read from a peer, one round of asking peers, one
+	// verification of the log. Absent means the agent's defaults.
+	PeerTimeout  string `toml:"peer_timeout"`
+	RoundBudget  string `toml:"round_budget"`
+	VerifyBudget string `toml:"verify_budget"`
 	// GossipPort is the port the peer gossip server listens on -- on the
 	// WireGuard interface's own address, never anywhere else (GOSSIP part 6).
 	// Zero turns gossip off; absent means DefaultGossipPort.
@@ -292,4 +298,50 @@ func (c Config) QuarantineFor(iface string, logger *slog.Logger) (func(string) e
 		}
 		return nil
 	}, nil
+}
+
+// The network budgets (H2-c). Each is an implementation default, not
+// protocol; each has a floor below which a node would reach nothing and a
+// ceiling above which the budget would bound nothing, and both are refused
+// as `hard_stale` refuses a slipped unit: a node that never reaches its peers,
+// or never finishes a verification, would otherwise say nothing about why.
+const (
+	MinPeerTimeout  = 100 * time.Millisecond
+	MaxPeerTimeout  = time.Minute
+	MinRoundBudget  = 100 * time.Millisecond
+	MaxRoundBudget  = 5 * time.Minute
+	MinVerifyBudget = time.Second
+	MaxVerifyBudget = 30 * time.Minute
+)
+
+// ParsePeerTimeout reads the bound on one read from a peer. Empty leaves
+// gossip.FetchTimeout's default.
+func ParsePeerTimeout(text string) (time.Duration, error) {
+	return parseBudget("peer_timeout", text, MinPeerTimeout, MaxPeerTimeout)
+}
+
+// ParseRoundBudget reads the bound on one round of asking peers. Empty leaves
+// agent.DefaultRoundBudget.
+func ParseRoundBudget(text string) (time.Duration, error) {
+	return parseBudget("round_budget", text, MinRoundBudget, MaxRoundBudget)
+}
+
+// ParseVerifyBudget reads the bound on one verification of the log. Empty
+// leaves agent.DefaultVerifyBudget.
+func ParseVerifyBudget(text string) (time.Duration, error) {
+	return parseBudget("verify_budget", text, MinVerifyBudget, MaxVerifyBudget)
+}
+
+func parseBudget(name, text string, floor, ceiling time.Duration) (time.Duration, error) {
+	if text == "" {
+		return 0, nil
+	}
+	d, err := time.ParseDuration(text)
+	if err != nil {
+		return 0, fmt.Errorf("%s: %w", name, err)
+	}
+	if d < floor || d > ceiling {
+		return 0, fmt.Errorf("%s must be between %s and %s, got %s", name, floor, ceiling, d)
+	}
+	return d, nil
 }

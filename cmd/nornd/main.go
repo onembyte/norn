@@ -62,6 +62,12 @@ func run(args []string) error {
 		"age past which every peer is dropped, e.g. 6h; off unless set")
 	maxSkew := fs.String("max-skew", "",
 		"how far this machine's clock may be from witness time before CLOCK_SKEW")
+	peerTimeout := fs.String("peer-timeout", "",
+		"bound on one read from a peer (default "+gossip.FetchTimeout().String()+")")
+	roundBudget := fs.String("round-budget", "",
+		"bound on one round of asking peers (default "+agent.DefaultRoundBudget.String()+")")
+	verifyBudget := fs.String("verify-budget", "",
+		"bound on one verification of the log (default "+agent.DefaultVerifyBudget.String()+")")
 	gossipPort := fs.Int("gossip-port", DefaultGossipPort,
 		"port for the peer gossip server, on the tunnel address only; 0 turns it off")
 	once := fs.Bool("once", false, "run one cycle and exit")
@@ -89,6 +95,9 @@ func run(args []string) error {
 	config.HardStale = pick(*hardStale, config.HardStale)
 	config.SetGossipPort(*gossipPort, *gossipPort != DefaultGossipPort)
 	config.MaxSkew = pick(*maxSkew, config.MaxSkew)
+	config.PeerTimeout = pick(*peerTimeout, config.PeerTimeout)
+	config.RoundBudget = pick(*roundBudget, config.RoundBudget)
+	config.VerifyBudget = pick(*verifyBudget, config.VerifyBudget)
 
 	logger := newLogger(*asJSON)
 	cycle, interval, err := build(config, logger)
@@ -116,6 +125,21 @@ func build(config Config, logger *slog.Logger) (*agent.Agent, time.Duration, err
 	mode, err := ParseMode(config.Mode)
 	if err != nil {
 		return nil, 0, err
+	}
+	peerTimeout, err := ParsePeerTimeout(config.PeerTimeout)
+	if err != nil {
+		return nil, 0, err
+	}
+	roundBudget, err := ParseRoundBudget(config.RoundBudget)
+	if err != nil {
+		return nil, 0, err
+	}
+	verifyBudget, err := ParseVerifyBudget(config.VerifyBudget)
+	if err != nil {
+		return nil, 0, err
+	}
+	if peerTimeout > 0 {
+		gossip.SetTimeout(peerTimeout)
 	}
 	hard, err := ParseHardStale(config.HardStale)
 	if err != nil {
@@ -205,7 +229,7 @@ func build(config Config, logger *slog.Logger) (*agent.Agent, time.Duration, err
 	cycle, err = agent.New(agent.Config{
 		Anchor: anchor, Fetcher: fetcher, Device: device, Provider: provider,
 		Mode: mode, RunDir: config.RunDir, StateDir: config.StateDir, Now: time.Now,
-		Hard: hard, MaxSkew: maxSkew,
+		Hard: hard, MaxSkew: maxSkew, RoundBudget: roundBudget, VerifyBudget: verifyBudget,
 		Peers:       func() []string { return cycle.PeerAddresses(gossipPort) },
 		FightPolicy: policy, FightThreshold: threshold, FightWindow: window,
 		Quarantine: quarantine,

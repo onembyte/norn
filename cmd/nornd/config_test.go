@@ -336,3 +336,35 @@ func TestTheHardLimitFloorIsATypoGuardAndSaysSo(t *testing.T) {
 		}
 	}
 }
+
+// H2-c: the network budgets are settings, each refused when absurd -- a
+// slipped unit would make a node that never reaches its peers or never
+// finishes a verification, and nothing would say so.
+func TestNetworkBudgetsAreBounded(t *testing.T) {
+	type parser struct {
+		name  string
+		parse func(string) (time.Duration, error)
+		good  string
+		want  time.Duration
+		bad   []string
+	}
+	for _, p := range []parser{
+		{"peer_timeout", ParsePeerTimeout, "2s", 2 * time.Second, []string{"10ms", "5m", "-1s", "soon"}},
+		{"round_budget", ParseRoundBudget, "8s", 8 * time.Second, []string{"10ms", "1h", "-1s", "soon"}},
+		{"verify_budget", ParseVerifyBudget, "2m", 2 * time.Minute, []string{"100ms", "24h", "-1s", "soon"}},
+	} {
+		t.Run(p.name, func(t *testing.T) {
+			if got, err := p.parse(""); err != nil || got != 0 {
+				t.Errorf("an absent %s must leave the default in place, got %v, %v", p.name, got, err)
+			}
+			if got, err := p.parse(p.good); err != nil || got != p.want {
+				t.Errorf("%s = %v, %v; want %v", p.name, got, err, p.want)
+			}
+			for _, bad := range p.bad {
+				if _, err := p.parse(bad); err == nil {
+					t.Errorf("%q was accepted as %s", bad, p.name)
+				}
+			}
+		})
+	}
+}

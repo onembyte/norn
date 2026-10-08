@@ -79,8 +79,8 @@ func cycleWithin(t *testing.T, a *Agent, limit time.Duration) error {
 	case err := <-finished:
 		return err
 	case <-time.After(limit):
-		t.Fatalf("Once() is still running after %s; a round of silent peers must cost "+
-			"one round budget, not r per-request timeouts", limit)
+		t.Fatalf("Once() is still running after %s; a stall must cost one budget, "+
+			"not the cycle", limit)
 		return nil
 	}
 }
@@ -142,5 +142,66 @@ func TestAnEvidenceRoundHasItsOwnBudget(t *testing.T) {
 	}
 	if peers, _ := fake.Peers(); holds(peers, rogue(t).Key) {
 		t.Error("the rogue key survived a watchdog cycle that evidence polling delayed")
+	}
+}
+
+// slowLog answers every request, correctly, after a delay: a log that is not
+// down and not lying, just slow enough that one `Verify` -- a request per
+// bundle and tile -- outlasts a cycle.
+type slowLog struct {
+	logclient.Fetcher
+	delay time.Duration
+}
+
+func (s slowLog) Fetch(path string) ([]byte, error) {
+	time.Sleep(s.delay)
+	return s.Fetcher.Fetch(path)
+}
+
+// H2-c. The per-request bound and the round budget leave one stall: a log
+// that answers each request slowly makes one `Verify` as long as the number
+// of requests times the delay, and nothing bounded the whole. One `Verify`
+// has a budget; past it the fetcher refuses further requests, the
+// verification fails like any other, and the cycle reconciles on the last
+// state that did verify.
+func TestASlowLogCannotStallACycleBeyondTheVerifyBudget(t *testing.T) {
+	dir := servedLog(t)
+	rec := &recorder{}
+	fake := peertable.NewFake()
+	a, err := New(Config{
+		Anchor: anchor(t), Fetcher: logclient.Dir(dir), Device: fake,
+		Mode: reconcile.Owner, Emit: rec.emit,
+		Now:          func() time.Time { return time.Unix(fixtureCosignedAt, 0) },
+		Mono:         func() time.Duration { return 0 },
+		VerifyBudget: 300 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Once(); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := fake.Peers()
+	if len(before) == 0 {
+		t.Fatal("the fast log was not enforced to begin with")
+	}
+
+	// The same log, 700 ms per request. A verification is several requests,
+	// so unbounded it runs for seconds; budgeted it stops after the first.
+	a.cfg.Fetcher = slowLog{Fetcher: logclient.Dir(dir), delay: 700 * time.Millisecond}
+	started := time.Now()
+	err = cycleWithin(t, a, 2*time.Second)
+	if err == nil {
+		t.Fatal("a verification the budget cut short was reported as a success")
+	}
+	if took := time.Since(started); took > 1500*time.Millisecond {
+		t.Errorf("the cycle took %s against a 300 ms verify budget", took)
+	}
+	if rec.kinds()[EnforcingOnStaleState] == 0 {
+		t.Errorf("the node should say it is holding the last verified state: %v", rec.kinds())
+	}
+	after, _ := fake.Peers()
+	if len(after) != len(before) {
+		t.Errorf("a slow log changed the table: %d -> %d peers", len(before), len(after))
 	}
 }

@@ -1878,6 +1878,12 @@ is healthy. The node MUST check received fork evidence under §11.1 prior to
 entering the frozen state; evidence that fails that check is only a bad peer
 response.
 
+An implementation SHOULD bound each read from a peer, each round of asking
+peers, and each verification of a log, so that a source that accepts a
+request and never answers — or answers each request slowly — costs a cycle a
+bounded wait and not the cycle. The bounds are implementation defaults, not
+protocol; `GOSSIP.md` §6 gives `nornd`'s.
+
 Each gossip server binds plain HTTP to its WireGuard interface address, with
 the host derived from that interface. Its required read endpoints are:
 
