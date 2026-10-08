@@ -56,7 +56,7 @@ func verifyEvidenceCmd(args []string) error {
 	if err != nil {
 		return fmt.Errorf("the trust file's own policy does not parse: %w", err)
 	}
-	finding, err := forkevidence.Check(evidence, anchor.Origin, anchor.LogKey, anchor.Policy)
+	finding, err := forkevidence.Check(evidence, anchor.Origin, []string{anchor.LogKey}, anchor.Policy)
 	if err != nil {
 		// A file that does not prove a fork is the *good* outcome for a reader
 		// checking an accusation, so say which it is rather than only failing.

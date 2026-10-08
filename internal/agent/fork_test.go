@@ -126,7 +126,7 @@ func TestAForkFreezesTheNodeAndLeavesEvidence(t *testing.T) {
 		t.Fatalf("the evidence a node wrote does not parse: %v", err)
 	}
 	doc := anchor(t)
-	if _, err := forkevidence.Check(ev, doc.Origin, doc.LogKey, doc.Policy); err != nil {
+	if _, err := forkevidence.Check(ev, doc.Origin, []string{doc.LogKey}, doc.Policy); err != nil {
 		t.Fatalf("the evidence a node wrote does not prove a fork: %v", err)
 	}
 }
@@ -607,7 +607,7 @@ func TestAForkOnTheLongerBranchStillLeavesEvidence(t *testing.T) {
 		t.Fatal(err)
 	}
 	doc := anchor(t)
-	finding, err := forkevidence.Check(evidence, doc.Origin, doc.LogKey, doc.Policy)
+	finding, err := forkevidence.Check(evidence, doc.Origin, []string{doc.LogKey}, doc.Policy)
 	if err != nil {
 		t.Fatalf("the evidence this node wrote does not prove a fork to a stranger: %v", err)
 	}

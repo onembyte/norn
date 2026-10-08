@@ -151,10 +151,14 @@ func Build(held *tlog.Tree, heldSigned string, conflicting string,
 // proves. Everything it needs is in the file and the trust document; nothing
 // is fetched, and no part of it takes the writer's word.
 //
-// `readerPolicy` is the caller's own `tlog-policy` -- the trust file's, or the
-// one it has replayed (§9.4). The file's own `policy` field is never used to
-// decide anything; see Evidence.Policy.
-func Check(ev *Evidence, origin, logVKey, readerPolicy string) (*Finding, error) {
+// `logVKeys` and `readerPolicy` are what the caller verifies its own log
+// under (§11.1 step 1: "per §10"): the trust file's log key plus every key a
+// state it accepted has published, and the trust file's policy or the one it
+// has replayed (§9.4). A node that followed an in-log rotation holds heads its
+// trust file's key never signed, and a node whose roots raised the quorum must
+// not believe evidence the raise would refuse (SEC-005 b, c). The file's own
+// `policy` field is never used to decide anything; see Evidence.Policy.
+func Check(ev *Evidence, origin string, logVKeys []string, readerPolicy string) (*Finding, error) {
 	// The reader first, before anything in the file: a fault here is this
 	// reader's configuration and says nothing about the evidence. This coded
 	// an unparseable reader policy as the file's `policy`, and a malformed
@@ -163,8 +167,13 @@ func Check(ev *Evidence, origin, logVKey, readerPolicy string) (*Finding, error)
 	if err != nil {
 		return nil, readerErrorf("this reader's own policy does not parse: %v", err)
 	}
-	if _, err := note.ParseVerifierKey(logVKey); err != nil {
-		return nil, readerErrorf("this reader's own log key does not parse: %v", err)
+	if len(logVKeys) == 0 {
+		return nil, readerErrorf("this reader has no log key to check the file against")
+	}
+	for _, key := range logVKeys {
+		if _, err := note.ParseVerifierKey(key); err != nil {
+			return nil, readerErrorf("this reader's own log key does not parse: %v", err)
+		}
 	}
 	// The carried policy decides nothing, but a closed schema with a stated
 	// grammar is part of the format: a file whose `policy` is not a policy is
@@ -173,11 +182,11 @@ func Check(ev *Evidence, origin, logVKey, readerPolicy string) (*Finding, error)
 		return nil, evidenceErrorf(evrefusal.Policy,
 			"the carried policy is not a `tlog-policy`: %v", err)
 	}
-	held, err := verified(ev.Held, origin, logVKey, rules)
+	held, err := verified(ev.Held, origin, logVKeys, rules)
 	if err != nil {
 		return nil, checkpointRefusal(evrefusal.Held, "the held checkpoint", err)
 	}
-	conflicting, err := verified(ev.Conflicting, origin, logVKey, rules)
+	conflicting, err := verified(ev.Conflicting, origin, logVKeys, rules)
 	if err != nil {
 		return nil, checkpointRefusal(evrefusal.Conflicting, "the conflicting checkpoint", err)
 	}
@@ -263,10 +272,10 @@ func Check(ev *Evidence, origin, logVKey, readerPolicy string) (*Finding, error)
 // The quorum is not optional here. A log signing two things by itself is a log
 // misbehaving in private; what makes a fork *provable to a third party* is
 // that independent witnesses vouched for both.
-func verified(signed, origin, logVKey string, rules *policy.Policy) (tlog.Checkpoint, error) {
+func verified(signed, origin string, logVKeys []string, rules *policy.Policy) (tlog.Checkpoint, error) {
 	// Each failure carries its §10.1 code: tlog.Verify and cosign.Verify name
 	// their own steps, and the origin and the quorum are named here.
-	cp, err := tlog.Verify(signed, []string{logVKey})
+	cp, err := tlog.Verify(signed, logVKeys)
 	if err != nil {
 		return tlog.Checkpoint{}, refusal.Carry(err,
 			fmt.Errorf("not signed by this network's log key: %w", err))

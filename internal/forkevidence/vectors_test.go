@@ -63,7 +63,7 @@ func TestEveryForkNegativeIsRefused(t *testing.T) {
 			// accusation a third party should act on.
 			evidence, err := Parse(body)
 			if err == nil {
-				_, err = Check(evidence, anchor.Origin, anchor.LogKey, anchor.Policy)
+				_, err = Check(evidence, anchor.Origin, []string{anchor.LogKey}, anchor.Policy)
 			}
 			if err == nil {
 				t.Fatal("accepted evidence that proves no fork; a reader would act on a " +
@@ -132,8 +132,8 @@ func reaches(t *testing.T, name string) (heldOK, conflictingOK, sizesAgree bool)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, heldErr := verified(ev.Held, anchor.Origin, anchor.LogKey, rules)
-	conflicting, conflictingErr := verified(ev.Conflicting, anchor.Origin, anchor.LogKey, rules)
+	_, heldErr := verified(ev.Held, anchor.Origin, []string{anchor.LogKey}, rules)
+	conflicting, conflictingErr := verified(ev.Conflicting, anchor.Origin, []string{anchor.LogKey}, rules)
 	return heldErr == nil, conflictingErr == nil,
 		conflictingErr == nil && conflicting.Size == ev.Size
 }
@@ -197,7 +197,7 @@ func TestEveryEvidenceSchemaRuleHasItsCase(t *testing.T) {
 			if err != nil {
 				return // refused by the schema, which is a refusal
 			}
-			if _, err := Check(ev, anchor.Origin, anchor.LogKey, anchor.Policy); err == nil {
+			if _, err := Check(ev, anchor.Origin, []string{anchor.LogKey}, anchor.Policy); err == nil {
 				t.Errorf("%s was accepted; §11.1 says it must not be", want)
 			}
 		})

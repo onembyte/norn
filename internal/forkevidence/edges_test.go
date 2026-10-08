@@ -32,7 +32,7 @@ func TestAHeldRootThatIsNotHeldsOwnIsProof(t *testing.T) {
 	logVKey, _, policy := trustKeys(t)
 	ev := &Evidence{Held: heldSigned, Conflicting: heldSigned, Size: 10,
 		HeldRoot: bytes.Repeat([]byte{0x42}, 32), Policy: policy}
-	_, err := Check(ev, origin, logVKey, policy)
+	_, err := Check(ev, origin, []string{logVKey}, policy)
 	if got, _ := evrefusal.CodeOf(err); got != evrefusal.Proof {
 		t.Errorf("refused as %q, want %q: %v", got, evrefusal.Proof, err)
 	}
@@ -58,7 +58,7 @@ func TestSizeZeroIsProof(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			ev := &Evidence{Held: c.held, Conflicting: empty, Size: 0,
 				HeldRoot: c.heldRoot, Policy: policy}
-			_, err := Check(ev, origin, logVKey, policy)
+			_, err := Check(ev, origin, []string{logVKey}, policy)
 			if got, _ := evrefusal.CodeOf(err); got != evrefusal.Proof {
 				t.Errorf("refused as %q, want %q: %v", got, evrefusal.Proof, err)
 			}
@@ -164,7 +164,7 @@ func TestEverySoundEvidenceFileProvesAFork(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := Check(ev, anchor.Origin, anchor.LogKey, anchor.Policy); err != nil {
+			if _, err := Check(ev, anchor.Origin, []string{anchor.LogKey}, anchor.Policy); err != nil {
 				t.Fatalf("does not prove a fork: %v", err)
 			}
 			held, err := tlog.Verify(ev.Held, []string{anchor.LogKey})
@@ -227,7 +227,7 @@ func TestTheEvidenceCapIsPinnedFromBothSides(t *testing.T) {
 		if err != nil {
 			continue
 		}
-		if _, err := Check(ev, anchor.Origin, anchor.LogKey, anchor.Policy); err == nil {
+		if _, err := Check(ev, anchor.Origin, []string{anchor.LogKey}, anchor.Policy); err == nil {
 			onePast = true
 		}
 	}

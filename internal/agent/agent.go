@@ -358,9 +358,11 @@ func New(cfg Config) (*Agent, error) {
 		// together do not ask the same peers at the same moments.
 		peerOrder: rand.New(rand.NewSource(time.Now().UnixNano()))}
 	// A fork this node proved earlier outlives the process (§11), and so
-	// does the head it held (D-069) and how old it had become (D-071).
-	agent.loadFreeze()
+	// does the head it held (D-069) and how old it had become (D-071). The
+	// head comes back first: the evidence behind a freeze is checked under
+	// what that head published, as it was when the node filed it.
 	agent.restoreHead()
+	agent.loadFreeze()
 	agent.restoreClock()
 	return agent, nil
 }

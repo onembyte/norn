@@ -15,6 +15,7 @@ import (
 	"github.com/onembyte/norn/internal/forkevidence"
 	"github.com/onembyte/norn/internal/gossip"
 	"github.com/onembyte/norn/internal/logclient"
+	"github.com/onembyte/norn/internal/state"
 )
 
 // ForkDir holds the evidence a node wrote when it caught its log equivocating.
@@ -86,13 +87,25 @@ func (a *Agent) loadFreeze() {
 		// know before carrying it to the witness operators, not a reason to
 		// start enforcing again.
 		a.frozen, a.frozenBy = true, path
-		if _, err := forkevidence.Check(evidence, a.cfg.Anchor.Origin,
-			a.cfg.Anchor.LogKey, a.cfg.Anchor.Policy); err != nil {
+		if _, err := a.checkEvidence(evidence, a.held()); err != nil {
 			a.frozenNote = fmt.Sprintf("the evidence does not verify under this trust "+
 				"file (%v), so it would not convince anybody else; the freeze stands", err)
 		}
 		return
 	}
+}
+
+// checkEvidence runs §11.1's check under what this node verifies its log
+// under (SEC-005 b, c): the trust file's key and every key the held state
+// published, and the replayed policy where the roots published one. With
+// nothing held it is the trust file alone, which is all a node has then.
+func (a *Agent) checkEvidence(ev *forkevidence.Evidence, held *logclient.Result) (*forkevidence.Finding, error) {
+	var st *state.State
+	if held != nil {
+		st = held.State
+	}
+	anchor := a.anchorUnder(st)
+	return forkevidence.Check(ev, a.cfg.Anchor.Origin, anchor.LogKeys, anchor.Policy)
 }
 
 // pollEvidence asks peers whether anybody has proved a fork this node has not
@@ -136,8 +149,7 @@ func (a *Agent) pollEvidence() {
 				"peer %s served something that is not evidence: %v", addr, err)})
 			continue
 		}
-		if _, err := forkevidence.Check(evidence, a.cfg.Anchor.Origin,
-			a.cfg.Anchor.LogKey, a.cfg.Anchor.Policy); err != nil {
+		if _, err := a.checkEvidence(evidence, a.held()); err != nil {
 			a.emit(Event{Kind: PeerRefused, Message: fmt.Sprintf(
 				"peer %s served evidence that proves nothing: %v", addr, err)})
 			continue
@@ -313,13 +325,14 @@ func (a *Agent) writeEvidence(fork *logclient.ForkError, held *logclient.Result)
 	if err != nil {
 		return "", err
 	}
-	evidence.Policy = a.cfg.Anchor.Policy
+	// The policy this node was verifying under, as §11.1's informational
+	// field says: the replayed one when the roots have published one.
+	evidence.Policy = a.anchorUnder(held.State).Policy
 
 	// Check the node's own work before filing it. Evidence that does not
 	// prove anything is worse than none: it is an accusation somebody will
 	// check and dismiss.
-	if _, err := forkevidence.Check(evidence, a.cfg.Anchor.Origin,
-		a.cfg.Anchor.LogKey, a.cfg.Anchor.Policy); err != nil {
+	if _, err := a.checkEvidence(evidence, held); err != nil {
 		return "", fmt.Errorf("this node built evidence that does not prove a fork: %w", err)
 	}
 

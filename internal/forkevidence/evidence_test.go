@@ -118,7 +118,7 @@ func TestEvidenceProvesEquivocationAtDifferentSizes(t *testing.T) {
 	logVKey, _, policy := trustKeys(t)
 	ev.Policy = policy
 
-	finding, err := Check(ev, origin, logVKey, policy)
+	finding, err := Check(ev, origin, []string{logVKey}, policy)
 	if err != nil {
 		t.Fatalf("evidence a node produced does not check out: %v", err)
 	}
@@ -145,7 +145,7 @@ func TestEvidenceAtTheSameSizeNeedsNoProof(t *testing.T) {
 	}
 	logVKey, _, policy := trustKeys(t)
 	ev.Policy = policy
-	if _, err := Check(ev, origin, logVKey, policy); err != nil {
+	if _, err := Check(ev, origin, []string{logVKey}, policy); err != nil {
 		t.Fatalf("same-size evidence does not check out: %v", err)
 	}
 }
@@ -184,7 +184,7 @@ func TestFabricatedEvidenceIsRefused(t *testing.T) {
 		}
 		ev := *good
 		ev.Conflicting = forged
-		if _, err := Check(&ev, origin, logVKey, policy); err == nil {
+		if _, err := Check(&ev, origin, []string{logVKey}, policy); err == nil {
 			t.Error("a head this network's log never signed was accepted as evidence")
 		}
 	})
@@ -197,7 +197,7 @@ func TestFabricatedEvidenceIsRefused(t *testing.T) {
 		}
 		ev := *good
 		ev.Conflicting = bare
-		if _, err := Check(&ev, origin, logVKey, policy); err == nil {
+		if _, err := Check(&ev, origin, []string{logVKey}, policy); err == nil {
 			t.Error("a head no witness vouched for was accepted; the log alone " +
 				"signing two things is not equivocation anybody else can see")
 		}
@@ -210,13 +210,13 @@ func TestFabricatedEvidenceIsRefused(t *testing.T) {
 			t.Skip("no proof at this size")
 		}
 		ev.Proof[0] = make([]byte, 32)
-		if _, err := Check(&ev, origin, logVKey, policy); err == nil {
+		if _, err := Check(&ev, origin, []string{logVKey}, policy); err == nil {
 			t.Error("a proof that does not chain to the signed head was accepted")
 		}
 	})
 
 	t.Run("another network's origin", func(t *testing.T) {
-		if _, err := Check(good, "norn/somebody-else", logVKey, policy); err == nil {
+		if _, err := Check(good, "norn/somebody-else", []string{logVKey}, policy); err == nil {
 			t.Error("evidence was accepted against the wrong network's anchor")
 		}
 	})
@@ -246,7 +246,7 @@ func TestEvidenceRoundTripsThroughAFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Check(back, origin, logVKey, policy); err != nil {
+	if _, err := Check(back, origin, []string{logVKey}, policy); err != nil {
 		t.Fatalf("evidence stopped checking out after a round trip: %v", err)
 	}
 }
@@ -271,7 +271,7 @@ func TestTheShippedVectorProvesAFork(t *testing.T) {
 	}
 
 	anchor := shippedAnchor(t, root)
-	finding, err := Check(evidence, anchor.Origin, anchor.LogKey, anchor.Policy)
+	finding, err := Check(evidence, anchor.Origin, []string{anchor.LogKey}, anchor.Policy)
 	if err != nil {
 		t.Fatalf("the shipped evidence does not prove a fork: %v", err)
 	}
@@ -301,7 +301,7 @@ func TestTheShippedVectorIsRefusedElsewhere(t *testing.T) {
 		t.Fatal(err)
 	}
 	anchor := shippedAnchor(t, root)
-	if _, err := Check(evidence, "norn/somebody-else", anchor.LogKey, anchor.Policy); err == nil {
+	if _, err := Check(evidence, "norn/somebody-else", []string{anchor.LogKey}, anchor.Policy); err == nil {
 		t.Error("the vector was accepted against another network's origin")
 	}
 }
@@ -353,7 +353,7 @@ func TestTheReadersOwnPolicyDecidesTheQuorum(t *testing.T) {
 		t.Errorf("the carried policy is not the permissive one this case is about")
 	}
 	anchor := shippedAnchor(t, root)
-	if _, err := Check(ev, anchor.Origin, anchor.LogKey, anchor.Policy); err == nil {
+	if _, err := Check(ev, anchor.Origin, []string{anchor.LogKey}, anchor.Policy); err == nil {
 		t.Fatal("concluded a fork from two checkpoints no quorum cosigned, because " +
 			"the accuser's own file said no quorum was needed")
 	}
@@ -377,7 +377,7 @@ func TestAForeignPolicyFieldDoesNotBreakSoundEvidence(t *testing.T) {
 	if ev.Policy == anchor.Policy {
 		t.Error("the carried policy is the reader's own, so the case pins nothing")
 	}
-	if _, err := Check(ev, anchor.Origin, anchor.LogKey, anchor.Policy); err != nil {
+	if _, err := Check(ev, anchor.Origin, []string{anchor.LogKey}, anchor.Policy); err != nil {
 		t.Fatalf("refused sound evidence because of a field it must not verify "+
 			"under: %v", err)
 	}
@@ -417,7 +417,7 @@ func TestEvidenceWitnessesSharingANoteNameKeepTheirOwnLabels(t *testing.T) {
 				t.Fatal(err)
 			}
 			logVKey := note.VerifierKey(origin, logKey(t).Public().(ed25519.PublicKey))
-			_, err = verified(signed, origin, logVKey, rules)
+			_, err = verified(signed, origin, []string{logVKey}, rules)
 			if tc.want {
 				if err != nil {
 					t.Fatalf("a and b were refused: %v", err)

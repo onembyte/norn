@@ -119,7 +119,7 @@ func TestCheckCodesAWrongLengthAsSchema(t *testing.T) {
 				t.Fatal(err)
 			}
 			spoil(ev)
-			_, err = Check(ev, anchor.Origin, anchor.LogKey, anchor.Policy)
+			_, err = Check(ev, anchor.Origin, []string{anchor.LogKey}, anchor.Policy)
 			if got, _ := evrefusal.CodeOf(err); got != evrefusal.Schema {
 				t.Errorf("refused as %q, want %q: %v", got, evrefusal.Schema, err)
 			}
@@ -255,7 +255,7 @@ func TestEvidenceIsCheckedInSection11_1sOrder(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			ev, err := Parse(c.raw(t))
 			if err == nil {
-				_, err = Check(ev, anchor.Origin, anchor.LogKey, anchor.Policy)
+				_, err = Check(ev, anchor.Origin, []string{anchor.LogKey}, anchor.Policy)
 			}
 			if err == nil {
 				t.Fatal("accepted")
@@ -296,7 +296,7 @@ func TestACheckpointRefusalCarriesItsSection10_1Code(t *testing.T) {
 			if c.readerOrigin != "" {
 				origin = c.readerOrigin
 			}
-			_, err = Check(ev, origin, anchor.LogKey, anchor.Policy)
+			_, err = Check(ev, origin, []string{anchor.LogKey}, anchor.Policy)
 			if got, _ := evrefusal.CodeOf(err); got != c.outer {
 				t.Errorf("evidence code %q, want %q: %v", got, c.outer, err)
 			}
@@ -325,11 +325,11 @@ func TestAReaderConfigurationFaultCarriesNoCode(t *testing.T) {
 	} {
 		for name, call := range map[string]func(ev *Evidence) error{
 			"its own policy does not parse": func(ev *Evidence) error {
-				_, err := Check(ev, anchor.Origin, anchor.LogKey, "quorum\n")
+				_, err := Check(ev, anchor.Origin, []string{anchor.LogKey}, "quorum\n")
 				return err
 			},
 			"its own log key does not parse": func(ev *Evidence) error {
-				_, err := Check(ev, anchor.Origin, "not a key", anchor.Policy)
+				_, err := Check(ev, anchor.Origin, []string{"not a key"}, anchor.Policy)
 				return err
 			},
 		} {
@@ -383,7 +383,7 @@ func TestTheEvidenceOrderHasItsVectors(t *testing.T) {
 		t.Fatal(err)
 	}
 	fails := func(signed string) bool {
-		_, err := verified(signed, anchor.Origin, anchor.LogKey, rules)
+		_, err := verified(signed, anchor.Origin, []string{anchor.LogKey}, rules)
 		return err != nil
 	}
 	for _, order := range []struct {
