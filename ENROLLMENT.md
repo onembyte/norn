@@ -152,16 +152,24 @@ history. Append-only means recovery = *new entries that supersede*.
 
 | # | Situation | Procedure | Downtime |
 |---|---|---|---|
-| R1 | Signer key **lost** | roots: `signer_remove` + `signer_add` | none |
-| R2 | Signer key **stolen** | roots: `signer_remove`; `norn audit --by <kid> --since <t>` lists everything that key signed; `revoke` rogue devices; re-`enroll` any it wrongly revoked | none for honest peers |
-| R3 | One root of 2-of-3 lost or stolen | remaining two: `root_remove` + `root_add` (new paper key). **Do it the same day** — with one root gone, the next loss is R5 | none |
+| R1 | Signer key **lost** | roots: `norn govern -trust norn.trust -t signer_remove -kid LOST_KID -key root.key -o remove.cbor`, then `norn govern -trust norn.trust -t signer_add -pk replacement.pub -key root.key -o add.cbor` | none |
+| R2 | Signer key **stolen** | roots: `norn govern -trust norn.trust -t signer_remove -kid STOLEN_KID -key root.key -o remove.cbor`; `norn audit --by <kid> --since <t>` lists everything that key signed; `revoke` rogue devices; re-`enroll` any it wrongly revoked | none for honest peers |
+| R3 | One root of 2-of-3 lost or stolen | remaining two: `norn govern -trust norn.trust -t root_remove -kid LOST_KID -key root.key -o remove.cbor`, then `norn govern -trust norn.trust -t root_add -pk replacement.pub -key root.key -o add.cbor` (new root key). **Do it the same day** — with one root gone, the next loss is R5 | none |
 | R4 | Device rebuilt / device key lost | `revoke` + fresh `enroll` | that device only |
 | R5 | Root quorum lost or stolen | **re-genesis** (`norn migrate` is **planned**, not built): build a new `genesis` under new roots, auto-generate re-enrollment requests for every active device (device keys persist), batch-sign them, produce one new trust file. Deliver it to each device out of band. This is the one procedure that touches every device, and it is the price of losing the roots; `norn migrate` will make it an afternoon, not a month | until each device imports the new trust file |
 | R6 | Log storage lost | **planned**: `norn-log restore --from <any node>` — every node holds all tiles; the log resumes at the same size with the same key | none for nodes (they gossip meanwhile) |
-| R7 | Log **key** compromised or lost | roots publish `log_key` entry (§6); the log signs checkpoints with **both** keys for `overlap` (30 d) so nodes with old trust files still verify while they replay the rotation | none |
-| R8 | Witness key rotation / policy change | roots publish `policy` entry (§6); same overlap logic for cosignatures | none |
+| R7 | Log **key** compromised or lost | roots build `norn govern -trust norn.trust -t log_key -pk new-log.pub -overlap 2592000 -key root.key -o log-key.cbor` (§6); the log signs checkpoints with **both** keys for `overlap` (30 d) so nodes with old trust files still verify while they replay the rotation | none |
+| R8 | Witness key rotation / policy change | roots build `norn govern -trust norn.trust -t policy -policy witnesses.policy -key root.key -o policy.cbor` (§6); same overlap logic for cosignatures | none |
 | R9 | Node's trust file lost | re-deliver (QR); nothing else changes | that node only |
 | R10 | Device stolen | `revoke`; evicted everywhere ≤ G4 bound; the device key can do nothing but self-revoke | none |
+
+For each governance entry above, each additional root confirms and extends the
+same file with `norn govern -trust norn.trust -t TYPE -key another-root.key -in entry.cbor -o entry.cbor`.
+Once the observed `root_thr` is met, publish it with
+`norn submit -trust norn.trust entry.cbor` and verify inclusion before building
+a change that depends on it. Replace `TYPE`, filenames and key ids with the
+values for that runbook. Root authority always requires confirmation; `-yes`
+is refused.
 
 ## 6. The two governance entries (normative in `SPEC.md` §§4.3 and 9.4)
 
@@ -169,6 +177,13 @@ history. Append-only means recovery = *new entries that supersede*.
 |---|---|---|---|
 | `log_key` | `pk` (new log verifier key), `overlap` (uint s) | ≥ `root_thr` roots | the log signs checkpoints with **both** keys for at least `overlap` — an obligation on the **log** (`SPEC.md` §9.4), not a rule a verifier times — and verifier keys accumulate: a learned key is never retired |
 | `policy` | `text` (verbatim tlog-policy) | ≥ `root_thr` roots | replaces the witness policy in replayed state |
+
+Build a log-key rotation with
+`norn govern -trust norn.trust -t log_key -pk new-log.pub -overlap 2592000 -key root.key -o log-key.cbor`,
+or a policy replacement with
+`norn govern -trust norn.trust -t policy -policy witnesses.policy -key root.key -o policy.cbor`.
+Extend with the other roots and submit as in §5; policy text is parsed before
+confirmation and included verbatim in the entry.
 
 Consequence: `norn.trust` carries the **initial** log key and policy plus the genesis
 hash; everything after that evolves inside the log under root signatures. A fresh

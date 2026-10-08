@@ -35,6 +35,7 @@ type command func(args []string) error
 var commands = map[string]command{
 	"audit":           auditCmd,
 	"enroll":          enrollCmd,
+	"govern":          governCmd,
 	"init":            initCmd,
 	"monitor":         monitorCmd,
 	"revoke":          revokeCmd,
@@ -53,6 +54,7 @@ func usage() {
 commands:
   audit    list everything one key signed — step one of recovering a stolen key
   enroll   build a signed enrollment request for this device (SPEC §16)
+  govern   sign or extend a root governance entry for submission
   init     create a network: roots, thresholds, genesis and the trust file
   monitor  watch a network and report what it sees (LAB.md §3)
   revoke   sign or extend a device revocation for submission
