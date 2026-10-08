@@ -676,6 +676,12 @@ plan before the first line of code, and stops at **[decision]** and **[user]**.
 | 6.5m-sec-014r | HS-014r | [codex: gpt-6-luna/medium] R7 says rotation is not revocation (D-072 d) — *needs D-072 d answered* | `ENROLLMENT.md` R7 and `THREAT-MODEL.md` A2: a compromised log key is contained by the witness quorum and remedied by a new trust file; retirement recorded for v1.1 | ⬜ |
 | 6.5m-sec-033r | HS-033r | `nornd` refuses to enforce under `quorum none` without saying so (D-072 e) — *needs D-072 e answered* | owner/watchdog refuse to start when the effective policy is `quorum none` unless `allow_no_quorum` is set; observe is always allowed; a policy lowered to none while running alarms on the degraded cadence; one sentence in §13.2 | ⬜ |
 | 6.5l-ix | H5 | Run 13's findings | see the 6.5l-ix row above; subdivided from `HARDENING-PLAN.md` H5. **[decision]** for D2, D6, D9, D12, D13 | ⬜ |
+| 6.5l-ix-a | H5-a | Triage run 13's D1–D19 against this implementation | the table below: for each, what Go and the reference do, and whether it is a suite gap, a prose fix, or a protocol question for b | ✅ |
+| 6.5l-ix-c | H5-c | The log grows once: D1, D3, D4 (replay), D9, D17 (log side) | `bad-rotate-unknown-body-key`, `bad-revoke-unknown-body-key` and "and closed" in both §5.1 rows; an accepted n-of-n threshold; one two-fault vector per untested replay ordering; a `policy` entry with two `log` lines; at-the-cap and one-past genesis names in multi-byte characters; one regeneration and the anchors | ⬜ |
+| 6.5l-ix-d | H5-d | Receipts and the served path: D4 (receipts, §10.1), D18 | a two-fault receipt per adjacent pair of §7's steps; `cp-body-before-sig`; the unreached served-path refusals (a missing hash tile, a tile index ≥ 1000, an unpadded root, an unpadded leaf hash, a trust-file origin case); §12.1's receipt row corrected | ⬜ |
+| 6.5l-ix-e | H5-e | Fork and proofs: D14, D15, D4 (§11.1) | a sound same-size fork in `fork/`'s `sound`; `proofs/at-the-cap` and `proofs-bad/one-past-the-cap`, grown with unlisted witnesses' lines; the held-before-policy two-fault evidence; §12.1's bundle-cap bullet removed | ⬜ |
+| 6.5l-ix-b | H5-b | 🧠 One DECISION block: D2, D5, D6, D7, D8, D10, D12, D13 | a recommendation each, as the triage below states the question; the rows that need an answer wait, the rest of H5 does not | ⬜ |
+| 6.5l-ix-f | H5-f | Prose, and the decisions applied: D4's sentence, D11, D16, D19, and b's answers | "still normative, merely untested"; the name a learned key signs under; the served-rotated and served-superseded manifests; the coverage rows; each answered part of b in SPEC and both implementations | ⬜ |
 | 6.5l-x | H6 | Sealed runs under D-068 | see the 6.5l-x row above | ⬜ |
 | 6.5m-v | H7 | Mesh simulation: T1–T8 in CI | `internal/sim` runs N agents over real loopback gossip with a programmable log; T1, T1b, T2–T8 pass in simulated time, each with a control that disables the mechanism it proves; `make lab-sim` | ⬜ |
 | 6.5m-vi | H8 | Observe-mode deployment kit | a hardened systemd unit and example config, each checked by a test; `/metrics` with `GOSSIP.md` §9's names; a log-server Dockerfile; `OBSERVE.md` | ⬜ |
@@ -691,6 +697,35 @@ plan before the first line of code, and stops at **[decision]** and **[user]**.
 | 7.0 | H17 | `ACTION-PLAN.md` and the email draft | a test plan for the owner; an email drafted in the form `wireguard.com` asks for, read from the page at the time; a pre-send checklist; **nothing sent** | ⬜ |
 | U1 | — | Observe mode on the homelab mesh (6.5m-vii) | **[user]** one node a day, then every node for seven days | ⬜ |
 | U2–U7 | — | Lab, nginx, OpenTimestamps, NAS, phone enrollment, LocalAPI on a real node, outside people | **[user]** `HARDENING-PLAN.md` Stage G | ⬜ |
+
+- **6.5l-ix-a — run 13's nineteen findings triaged against this implementation; H5 split into a–f.**
+  - **How.** Each finding of `SPEC-DEFECTS-13.md` was read against the code it names, and where reading did not settle it, probed: Go's `replay.checkBody`, `trust.Validate`, `policy.Parse`, `note.ParseVerifierKey`, `cbor`'s simple-value branch, `receipt.Check`'s caller, `forkevidence`; the reference's `_check_body`, `policy.parse` (with a real witness key), `cbor.decode` (simple 16 and 32), `parse_vkey`; and the two languages' whitespace predicates over U+001C, U+001F, U+0085, U+00A0, U+2028 and U+180E.
+  - **The table.** *Suite gap* means both implementations already do what the text plainly says and only a vector or a coverage row is missing; *prose* means the text says it, badly or in the wrong place; *protocol* means SPEC answers it two ways or not at all and the answer changes what a conforming implementation accepts — rule 7's first class, for b.
+
+    | D | Run 13 says | Go | Reference | Class → row |
+    |---|---|---|---|---|
+    | D1 | `rotate`/`revoke` rows say "well-formed", not "closed" | closed: `checkBody` applies every schema | closed: `_check_body` runs for every type | prose + vectors → c (§4.0 already says bodies are closed) |
+    | D2 | no stated key for bundles and receipts after a log-key rotation | `norn submit` checks receipts under the trust file's key only | — | **protocol** → b |
+    | D3 | the inclusive threshold bound is unpinned | `1 ≤ thr ≤ len` | same | suite gap → c |
+    | D4 | orderings called normative and licensed reversible; receipt orders untested | follows the stated orders | same | vectors → c, d, e; the sentence → f (the order is already stated normative; "may reverse" is the contradiction, not a rule) |
+    | D5 | two definitions of a checkpoint's age | §15's: the running estimate minus the quorum time | no freshness | **protocol** → b (the two give different peer tables on reachable input) |
+    | D6 | whose note rules win; exact length on lines nobody trusts; UTF-8 | length on every line | — | **protocol** → b (applying the length only to matched lines changes what is accepted; 027 already did the matched-witness half) |
+    | D7 | "the same keys": vkey or public key? | the whole vkey text, by witness name | — | **protocol** → b (§9.1's grammar table says "by parsed public key", Go is stricter) |
+    | D8 | may a directive follow `quorum`? | accepted | accepted | **protocol** → b (SPEC silent; both implementations agree, so the answer is to write down what they do) |
+    | D9 | a `policy` entry with two `log` lines is never replayed | accepted (`policy.Parse`) | accepted | suite gap → c |
+    | D10 | key-id case and "a Unicode space" undefined | lowercase only; `unicode.IsSpace` | lowercase only; `str.isspace` | **protocol** → b — and a **real divergence**: U+001C–U+001F are spaces to Python and not to Go, so a vkey name carrying one is accepted by one implementation and refused by the other |
+    | D11 | what name a learned log key signs under | `<origin>+id+key` (`KeysFrom`) | — | prose → f (§2 implies it) |
+    | D12 | a log whose entry 0 is not the genesis has no refusal code | refused with a plain error (SEC-029) | — | **protocol** → b (the closed list would grow) |
+    | D13 | CBOR simple values other than the four named | refused (`cbor`) | refused (it labels simple 32 a float; cosmetic) | **protocol** → b (SPEC silent; both refuse, so write it down) |
+    | D14 | no vector proves a same-size fork | proves it | — | suite gap → e |
+    | D15 | §12.1's reason for not vectoring the bundle cap is false | enforces the cap | — | suite gap + prose → e |
+    | D16 | the served-rotated and served-superseded manifests do not pin "alongside" | keeps the anchor key alongside | — | suite gap → f |
+    | D17 | boundaries pinned far from the boundary | enforces them | enforces them | suite gap → c (log side), d (trust) |
+    | D18 | refusals on the served path and in receipts no vector reaches | refuses each | — | suite gap → d; its `cosig-wrong-length-ignored` was closed by 6.5m-sec-027 (`checkpoints-bad/28`) |
+    | D19 | §12.1 coverage rows inaccurate either way | — | — | prose → f |
+  - **What b will ask.** Eight questions — D2, D5, D6, D7, D8, D10, D12, D13 — where the plan expected five (D2, D6, D9, D12, D13). D9 turned out to be a suite gap, since both implementations already accept the entry; D5, D7, D8 and D10 joined, the last with a divergence measured rather than imagined.
+  - **Order.** The sub-rows that need no answer (c, d, e) come before b in the table, so the loop keeps building while b waits for a Mythos session, as the plan says ("continue with c–e while it waits"); f applies b's answers last.
+  - **Gate:** generators first (no change under `testdata/`), then `make test` (race) alone, green in all 49 packages with tests — 1037 tests — `vectors-check`, 224 reference tests, `lint`, `fmt-check`, `vet` clean. Documents only.
 
 - **6.5m-sec-034 — `norn-log`'s HTTP server has timeouts and a header cap.**
   - **What was wrong.** The log — the one server every node and the monitor read from — served with `http.ListenAndServe`: no header, read, write or idle timeout, and Go's 1 MB header cap. A client that sent half a request line and then nothing held a connection, a goroutine and a file descriptor for as long as it liked; enough of them and the log stops answering anyone. Built here rather than in a lane, because its red test needs a listener the lane sandbox forbids.
