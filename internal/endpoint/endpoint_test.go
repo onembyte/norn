@@ -363,3 +363,33 @@ func TestOnlyTheOverlappingPrefixIsWithheld(t *testing.T) {
 		t.Errorf("overlaps reported = %v, want the one equal pair", report.Overlapping)
 	}
 }
+
+// All providers meet at Desired, including providers that return Prefix
+// values directly instead of parsing text. Their stored hints stay their own.
+func TestDesiredMasksPrefixesFromEveryProvider(t *testing.T) {
+	unmasked := []netip.Prefix{netip.MustParsePrefix("10.9.0.5/24"), netip.MustParsePrefix("fd00::5/64")}
+	static := Static{Peers: map[string]Hints{"peer": {AllowedIPs: unmasked}}}
+	path := t.TempDir() + "/hints.json"
+	if err := os.WriteFile(path, []byte(`{"peers":{"peer":{"allowed_ips":["10.9.0.5/24","fd00::5/64"]}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	file, err := LoadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, provider := range []Provider{static, file, &Labels{}} {
+		peers, report := Desired([]Device{device(t, "peer", 1, map[string]string{
+			LabelIP: "10.9.0.5/24,fd00::5/64",
+		})}, provider)
+		if !report.Empty() || len(peers) != 1 {
+			t.Fatalf("%s: peers = %v, report = %+v", provider.Name(), peers, report)
+		}
+		got := peers[0].AllowedIPs
+		if len(got) != 2 || got[0].String() != "10.9.0.0/24" || got[1].String() != "fd00::/64" {
+			t.Errorf("%s: desired prefixes = %v", provider.Name(), got)
+		}
+	}
+	if unmasked[0].String() != "10.9.0.5/24" || unmasked[1].String() != "fd00::5/64" {
+		t.Error("normalising desired peers mutated the provider's hints")
+	}
+}

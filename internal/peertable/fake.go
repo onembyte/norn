@@ -3,6 +3,7 @@ package peertable
 import (
 	"errors"
 	"fmt"
+	"net/netip"
 	"sync"
 )
 
@@ -27,6 +28,19 @@ type Fake struct {
 	// FailPeers and FailWrite make the interface behave like one that is down.
 	FailPeers error
 	FailWrite error
+
+	// OwnPublicKey and MaskPrefixes opt into the kernel's storage rules.
+	// Set them before using the fake; their zero values keep the original
+	// behaviour, so tests that need an unconstrained table still have one.
+	OwnPublicKey Key
+	MaskPrefixes bool
+}
+
+// OwnKey reads the interface's public key, or zero before it is configured.
+func (f *Fake) OwnKey() (Key, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.OwnPublicKey, f.FailPeers
 }
 
 // Call is one write, as the interface saw it.
@@ -62,7 +76,10 @@ func (f *Fake) Replace(peers []Peer) error {
 	if f.FailWrite != nil {
 		return f.FailWrite
 	}
-	f.peers = ByKey(peers)
+	f.peers = make(map[Key]Peer, len(peers))
+	for _, peer := range peers {
+		f.store(peer)
+	}
 	f.Calls = append(f.Calls, Call{Op: "replace", Peers: Sorted(peers)})
 	return nil
 }
@@ -102,7 +119,7 @@ func (f *Fake) UpdateEndpoints(peers []Peer) error {
 		if peer.PresharedKey == ([KeyLen]byte{}) {
 			peer.PresharedKey = f.peers[peer.Key].PresharedKey
 		}
-		f.peers[peer.Key] = peer
+		f.store(peer)
 	}
 	f.Calls = append(f.Calls, Call{Op: "update", Peers: Sorted(peers)})
 	return nil
@@ -122,8 +139,24 @@ func (f *Fake) Inject(peers ...Peer) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	for _, peer := range peers {
-		f.peers[peer.Key] = peer
+		f.store(peer)
 	}
+}
+
+// store models the kernel only when asked. It copies routes before masking
+// so the recorded request still shows exactly what the caller supplied.
+// The caller holds mu.
+func (f *Fake) store(peer Peer) {
+	if f.OwnPublicKey != (Key{}) && peer.Key == f.OwnPublicKey {
+		return
+	}
+	if f.MaskPrefixes {
+		peer.AllowedIPs = append([]netip.Prefix(nil), peer.AllowedIPs...)
+		for i, prefix := range peer.AllowedIPs {
+			peer.AllowedIPs[i] = prefix.Masked()
+		}
+	}
+	f.peers[peer.Key] = peer
 }
 
 // ErrDown is what a fake interface returns when told to be unavailable.

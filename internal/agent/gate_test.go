@@ -4,6 +4,7 @@ import (
 	"crypto/ed25519"
 	"encoding/hex"
 	"encoding/json"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/onembyte/norn/internal/cosign"
+	"github.com/onembyte/norn/internal/endpoint"
 	"github.com/onembyte/norn/internal/entry"
 	"github.com/onembyte/norn/internal/freshness"
 	"github.com/onembyte/norn/internal/logclient"
@@ -236,6 +238,56 @@ func TestNothingHappensWhenNothingChanges(t *testing.T) {
 		if !holds(after, peer.Key) {
 			t.Errorf("%s was removed with nothing having changed", peer.Key.Short())
 		}
+	}
+}
+
+// The kernel cannot hold its own key and canonicalises routes it stores.
+// Prove the fake has those constraints before asking whether owner converges:
+// otherwise removing a constraint would quietly turn this back into the old gate.
+func TestNothingHappensWhenNothingChangesOnAKernelLikeInterface(t *testing.T) {
+	fake := peertable.NewFake()
+	own := keyOfDevice(t, "nas")
+	fake.OwnPublicKey, fake.MaskPrefixes = own, true
+	unmasked := netip.MustParsePrefix("10.9.0.5/24")
+	probe := rogue(t)
+	probe.AllowedIPs = []netip.Prefix{unmasked}
+	if err := fake.Replace([]peertable.Peer{{Key: own}, probe}); err != nil {
+		t.Fatal(err)
+	}
+	stored, err := fake.Peers()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if holds(stored, own) {
+		t.Fatal("the kernel-like fake held its own key; this gate would not exercise SEC-012")
+	}
+	if len(stored) != 1 || stored[0].AllowedIPs[0].String() != "10.9.0.0/24" {
+		t.Fatal("the kernel-like fake did not mask its routes; this gate would not exercise SEC-019")
+	}
+	if err := fake.Replace(nil); err != nil {
+		t.Fatal(err)
+	}
+	before := fake.Writes()
+	a := newAgent(t, reconcile.Owner, servedLog(t), fake, &recorder{})
+	a.cfg.Provider = endpoint.Static{Peers: map[string]endpoint.Hints{
+		"nas":    {AllowedIPs: []netip.Prefix{netip.MustParsePrefix("10.8.0.1/32")}},
+		"pi-cam": {AllowedIPs: []netip.Prefix{unmasked}},
+	}}
+	a.cfg.Mono = func() time.Duration { return 0 }
+	if err := a.Once(); err != nil {
+		t.Fatal(err)
+	}
+	installed := fake.Writes()
+	if installed != before+1 {
+		t.Fatalf("the first cycle made %d writes, want one", installed-before)
+	}
+	for i := 0; i < 50; i++ {
+		if err := a.Once(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if fake.Writes() != installed {
+		t.Errorf("%d further writes on an unchanged kernel-like interface", fake.Writes()-installed)
 	}
 }
 

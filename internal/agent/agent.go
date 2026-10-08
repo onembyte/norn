@@ -132,6 +132,9 @@ const DefaultGossipEvery = 30 * time.Second
 const (
 	// InterfaceUnavailable: the WireGuard interface could not be read.
 	InterfaceUnavailable = "INTERFACE_UNAVAILABLE"
+	// InterfaceUnconfigured: the interface has no own public key yet, so
+	// there is no local key to leave out of the peer table.
+	InterfaceUnconfigured = "INTERFACE_UNCONFIGURED"
 	// NoStateYet: nothing has verified since start, so there is nothing to
 	// enforce. The table is left exactly as it is.
 	NoStateYet = "NO_STATE_YET"
@@ -271,6 +274,10 @@ type Agent struct {
 	// alarm to once.
 	uncorroborated     bool
 	saidUncorroborated bool
+	// saidUnconfigured means INTERFACE_UNCONFIGURED has been said for the
+	// interface's current keyless spell, so it is said once per spell and not
+	// every T_poll.
+	saidUnconfigured bool
 	// frozen means this node has proof its log forked and will accept nothing
 	// further under this anchor (§11). frozenBy names the evidence, and
 	// frozenNote says why that file is not itself proof when it is not: a
@@ -741,7 +748,11 @@ func roundAge(age *time.Duration) string {
 // already does both for an empty set, so hard-stale needs no second code path
 // that could disagree with the first.
 func (a *Agent) reconcile(result *logclient.Result, fresh proven.Freshness) error {
-	desired, report := a.desired(result)
+	own, err := a.ownKey()
+	if err != nil {
+		return err
+	}
+	desired, report := a.desired(result, own)
 	if fresh.State == freshness.HardStale {
 		desired, report = nil, endpoint.Report{}
 	}
@@ -799,8 +810,28 @@ func (a *Agent) apply(desired []peertable.Peer, report endpoint.Report) error {
 	return nil
 }
 
-// desired is the proven set dressed with whatever the provider knows.
-func (a *Agent) desired(result *logclient.Result) ([]peertable.Peer, endpoint.Report) {
+// ownKey reads the interface's own public key for a reconcile, and says when
+// the interface has none -- once per keyless spell, not every T_poll.
+func (a *Agent) ownKey() (peertable.Key, error) {
+	own, err := a.cfg.Device.OwnKey()
+	if err != nil {
+		a.emit(Event{Kind: InterfaceUnavailable, Message: err.Error()})
+		return peertable.Key{}, fmt.Errorf("agent: reading the interface's own key: %w", err)
+	}
+	unconfigured := own == (peertable.Key{})
+	if unconfigured && !a.saidUnconfigured {
+		a.emit(Event{Kind: InterfaceUnconfigured, Message: "the interface has no own public key yet; " +
+			"treating all proven devices as peers until it is configured"})
+	}
+	a.saidUnconfigured = unconfigured
+	return own, nil
+}
+
+// desired is the proven set dressed with whatever the provider knows, except
+// for this interface itself, whose key is own (zero when it has none). Being
+// local changes no proof; it only means the device cannot be its own
+// WireGuard peer.
+func (a *Agent) desired(result *logclient.Result, own peertable.Key) ([]peertable.Peer, endpoint.Report) {
 	// The checkpoint's own time, not this machine's (§5.3, A11). This is the
 	// clock that decides what goes in the peer table, so it is the last place
 	// a wrong local clock should be able to reach: a fast one would evict a
@@ -808,6 +839,7 @@ func (a *Agent) desired(result *logclient.Result) ([]peertable.Peer, endpoint.Re
 	// say anything.
 	at := proven.EvaluationTime(result)
 	var devices []endpoint.Device
+	local := map[string]bool{}
 	for _, id := range proven.Devices(result.State, at) {
 		device := result.State.Devices[id]
 		key, err := keyOf(device.WgPk)
@@ -816,9 +848,23 @@ func (a *Agent) desired(result *logclient.Result) ([]peertable.Peer, endpoint.Re
 				Message: fmt.Sprintf("%q has an unreadable key in the log: %v", id, err)})
 			continue
 		}
+		if own != (peertable.Key{}) && key == own {
+			local[id] = true
+			continue
+		}
 		devices = append(devices, endpoint.Device{ID: id, Key: key, Labels: device.Labels})
 	}
-	return endpoint.Desired(devices, a.cfg.Provider)
+	peers, report := endpoint.Desired(devices, a.cfg.Provider)
+	// Local hints are still about a proven device. Excluding it from peer
+	// routing must not turn its provider entry into an unproven claim.
+	unproven := report.Unproven[:0]
+	for _, id := range report.Unproven {
+		if !local[id] {
+			unproven = append(unproven, id)
+		}
+	}
+	report.Unproven = unproven
+	return peers, report
 }
 
 // noteEvictions watches for the same key being put back over and over.
@@ -934,7 +980,13 @@ func (a *Agent) PeerAddresses(port int) []string {
 	if held == nil || port <= 0 {
 		return nil
 	}
-	desired, _ := a.desired(held)
+	// Read quietly: reconcile is what reports the interface's state, and an
+	// address query is not a second place to say it.
+	own, err := a.cfg.Device.OwnKey()
+	if err != nil {
+		return nil
+	}
+	desired, _ := a.desired(held, own)
 	out := make([]string, 0, len(desired))
 	for _, peer := range desired {
 		if addr, ok := gossip.Address(peer.AllowedIPs, port); ok {

@@ -51,7 +51,18 @@ connected it yet). Never writes. Mandatory first mode everywhere (D-005).
 ### enforce / owner
 `nornd` is the **sole writer** of the peer table.
 
-- Desired table = `proven` × endpoint data from an **endpoint provider** (§5).
+- Desired table = `proven` × endpoint data from an **endpoint provider** (§5),
+  **minus the interface's own key**. The node's own device is proven but cannot
+  be its own peer: the kernel and wireguard-go refuse a peer with the
+  interface's key, so desiring it would leave `actual ≠ desired` forever and
+  rewrite the table every `T_poll` (SEC-012). It stays proven everywhere else;
+  it is only not a peer, nor a gossip address. An interface with no key yet is
+  reconciled against the whole proven set, and `INTERFACE_UNCONFIGURED` says so
+  once.
+- Allowed-ips are desired in the form the kernel stores them, masked to their
+  prefix: a hint of `10.9.0.5/24` is installed as `10.9.0.0/24`. Compared
+  unmasked, they never match what the interface returns, with the same endless
+  rewrite (SEC-019).
 - On every proven-set change and every `T_poll`: if `actual ≠ desired` →
   `ConfigureDevice(ReplacePeers: true, Peers: desired)`. This both installs the
   proven set and evicts anything an external writer slipped in, and **the

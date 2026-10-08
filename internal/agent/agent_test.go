@@ -2,6 +2,8 @@ package agent
 
 import (
 	"encoding/hex"
+	"fmt"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strings"
@@ -533,5 +535,172 @@ func TestAFailedEvictionIsNotEvidenceOfAFight(t *testing.T) {
 	}
 	if rec.kinds()[ControlPlaneFight] != 0 {
 		t.Errorf("a broken interface was blamed on the control plane: %v", rec.kinds())
+	}
+}
+
+// The interface is a proven device, but it cannot be its own peer. Its
+// provider hints are neither unproven claims nor routes for another peer.
+func TestTheOwnKeyIsNotAPeerButIsStillProven(t *testing.T) {
+	for _, ownHints := range []bool{false, true} {
+		t.Run(fmt.Sprint(ownHints), func(t *testing.T) {
+			fake := peertable.NewFake()
+			own := keyOfDevice(t, "nas")
+			fake.OwnPublicKey = own
+			rec := &recorder{}
+			a := newAgent(t, reconcile.Owner, servedLog(t), fake, rec)
+			a.cfg.RunDir = t.TempDir()
+			provider := endpoint.Static{Peers: map[string]endpoint.Hints{
+				"pi-cam": {AllowedIPs: []netip.Prefix{netip.MustParsePrefix("10.9.0.2/32")}},
+				"ghost":  {},
+			}}
+			if ownHints {
+				// This local subnet overlaps the remote host. A local device
+				// must not compete in peer routing or produce an overlap alarm.
+				provider.Peers["nas"] = endpoint.Hints{AllowedIPs: []netip.Prefix{
+					netip.MustParsePrefix("10.9.0.1/24")}}
+			}
+			a.cfg.Provider = provider
+			if err := a.Once(); err != nil {
+				t.Fatal(err)
+			}
+			desired, _ := a.desired(a.last, own)
+			if holds(desired, own) {
+				t.Error("the interface's own key entered the desired set")
+			}
+			if addresses := a.PeerAddresses(8090); len(addresses) != 1 || addresses[0] != "http://10.9.0.2:8090" {
+				t.Errorf("gossip addresses = %v, want only the remote peer", addresses)
+			}
+			set, err := proven.Read(filepath.Join(a.cfg.RunDir, proven.FileName))
+			if err != nil {
+				t.Fatal(err)
+			}
+			found := false
+			for _, device := range set.Devices {
+				if device.WgPk == own.String() {
+					found = true
+				}
+			}
+			if !found || len(set.Devices) != len(provenKeys(t)) {
+				t.Error("excluding a self-peer changed what proven reports")
+			}
+			ghost := false
+			for _, e := range rec.events {
+				if (e.Peer != nil && e.Peer.Key == own) ||
+					(e.Kind == ProviderClaim && strings.Contains(e.Message, `"nas"`)) ||
+					(e.Kind == ProviderClaim && strings.Contains(e.Message, "overlapping")) {
+					t.Errorf("the proven local device caused an alarm: %+v", e)
+				}
+				ghost = ghost || (e.Kind == ProviderClaim && strings.Contains(e.Message, `"ghost"`))
+			}
+			if !ghost {
+				t.Error("suppressing local hints also suppressed an unproven provider claim")
+			}
+		})
+	}
+}
+
+func TestAnUnmaskedHintReachesTheTableMasked(t *testing.T) {
+	fake := peertable.NewFake() // No kernel masking to conceal an unnormalised write.
+	a := newAgent(t, reconcile.Owner, servedLog(t), fake, &recorder{})
+	a.cfg.Provider = endpoint.Static{Peers: map[string]endpoint.Hints{
+		"pi-cam": {AllowedIPs: []netip.Prefix{netip.MustParsePrefix("10.9.0.5/24")}},
+	}}
+	if err := a.Once(); err != nil {
+		t.Fatal(err)
+	}
+	peers, err := fake.Peers()
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := peertable.ByKey(peers)[keyOfDevice(t, "pi-cam")].AllowedIPs
+	if len(got) != 1 || got[0].String() != "10.9.0.0/24" {
+		t.Errorf("table received %v, want [10.9.0.0/24]", got)
+	}
+}
+
+func TestAnInterfaceWithoutAnOwnKeyStillReconcilesAndSaysSo(t *testing.T) {
+	fake := peertable.NewFake()
+	rec := &recorder{}
+	a := newAgent(t, reconcile.Owner, servedLog(t), fake, rec)
+	if err := a.Once(); err != nil {
+		t.Fatal(err)
+	}
+	peers, err := fake.Peers()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(peers) != len(provenKeys(t)) || fake.Writes() != 1 {
+		t.Fatalf("unconfigured interface got %d peers and %d writes", len(peers), fake.Writes())
+	}
+	if rec.kinds()["INTERFACE_UNCONFIGURED"] != 1 || rec.kinds()[InterfaceUnavailable] != 0 {
+		t.Errorf("an absent own key must be reported without treating the interface as down: %v", rec.kinds())
+	}
+	for _, e := range rec.events {
+		if e.Kind == "INTERFACE_UNCONFIGURED" && !strings.Contains(e.Message, "all proven devices as peers") {
+			t.Errorf("the notice did not explain what the node did: %q", e.Message)
+		}
+	}
+	// Configuring the interface later must take effect without a restart.
+	fake.OwnPublicKey = keyOfDevice(t, "nas")
+	if err := a.Once(); err != nil {
+		t.Fatal(err)
+	}
+	peers, _ = fake.Peers()
+	if holds(peers, fake.OwnPublicKey) {
+		t.Error("the newly configured own key remained a peer")
+	}
+}
+
+// An interface with no key is a state, not an event: it is said when the node
+// finds it so, and again only if it leaves and comes back. Said every T_poll --
+// and every time gossip asks where its peers are -- it would bury everything
+// else the log says.
+func TestAnUnconfiguredInterfaceIsSaidOnceNotEveryPoll(t *testing.T) {
+	fake := peertable.NewFake()
+	rec := &recorder{}
+	a := newAgent(t, reconcile.Owner, servedLog(t), fake, rec)
+	for i := 0; i < 50; i++ {
+		if err := a.Once(); err != nil {
+			t.Fatal(err)
+		}
+		a.PeerAddresses(8090)
+	}
+	if got := rec.kinds()[InterfaceUnconfigured]; got != 1 {
+		t.Fatalf("fifty cycles on an unconfigured interface said so %d times, want once", got)
+	}
+	fake.OwnPublicKey = keyOfDevice(t, "nas")
+	if err := a.Once(); err != nil {
+		t.Fatal(err)
+	}
+	fake.OwnPublicKey = peertable.Key{}
+	if err := a.Once(); err != nil {
+		t.Fatal(err)
+	}
+	if got := rec.kinds()[InterfaceUnconfigured]; got != 2 {
+		t.Errorf("an interface that lost its key again was said %d times in all, want twice", got)
+	}
+}
+
+type unreadableOwnKey struct{ *peertable.Fake }
+
+func (f unreadableOwnKey) OwnKey() (peertable.Key, error) {
+	return peertable.Key{}, peertable.ErrDown
+}
+
+func TestAnUnreadableOwnKeyLeavesTheTableUntouched(t *testing.T) {
+	fake := peertable.NewFake(rogue(t))
+	rec := &recorder{}
+	a := newAgent(t, reconcile.Owner, servedLog(t), unreadableOwnKey{fake}, rec)
+	a.cfg.Provider = endpoint.Static{Peers: map[string]endpoint.Hints{
+		"pi-cam": {AllowedIPs: []netip.Prefix{netip.MustParsePrefix("10.9.0.2/32")}},
+	}}
+	if err := a.Once(); err == nil {
+		t.Error("a failed own-key read was treated as an unconfigured interface")
+	}
+	if fake.Writes() != 0 || rec.kinds()[InterfaceUnavailable] == 0 {
+		t.Errorf("failed own-key read: %d writes, events %v", fake.Writes(), rec.kinds())
+	}
+	if got := a.PeerAddresses(8090); len(got) != 0 {
+		t.Errorf("gossip used an unknown local identity: %v", got)
 	}
 }

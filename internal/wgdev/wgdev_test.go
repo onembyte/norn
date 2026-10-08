@@ -1,6 +1,7 @@
 package wgdev
 
 import (
+	"errors"
 	"net"
 	"net/netip"
 	"os/exec"
@@ -196,5 +197,33 @@ func TestAgainstARealInterfaceIfOneExists(t *testing.T) {
 		if peer.Key == (peertable.Key{}) {
 			t.Error("a peer came back with a zero key")
 		}
+	}
+}
+
+type ownKeyClient struct {
+	client
+	device *wgtypes.Device
+	err    error
+	name   string
+}
+
+func (c *ownKeyClient) Device(name string) (*wgtypes.Device, error) {
+	c.name = name
+	return c.device, c.err
+}
+
+func TestOwnKeyReadsTheDevicePublicKey(t *testing.T) {
+	c := &ownKeyClient{device: &wgtypes.Device{PublicKey: wgtypes.Key(key(t, 7))}}
+	d := &Device{client: c, name: "wg-test"}
+	for _, want := range []peertable.Key{key(t, 7), {}, key(t, 8)} {
+		c.device.PublicKey = wgtypes.Key(want)
+		got, err := d.OwnKey()
+		if err != nil || got != want || c.name != d.name {
+			t.Errorf("own key = %v, err = %v, device = %q; want %v from %q", got, err, c.name, want, d.name)
+		}
+	}
+	c.err = peertable.ErrDown
+	if _, err := d.OwnKey(); !errors.Is(err, peertable.ErrDown) {
+		t.Errorf("a failed device read lost its error: %v", err)
 	}
 }

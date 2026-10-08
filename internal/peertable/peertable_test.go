@@ -216,3 +216,42 @@ func TestByKeyAndSorted(t *testing.T) {
 		}
 	}
 }
+
+func TestTheFakeCanStorePeersLikeTheKernel(t *testing.T) {
+	own, remote := Peer{Key: key(t, 1)}, Peer{Key: key(t, 2),
+		AllowedIPs: []netip.Prefix{prefix(t, "10.9.0.5/24"), prefix(t, "fd00::5/64")}}
+	for _, kernel := range []bool{false, true} {
+		fake := NewFake()
+		if kernel {
+			fake.OwnPublicKey, fake.MaskPrefixes = own.Key, true
+		}
+		got, err := fake.OwnKey()
+		if err != nil || got != fake.OwnPublicKey {
+			t.Errorf("kernel=%v: own key = %v, err = %v", kernel, got, err)
+		}
+		if err := fake.Replace([]Peer{own, remote}); err != nil {
+			t.Fatal(err)
+		}
+		peers, err := fake.Peers()
+		if err != nil {
+			t.Fatal(err)
+		}
+		byKey := ByKey(peers)
+		if _, holdsOwn := byKey[own.Key]; holdsOwn == kernel {
+			t.Errorf("kernel=%v: holds own key = %v", kernel, holdsOwn)
+		}
+		want := remote.AllowedIPs
+		if kernel {
+			want = []netip.Prefix{prefix(t, "10.9.0.0/24"), prefix(t, "fd00::/64")}
+		}
+		if got := byKey[remote.Key].AllowedIPs; len(got) != 2 || got[0] != want[0] || got[1] != want[1] {
+			t.Errorf("kernel=%v: stored prefixes = %v, want %v", kernel, got, want)
+		}
+		// Recording the caller's request must not rewrite its hints or hide
+		// an attempted self-peer just because the kernel would discard it.
+		if len(fake.Calls[0].Peers) != 2 || remote.AllowedIPs[0].String() != "10.9.0.5/24" ||
+			ByKey(fake.Calls[0].Peers)[remote.Key].AllowedIPs[0] != remote.AllowedIPs[0] {
+			t.Error("storing canonical routes changed the request or its record")
+		}
+	}
+}

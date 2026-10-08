@@ -26,8 +26,24 @@ import (
 
 // Device is a WireGuard interface.
 type Device struct {
-	client *wgctrl.Client
+	client client
 	name   string
+}
+
+// client keeps device reads testable without opening a kernel socket.
+type client interface {
+	Device(string) (*wgtypes.Device, error)
+	ConfigureDevice(string, wgtypes.Config) error
+	Close() error
+}
+
+// OwnKey implements peertable.Device.
+func (d *Device) OwnKey() (peertable.Key, error) {
+	device, err := d.client.Device(d.name)
+	if err != nil {
+		return peertable.Key{}, fmt.Errorf("wgdev: reading %s: %w", d.name, err)
+	}
+	return peertable.Key(device.PublicKey), nil
 }
 
 // Open connects to the interface by name.

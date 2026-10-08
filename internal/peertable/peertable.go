@@ -124,6 +124,9 @@ func Sorted(peers []Peer) []Peer {
 // ReplacePeers for owner mode, Remove for watchdog evictions, and UpdateOnly
 // for refreshing endpoints without adding keys.
 type Device interface {
+	// OwnKey reads the interface's own public key. Zero with no error means
+	// the interface has not been configured with a key yet.
+	OwnKey() (Key, error)
 	// Peers reads the current table.
 	Peers() ([]Peer, error)
 	// Replace makes the table exactly these peers (ReplacePeers: true).

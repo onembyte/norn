@@ -97,7 +97,12 @@ func Desired(proven []Device, provider Provider) ([]peertable.Peer, Report) {
 	for _, device := range proven {
 		peer := peertable.Peer{Key: device.Key}
 		if hints, ok := provider.Hints(device); ok {
-			peer.AllowedIPs = hints.AllowedIPs
+			// Every provider meets here, including ones returning prefixes
+			// directly. Match the kernel's route form before reconciliation,
+			// without changing the provider's own hints.
+			for _, prefix := range hints.AllowedIPs {
+				peer.AllowedIPs = append(peer.AllowedIPs, prefix.Masked())
+			}
 			peer.Endpoint = hints.Endpoint
 			peer.Keepalive = hints.Keepalive
 		}
