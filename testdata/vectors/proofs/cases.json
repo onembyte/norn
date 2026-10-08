@@ -1,4 +1,9 @@
 {
+  "at_the_cap": {
+    "accept": true,
+    "bytes": 81919,
+    "file": "at-the-cap.bundle"
+  },
   "checkpoint_quorum_time": 1760003607,
   "comment": "the served log and its proof bundles, produced by the Go implementation and validated by upstream libraries; see SPEC 12. `installs` is the wg_pk, in hex, that a node installs for each device once its bundle checks out: the key replay gives (SPEC 8.1 condition 3), which is not always the key in the bundle's entry. `nas` rotated after it enrolled, so its bundle proves the enrol and names the old key",
   "devices": [

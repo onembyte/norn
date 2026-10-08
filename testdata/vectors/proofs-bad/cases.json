@@ -1,6 +1,10 @@
 {
   "cases": [
     {
+      "name": "one-past-the-cap",
+      "says": "input exceeds"
+    },
+    {
       "name": "open-schema",
       "says": "unknown field"
     },
@@ -54,6 +58,7 @@
     "foreign-checkpoint": "log-signature",
     "no-quorum": "quorum",
     "no-quorum-tampered-proof": "quorum",
+    "one-past-the-cap": "bundle",
     "open-schema": "bundle",
     "revoke-entry-other-device": "binding",
     "rotate-entry-other-device": "binding",
@@ -81,6 +86,10 @@
     },
     "no-quorum-tampered-proof": {
       "says": "a satisfied witness quorum",
+      "section": "8.1"
+    },
+    "one-past-the-cap": {
+      "says": "larger than this MUST be refused on length",
       "section": "8.1"
     },
     "open-schema": {

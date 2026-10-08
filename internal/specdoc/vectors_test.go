@@ -2434,7 +2434,7 @@ func TestEveryStatedOrderingIsObservedByAVector(t *testing.T) {
 		"proofs-bad/foreign-checkpoint", "proofs-bad/no-quorum-tampered-proof",
 		"proofs-bad/wrong-entry", "fork/bad-oversize-and-not-cbor",
 		"fork/bad-version-and-unknown-key", "fork/bad-short-held-root-and-size-above-held",
-		"fork/bad-other-origin",
+		"fork/bad-other-origin", "fork/bad-policy-unparseable-and-foreign-held",
 	} {
 		if !strings.Contains(flat, vector) {
 			t.Errorf("§12.1 does not name %s, a vector that observes one of the orderings "+
@@ -2855,7 +2855,7 @@ func TestEveryServedAndBundleNegativeCitesTheRuleOfItsCode(t *testing.T) {
 			"unserved": {"any file a later step needs and cannot fetch"},
 		},
 		"proofs-bad": {
-			"bundle":        {"a closed map of exactly these six keys", "`v` | uint | `1`"},
+			"bundle":        {"a closed map of exactly these six keys", "`v` | uint | `1`", "larger than this MUST be refused on length"},
 			"log-signature": {"this network's log key"},
 			"origin":        {"this network's origin"},
 			"quorum":        {"a satisfied witness quorum"},

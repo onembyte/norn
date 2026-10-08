@@ -261,6 +261,9 @@ func run(root string) error {
 		"log_key": "keys.json ed25519.logkey — the key trust.cbor names",
 		"size":    store.Size(),
 		"devices": ids,
+		"at_the_cap": map[string]any{
+			"file": "at-the-cap.bundle", "bytes": proof.MaxBundleBytes, "accept": true,
+		},
 		"right_edge_inclusion": map[string]any{
 			"file": "right-edge.json", "size": 127, "index": 126,
 		},
@@ -1166,8 +1169,35 @@ func writeBadProofs(root, origin string, key ed25519.PrivateKey, entries [][]byt
 		}
 	}
 
+	// Cold gate run 13, D15. An unlisted witness's real cosignatures add
+	// bytes without changing any check. These twins isolate the size cap.
+	nasRaw, err := os.ReadFile(filepath.Join(root, "proofs", "nas.bundle"))
+	if err != nil {
+		return err
+	}
+	nas, err := proof.Decode(nasRaw)
+	if err != nil {
+		return err
+	}
+	for _, boundary := range []struct {
+		dir, name string
+		size      int
+	}{
+		{"proofs", "at-the-cap", proof.MaxBundleBytes},
+		{"proofs-bad", "one-past-the-cap", proof.MaxBundleBytes + 1},
+	} {
+		raw, err := bundleOfSize(root, nas, boundary.size)
+		if err != nil {
+			return err
+		}
+		if err := os.WriteFile(filepath.Join(root, boundary.dir, boundary.name+".bundle"), raw, 0o644); err != nil {
+			return err
+		}
+	}
+
 	// Every negative names the section that states its rule (run 10).
 	bundleRules := map[string]map[string]string{
+		"one-past-the-cap":          {"section": "8.1", "says": "larger than this MUST be refused on length"},
 		"open-schema":               {"section": "8.1", "says": "a closed map of exactly these six keys"},
 		"wrong-version":             {"section": "8.1", "says": "`v` | uint | `1`"},
 		"device-not-in-entry":       {"section": "8.1", "says": "`device` is the `device_id` the `entry` names"},
@@ -1189,6 +1219,7 @@ func writeBadProofs(root, origin string, key ed25519.PrivateKey, entries [][]byt
 	// the binding -- the entry is another one's), and
 	// no-quorum-tampered-proof (the quorum, then the inclusion proof).
 	bundleCodes := map[string]refusal.Code{
+		"one-past-the-cap":          refusal.Bundle,
 		"open-schema":               refusal.Bundle,
 		"wrong-version":             refusal.Bundle,
 		"device-not-in-entry":       refusal.Binding,
@@ -1203,6 +1234,7 @@ func writeBadProofs(root, origin string, key ed25519.PrivateKey, entries [][]byt
 		"wrong-log-key":             refusal.LogSignature,
 	}
 	bundleCases := []map[string]string{
+		{"name": "one-past-the-cap", "says": "input exceeds"},
 		{"name": "open-schema", "says": "unknown field"},
 		{"name": "wrong-version", "says": "unsupported version"},
 		{"name": "device-not-in-entry", "says": "carries an entry about"},
@@ -1238,6 +1270,57 @@ func writeBadProofs(root, origin string, key ed25519.PrivateKey, entries [][]byt
 		return err
 	}
 	return os.WriteFile(filepath.Join(dir, "cases.json"), append(blob, '\n'), 0o644)
+}
+
+// bundleOfSize grows only the checkpoint's signature block. Repeated real
+// stranger lines supply most of the bytes; a final unlisted name supplies
+// the remainder, including any change in the CBOR text-length header.
+func bundleOfSize(root string, base *proof.Bundle, target int) ([]byte, error) {
+	key, err := seedKey(root, "stranger")
+	if err != nil {
+		return nil, err
+	}
+	body, _, err := note.Split(base.Checkpoint)
+	if err != nil {
+		return nil, err
+	}
+	const name = "norn-witness/stranger"
+	line, err := cosignpkg.Sign(body, name, key, time.Unix(CosignedAt, 0))
+	if err != nil {
+		return nil, err
+	}
+	raw, err := base.Encode()
+	if err != nil {
+		return nil, err
+	}
+	// Leave room for the final line and a wider CBOR length header.
+	count := (target - len(raw) - 2*len(line)) / (len(line) + 1)
+	if count < 0 {
+		return nil, fmt.Errorf("bundle target %d is too small", target)
+	}
+	prefix := base.Checkpoint + strings.Repeat(line+"\n", count)
+	b := *base
+	b.Checkpoint = prefix + line + "\n"
+	raw, err = b.Encode()
+	if err != nil {
+		return nil, err
+	}
+	if len(raw) > target {
+		return nil, fmt.Errorf("bundle already exceeds target %d", target)
+	}
+	final, err := cosignpkg.Sign(body, name+strings.Repeat("x", target-len(raw)), key, time.Unix(CosignedAt, 0))
+	if err != nil {
+		return nil, err
+	}
+	b.Checkpoint = prefix + final + "\n"
+	raw, err = b.Encode()
+	if err != nil {
+		return nil, err
+	}
+	if len(raw) != target {
+		return nil, fmt.Errorf("bundle is %d bytes, want %d", len(raw), target)
+	}
+	return raw, nil
 }
 
 // checkCodes refuses to write a manifest whose cases and codes disagree:
@@ -1581,6 +1664,24 @@ func writeForkEvidence(root, origin string, key ed25519.PrivateKey,
 	if err := os.WriteFile(filepath.Join(dir, "evidence-at-64.cbor"), raw64, 0o644); err != nil {
 		return err
 	}
+	// Cold gate run 13, D14. The two signed roots prove a same-size fork
+	// without a consistency path. Every previous same-size file was refused.
+	sameSigned, sameCP, err := forkedBranch(root, origin, key, entries, signers, len(entries))
+	if err != nil {
+		return err
+	}
+	same, err := forkevidence.Build(heldTree, heldSigned, sameSigned, sameCP)
+	if err != nil {
+		return err
+	}
+	same.Policy = policyOf(root)
+	rawSame, err := same.Encode()
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(dir, "evidence-at-same-size.cbor"), rawSame, 0o644); err != nil {
+		return err
+	}
 	return writeForkNegatives(root, origin, key, entries, heldSigned, heldTree, signers,
 		evidence, forkedSigned, forkedCP)
 }
@@ -1904,6 +2005,21 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 		return err
 	}
 
+	// Cold gate run 13, D4. The closed-code table checks the carried policy
+	// at step 4, then held at step 5. Both faults must be present to pin it.
+	twoFaults := *unparseable
+	twoFaults.Held, err = signedHeadOver(root, elsewhere, key, entries, signers)
+	if err != nil {
+		return err
+	}
+	rawTwoFaults, err := twoFaults.Encode()
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(dir, "bad-policy-unparseable-and-foreign-held.cbor"), rawTwoFaults, 0o644); err != nil {
+		return err
+	}
+
 	// ...and the other direction, which is a POSITIVE case: a carried policy
 	// the reader does not share must not break evidence that is otherwise
 	// sound. A reader that verified under the field would refuse a real fork
@@ -2165,6 +2281,7 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 		{"name": "bad-bool-size", "says": "size is bool, want uint"},
 		{"name": "bad-policy-says-quorum-none", "says": "no quorum cosigned it"},
 		{"name": "bad-policy-unparseable", "says": "not a `tlog-policy`"},
+		{"name": "bad-policy-unparseable-and-foreign-held", "says": "not a `tlog-policy`"},
 		{"name": "bad-proof-at-same-size", "says": "requires none"},
 		{"name": "bad-consistent", "says": "nothing here is a fork"},
 		{"name": "bad-other-origin", "says": "the held checkpoint"},
@@ -2191,6 +2308,7 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 		"bad-bool-size":                           evrefusal.Schema,
 		"bad-policy-says-quorum-none":             evrefusal.Held,
 		"bad-policy-unparseable":                  evrefusal.Policy,
+		"bad-policy-unparseable-and-foreign-held": evrefusal.Policy,
 		"bad-proof-at-same-size":                  evrefusal.Proof,
 		"bad-consistent":                          evrefusal.Consistent,
 		"bad-other-origin":                        evrefusal.Held,
@@ -2219,6 +2337,7 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 			"bad-bool-size":                           {"section": "11.1", "says": "the `size` field is a boolean rather than a uint"},
 			"bad-policy-says-quorum-none":             {"section": "11.1", "says": "never the one in the file"},
 			"bad-policy-unparseable":                  {"section": "11.1", "says": "MUST parse as `c2sp.org/tlog-policy`"},
+			"bad-policy-unparseable-and-foreign-held": {"section": "11.1", "says": "MUST parse as `c2sp.org/tlog-policy`"},
 			"bad-proof-at-same-size":                  {"section": "11.1", "says": "Empty when `size` equals"},
 			"bad-consistent":                          {"section": "11.1", "says": "only if `held_root` differs"},
 			"bad-other-origin":                        {"section": "11.1", "says": "this network's origin"},
@@ -2230,7 +2349,7 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 		"codes": forkCodes,
 		// Cold gate run 12: the files that MUST prove a fork, named so a
 		// reader is held to the positives as well as the negatives.
-		"sound": []string{"evidence", "policy-not-the-readers", "evidence-at-64", "evidence-at-the-cap"},
+		"sound": []string{"evidence-at-same-size", "evidence", "policy-not-the-readers", "evidence-at-64", "evidence-at-the-cap"},
 		"comment": "evidence that MUST NOT be acted on, checked against trust.cbor. " +
 			"bad-consistent is a log and its own earlier self -- every signature valid, " +
 			"both heads cosigned, the roots agreeing. bad-other-origin is a real fork of " +

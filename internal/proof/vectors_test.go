@@ -153,7 +153,7 @@ func TestTheBundleTableDescribesTheShippedBundles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	value, err := cbor.Decode(raw)
+	value, err := cbor.DecodeWithin(raw, MaxBundleBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
