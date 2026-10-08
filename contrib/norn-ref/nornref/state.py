@@ -6,6 +6,8 @@ has no opinion about which entries are valid. That decision belongs to `replay`.
 
 from __future__ import annotations
 
+import ipaddress
+
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -16,7 +18,12 @@ DEFAULT_PARAMS: dict[str, Any] = {
     "staleness": 600,
     "mmd": 60,
     "rotate_needs_signer": False,
+    "routes": "granted",
 }
+
+#: The one text-valued parameter has a closed value set (SPEC 4.5, D-073):
+#: two readers must never hold two readings of whether routes are bounded.
+ROUTES_VALUES = frozenset({"granted", "advisory"})
 
 #: Exactly the keys of DEFAULT_PARAMS. The witness policy deliberately has one
 #: home only -- the `policy` entry type (D-034) -- because two places to set the
@@ -77,6 +84,30 @@ class State:
         self.active_wg.pop(device["wg_pk"], None)
 
     # -- serialisation ----------------------------------------------------
+
+    def grant(self, device_id: str) -> list[str]:
+        """The device's grant (SPEC 4.0, D-073): the prefixes its `ip` label
+        carries, each masked, duplicates removed, sorted as text.
+
+        Parsed as a whole: a label with one part that is not a prefix is no
+        grant at all, not the parts that did parse -- a bound with a hole in
+        it is not the bound the signers signed. An IPv4-mapped IPv6 prefix is
+        no grant either, because the two implementations' text forms of one
+        differ, and a grant is compared as text.
+        """
+        label = self.devices[device_id].get("labels", {}).get("ip")
+        if not isinstance(label, str):
+            return []
+        out: set[str] = set()
+        for part in label.split(","):
+            try:
+                network = ipaddress.ip_network(part.strip(), strict=False)
+            except ValueError:
+                return []
+            if network.version == 6 and network.network_address.ipv4_mapped is not None:
+                return []
+            out.add(network.with_prefixlen)
+        return sorted(out)
 
     def proven(self, at: int) -> list[str]:
         """The devices a node would admit at evaluation time `at` (SPEC §5.3).

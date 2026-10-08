@@ -36,7 +36,7 @@ var bodySchema = map[string]struct{ required, optional []string }{
 	"policy":        {[]string{"text"}, nil},
 	"note":          {[]string{"text"}, nil},
 	// params is the exception: its keys are the §4.5 parameter names.
-	"params": {nil, []string{"checkpoint_interval", "staleness", "mmd", "rotate_needs_signer"}},
+	"params": {nil, []string{"checkpoint_interval", "staleness", "mmd", "rotate_needs_signer", "routes"}},
 }
 
 func checkBody(entryType string, body map[string]any) error {
@@ -363,25 +363,34 @@ func hParams(_ *replayer, st *state.State, env *entry.Envelope, _ uint64) error 
 	// poll (SEC-010).
 	checked := make(map[string]any, len(env.Body))
 	for key, value := range env.Body {
-		switch key {
-		case "rotate_needs_signer":
-			b, ok := value.(bool)
-			if !ok {
-				return rejectWith(ReasonDecode)
-			}
-			checked[key] = b
-		default:
-			n, ok := value.(uint64)
-			if !ok {
-				return rejectWith(ReasonDecode)
-			}
-			checked[key] = n
+		typed, ok := checkParam(key, value)
+		if !ok {
+			return rejectWith(ReasonDecode)
 		}
+		checked[key] = typed
 	}
 	for key, value := range checked {
 		st.Params[key] = value
 	}
 	return nil
+}
+
+// checkParam is §4.5's type rule for one parameter, shared by a `params`
+// entry and a genesis so the two paths cannot disagree (cold gate run 8,
+// D20). `rotate_needs_signer` is a bool; `routes` is text from a closed set
+// (D-073); everything else is a uint.
+func checkParam(key string, value any) (any, bool) {
+	switch key {
+	case "rotate_needs_signer":
+		b, ok := value.(bool)
+		return b, ok
+	case "routes":
+		s, ok := value.(string)
+		return s, ok && (s == state.RoutesGranted || s == state.RoutesAdvisory)
+	default:
+		n, ok := value.(uint64)
+		return n, ok
+	}
 }
 
 func hNote(_ *replayer, _ *state.State, env *entry.Envelope, _ uint64) error {

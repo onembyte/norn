@@ -20,7 +20,7 @@ DEVICES = ["nas", "laptop", "pi-cam"]
 WITNESSES = ["pi", "vps", "friend"]
 
 EXTRA_KEYS = (["signer3", "root4", "logkey", "logkey2", "spare", "printer", "nas-id2", "printer-id2", "escaped", "contractor", "halfsigned", "labelcap",
-              "rootrevoked", "stranger", "astral", "sundial", "logkey3"]
+              "rootrevoked", "stranger", "astral", "sundial", "logkey3", "router", "badgrant"]
               + [f"witness-{w}" for w in WITNESSES])
 
 KEYS: dict[str, keys.Ed25519] = {
@@ -29,7 +29,7 @@ KEYS: dict[str, keys.Ed25519] = {
 }
 WG: dict[str, bytes] = {
     name: keys.x25519_public(name)
-    for name in DEVICES + ["laptop2", "nas2", "spare", "printer", "rogue", "escaped", "contractor", "halfsigned", "labelcap", "rootrevoked", "astral", "sundial"]
+    for name in DEVICES + ["laptop2", "nas2", "spare", "printer", "rogue", "escaped", "contractor", "halfsigned", "labelcap", "rootrevoked", "astral", "sundial", "router", "badgrant"]
 }
 
 #: Every canonical-JSON escape rule (SPEC §14.2) in one value: the characters
@@ -1043,6 +1043,25 @@ def log() -> list[LogItem]:
     foreign = entry.new("signer_add", b"\xff" * 16, ts=T0 + b.index * 60, after=b.index,
                         body={"pk": KEYS["stranger"].public})
     b.add_raw(f"{b.index}-bad-precedence-net-before-threshold", entry.encode(foreign), "decode")
+
+    # D-073. The `ip` label is the device's grant -- the prefixes the signers
+    # authorised it to source -- parsed as a whole, masked, sorted. `router`
+    # is enrolled with host addresses on wider prefixes, so the grant a reader
+    # computes differs from the label it reads; `badgrant`'s label has one
+    # prefix that does not parse, and a label that does not parse as a whole
+    # is no grant at all, not the prefixes that did parse.
+    b.add(f"{b.index}-enroll-router-granted", b.build("enroll", _enroll_body(
+        "router", labels={"ip": "10.9.1.5/24, fd00::5/64"}), both))
+    b.add(f"{b.index}-enroll-badgrant-label-not-a-grant", b.build("enroll", _enroll_body(
+        "badgrant", labels={"ip": "10.9.2.0/24, nope"}), both))
+    # `routes` is the one text-valued parameter and its value set is closed:
+    # the default named explicitly is accepted; another word, or a number, is
+    # `decode` -- as a bool where a uint belongs is.
+    b.add(f"{b.index}-params-routes-granted", b.build("params", {"routes": "granted"}, roots3))
+    b.add(f"{b.index}-bad-params-routes-unknown-value", b.build(
+        "params", {"routes": "open"}, roots3), "decode")
+    b.add(f"{b.index}-bad-params-routes-wrong-type", b.build(
+        "params", {"routes": 1}, roots3), "decode")
 
     return b.items
 

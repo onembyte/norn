@@ -214,6 +214,11 @@ def write_proven(out: pathlib.Path, final: Any, entries: list[bytes]) -> None:
         "cases": [{"name": name, "t": t, "why": why, "proven": final.proven(t)}
                   for t, name, why in cases],
         "bundles": bundles,
+        # D-073: every active device's grant, which the evaluation time does
+        # not change. `router` is the masked-and-sorted case, `badgrant` the
+        # label that does not parse as a whole, `nas` the device with none.
+        "grants": {name: final.grant(name) for name, dev in sorted(final.devices.items())
+                   if dev["status"] == "active"},
     }) + "\n")
 
 

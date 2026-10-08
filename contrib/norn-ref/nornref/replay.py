@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from . import cbor, enrollreq, entry, fields, keys, policy
-from .state import DEFAULT_PARAMS, PARAM_KEYS, State
+from .state import DEFAULT_PARAMS, PARAM_KEYS, ROUTES_VALUES, State
 
 REASONS = (
     "decode", "unknown-type", "bad-genesis", "dup-genesis", "dup-entry", "after",
@@ -356,6 +356,9 @@ def _h_params(state: State, env: dict[str, Any], index: int) -> None:
             raise Reject("decode")
         if not isinstance(value, expected):
             raise Reject("decode")
+        # `routes` is text with a closed value set (SPEC 4.5, D-073).
+        if key == "routes" and value not in ROUTES_VALUES:
+            raise Reject("decode")
         checked[key] = value
     state.params.update(checked)
 
@@ -433,6 +436,8 @@ def _apply_genesis(anchor: Anchor, env: dict[str, Any]) -> State:
             if isinstance(value, bool) is not (expected is bool):
                 raise Reject("bad-genesis")
             if not isinstance(value, expected):
+                raise Reject("bad-genesis")
+            if key == "routes" and value not in ROUTES_VALUES:
                 raise Reject("bad-genesis")
         state.params.update(params)
     return state

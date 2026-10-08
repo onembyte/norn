@@ -101,14 +101,11 @@ func (r *replayer) applyGenesis(st *state.State, raw []byte) error {
 			if _, known := state.DefaultParams()[key]; !known {
 				return rejectWith(ReasonBadGenesis)
 			}
-			if key == "rotate_needs_signer" {
-				if _, isBool := value.(bool); !isBool {
-					return rejectWith(ReasonBadGenesis)
-				}
-			} else if _, isUint := value.(uint64); !isUint {
+			typed, ok := checkParam(key, value)
+			if !ok {
 				return rejectWith(ReasonBadGenesis)
 			}
-			st.Params[key] = value
+			st.Params[key] = typed
 		}
 	}
 	return nil

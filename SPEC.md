@@ -229,15 +229,26 @@ every failure is `bad-genesis` and aborts replay, per §5.1's entry-0 list):
 | `kid` (in `sigs`, and in `signer_remove`/`root_remove` bodies) | exactly 16 characters matching `^[0-9a-f]{16}$`. A malformed `kid` is a schema violation (`decode`), **not** a `kid` that merely fails to resolve — that distinction matters because the two produce different reason codes. |
 | `sigs` array | sorted by `kid` and free of repeats (§4.0); an unsorted or repeating array is `decode` |
 
-Reserved label keys (advisory hints for owner mode, D-026): `ip` — comma-separated
-CIDR list used as allowed-ips; `endpoint` — `host:port`. A control plane may
-override endpoints; it can never override keys. During request checking and
-replay, these values are opaque text: their hint syntax MUST NOT be validated,
-and a string that does not match the described format MUST NOT by itself
-invalidate the request or its embedded request in an `enroll` entry. A
-consumer MAY validate a hint when deciding whether to use it and MAY ignore an
-unusable value. The label map's ordinary UTF-8, type, and byte-length
-constraints still apply.
+Reserved label keys (D-026, D-073): `ip` — a comma-separated CIDR list;
+`endpoint` — `host:port`. During request checking and replay these values are
+opaque text: their hint syntax MUST NOT be validated, and a string that does not
+match the described format MUST NOT by itself invalidate the request or its
+embedded request in an `enroll` entry. The label map's ordinary UTF-8, type,
+and byte-length constraints still apply.
+
+The `ip` label is the device's **grant**: the prefixes the signers authorised
+it to source. A node derives the grant from the label alone — the label split
+on commas, each part trimmed and parsed as an IPv4 or IPv6 prefix, masked to
+its prefix, duplicates removed, sorted as text — and a label that is absent or
+does not parse **as a whole** is **no grant**: a bound with a hole in it is not
+the bound the signers signed, so the parts that did parse count for nothing.
+An IPv4-mapped IPv6 prefix is no grant either, because implementations render
+one differently and a grant is compared as text. The grant bounds the peer's
+allowed-ips under `params.routes = "granted"` (§13.1); `proven/cases.json`'s
+`grants` gives every active device's. `endpoint` remains a hint a control
+plane may override: reachability is not authorization. A `rotate` keeps the
+device's labels and so its grant; changing a grant is a `revoke` and a new
+`enroll`, as changing any label is.
 
 ### 4.1 Envelope
 
@@ -357,11 +368,18 @@ staleness (part 6) catch. RECOMMENDED for every entry.
 | `staleness` | uint s | 600 | S — checkpoint age before `degraded` |
 | `mmd` | uint s | 60 | max merge delay promised by receipts |
 | `rotate_needs_signer` | bool | false | whether `rotate` needs a signer countersignature |
+| `routes` | text | `"granted"` | whether a peer's installed allowed-ips are bounded by its grant (`"granted"`, §13.1) or taken from the endpoint provider as given (`"advisory"`, D-026's original reading) |
 
 The witness policy is deliberately **not** a parameter (D-034). It has exactly
 two homes: `norn.trust.policy`, which a node is provisioned with, and the
 `policy` entry type, which supersedes it inside the log. A third copy in `params`
 would let two verifiers disagree about the quorum that guards the log.
+
+`routes` is the one text-valued parameter and its value set is closed: a
+`params` entry or a genesis that gives it any text but `granted` or `advisory`,
+or a value that is not text, is refused (`decode`, or `bad-genesis` at entry
+0), so two verifiers can never hold two readings of whether routes are bounded
+(D-073).
 
 ## 5. Replay — the state machine
 
@@ -617,7 +635,7 @@ devices on a number nobody signed.
 - Layout, tiles, entry bundles, and `checkpoint` exactly per `tlog-tiles`. Tile height 8 (width 256), as torchwood requires.
 - A checkpoint body is exactly three lines (`c2sp.org/tlog-checkpoint`): the origin, the tree size in decimal with **no leading zeroes**, and the root as **standard base64 with padding, 32 bytes once decoded** — any other decoded length is an error, and so is base64 the line's own length does not account for. The root MUST use canonical RFC 4648 §3.5 encoding: unused pad bits MUST be zero, so decoding and re-encoding MUST reproduce the exact line. A different final character that decodes to the same root is invalid. `0124` and `124` are the same number and two spellings of one head. The length bound is not decoration: a reader that skips it and also skips the rebuild below accepts a head that is not a SHA-256 root at all, and the two rules are the only ones that look at that line (cold gate run 10, D11).
 - Leaf hash = `H(0x00 ‖ entry_bytes)` (RFC 6962 §2.1). An entry bundle is each entry's length as a **big-endian** uint16 followed by that many bytes, repeated — the framing `c2sp.org/tlog-tiles` defines, and the reason §4.0's `MAX_ENTRY_BYTES` is 65535 rather than 65536. A partial bundle holds **exactly** the number of entries its path declares.
-- **The paths, restated.** `c2sp.org/tlog-tiles` defines them and this document does not vary them — but it restates them here for the same reason §7 restates the note framing and §9.1 the policy grammar: a verifier cannot be written without them, and a reader holding this document and the vectors has no other copy. A hash tile at level `L` covering index group `N` is `tile/<L>/<N>`, and an entry bundle is `tile/entries/<N>`, where `<N>` is the tile's index written in **three-digit groups, most significant first, joined by `/`** — `0`, `1000` and `1234567` are `000`, `x001/000` and `x001/x234/567`, with every group but the last prefixed `x`. A tile that is not yet full is **partial**: its path gains `.p/<W>`, where `<W>` is how many of the 256 entries it holds. So a log of 154 entries serves its only hash tile at `tile/0/000.p/154` and its only bundle at `tile/entries/000.p/154` — both of which this suite ships, and every concrete path written here is one a reader can open. When a tile fills, the `.p/<W>` suffix goes away and the path is the bare group; the next tile starts again at width 1. Tile height is 8, so width is 256 and level `L` covers 256^(L+1) leaves.
+- **The paths, restated.** `c2sp.org/tlog-tiles` defines them and this document does not vary them — but it restates them here for the same reason §7 restates the note framing and §9.1 the policy grammar: a verifier cannot be written without them, and a reader holding this document and the vectors has no other copy. A hash tile at level `L` covering index group `N` is `tile/<L>/<N>`, and an entry bundle is `tile/entries/<N>`, where `<N>` is the tile's index written in **three-digit groups, most significant first, joined by `/`** — `0`, `1000` and `1234567` are `000`, `x001/000` and `x001/x234/567`, with every group but the last prefixed `x`. A tile that is not yet full is **partial**: its path gains `.p/<W>`, where `<W>` is how many of the 256 entries it holds. So a log of 159 entries serves its only hash tile at `tile/0/000.p/159` and its only bundle at `tile/entries/000.p/159` — both of which this suite ships, and every concrete path written here is one a reader can open. When a tile fills, the `.p/<W>` suffix goes away and the path is the bare group; the next tile starts again at width 1. Tile height is 8, so width is 256 and level `L` covers 256^(L+1) leaves.
 - A verifier rebuilds the tree from the **entry bundles** and compares its head with the signed checkpoint; that comparison is what binds the entries to the head. The served `tile/<L>/…` hashes MUST also agree with the tree it rebuilt. They are not needed to reach the head, and checking them is not optional: a node serves the tiles it fetched onward to its peers (§15), so a node that accepted tiles it never checked would pass on a lie it had the means to catch.
 - The checkpoint is a `tlog-checkpoint` note: `origin` line = §2 `origin`, size, root; **no extension lines**. Signed by the log key; cosigned by witnesses per `tlog-cosignature` v1.
 - The log MUST issue a new checkpoint after every append and at least every `checkpoint_interval`.
@@ -1376,7 +1394,7 @@ naming that rule is how the generators and the placement guards check it.
 | `keys.json` | every test key: Ed25519 `{seed, public, kid}` by name, X25519 public keys by name, and `net` |
 | `entries/NN-<type>.cbor` | one valid entry per type, canonical bytes |
 | `entries/NN-<type>.json` | mirror: `{entry, entry_hash, leaf_hash, preimage_sha256, size}` where `size` is the byte length of the `.cbor`. The `entry` object mirrors the **CBOR**, so an optional field absent from the entry is absent here too — unlike `state.json`, where §5.3's schema fields are always emitted |
-| `log/NN-<name>.cbor` | the replay fixture, **154 entries** in order. The file names are labels, not the order: **read the sequence from `manifest.json`**, never by globbing and sorting |
+| `log/NN-<name>.cbor` | the replay fixture, **159 entries** in order. The file names are labels, not the order: **read the sequence from `manifest.json`**, never by globbing and sorting |
 | `log/NN-<name>.reason` | beside each entry that must be rejected: its §5.2 reason code |
 | `log/manifest.json` | `{"anchor": {"net", "genesis_hash"}, "entries": [{"index", "name", "reason"}]}` — the replay input and expected outcome; `reason` is `""` for an accepted entry |
 | `state.json` | canonical replay output for `log/` (§5.3) |
@@ -1398,7 +1416,7 @@ naming that rule is how the generators and the placement guards check it.
 | `receipt.json` | `{comment, origin, leaf_hash, deadline, text_sha256}`, where `text_sha256` is `SHA-256` of the **signed text** — through the newline ending the last text line, excluding the blank separator and the signature lines |
 | `checkpoints-bad/<NN-case>.checkpoint` | checkpoints that MUST be refused, each served in place of `served/checkpoint` over the honest tiles. `cases.json` lists them, and its `signature_blind_accepts` names the ones a verifier that never calls Ed25519 accepts — five of the twenty-four. That set is **computed** from the shipped files, not asserted |
 | `entries-hostile/<name>.cbor` | input that is not an entry and never could be, for §4.0's three resource limits — the entry size, the nesting depth and the map-key cap. `cases.json` says what each refusal must be about, and marks the cases that sit exactly **at** a limit and MUST be accepted |
-| `proven/cases.json` | the devices admitted at four evaluation times (§5.3), including the boundary where `expires` equals `T` |
+| `proven/cases.json` | the devices admitted at four evaluation times (§5.3), including the boundary where `expires` equals `T`; and under `grants`, every active device's §4.0 grant, which the evaluation time does not change |
 | `fork/` | `evidence.cbor` and the `conflicting.checkpoint` it is about (§11.1), plus `bad-consistent` and `bad-other-origin`, which MUST be refused. `cases.json` lists them |
 | `anchors/` | OpenTimestamps proofs written by `python-opentimestamps`: `checkpoint-<size>.ots`, `sample.ots` over an arbitrary digest, and a calendar's reply. **`cases.json` states each proof's digest in hex and names the bytes that produce it** — for the checkpoint proof, `served/checkpoint` through the newline that terminates the blank separator line, which is the §6 range and *not* the three-line body. Without it a reader has to parse the OpenTimestamps container, a format this document does not describe, before it can tell which of three byte ranges was stamped |
 | `proofs-bad/<name>.bundle` | bundles that MUST be refused (§8.1); `cases.json` gives the log key to check them under and what each refusal must be about |
@@ -1456,7 +1474,7 @@ this table drifted out of date the moment one was.
 | §5.3 genesis `params` is **overlaid** | `state.json`'s `checkpoint_interval`, which the genesis body does not set and the §4.5 default supplies | a reader that *replaces* the defaults instead loses the key entirely |
 | §4.3 the request's `ts` is unconstrained | `enroll-request-from-the-future`: an accepted `enroll` whose embedded request is dated ten days after the entry carrying it | the check a reader is most likely to add unasked |
 | §4.4 `after` is a floor | `after-below-index` | `bad-after` |
-| §5 replay, 15 of the 16 reason codes | the log | **109 rejecting entries** |
+| §5 replay, 15 of the 16 reason codes | the log | **111 rejecting entries** |
 | §4.2 signatures resolve against the state **before** this entry | the whole log, every governance entry | `log/133-bad-root_add-counts-its-own-key`: `root_thr` is 3, two valid root signatures, and a third by the key in its own body. Under §4.2 that is two of three and the entry is `threshold`; under the other reading it is a root quorum that **bootstraps itself**. No other entry is signed by a key it adds, so `ResolveKeysAfterEntry` passed all 622 checks. §9.4 makes the same ordering argument for log keys — a stolen log key cannot name its own successor — and the root-key version was stated once and exercised by nothing (cold gate run 11, D8) |
 | §5 `bad-genesis` | — | `genesis/`; it cannot appear in the log, since it aborts replay |
 | §5.1 genesis | the log's entry 0; `genesis-good/01-name-at-the-cap`, a 64-byte `name` | **20 abort paths** in `genesis/`, one single-entry log each. §4.0's 1–64 byte `name` is pinned at both ends and beside the top one: `15-name-empty`, `20-name-one-past-the-cap` (65 bytes in 33 characters — 32 two-byte and one ASCII — so a reader counting characters accepts it) and `14-name-too-long` (cold gate run 13, D17). Two of them are step 7's two halves: `18-bootstrap-sigs-wrong-role` varies the **role string** a signature declares, `19-bootstrap-sigs-from-signers` varies the **key set** it resolves against — signed only by keys the body lists under `signers`, each line declaring `root`. Step 6 requires the two sets disjoint, so a reader that bootstrap-resolves against `signers` too admits a network this one aborts on (cold gate run 10, D15) |
@@ -1470,6 +1488,7 @@ this table drifted out of date the moment one was.
 | §5.3 a witness counts at its **newest** verifying line | `served-twice-cosigned/`: one witness answers twice and both lines verify, so the head is valid and only the tie-break decides. `cases.json` records the instant it must come out at, and the one an oldest-line reader would get instead | `checkpoints-bad/12-second-line-from-one-witness` cannot pin this — its second line does not verify, so §10's per-line rule refuses the checkpoint first |
 | §5.3 the derivation of `T` | `served/checkpoint`, whose three witnesses cosign seven seconds apart, so the **newest** and the **oldest** are both separated from the answer; `proofs/cases.json` records the value `T` must come out as | — |
 | §5.3 policy for the checkpoint's `T` | `served/checkpoint` is accepted under `trust.cbor`'s 2-of-3 policy, so `proofs/cases.json` records `checkpoint_quorum_time` 1760003607. The same checkpoint replays a 3-of-3 policy; `replayed_policy_quorum_time` 1760003600 pins the different, retroactive reading | — |
+| §4.0 the grant, §4.5 `routes` | `proven/cases.json`'s `grants`: `router`'s label `10.9.1.5/24, fd00::5/64` becomes `10.9.1.0/24, fd00::/64` (masked, sorted as text), `nas` has none, and `badgrant`'s `10.9.2.0/24, nope` is no grant at all — a reader that keeps the part that parsed differs by a prefix a node would install. `log/156-params-routes-granted` names the default | `log/157-bad-params-routes-unknown-value` (`"open"`) and `log/158-bad-params-routes-wrong-type` (`1`): the value set is closed and the type is text, each `decode` |
 | §5.3 evaluation time | `proven/cases.json`: the admitted set at four values of `T` — no clock, before, **exactly at**, and after the one deadline the fixture carries. `state.json` is clock-independent by design, so this is the only vector that exercises expiry | the `at-the-deadline` case, where `expires == T` and the device is **out** |
 | §7 receipt, codes and check order | `receipt.note` | **16 `receipt-bad/` cases** cover all eight closed codes: `note` (extra final newline), `log-signature` (untrusted signer), `receipt` (wrong header), `origin`, `leaf-hash` (invalid data and non-zero pad bits), `deadline` (`leading-zero.note`), `entry`, and `expired` (checked at the deadline). Body and signer negatives are re-signed; the framing case cannot be, and expiry is a time-dependent check over the otherwise valid receipt. The leading-zero case closes cold gate run 11, D4: §6 fixed a checkpoint's size spelling while §7 left this deadline implicit, so `ReceiptDeadlineLax` passed all 622 checks. **The order** is held pair by pair (cold gate run 13, D4): until then every case failed one step, so a reader that swapped two adjacent steps passed. Each `order-` case fails steps *n* and *n*+1 and is refused for *n* — `order-log-signature-before-receipt` (signed by another key, wrong header), `order-receipt-before-origin`, `order-origin-before-leaf-hash`, `order-leaf-hash-before-deadline`, `order-deadline-before-entry` and `order-entry-before-expired` (another entry's hash, checked at the deadline) |
 | §7 canonical receipt leaf-hash base64 | `receipt.note` uses canonical base64 for its 32-byte leaf hash | `receipt-bad/leaf-hash-nonzero-pad-bits.note` is correctly re-signed and decodes to the same hash as the good receipt; only its unused pad bits differ, so it MUST refuse as `leaf-hash`. `receipt-bad/leaf-hash-unpadded.note` is the same hash with its `=` dropped, which a lenient decoder reads as the same 32 bytes (cold gate run 13, D18) |
@@ -1704,6 +1723,17 @@ reconciler MUST be idempotent and MUST NOT widen the desired keys on a failed
 verification. A backend used for `observe` needs only peer-table reads;
 `owner` and `watchdog` additionally need their respective write operations.
 
+**Routes (D-073).** Under `params.routes = "granted"`, the default, the
+desired allowed-ips of a peer are the endpoint provider's, each masked, kept
+only where it lies within a prefix of the peer's grant (§4.0); a provider's
+prefix outside the grant is withheld and reported as a provider claim, so a
+provider MAY narrow a grant and MUST NOT widen it. A peer with no grant is
+installed with its key and no allowed-ips, and the node reports that once per
+device. WireGuard's cryptokey routing makes a peer's allowed-ips its authority
+to source those addresses, so the log is the authority on the **bound** a peer
+may claim; it does not route. Under `"advisory"` the provider's prefixes are
+installed as given. The endpoint and keepalive are the provider's in both.
+
 ### 13.2 Failure semantics
 
 A missing or invalid trust file prevents startup in every mode. If no
@@ -1765,8 +1795,10 @@ object has these members:
 | `written_at_local_clock` | local wall-clock Unix seconds, for detecting a stopped publisher only |
 
 Each `devices` element has `device_id` (text), `wg_pk` (base64 WireGuard
-public key), `labels` (text-to-text object), `expires` (Unix seconds, or zero),
-`proof` (path to a §8.1 bundle), and `since_index` (integer). The current key
+public key), `labels` (text-to-text object), `grant` (array of CIDR text, the
+§4.0 grant, masked and sorted; `[]` when the device has none), `expires` (Unix
+seconds, or zero), `proof` (path to a §8.1 bundle), and `since_index`
+(integer). The current key
 comes from replay, not the bundle's historical entry. The node writes each
 referenced proof bundle before atomically replacing `proven.json`, so a
 published path resolves. A failed verification MUST NOT republish a new view.

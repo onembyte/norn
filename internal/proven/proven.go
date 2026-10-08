@@ -69,6 +69,7 @@ type Device struct {
 	DeviceID string            `json:"device_id"`
 	WgPk     string            `json:"wg_pk"` // base64, as WireGuard writes keys
 	Labels   map[string]string `json:"labels"`
+	Grant    []string          `json:"grant"`
 	Expires  int64             `json:"expires"`
 	// Proof names the bundle beside this file that proves the claim, so an
 	// alarm can point at evidence instead of asserting.
@@ -210,9 +211,13 @@ func FromResult(result *logclient.Result, now time.Time, fresh Freshness) (Set, 
 		if err != nil {
 			return Set{}, fmt.Errorf("proven: %s has an unreadable key: %w", id, err)
 		}
+		grant := Grant(labels)
+		if grant == nil {
+			grant = []string{}
+		}
 		set.Devices = append(set.Devices, Device{
 			DeviceID: id, WgPk: base64.StdEncoding.EncodeToString(raw),
-			Labels: labels, Expires: int64(device.Expires),
+			Labels: labels, Grant: grant, Expires: int64(device.Expires),
 			Proof: filepath.Join(ProofDir, id+".bundle"), SinceIndex: int64(device.SinceIndex),
 		})
 	}

@@ -23,6 +23,13 @@ const (
 	StatusRevoked = "revoked"
 )
 
+// The values `params.routes` may take (§4.5, D-073): whether a peer's
+// installed allowed-ips are bounded by its grant, or the provider's as given.
+const (
+	RoutesGranted  = "granted"
+	RoutesAdvisory = "advisory"
+)
+
 // DefaultParams are the §4.5 defaults every state starts from.
 func DefaultParams() map[string]any {
 	return map[string]any{
@@ -30,6 +37,7 @@ func DefaultParams() map[string]any {
 		"staleness":           uint64(600),
 		"mmd":                 uint64(60),
 		"rotate_needs_signer": false,
+		"routes":              "granted",
 	}
 }
 
@@ -202,6 +210,9 @@ func Parse(raw []byte) (*State, error) {
 			params[k] = value
 		case float64:
 			params[k] = uint64(value)
+		case string:
+			// `routes` (§4.5, D-073): the one text-valued parameter.
+			params[k] = value
 		default:
 			return nil, fmt.Errorf("%w: param %q has type %T", ErrState, k, v)
 		}
