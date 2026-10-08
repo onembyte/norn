@@ -172,12 +172,11 @@ func (r Rules) ViewRollback(node string, current, earlier tlog.Checkpoint) (Aler
 }
 
 // RejectedEntry reports that the log published something replay refused.
-func (r Rules) RejectedEntry(index int64, reason string) (Alert, bool) {
+func (r Rules) RejectedEntry(index int64, reason, summary string) (Alert, bool) {
 	return Alert{Rule: "rejected-entry", Level: Warning, Subject: reason,
-		Message: fmt.Sprintf("the log published entry %d, which every verifier "+
-			"rejects (%s). The log operator is misbehaving or running something "+
-			"buggy; nothing is at risk, because nobody replayed it.",
-			index, reason)}, true
+		Message: fmt.Sprintf("the log published entry %d, %s — refused: %s. "+
+			"The log operator is misbehaving or running something buggy; "+
+			"the entry did not take effect.", index, summary, reason)}, true
 }
 
 // RepeatedEntry reports an entry whose signed content already appeared

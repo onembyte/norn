@@ -163,3 +163,44 @@ func TestParamsListsWhatChanged(t *testing.T) {
 		}
 	}
 }
+
+// Refused entries need the same detail without claiming the action happened.
+func TestEveryRejectedTypeSaysWhatItWouldHaveDone(t *testing.T) {
+	for _, tc := range []struct {
+		kind string
+		body map[string]any
+		want string
+	}{
+		{"genesis", map[string]any{"name": "mesh"}, `nobody would have created the network "mesh" with 0 root(s) and 0 signer(s)`},
+		{"enroll", nil, "nobody would have enrolled an unreadable request (wireguard ?)"},
+		{"rotate", map[string]any{"device_id": "laptop"}, "nobody would have rotated laptop's WireGuard key"},
+		{"rotate", map[string]any{"device_id": "laptop", "device_pk": []byte{}}, "nobody would have rotated laptop's WireGuard and identity keys"},
+		{"revoke", map[string]any{"device_id": "laptop"}, "nobody would have revoked laptop"},
+		{"revoke", map[string]any{"device_id": "laptop", "reason": "lost"}, "nobody would have revoked laptop (lost)"},
+		{"signer_add", nil, "nobody would have added signer ?"},
+		{"signer_remove", map[string]any{"kid": "old"}, "nobody would have removed signer old"},
+		{"root_add", nil, "nobody would have added root ?"},
+		{"root_remove", map[string]any{"kid": "old"}, "nobody would have removed root old"},
+		{"signer_thr", map[string]any{"thr": uint64(2)}, "nobody would have set the signer threshold to 2"},
+		{"root_thr", map[string]any{"thr": uint64(3)}, "nobody would have set the root threshold to 3"},
+		{"params", map[string]any{"mmd": uint64(45)}, "nobody would have changed mmd to 45"},
+		{"policy", nil, "nobody would have replaced the witness policy"},
+		{"log_key", map[string]any{"overlap": uint64(3600)}, "nobody would have rotated the log key, with a 1-hour overlap"},
+		{"note", map[string]any{"text": "hello"}, `nobody would have noted: "hello"`},
+		{"unknown", nil, "nobody would have made a unknown entry"},
+	} {
+		if got := DescribeRejected(&entry.Envelope{T: tc.kind, Body: tc.body}); got != tc.want {
+			t.Errorf("%s: rejected description = %q, want %q", tc.kind, got, tc.want)
+		}
+	}
+	for _, env := range fixtureEntries(t) {
+		if env.T == "enroll" && strings.Contains(Describe(env), "enrolled spare") {
+			got := DescribeRejected(env)
+			if !strings.HasPrefix(got, "signer ") || !strings.Contains(got, "would have enrolled spare (wireguard ") {
+				t.Fatalf("the refused enrolment should name the signer, spare and its key: %q", got)
+			}
+			return
+		}
+	}
+	t.Fatal("the fixture no longer carries an enrolment of spare")
+}

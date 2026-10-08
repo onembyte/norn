@@ -68,6 +68,12 @@ func Describe(env *entry.Envelope) string {
 	}
 }
 
+// DescribeRejected renders what an entry would have done if replay accepted it.
+func DescribeRejected(env *entry.Envelope) string {
+	who := actors(env)
+	return who + " would have " + strings.TrimPrefix(Describe(env), who+" ")
+}
+
 // Ago renders how long before `now` the entry claims to have been signed.
 func Ago(env *entry.Envelope, now time.Time) string {
 	d := now.Sub(time.Unix(int64(env.TS), 0))

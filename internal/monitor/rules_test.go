@@ -108,8 +108,10 @@ func TestTheWarningRules(t *testing.T) {
 	rules := Default()
 
 	cases := map[string]func() (Alert, bool){
-		"clock skew":        func() (Alert, bool) { return rules.Node("node2", "CLOCK_SKEW", "two hours out") },
-		"rejected entry":    func() (Alert, bool) { return rules.RejectedEntry(7, "unknown-type") },
+		"clock skew": func() (Alert, bool) { return rules.Node("node2", "CLOCK_SKEW", "two hours out") },
+		"rejected entry": func() (Alert, bool) {
+			return rules.RejectedEntry(7, "unknown-type", "would have made an unknown entry")
+		},
 		"heartbeat missing": func() (Alert, bool) { return rules.Heartbeat("node3", 6*time.Minute) },
 		"quorum unreachable": func() (Alert, bool) {
 			return rules.WitnessQuorum(5*time.Minute, time.Minute)
@@ -190,7 +192,7 @@ func TestEveryAlertNamesItsRule(t *testing.T) {
 		firstOf(rules.ViewRollback("n", tlog.Checkpoint{}, tlog.Checkpoint{})),
 		firstOf(rules.Heartbeat("n", time.Hour)),
 		firstOf(rules.AnchorLag(time.Hour * 24 * 30)),
-		firstOf(rules.RejectedEntry(1, "bad-sig")),
+		firstOf(rules.RejectedEntry(1, "bad-sig", "would have enrolled a device")),
 		firstOf(rules.WitnessQuorum(time.Hour, time.Minute)),
 	}
 	seen := map[string]bool{}

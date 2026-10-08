@@ -17,6 +17,7 @@ import (
 	"github.com/onembyte/norn/internal/entry"
 	"github.com/onembyte/norn/internal/gossip"
 	"github.com/onembyte/norn/internal/logclient"
+	"github.com/onembyte/norn/internal/plainlog"
 	"github.com/onembyte/norn/internal/tlogstore"
 	"github.com/onembyte/norn/internal/trust"
 )
@@ -95,9 +96,7 @@ func TestAnUnchangedLogIsSilent(t *testing.T) {
 	second := w.Round(served, nil)
 
 	for _, a := range second {
-		if a.Rule == "new-entry" || a.Rule == "governance-entry" {
-			t.Errorf("an entry was reported twice: %s", a.Message)
-		}
+		t.Errorf("an unchanged log emitted a new alert: %+v", a)
 	}
 }
 
@@ -119,6 +118,112 @@ func TestEntriesTheLogPublishedAndReplayRefusedAreReported(t *testing.T) {
 	if rejected == 0 {
 		t.Error("the fixture's log publishes entries replay rejects, and none was " +
 			"reported; a log operator publishing garbage would go unmentioned")
+	}
+}
+
+// Publishing an entry is not applying it. Replay's refusal must be the only
+// outcome the operator sees, even when the entry can be described fluently.
+func TestARejectedEntryIsNeverDescribedAsDone(t *testing.T) {
+	result := verifiedLog(t)
+	if len(result.State.Rejected) != 102 {
+		t.Fatalf("fixture rejections = %d, want 102", len(result.State.Rejected))
+	}
+	w := New(anchorOf(t), Default())
+	w.Now = func() time.Time { return time.Unix(fixtureCosigned, 0) }
+	alerts := w.Round(logclient.Dir(filepath.Join(vectors(), "served")), nil)
+	refused := map[uint64]bool{}
+	for _, r := range result.State.Rejected {
+		refused[r.Index] = true
+	}
+	applied := map[Alert]int{}
+	for index, raw := range result.Served {
+		if refused[uint64(index)] {
+			continue
+		}
+		env, err := entry.Decode(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		alert, _ := Default().Entry(Entry{Type: env.T, Index: int64(index), Summary: plainlog.Describe(env)})
+		applied[alert]++
+	}
+	for _, alert := range alerts {
+		if alert.Rule != "new-entry" && alert.Rule != "governance-entry" {
+			continue
+		}
+		if applied[alert] == 0 {
+			t.Fatalf("a rejected entry was described as done: %s", alert.Message)
+		}
+		applied[alert]--
+	}
+
+}
+
+func TestARejectedEntrySaysWhatItWouldHaveDoneAndWhyItWasRefused(t *testing.T) {
+	result := verifiedLog(t)
+	w := New(anchorOf(t), Default())
+	w.Now = func() time.Time { return time.Unix(fixtureCosigned, 0) }
+	alerts := w.Round(logclient.Dir(filepath.Join(vectors(), "served")), nil)
+	for _, rejected := range result.State.Rejected {
+		prefix := fmt.Sprintf("the log published entry %d,", rejected.Index)
+		found := false
+		for _, alert := range alerts {
+			if alert.Rule != "rejected-entry" || !strings.HasPrefix(alert.Message, prefix) {
+				continue
+			}
+			found = true
+			for _, want := range []string{"would have", "refused", rejected.Reason} {
+				if !strings.Contains(alert.Message, want) {
+					t.Fatalf("entry %d alert omits %q: %s", rejected.Index, want, alert.Message)
+				}
+			}
+			env, err := entry.Decode(result.Served[rejected.Index])
+			if err == nil && env.T == "enroll" && strings.Contains(plainlog.Describe(env), "enrolled spare") &&
+				!strings.Contains(alert.Message, "would have enrolled spare") {
+				t.Fatalf("the refused enrolment must name spare: %s", alert.Message)
+			}
+		}
+		if !found {
+			t.Fatalf("no refusal alert for entry %d", rejected.Index)
+		}
+	}
+}
+
+// Re-signed copies also raise the separate SEC-001 alarm. Each entry still
+// gets exactly one outcome, and those outcomes follow the published log.
+func TestAFirstRoundReportsOneOutcomePerEntryInLogOrder(t *testing.T) {
+	result := verifiedLog(t)
+	w := New(anchorOf(t), Default())
+	w.Now = func() time.Time { return time.Unix(fixtureCosigned, 0) }
+	var outcomes []Alert
+	for _, alert := range w.Round(logclient.Dir(filepath.Join(vectors(), "served")), nil) {
+		if alert.Rule == "new-entry" || alert.Rule == "governance-entry" || alert.Rule == "rejected-entry" {
+			outcomes = append(outcomes, alert)
+		}
+	}
+	if len(outcomes) != len(result.Served) {
+		t.Fatalf("outcome alerts = %d, want %d, one per served entry", len(outcomes), len(result.Served))
+	}
+	rejected := map[uint64]string{}
+	for _, r := range result.State.Rejected {
+		rejected[r.Index] = r.Reason
+	}
+	for index, alert := range outcomes {
+		if reason, refused := rejected[uint64(index)]; refused {
+			if alert.Rule != "rejected-entry" || !strings.HasPrefix(alert.Message, fmt.Sprintf("the log published entry %d,", index)) ||
+				!strings.Contains(alert.Message, reason) {
+				t.Fatalf("outcome %d = %+v, want its refusal", index, alert)
+			}
+		} else {
+			env, err := entry.Decode(result.Served[index])
+			if err != nil {
+				t.Fatal(err)
+			}
+			want, _ := Default().Entry(Entry{Type: env.T, Index: int64(index), Summary: plainlog.Describe(env)})
+			if alert != want {
+				t.Fatalf("outcome %d = %+v, want %+v", index, alert, want)
+			}
+		}
 	}
 }
 

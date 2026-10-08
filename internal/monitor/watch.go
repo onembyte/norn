@@ -207,17 +207,32 @@ func (w *Watcher) compareHeads(first string, a headView, second string, b headVi
 func (w *Watcher) readLog(result *logclient.Result) []Alert {
 	var alerts []Alert
 
-	// Every entry, always -- in plain words, because an operator who cannot
-	// read it will not read it.
+	// Replay decides whether an entry took effect. Choose its outcome before
+	// describing it, so a refusal is never preceded by a claim of success.
+	rejected := map[int64]int{}
+	for i, refusal := range result.State.Rejected {
+		rejected[int64(refusal.Index)] = i
+	}
 	for index := w.reported; index < int64(len(result.Served)); index++ {
 		env, err := entry.Decode(result.Served[index])
-		if err != nil {
-			continue // replay will have rejected it; reported below
+		if position, refused := rejected[index]; refused {
+			if position >= w.rejectedSeen {
+				summary := "would have made an unreadable entry (its intended action cannot be decoded)"
+				if err == nil {
+					summary = plainlog.DescribeRejected(env)
+				}
+				if alert, ok := w.rules.RejectedEntry(index, result.State.Rejected[position].Reason, summary); ok {
+					alerts = append(alerts, alert)
+				}
+			}
+		} else if err == nil {
+			if alert, ok := w.rules.Entry(Entry{Type: env.T, Index: index,
+				Summary: plainlog.Describe(env)}); ok {
+				alerts = append(alerts, alert)
+			}
 		}
-		alert, ok := w.rules.Entry(Entry{Type: env.T, Index: index,
-			Summary: plainlog.Describe(env)})
-		if ok {
-			alerts = append(alerts, alert)
+		if err != nil {
+			continue
 		}
 		// The same signed content under a new signature list is a re-signed
 		// copy (SEC-001, D-070), and the log's history is the only place it
@@ -242,13 +257,6 @@ func (w *Watcher) readLog(result *logclient.Result) []Alert {
 	}
 	w.reported = int64(len(result.Served))
 
-	// Entries the log published that every verifier refuses.
-	for i := w.rejectedSeen; i < len(result.State.Rejected); i++ {
-		rejected := result.State.Rejected[i]
-		if alert, ok := w.rules.RejectedEntry(int64(rejected.Index), rejected.Reason); ok {
-			alerts = append(alerts, alert)
-		}
-	}
 	w.rejectedSeen = len(result.State.Rejected)
 
 	// How old the log's own head is, judged in witness time.
