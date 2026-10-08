@@ -94,13 +94,15 @@ class NegativesAreNotOverDetermined(unittest.TestCase):
     rule entirely.
     """
 
-    #: Vectors whose purpose *is* a stale `after`: the plain ones, and the two
+    #: Vectors whose purpose *is* a stale `after`: the plain ones, and the four
     #: precedence cases that pair it with a second fault so §5.1's step 6 can
-    #: be shown to decide after step 3 and before step 7. A precedence vector
-    #: is over-determined ON PURPOSE -- that is what makes an ordering
-    #: observable -- so the exemption is by name and stays short.
+    #: be shown to decide after steps 3, 4 and 5 and before step 7. A
+    #: precedence vector is over-determined ON PURPOSE -- that is what makes
+    #: an ordering observable -- so the exemption is by name and stays short.
     AFTER_IS_THE_POINT = ("-bad-after", "-bad-precedence-after-before-threshold",
-                          "-bad-precedence-decode-before-after", "-bad-after-by-one")
+                          "-bad-precedence-decode-before-after", "-bad-after-by-one",
+                          "-bad-precedence-unknown-type-before-after",
+                          "-bad-precedence-dup-genesis-before-after")
 
     def test_after_never_exceeds_the_index(self):
         """Except in the vectors whose whole purpose is to exceed it."""

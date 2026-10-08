@@ -125,8 +125,8 @@ func TestEntriesTheLogPublishedAndReplayRefusedAreReported(t *testing.T) {
 // outcome the operator sees, even when the entry can be described fluently.
 func TestARejectedEntryIsNeverDescribedAsDone(t *testing.T) {
 	result := verifiedLog(t)
-	if len(result.State.Rejected) != 104 {
-		t.Fatalf("fixture rejections = %d, want 104", len(result.State.Rejected))
+	if len(result.State.Rejected) != 109 {
+		t.Fatalf("fixture rejections = %d, want 109", len(result.State.Rejected))
 	}
 	w := New(anchorOf(t), Default())
 	w.Now = func() time.Time { return time.Unix(fixtureCosigned, 0) }
@@ -703,7 +703,7 @@ func TestANodeShrinkingItsOwnViewIsReportedWithoutCallingItAFork(t *testing.T) {
 	if len(rollbacks) != 1 || rollbacks[0].Level != Critical {
 		t.Fatalf("rollback alerts = %+v, want one critical alert", rollbacks)
 	}
-	for _, want := range []string{"pi", "pi's earlier view", "40 entries", "149 entries", "never freezes"} {
+	for _, want := range []string{"pi", "pi's earlier view", "40 entries", "154 entries", "never freezes"} {
 		if !strings.Contains(rollbacks[0].Message, want) {
 			t.Errorf("the rollback alert should carry %q: %q", want, rollbacks[0].Message)
 		}

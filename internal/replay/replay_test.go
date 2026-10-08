@@ -483,6 +483,47 @@ func TestThePrecedenceVectorsAreWrongInTwoWays(t *testing.T) {
 				t.Error("the key already belongs to this device, which `dup-wg` permits")
 			}
 		},
+	}, {
+		// Run 13, D4: the five pairs no entry had reached.
+		name: "bad-precedence-unknown-type-before-after", reason: "unknown-type",
+		alsoWrong: "names an `after` past its own index",
+		secondFault: func(t *testing.T, env map[string]any) {
+			afterPastIndex(t, m, env, "bad-precedence-unknown-type-before-after")
+		},
+	}, {
+		name: "bad-precedence-dup-genesis-before-after", reason: "dup-genesis",
+		alsoWrong: "names an `after` past its own index",
+		secondFault: func(t *testing.T, env map[string]any) {
+			afterPastIndex(t, m, env, "bad-precedence-dup-genesis-before-after")
+		},
+	}, {
+		name: "bad-precedence-note-threshold-before-body", reason: "threshold",
+		alsoWrong: "carries a `text` over the 4096-byte cap",
+		secondFault: func(t *testing.T, env map[string]any) {
+			body, _ := env["body"].(map[string]any)
+			if text, _ := body["text"].(string); len(text) <= maxText {
+				t.Errorf("a %d-byte text is within the cap: the body check would pass", len(text))
+			}
+		},
+	}, {
+		name: "bad-precedence-revoke-not-active-before-threshold", reason: "not-active",
+		alsoWrong: "carries no signature, so nothing authorises it",
+		secondFault: func(t *testing.T, env map[string]any) {
+			if sigs, _ := env["sigs"].([]any); len(sigs) != 0 {
+				t.Errorf("%d signatures: the device itself might authorise it", len(sigs))
+			}
+		},
+	}, {
+		name: "bad-precedence-net-before-threshold", reason: "decode",
+		alsoWrong: "carries no root signature, so step 7 would refuse it",
+		secondFault: func(t *testing.T, env map[string]any) {
+			if kind, _ := env["t"].(string); !governance[kind] {
+				t.Errorf("t is %q, which step 7 does not judge", kind)
+			}
+			if sigs, _ := env["sigs"].([]any); len(sigs) != 0 {
+				t.Errorf("%d signatures: step 7 might be satisfied", len(sigs))
+			}
+		},
 	}}
 
 	for _, c := range cases {
@@ -494,6 +535,16 @@ func TestThePrecedenceVectorsAreWrongInTwoWays(t *testing.T) {
 			c.secondFault(t, rawEntry(t, fullName(t, m, c.name)))
 			t.Logf("also %s, which a swapped order would have reported instead", c.alsoWrong)
 		})
+	}
+}
+
+// afterPastIndex fails unless the entry's `after` is past its own index, the
+// fault step 6 would report.
+func afterPastIndex(t *testing.T, m manifest, env map[string]any, name string) {
+	t.Helper()
+	index, _ := entryNamed(t, m, name)
+	if after, ok := env["after"].(uint64); !ok || after <= uint64(index) {
+		t.Errorf("after is %v at index %d: step 6 would not fire", env["after"], index)
 	}
 }
 

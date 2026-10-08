@@ -1012,6 +1012,38 @@ def log() -> list[LogItem]:
         "text": f"{first_log}\nlog {note.vkey(ORIGIN, KEYS['logkey2'].public)}\n{rest}"},
         roots3))
 
+    # Run 13, D4. §5.1's order is normative, and five adjacent pairs had no
+    # entry with a fault on each side, so a reader that swapped either pair
+    # passed. Each entry below fails two checks; the earlier decides.
+    #
+    # Step 4 before step 6: an unknown `t` that also names an `after` past its
+    # own index -- `unknown-type`, not `after`.
+    ahead = {"v": entry.VERSION, "t": "bogus", "net": NET, "ts": T0 + b.index * 60,
+             "after": b.index + 1, "body": {"text": "unknown type, after ahead"}, "sigs": []}
+    entry.sign(ahead, KEYS["signer1"], "signer")
+    b.add_raw(f"{b.index}-bad-precedence-unknown-type-before-after", cbor.encode(ahead),
+              "unknown-type")
+    # Step 5 before step 6: a second genesis with an `after` past its own
+    # index -- `dup-genesis`, not `after`.
+    b.add(f"{b.index}-bad-precedence-dup-genesis-before-after", genesis(after=b.index + 1),
+          "dup-genesis")
+    # Step 7 before step 8 for `note`, which has its own step-7 rule: unsigned,
+    # and one byte over the text cap -- `threshold`, not `decode`.
+    # `bad-undersigned-malformed` is the governance form of this pair.
+    b.add(f"{b.index}-bad-precedence-note-threshold-before-body", b.build(
+        "note", {"text": "x" * 4097}, []), "threshold")
+    # Inside `revoke`: currently `active` before the authorisation. `laptop`
+    # revoked itself at entry 36, and nobody signs -- `not-active`, not
+    # `threshold`. `bad-revoke-unknown-unsigned` orders the check before it.
+    b.add(f"{b.index}-bad-precedence-revoke-not-active-before-threshold", b.build(
+        "revoke", {"device_id": "laptop", "reason": "again"}, []), "not-active")
+    # Step 3 before step 7: an unsigned `signer_add` for another network --
+    # `decode`, not `threshold`. `bad-decode-net` is signed, so a reader that
+    # judged `net` after authorisation still called it `decode`.
+    foreign = entry.new("signer_add", b"\xff" * 16, ts=T0 + b.index * 60, after=b.index,
+                        body={"pk": KEYS["stranger"].public})
+    b.add_raw(f"{b.index}-bad-precedence-net-before-threshold", entry.encode(foreign), "decode")
+
     return b.items
 
 
