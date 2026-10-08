@@ -704,6 +704,8 @@ plan before the first line of code, and stops at **[decision]** and **[user]**.
 | 6.7 | H14 | `contrib/verify-py/`, kept | a cold-built standard-library verifier passes every vector, committed as written with its provenance; `make verify-py` in `make ci` | ⬜ |
 | 6.6 | H15 | Phase 6 gate audit | see the 6.6 row above | ⬜ |
 | 6.12 | H19 | `SECURITY.md`, `CONTRIBUTING.md`, release notes for v0.1 | **a** [codex: gpt-6-luna/medium] the two files; **b** `RELEASE-NOTES-v0.1.md`, the tag is U8 | ⬜ |
+| 6.12-a | H19-a | [codex: gpt-6-luna/medium] `SECURITY.md` and `CONTRIBUTING.md` | private reporting (honest about a private repository), scope and §7's non-goals; the gate, controls, the vectors' provenances, `SPEC.md` by decision only | ✅ |
+| 6.12-b | H19-b | `RELEASE-NOTES-v0.1.md` | what v0.1 is and does not claim, the gate it passed; the tag is U8 | ⬜ |
 | 6.10 | H16 | Hand-over material | `TRY-NORN.md` with every command run in a test; a review packet for the comparison table | ⬜ |
 | 6.13 | H20 | 🧠 `KEYTRANS-MAPPING.md` | every Norn concept against `draft-ietf-keytrans-protocol` as it stands then: equivalent, partial, none — and where each *none* belongs | ⬜ |
 | 7.0 | H17 | `ACTION-PLAN.md` and the email draft | a test plan for the owner; an email drafted in the form `wireguard.com` asks for, read from the page at the time; a pre-send checklist; **nothing sent** | ⬜ |
@@ -712,6 +714,16 @@ plan before the first line of code, and stops at **[decision]** and **[user]**.
 | U2–U7 | — | Lab, nginx, OpenTimestamps, NAS, phone enrollment, LocalAPI on a real node, outside people | **[user]** `HARDENING-PLAN.md` Stage G | ⬜ |
 | U8 | — | The v0.1 tag; the scope email to `keytrans@ietf.org`, drafted here, sent by you | **[user]** not before the lab soak; the 2 Nov 2026 cutoff is not a target | ⬜ |
 | U9 | — | Render and, if U8's answer makes it in scope, submit the `-00` problem statement | **[user]** `kramdown-rfc`, a Datatracker account | ⬜ |
+
+- **6.12-a — `SECURITY.md` and `CONTRIBUTING.md` exist (Codex lane N, integrated). H19 split into a and b.**
+  - **The lane.** `gpt-6-luna`, medium — documents only. Its brief: private reporting with no invented address, key, bounty or deadline; scope (the verifier, `nornd`'s enforcement and the grant bound, the trust file, requests and the signing tools, Go/reference divergence) and `THREAT-MODEL.md` §7's non-goals; the gate as the Makefile runs it, controls, the vectors' two provenances, `SPEC.md` changing only by decision; each file short. No red test and no control — the document guards do not read these files, and it said so rather than inventing either.
+  - **What review changed:**
+    - **Reporting.** The lane pointed at GitHub's "Report a vulnerability" button; the repository is private (`gh repo view`), and GitHub offers private reporting on public repositories only. `SECURITY.md` now says that, and that until then everyone who can read the repository was invited and can reach the owner directly.
+    - **A broken anchor.** `THREAT-MODEL.md#7-explicit-non-goals` points nowhere: the heading continues "(repeated from PLAN.md so this file stands alone)". The link carries the whole slug. (§12's anchor in `CONTRIBUTING.md` was checked against the heading and is right.)
+    - **The gate** omitted `make vectors-sums` and the anchors' own generator; both are named now.
+    - **The README's file table** lists the two files (the brief left linking to the integrator).
+  - **H19 split.** The row named the two files *and* `RELEASE-NOTES-v0.1.md`; only the first is done, so the row is 6.12-a ✅ and 6.12-b ⬜ rather than a tick on half of it.
+  - **Gate:** generators first (no change under `testdata/`), then `make test` (race) alone — green in all 49 packages with tests, 1055 tests — `vectors-check`, 230 reference tests, `lint`, `fmt-check`, `vet` clean.
 
 - **6.5l-ix-d-ii — four §10.1 refusals the suite never reached: the signature before the body, an unpadded root, a missing hash tile, a missing checkpoint.**
   - **What was missing.** Run 13's D4 (`cp-body-before-sig`) and three of D18's served-path survivors. Every body fault in `checkpoints-bad/` was signed by the log, so a verifier that parsed the body before checking the signature refused each for the same reason; no root was unpadded (`root-b64-unpadded-ok`); and `served-bad/` took away an entry bundle but never a hash tile (`tiles-missing-ok`) or the checkpoint (`loop-missing-checkpoint-note`).
