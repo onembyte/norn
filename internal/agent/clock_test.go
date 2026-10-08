@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -156,5 +157,74 @@ func TestAnUnreadableClockFileIsReportedAndIgnored(t *testing.T) {
 	}
 	if got := a.Freshness(); got != freshness.Fresh {
 		t.Errorf("with no usable clock the first head is age zero, got %q", got)
+	}
+}
+
+// SEC-028. A head with no quorum time -- a `quorum none` policy, under which
+// nobody vouches for any instant -- was aged from the zero time once the
+// witness clock had been set by anything else: the clock file (D-071 a) or an
+// earlier cosigned head. Two thousand years old, so `degraded`, or past S_hard
+// `hard_stale`, and an owner node emptied its table. §15: "A `quorum none`
+// policy has no quorum time: freshness is `unknown`, not an assertion of
+// recency."
+func TestAHeadWithNoQuorumTimeIsUnknownEvenWithAClock(t *testing.T) {
+	for _, hard := range []time.Duration{0, time.Hour} {
+		dir, _, _ := writableLog(t)
+		var mono time.Duration
+		a, _ := agingNode(t, dir, t.TempDir(), &mono, hard, &recorder{})
+		if err := a.Once(); err != nil {
+			t.Fatal(err)
+		}
+		uncosigned := *a.last
+		uncosigned.QuorumTime = nil
+		if got := a.freshness(&uncosigned); got.State != freshness.Unknown || got.Age != nil {
+			t.Errorf("S_hard %s: a head nobody vouched for reads %+v, want unknown with no age", hard, got)
+		}
+	}
+}
+
+// End to end: a `quorum none` node that kept a witness clock from before
+// (the clock file outlives a policy change and a restart) must not drop its
+// peers for a head that simply has no time.
+func TestAQuorumNoneNodeWithAClockFileStillEnforces(t *testing.T) {
+	dir, _, _ := writableLog(t)
+	stateDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(stateDir, clockFile),
+		[]byte(clockMagic+strconv.FormatInt(fixtureCosignedAt, 10)+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// The fixture's witnesses, listed and named, with nobody required.
+	doc := *anchor(t)
+	var lines []string
+	for _, line := range strings.Split(doc.Policy, "\n") {
+		if strings.HasPrefix(line, "quorum ") {
+			line = "quorum none"
+		}
+		lines = append(lines, line)
+	}
+	doc.Policy = strings.Join(lines, "\n")
+	fake := peertable.NewFake()
+	rec := &recorder{}
+	a, err := New(Config{
+		Anchor: &doc, Fetcher: logclient.Dir(dir), Device: fake,
+		Mode: reconcile.Owner, RunDir: t.TempDir(), StateDir: stateDir, Emit: rec.emit,
+		Hard: time.Hour,
+		Now:  func() time.Time { return time.Unix(fixtureCosignedAt, 0) },
+		Mono: func() time.Duration { return 0 },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Once(); err != nil {
+		t.Fatal(err)
+	}
+	if peers, _ := fake.Peers(); len(peers) == 0 {
+		t.Errorf("a quorum-none node dropped every peer: %v", rec.kinds())
+	}
+	if rec.kinds()[HardStale] != 0 {
+		t.Errorf("a head with no time was called hard-stale: %v", rec.kinds())
+	}
+	if got := a.Freshness(); got != freshness.Unknown {
+		t.Errorf("freshness = %q, want unknown", got)
 	}
 }

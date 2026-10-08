@@ -1021,8 +1021,13 @@ func (a *Agent) checkClock(quorumTime time.Time, params map[string]any) {
 // *that* checkpoint rather than for the best one known.
 func (a *Agent) freshness(result *logclient.Result) proven.Freshness {
 	limits := freshness.LimitsFrom(result.State.Params, a.cfg.Hard)
+	// A head nobody vouched for has no age (§15): `unknown`, not an instant
+	// at the zero time. Aging it from there once the witness clock had been
+	// set by anything else -- the clock file, an earlier cosigned head -- made
+	// it two thousand years old, and an owner node past S_hard emptied its
+	// table for a head that merely had no time (SEC-028).
 	if result.QuorumTime == nil {
-		return proven.View(&a.clock, limits, time.Time{}, a.cfg.Mono())
+		return proven.Freshness{State: freshness.Unknown}
 	}
 	return proven.View(&a.clock, limits, *result.QuorumTime, a.cfg.Mono())
 }
