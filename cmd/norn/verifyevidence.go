@@ -6,7 +6,9 @@ import (
 	"os"
 
 	"github.com/onembyte/norn/internal/forkevidence"
+	"github.com/onembyte/norn/internal/logclient"
 	"github.com/onembyte/norn/internal/policy"
+	"github.com/onembyte/norn/internal/refusal"
 	"github.com/onembyte/norn/internal/trust"
 )
 
@@ -20,6 +22,8 @@ import (
 func verifyEvidenceCmd(args []string) error {
 	fs := newFlagSet("verify-evidence")
 	trustPath := fs.String("trust", "", "path to norn.trust (required)")
+	logLocation := fs.String("log", "", "a log URL or directory to learn what this network "+
+		"published since the trust file (§9.4); without it, the trust file alone")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -51,12 +55,22 @@ func verifyEvidenceCmd(args []string) error {
 
 	// The reader's own policy decides the quorum, never the one inside the
 	// file: §11.1's premise is that there is no reason to trust whoever handed
-	// it over, and §11 rule 4 makes a fork conclusion permanent.
-	rules, err := policy.Parse(anchor.Policy)
-	if err != nil {
-		return fmt.Errorf("the trust file's own policy does not parse: %w", err)
+	// it over, and §11 rule 4 makes a fork conclusion permanent. "The reader's
+	// own" is the trust file's, or -- with -log -- what the network's roots
+	// published since, as a node verifies under (§10, §9.4; SEC-005 b, c).
+	keys, policyText := []string{anchor.LogKey}, anchor.Policy
+	source := "the trust file"
+	if *logLocation != "" {
+		if keys, policyText, err = published(anchor, *logLocation); err != nil {
+			return fmt.Errorf("could not learn what this network published from %s: %w", *logLocation, err)
+		}
+		source = fmt.Sprintf("the trust file and what %s published (%d log key(s))", *logLocation, len(keys))
 	}
-	finding, err := forkevidence.Check(evidence, anchor.Origin, []string{anchor.LogKey}, anchor.Policy)
+	rules, err := policy.Parse(policyText)
+	if err != nil {
+		return fmt.Errorf("the reader's own policy does not parse: %w", err)
+	}
+	finding, err := forkevidence.Check(evidence, anchor.Origin, keys, policyText)
 	if err != nil {
 		// A file that does not prove a fork is the *good* outcome for a reader
 		// checking an accusation, so say which it is rather than only failing.
@@ -67,6 +81,7 @@ func verifyEvidenceCmd(args []string) error {
 	fmt.Printf("FORK PROVEN\n\n")
 	fmt.Printf("network     %s  (%s)\n", anchor.Name, anchor.Origin)
 	fmt.Printf("anchor      %s\n", fingerprint)
+	fmt.Printf("checked by  %s\n", source)
 	fmt.Printf("at size     %d entries\n", finding.Size)
 	fmt.Printf("  root A    %s\n", hex.EncodeToString(finding.Held[:]))
 	fmt.Printf("  root B    %s\n", hex.EncodeToString(finding.Claimed[:]))
@@ -76,4 +91,38 @@ func verifyEvidenceCmd(args []string) error {
 	fmt.Printf("running or the accuser to be trusted.\n\n")
 	fmt.Printf("Witnesses that were meant to prevent it: %v\n", rules.WitnessNames())
 	return nil
+}
+
+// published is what a reader learns from a network's log: the trust file's
+// log key plus every key its roots published, and the published policy where
+// there is one. The log is untrusted, so it is learned the way a restarted
+// node learns it (D-069): the log must verify under the trust file, or --
+// when the trust file's key or policy is what refuses it -- under what its
+// own entries publish, replayed from the pinned genesis, which is root-signed
+// authority (§9.4). A log that verifies under neither teaches nothing.
+func published(anchor *trust.Trust, location string) ([]string, string, error) {
+	fetcher, err := logclient.Open(location)
+	if err != nil {
+		return nil, "", err
+	}
+	under := anchorFor(anchor)
+	result, err := logclient.Verify(fetcher, under)
+	if code, _ := refusal.CodeOf(err); code == refusal.LogSignature || code == refusal.Quorum {
+		if st, perr := logclient.Published(fetcher, under.Anchor); perr == nil {
+			under.LogKeys = append(under.LogKeys, logclient.KeysFrom(anchor.Origin, st)...)
+			if p := logclient.PolicyFrom(st); p != "" {
+				under.Policy = p
+			}
+			result, err = logclient.Verify(fetcher, under)
+		}
+	}
+	if err != nil {
+		return nil, "", err
+	}
+	keys := append([]string{anchor.LogKey}, logclient.KeysFrom(anchor.Origin, result.State)...)
+	policyText := anchor.Policy
+	if p := logclient.PolicyFrom(result.State); p != "" {
+		policyText = p
+	}
+	return keys, policyText, nil
 }
