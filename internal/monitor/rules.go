@@ -18,6 +18,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/onembyte/norn/internal/tlog"
 )
 
 // Level is how loud an alert is.
@@ -143,6 +145,30 @@ func (r Rules) Node(node, kind, detail string) (Alert, bool) {
 	default:
 		return Alert{}, false
 	}
+}
+
+// ConflictingHeads reports two verified views whose histories disagree. The
+// monitor points at the nodes' evidence, because an operator needs something
+// independently checkable to take to the log and witness operators (§11.1).
+func (r Rules) ConflictingHeads(first string, a tlog.Checkpoint, second string, b tlog.Checkpoint) (Alert, bool) {
+	return Alert{Rule: "conflicting-heads", Level: Critical, Subject: first + " / " + second,
+		Message: fmt.Sprintf("%s holds %d entries, root %x; %s holds %d entries, root %x. "+
+			"These verified views disagree about this log's history. Check the nodes' "+
+			"fork evidence with norn verify-evidence and the network's trust file. "+
+			"The monitor only alerts and never freezes.",
+			first, a.Size, a.Root[:8], second, b.Size, b.Root[:8])}, true
+}
+
+// ViewRollback reports a node going backwards along a consistent history.
+// It is not fork evidence, but revocations the node already knew about may
+// have disappeared from its view, so it needs the operator's attention now.
+func (r Rules) ViewRollback(node string, current, earlier tlog.Checkpoint) (Alert, bool) {
+	return Alert{Rule: "view-rollback", Level: Critical, Subject: node,
+		Message: fmt.Sprintf("%s holds %d entries, root %x; %s's earlier view held %d entries, root %x. "+
+			"The node has gone backwards along the same history and may have lost revocations "+
+			"it already knew about. Check why the node lost its later view. "+
+			"The monitor only alerts and never freezes.",
+			node, current.Size, current.Root[:8], node, earlier.Size, earlier.Root[:8])}, true
 }
 
 // RejectedEntry reports that the log published something replay refused.

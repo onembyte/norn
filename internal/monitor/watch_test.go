@@ -4,6 +4,7 @@ import (
 	"crypto/ed25519"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -402,5 +403,215 @@ func TestAReSignedCopyLandingLaterIsStillRecognised(t *testing.T) {
 	if !strings.Contains(repeated[0].Message, "37") ||
 		!strings.Contains(repeated[0].Message, formatUint(int64(len(entries)))) {
 		t.Errorf("the alert should name the copy and the original: %q", repeated[0].Message)
+	}
+}
+
+// The detector's branches are signed and cosigned under the fixture anchor.
+// Their names are relative to its 40-entry earlier head, so both that head
+// and the full served log matter: checking only the latter never compares
+// two equal sizes, nor a node ahead of the log.
+func comparisonWatcher(t *testing.T, views map[string]string) *Watcher {
+	t.Helper()
+	w := New(anchorOf(t), Default())
+	w.Now = func() time.Time { return time.Unix(fixtureCosigned, 0) }
+	w.NodeFetcher = func(node Node) logclient.Fetcher {
+		return logclient.Dir(views[node.Name])
+	}
+	return w
+}
+
+func detectView(name string) string {
+	return filepath.Join(vectors(), "detect", name)
+}
+
+func conflictAlerts(alerts []Alert) []Alert {
+	var conflicts []Alert
+	for _, alert := range alerts {
+		if alert.Rule == "conflicting-heads" {
+			conflicts = append(conflicts, alert)
+		}
+	}
+	return conflicts
+}
+
+// A claim about a fork is only useful if it names the two views and tells
+// the operator where independently checkable evidence comes from.
+func requireConflict(t *testing.T, alerts []Alert, first, second, firstDir, secondDir string) {
+	t.Helper()
+	conflicts := conflictAlerts(alerts)
+	if len(conflicts) != 1 {
+		t.Fatalf("conflicting-heads alerts = %d, want exactly one naming %s and %s", len(conflicts), first, second)
+	}
+	alert := conflicts[0]
+	if alert.Level != Critical {
+		t.Errorf("level = %s, want critical", alert.Level)
+	}
+	for _, want := range []string{first, second, "norn verify-evidence", "never freezes"} {
+		if !strings.Contains(alert.Message, want) {
+			t.Errorf("the alert should carry %q: %q", want, alert.Message)
+		}
+	}
+	for _, dir := range []string{firstDir, secondDir} {
+		result, err := logclient.Verify(logclient.Dir(dir), New(anchorOf(t), Default()).logAnchor())
+		if err != nil {
+			t.Fatalf("the comparison fixture must fully verify: %v", err)
+		}
+		want := fmt.Sprintf("%d entries, root %x", result.Checkpoint.Size, result.Checkpoint.Root[:8])
+		if !strings.Contains(alert.Message, want) {
+			t.Errorf("the alert should identify the verified head %q: %q", want, alert.Message)
+		}
+	}
+}
+
+func TestANodeOnASameSizeForkIsCritical(t *testing.T) {
+	logDir, nodeDir := detectView("honest-earlier"), detectView("fork-same-size")
+	w := comparisonWatcher(t, map[string]string{"pi": nodeDir})
+	requireConflict(t, w.Round(logclient.Dir(logDir), []Node{{Name: "pi"}}),
+		"the log", "pi", logDir, nodeDir)
+}
+
+func TestANodeOnALongerForkIsCritical(t *testing.T) {
+	logDir, nodeDir := detectView("honest-earlier"), detectView("fork-longer")
+	w := comparisonWatcher(t, map[string]string{"pi": nodeDir})
+	requireConflict(t, w.Round(logclient.Dir(logDir), []Node{{Name: "pi"}}),
+		"the log", "pi", logDir, nodeDir)
+}
+
+func TestEveryForkedNodeIsComparedWithTheFullLog(t *testing.T) {
+	logDir := filepath.Join(vectors(), "served")
+	for _, branch := range []string{"fork-same-size", "fork-longer", "fork-shorter"} {
+		t.Run(branch, func(t *testing.T) {
+			nodeDir := detectView(branch)
+			w := comparisonWatcher(t, map[string]string{"pi": nodeDir})
+			requireConflict(t, w.Round(logclient.Dir(logDir), []Node{{Name: "pi"}}),
+				"the log", "pi", logDir, nodeDir)
+		})
+	}
+}
+
+// A peer may be behind the log or ahead of it while sharing its history.
+// Neither direction is evidence of two branches.
+func TestAPrefixIsNotReportedAsAConflict(t *testing.T) {
+	full, earlier := filepath.Join(vectors(), "served"), detectView("honest-earlier")
+	for _, dirs := range [][2]string{{full, earlier}, {earlier, full}} {
+		w := comparisonWatcher(t, map[string]string{"pi": dirs[1], "nas": dirs[0]})
+		alerts := w.Round(logclient.Dir(dirs[0]), []Node{{Name: "pi"}, {Name: "nas"}})
+		if conflicts := conflictAlerts(alerts); len(conflicts) != 0 {
+			t.Errorf("a prefix raised a fork alert: %+v", conflicts)
+		}
+	}
+}
+
+func TestTwoNodesOnDifferentBranchesAreComparedWhenTheLogIsUnreachable(t *testing.T) {
+	first, second := detectView("honest-earlier"), detectView("fork-longer")
+	w := comparisonWatcher(t, map[string]string{"pi": first, "nas": second})
+	alerts := w.Round(logclient.Dir(t.TempDir()), []Node{{Name: "pi"}, {Name: "nas"}})
+	requireConflict(t, alerts, "pi", "nas", first, second)
+}
+
+// Losing a round must not erase the view that made the later change of
+// history recognisable. It is the last verified view, not the last answer.
+func TestANodeChangingHistoryIsComparedWithItsEarlierView(t *testing.T) {
+	for _, tc := range []struct{ first, second string }{
+		{detectView("honest-earlier"), detectView("fork-same-size")},
+		{detectView("honest-earlier"), detectView("fork-longer")},
+		{filepath.Join(vectors(), "served"), detectView("fork-shorter")},
+	} {
+		t.Run(filepath.Base(tc.second), func(t *testing.T) {
+			views := map[string]string{"pi": tc.first}
+			w := comparisonWatcher(t, views)
+			unreachable := logclient.Dir(t.TempDir())
+			nodes := []Node{{Name: "pi"}}
+			w.Round(unreachable, nodes)
+			views["pi"] = detectView("tampered-current")
+			if conflicts := conflictAlerts(w.Round(unreachable, nodes)); len(conflicts) != 0 {
+				t.Fatalf("a view that failed verification was compared: %+v", conflicts)
+			}
+			views["pi"] = tc.second
+			requireConflict(t, w.Round(unreachable, nodes), "pi's earlier view", "pi", tc.first, tc.second)
+			if conflicts := conflictAlerts(w.Round(unreachable, nodes)); len(conflicts) != 0 {
+				t.Errorf("the unchanged pair with an earlier view was repeated: %+v", conflicts)
+			}
+			views["pi"] = tc.first
+			if conflicts := conflictAlerts(w.Round(unreachable, nodes)); len(conflicts) != 0 {
+				t.Errorf("reversing the same conflicting heads repeated the pair: %+v", conflicts)
+			}
+		})
+	}
+}
+
+func TestAnUnchangedConflictingPairIsSilent(t *testing.T) {
+	logDir, nodeDir := detectView("honest-earlier"), detectView("fork-longer")
+	w := comparisonWatcher(t, map[string]string{"pi": nodeDir})
+	nodes := []Node{{Name: "pi"}}
+	requireConflict(t, w.Round(logclient.Dir(logDir), nodes), "the log", "pi", logDir, nodeDir)
+	if conflicts := conflictAlerts(w.Round(logclient.Dir(logDir), nodes)); len(conflicts) != 0 {
+		t.Errorf("the same conflicting pair was reported twice: %+v", conflicts)
+	}
+}
+
+// Pair identity includes the sources and the full heads. A second node on
+// the same branch is a distinct finding; changing poll order is not.
+func TestDistinctSourcesAreReportedOnceRegardlessOfPollOrder(t *testing.T) {
+	logDir, nodeDir := detectView("honest-earlier"), detectView("fork-longer")
+	w := comparisonWatcher(t, map[string]string{"pi": logDir, "nas": nodeDir, "vps": nodeDir})
+	unreachable := logclient.Dir(t.TempDir())
+	first := []Node{{Name: "pi"}, {Name: "nas"}, {Name: "vps"}}
+	if conflicts := conflictAlerts(w.Round(unreachable, first)); len(conflicts) != 2 {
+		t.Fatalf("conflicts = %+v, want one for pi/nas and one for pi/vps", conflicts)
+	}
+	second := []Node{{Name: "vps"}, {Name: "nas"}, {Name: "pi"}}
+	if conflicts := conflictAlerts(w.Round(unreachable, second)); len(conflicts) != 0 {
+		t.Errorf("changing poll order repeated the same pairs: %+v", conflicts)
+	}
+}
+
+func TestAnUnverifiedNodeHeadIsNeverCompared(t *testing.T) {
+	w := comparisonWatcher(t, map[string]string{"pi": detectView("tampered-current")})
+	if conflicts := conflictAlerts(w.Round(logclient.Dir(filepath.Join(vectors(), "served")),
+		[]Node{{Name: "pi"}})); len(conflicts) != 0 {
+		t.Errorf("an unverified head raised a fork alert: %+v", conflicts)
+	}
+}
+
+// Being behind another source is ordinary; going backwards from a node's
+// own verified history would undo what it already learned. It is a rollback,
+// and must be reported without accusing a consistent log of a fork.
+func TestANodeShrinkingItsOwnViewIsReportedWithoutCallingItAFork(t *testing.T) {
+	full, earlier := filepath.Join(vectors(), "served"), detectView("honest-earlier")
+	views := map[string]string{"pi": full}
+	w := comparisonWatcher(t, views)
+	unreachable := logclient.Dir(t.TempDir())
+	nodes := []Node{{Name: "pi"}}
+	w.Round(unreachable, nodes)
+	views["pi"] = earlier
+	alerts := w.Round(unreachable, nodes)
+	if conflicts := conflictAlerts(alerts); len(conflicts) != 0 {
+		t.Fatalf("a consistent rollback was called a fork: %+v", conflicts)
+	}
+	var rollbacks []Alert
+	for _, alert := range alerts {
+		if alert.Rule == "view-rollback" {
+			rollbacks = append(rollbacks, alert)
+		}
+	}
+	if len(rollbacks) != 1 || rollbacks[0].Level != Critical {
+		t.Fatalf("rollback alerts = %+v, want one critical alert", rollbacks)
+	}
+	for _, want := range []string{"pi", "pi's earlier view", "40 entries", "145 entries", "never freezes"} {
+		if !strings.Contains(rollbacks[0].Message, want) {
+			t.Errorf("the rollback alert should carry %q: %q", want, rollbacks[0].Message)
+		}
+	}
+	for _, alert := range w.Round(unreachable, nodes) {
+		if alert.Rule == "view-rollback" || alert.Rule == "conflicting-heads" {
+			t.Errorf("the unchanged rollback was reported again: %+v", alert)
+		}
+	}
+	views["pi"] = full
+	for _, alert := range w.Round(unreachable, nodes) {
+		if alert.Rule == "view-rollback" || alert.Rule == "conflicting-heads" {
+			t.Errorf("returning to the earlier history raised an alert: %+v", alert)
+		}
 	}
 }

@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/onembyte/norn/internal/tlog"
 )
 
 // `LAB.md` §3's rules table, as code. The table is the specification; these
@@ -184,6 +186,8 @@ func TestEveryAlertNamesItsRule(t *testing.T) {
 		firstOf(rules.Entry(Entry{Type: "enroll", Summary: "added"})),
 		firstOf(rules.CheckpointAge("n", time.Hour, time.Minute)),
 		firstOf(rules.Node("n", "FORK", "x")),
+		firstOf(rules.ConflictingHeads("n", tlog.Checkpoint{}, "the log", tlog.Checkpoint{})),
+		firstOf(rules.ViewRollback("n", tlog.Checkpoint{}, tlog.Checkpoint{})),
 		firstOf(rules.Heartbeat("n", time.Hour)),
 		firstOf(rules.AnchorLag(time.Hour * 24 * 30)),
 		firstOf(rules.RejectedEntry(1, "bad-sig")),

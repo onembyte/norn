@@ -11,6 +11,7 @@ import (
 	"github.com/onembyte/norn/internal/logclient"
 	"github.com/onembyte/norn/internal/plainlog"
 	"github.com/onembyte/norn/internal/replay"
+	"github.com/onembyte/norn/internal/tlog"
 	"github.com/onembyte/norn/internal/trust"
 )
 
@@ -38,6 +39,9 @@ type Watcher struct {
 	// monitor's own experience of the network rather than about what the log
 	// proves, so the local clock is the right one.
 	Now func() time.Time
+
+	// NodeFetcher reads a node's view; by default it is gossip.Peer(node.URL).
+	NodeFetcher func(Node) logclient.Fetcher
 
 	// learned are the log keys the roots published, picked up by replaying a
 	// log this monitor already accepted (D-020). Kept alongside the trust
@@ -67,12 +71,40 @@ type Watcher struct {
 	exact map[string]bool
 	// lastSeen is when each node last answered.
 	lastSeen map[string]time.Time
+
+	// previous keeps only each node's latest verified checkpoint and hash tree
+	// at the greatest size seen; a shrinking answer cannot erase that history.
+	// The tree can speak for any earlier size, so a shorter branch can be
+	// compared without keeping entries, replay state or signed notes.
+	previous map[string]headView
+	// conflicts keeps source names, sizes and full roots of pairs already
+	// reported. An unchanged picture must be silent: repeating the same fork
+	// every round would teach the operator to ignore the monitor.
+	conflicts map[[2]headID]bool
+}
+
+type headView struct {
+	checkpoint tlog.Checkpoint
+	tree       *tlog.Tree
+}
+
+type sourcedHead struct {
+	source string
+	view   headView
+}
+
+type headID struct {
+	source string
+	size   int64
+	root   string
 }
 
 // New builds a watcher for a network.
 func New(anchor *trust.Trust, rules Rules) *Watcher {
 	return &Watcher{anchor: anchor, rules: rules, Now: time.Now,
-		lastSeen: map[string]time.Time{}}
+		NodeFetcher: func(node Node) logclient.Fetcher { return gossip.Peer(node.URL) },
+		lastSeen:    map[string]time.Time{}, previous: map[string]headView{},
+		conflicts: map[[2]headID]bool{}}
 }
 
 // Round reads the log and every node once and returns what is worth saying.
@@ -82,6 +114,7 @@ func New(anchor *trust.Trust, rules Rules) *Watcher {
 // relying on it -- so every failure becomes an alert and the round carries on.
 func (w *Watcher) Round(log logclient.Fetcher, nodes []Node) []Alert {
 	var alerts []Alert
+	var current []sourcedHead
 	result, err := logclient.Verify(log, w.logAnchor())
 	if err != nil {
 		alerts = append(alerts, Alert{Rule: "log-unreadable", Level: Warning,
@@ -90,11 +123,84 @@ func (w *Watcher) Round(log logclient.Fetcher, nodes []Node) []Alert {
 	} else {
 		w.learn(result)
 		alerts = append(alerts, w.readLog(result)...)
+		current = append(current, sourcedHead{"the log", headView{result.Checkpoint, result.Tree}})
 	}
 	for _, node := range nodes {
-		alerts = append(alerts, w.readNode(node)...)
+		result, nodeAlerts := w.readNode(node)
+		alerts = append(alerts, nodeAlerts...)
+		if result == nil {
+			continue
+		}
+		view := headView{result.Checkpoint, result.Tree}
+		if earlier, ok := w.previous[node.Name]; ok {
+			alerts = append(alerts, w.compareHeads(node.Name, view,
+				node.Name, earlier, node.Name+"'s earlier view")...)
+		}
+		for _, other := range current {
+			alerts = append(alerts, w.compareHeads(node.Name, view,
+				other.source, other.view, other.source)...)
+		}
+		if earlier, ok := w.previous[node.Name]; !ok || view.checkpoint.Size >= earlier.checkpoint.Size {
+			w.previous[node.Name] = view
+		}
+		current = append(current, sourcedHead{node.Name, view})
 	}
 	return alerts
+}
+
+// compareHeads uses the same smaller-size comparison as a node's
+// logclient.checkAgainstStored. Both trees have already verified, so HeadAt
+// computes the prefix locally with tlog's hashing, without trusting a proof
+// from either source. A peer merely behind another has no conflicting history.
+func (w *Watcher) compareHeads(first string, a headView, second string, b headView,
+	secondLabel string) []Alert {
+	rollback := false
+	if a.checkpoint.Size == b.checkpoint.Size {
+		if a.checkpoint.Root == b.checkpoint.Root {
+			return nil
+		}
+	} else {
+		smaller, larger := a, b
+		if smaller.checkpoint.Size > larger.checkpoint.Size {
+			smaller, larger = larger, smaller
+		}
+		root, err := larger.tree.HeadAt(smaller.checkpoint.Size)
+		if err != nil {
+			return nil
+		}
+		if root == smaller.checkpoint.Root {
+			if first != second || a.checkpoint.Size >= b.checkpoint.Size {
+				return nil
+			}
+			// A prefix is not a fork, but a node cannot go backwards from
+			// its own view. Keep the distinction the node makes (§10).
+			rollback = true
+		}
+	}
+	idA := headID{first, a.checkpoint.Size, string(a.checkpoint.Root[:])}
+	idB := headID{second, b.checkpoint.Size, string(b.checkpoint.Root[:])}
+	// Poll order and which view was earlier do not change the pair. Full
+	// roots identify it; the short hex in the alert is only for a person.
+	if idB.source < idA.source || (idB.source == idA.source &&
+		(idB.size < idA.size || (idB.size == idA.size && idB.root < idA.root))) {
+		idA, idB = idB, idA
+	}
+	pair := [2]headID{idA, idB}
+	if w.conflicts[pair] {
+		return nil
+	}
+	var alert Alert
+	var ok bool
+	if rollback {
+		alert, ok = w.rules.ViewRollback(first, a.checkpoint, b.checkpoint)
+	} else {
+		alert, ok = w.rules.ConflictingHeads(first, a.checkpoint, secondLabel, b.checkpoint)
+	}
+	if ok {
+		w.conflicts[pair] = true
+		return []Alert{alert}
+	}
+	return nil
 }
 
 // readLog reports what is new in the log since the last round.
@@ -155,9 +261,9 @@ func (w *Watcher) readLog(result *logclient.Result) []Alert {
 }
 
 // readNode reads one node's gossip endpoints.
-func (w *Watcher) readNode(node Node) []Alert {
+func (w *Watcher) readNode(node Node) (*logclient.Result, []Alert) {
 	var alerts []Alert
-	peer := gossip.Peer(node.URL)
+	peer := w.NodeFetcher(node)
 
 	// Evidence first: it is the loudest thing a node can be holding, and a
 	// node that has frozen may well be answering nothing else usefully.
@@ -174,7 +280,7 @@ func (w *Watcher) readNode(node Node) []Alert {
 		if alert, ok := w.rules.Heartbeat(node.Name, w.quietFor(node.Name)); ok {
 			alerts = append(alerts, alert)
 		}
-		return alerts
+		return nil, alerts
 	}
 	w.lastSeen[node.Name] = w.Now()
 
@@ -183,7 +289,7 @@ func (w *Watcher) readNode(node Node) []Alert {
 			alerts = append(alerts, alert)
 		}
 	}
-	return alerts
+	return result, alerts
 }
 
 // quietFor is how long a node has been unheard from. A node never yet seen is
