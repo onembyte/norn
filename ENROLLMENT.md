@@ -126,8 +126,13 @@ normative in `SPEC.md` §16.3.
 ## 4. Rotation, revocation, expiry
 
 - **Rotate** (the `rotate` entry is normative, `SPEC.md` §4.3; the `norn rotate`
-  subcommand is **planned**, not built): new WG key, `rotate` entry signed by the
-  device key (+ a signer if `rotate_needs_signer`). The device keeps the old WG key
+  subcommand exists): the device runs
+  `norn rotate -trust norn.trust -device pi-cam -wg-key /etc/wireguard/wg0-new.key -key /var/lib/norn/device.key -yes -o rotate.cbor`.
+  Add `-new-key device-new.key` to rotate its identity too; both identity keys sign.
+  When `rotate_needs_signer` is on, a signer extends it with
+  `norn rotate -trust norn.trust -device pi-cam -role signer -key signer.key -in rotate.cbor -o rotate.cbor`;
+  repeat with distinct signers until `signer_thr` is met, then submit with
+  `norn submit -trust norn.trust rotate.cbor`. The device keeps the old WG key
   until it sees the entry included, then swaps; peers switch at their next checkpoint.
   Gap ≤ T_c + T_g. Overlapping dual-key grace is v1 backlog.
 - **Revoke** (the entry is normative, `SPEC.md` §4.3; the `norn revoke` subcommand

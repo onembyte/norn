@@ -38,6 +38,7 @@ var commands = map[string]command{
 	"init":            initCmd,
 	"monitor":         monitorCmd,
 	"revoke":          revokeCmd,
+	"rotate":          rotateCmd,
 	"sign":            signCmd,
 	"stamp":           stampCmd,
 	"status":          statusCmd,
@@ -55,6 +56,7 @@ commands:
   init     create a network: roots, thresholds, genesis and the trust file
   monitor  watch a network and report what it sees (LAB.md §3)
   revoke   sign or extend a device revocation for submission
+  rotate   sign or extend a device key rotation for submission
   sign     verify a request and sign the enroll entry it asks for
   stamp    obtain an OpenTimestamps proof for a log's checkpoint (advisory)
   status   what this node can prove about the network right now
