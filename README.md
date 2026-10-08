@@ -26,7 +26,7 @@ $ go build -o norn ./cmd/norn
 $ ./norn verify -trust testdata/vectors/trust.cbor -log testdata/vectors/served
 network    norn-testnet
 anchor     Y2KM-WGEJ-5GCD-X3HA
-size       145 entries
+size       149 entries
 ...
 11 device(s), 6 active:
 ```

@@ -984,6 +984,34 @@ def log() -> list[LogItem]:
     b.add(f"{b.index}-bad-params-flag-as-uint", b.build(
         "params", {"rotate_needs_signer": 1}, roots3), "decode")
 
+    # Cold gate run 13, D1. §4.0 closes every body, but §5.1's `rotate` and
+    # `revoke` rows said "well-formed" where the others say "well-formed and
+    # closed", and the one unknown-body-key vector was a `note`. A reader that
+    # took the rows at their word re-keyed or revoked a device on a body with
+    # a key nobody defined. Each entry below is otherwise valid -- signed by
+    # the device and both signers, or by both signers -- so the extra key is
+    # the only thing that refuses it.
+    b.add(f"{b.index}-bad-rotate-unknown-body-key", b.build("rotate", {
+        "device_id": "printer", "wg_pk": WG["rogue"], "comment": "x"},
+        [("printer", "device")] + both), "decode")
+    b.add(f"{b.index}-bad-revoke-unknown-body-key", b.build("revoke", {
+        "device_id": "printer", "reason": "lost", "comment": "x"}, both), "decode")
+    # Run 13, D3. `1 ≤ thr ≤ len(set)` was pinned at 0 and at 99, never at
+    # its top: no entry set a threshold equal to the set's size, so a reader
+    # that wrote `<` passed. Two signers, two required.
+    b.add(f"{b.index}-signer_thr-2-of-2", b.build("signer_thr", {"thr": 2}, roots3))
+    # Run 13, D9. The policy grammar permits more than one `log` line, and
+    # the policy suite's `two-log-lines` says so to a parser -- but no entry
+    # ever carried one, so replay's "MUST parse" was checked against a single
+    # log line only. The current policy, plus the first key the roots
+    # published: what a rotation looks like from outside. The second line
+    # follows the first, not `quorum` -- whether anything may follow `quorum`
+    # is run 13's D8, a question this vector does not answer.
+    first_log, rest = rotated.split("\n", 1)
+    b.add(f"{b.index}-policy-two-log-lines", b.build("policy", {
+        "text": f"{first_log}\nlog {note.vkey(ORIGIN, KEYS['logkey2'].public)}\n{rest}"},
+        roots3))
+
     return b.items
 
 

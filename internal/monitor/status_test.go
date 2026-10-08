@@ -75,17 +75,22 @@ func TestTheStatusPageShowsWhatTheSectionAsksFor(t *testing.T) {
 	}
 }
 
-// The one that matters. The fixture's `escaped` device has labels containing
-// `<`, `>` and `&`, chosen by whoever enrolled it.
+// The one that matters. The fixture's `astral` device has a label whose value
+// contains `<`, `>` and `&`, chosen by whoever enrolled it. It is active, so
+// its labels are in the device table. (This test named `escaped` until
+// 6.5l-ix-c-i, which entry 126 revokes: its labels were never on the page,
+// and its name was only while that revocation was among the last twenty
+// entries -- so the precondition held by accident and the forbidden strings
+// below could not have appeared either way.)
 func TestADeviceLabelCannotBecomeMarkup(t *testing.T) {
 	page := statusPage(t, nil)
 
-	if !strings.Contains(page, "escaped") {
-		t.Fatal("the device with the awkward labels is not on the page at all, so " +
+	if !strings.Contains(page, "<td>astral</td>") {
+		t.Fatal("the device with the awkward labels is not in the device table, so " +
 			"this test proves nothing")
 	}
 	// The raw characters must not appear as markup.
-	for _, forbidden := range []string{"<b&c", "x>y"} {
+	for _, forbidden := range []string{"lt<", "gt>"} {
 		if strings.Contains(page, forbidden) {
 			t.Errorf("%q appears unescaped; a device label became markup", forbidden)
 		}

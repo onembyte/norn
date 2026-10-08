@@ -1,22 +1,22 @@
 �dheldyOnorn/nzxxe3rnorsxg5domv2c2mbqge
-145
-F6o+h4JUvwDQg0TEDkWkKQZhSUOUjWm00Iv8QdvT9z4=
+149
+5iyxo71gk4XSSQ94jex6VQPvFELRZH7suQ3h3JB7+OI=
 
-— norn/nzxxe3rnorsxg5domv2c2mbqge vqSmZotzO8YtVuIe41H8olYU6I8EKIDGNAkTl1vSPde7K3r0Su4bKiQsXehpkS6R4KGnqmu4eRADK4U/5on1umD/qwk=
-— norn-witness/pi BR0cUQAAAABo54YQ/4TqRhho+zZ0i/agzPGdoGwmSVRoo+yg0sUKsvGUoDNYFCk5Au7arYLHqSM6P5PhAykAp974be0wmmOEIigtDw==
-— norn-witness/vps Rqb9OAAAAABo54YXiWEouiwy4RNEQovmvC3t4GnGsS2iGFsuq9cwDSSxN0LWojzCNLvjPaGYgOGZI2Id2FbwjhI41h+ewB3T7tfzDw==
-— norn-witness/friend FAT3QgAAAABo54YeR8tXP2YVlvVMg/aPfCSjRbH1d2pbFgQHjCeSbysz8Jiil94QCZOKOu/qyXDxu/2/W1vmLtkDZj/GtoWPzZnrAQ==
-dsize�eproof�fpolicyy�log norn/nzxxe3rnorsxg5domv2c2mbqge+bea4a666+AV6v97lmGyW99eHglI8syFAU2uY+/HuHHq0VYz9Rmio1 https://log.norn.example/testnet
+— norn/nzxxe3rnorsxg5domv2c2mbqge vqSmZr1R0/EkoOSYEKaGF1a8k4wsXakHS8b3GVxFWXHEiAGcKZwrPMSQ9j63MeTbVXguDNptnlCfIsKf18aTAJg9SwM=
+— norn-witness/pi BR0cUQAAAABo54YQnz807qxjOtObvFXAW2vsQ8Gt3/WhCKFbBHBD7kCXGXXJRfHvugarlW4hUYLV9E+EjVxicRRsWl61l5aUgtWFAQ==
+— norn-witness/vps Rqb9OAAAAABo54YXNfBWTo6AuB0N6EDtfWQsnjpf4OwI17aYnUvO1FbierUF+G60S3SnCGenh2eiF76Z4BB8aEGqHU5QKxBgCsmvCA==
+— norn-witness/friend FAT3QgAAAABo54Ye13w6ujvpUi9d24ar0Jg5B6wY1rDThqg0X1S1VzNJmTC2h72O99kMky8GMGzyUkIdj4PClgSsM3FoDmlDHTu9Bg==
+dsize�eproof�fpolicyy�log norn/nzxxe3rnorsxg5domv2c2mbqge+bea4a666+AV6v97lmGyW99eHglI8syFAU2uY+/HuHHq0VYz9Rmio1 https://log.norn.example/testnet
 witness pi norn-witness/pi+051d1c51+BHeagefoK0s3F5shdMl1Ahsd1ZCE9MC5F5gvM3cLTnZa http://10.0.0.153:8100
 witness vps norn-witness/vps+46a6fd38+BIXCilOrHi0kMxynG/s1EyJ2aWFC1jZc4UlZRza6g8ou https://witness.example.net
 witness friend norn-witness/friend+1404f742+BJjvlkRbihDdM/4Lb/YPiP+eoqk3VgrncrTgSXQNXr6B https://bastion.example.org/w
 group home 2 pi vps friend
 quorum home
 gversioniheld_rootX BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBkconflictingyOnorn/nzxxe3rnorsxg5domv2c2mbqge
-145
-F6o+h4JUvwDQg0TEDkWkKQZhSUOUjWm00Iv8QdvT9z4=
+149
+5iyxo71gk4XSSQ94jex6VQPvFELRZH7suQ3h3JB7+OI=
 
-— norn/nzxxe3rnorsxg5domv2c2mbqge vqSmZotzO8YtVuIe41H8olYU6I8EKIDGNAkTl1vSPde7K3r0Su4bKiQsXehpkS6R4KGnqmu4eRADK4U/5on1umD/qwk=
-— norn-witness/pi BR0cUQAAAABo54YQ/4TqRhho+zZ0i/agzPGdoGwmSVRoo+yg0sUKsvGUoDNYFCk5Au7arYLHqSM6P5PhAykAp974be0wmmOEIigtDw==
-— norn-witness/vps Rqb9OAAAAABo54YXiWEouiwy4RNEQovmvC3t4GnGsS2iGFsuq9cwDSSxN0LWojzCNLvjPaGYgOGZI2Id2FbwjhI41h+ewB3T7tfzDw==
-— norn-witness/friend FAT3QgAAAABo54YeR8tXP2YVlvVMg/aPfCSjRbH1d2pbFgQHjCeSbysz8Jiil94QCZOKOu/qyXDxu/2/W1vmLtkDZj/GtoWPzZnrAQ==
+— norn/nzxxe3rnorsxg5domv2c2mbqge vqSmZr1R0/EkoOSYEKaGF1a8k4wsXakHS8b3GVxFWXHEiAGcKZwrPMSQ9j63MeTbVXguDNptnlCfIsKf18aTAJg9SwM=
+— norn-witness/pi BR0cUQAAAABo54YQnz807qxjOtObvFXAW2vsQ8Gt3/WhCKFbBHBD7kCXGXXJRfHvugarlW4hUYLV9E+EjVxicRRsWl61l5aUgtWFAQ==
+— norn-witness/vps Rqb9OAAAAABo54YXNfBWTo6AuB0N6EDtfWQsnjpf4OwI17aYnUvO1FbierUF+G60S3SnCGenh2eiF76Z4BB8aEGqHU5QKxBgCsmvCA==
+— norn-witness/friend FAT3QgAAAABo54Ye13w6ujvpUi9d24ar0Jg5B6wY1rDThqg0X1S1VzNJmTC2h72O99kMky8GMGzyUkIdj4PClgSsM3FoDmlDHTu9Bg==
