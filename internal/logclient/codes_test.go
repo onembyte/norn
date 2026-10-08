@@ -534,7 +534,7 @@ func TestTheHeadBeforeTilesOrderHasAVector(t *testing.T) {
 			t.Errorf("%s is coded `head` and its entries hash to the signed root", c.Name)
 			continue
 		}
-		if checkTiles(Dir(dir), tree) != nil {
+		if checkTiles(Dir(dir), tree, nil) != nil {
 			return // the tiles disagree too: a tiles-first reader says `tiles` here
 		}
 	}

@@ -35,6 +35,13 @@ func (t *Tree) Append(raw []byte) error {
 	return nil
 }
 
+// Clone is a copy that can be appended to without moving this one. A node
+// keeps the tree of the head it holds, and verifying a grown log appends to
+// a copy, so a verification that fails halfway leaves the held tree as it was.
+func (t *Tree) Clone() *Tree {
+	return &Tree{hashes: append([]upstream.Hash(nil), t.hashes...), size: t.size}
+}
+
 // Size is the number of entries.
 func (t *Tree) Size() int64 { return t.size }
 

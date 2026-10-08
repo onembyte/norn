@@ -90,6 +90,37 @@ func New(net []byte) *State {
 	}
 }
 
+// Clone is a deep copy: a fold resumed from a held state must not move the
+// held state when it fails halfway.
+func (s *State) Clone() *State {
+	out := &State{
+		Name: s.Name, Net: append([]byte(nil), s.Net...), Size: s.Size,
+		RootThr: s.RootThr, SignerThr: s.SignerThr, Policy: s.Policy,
+		Roots: copyStrings(s.Roots), Signers: copyStrings(s.Signers),
+		Params:   make(map[string]any, len(s.Params)),
+		LogKeys:  append([]LogKey{}, s.LogKeys...),
+		Devices:  make(map[string]Device, len(s.Devices)),
+		ActiveWg: copyStrings(s.ActiveWg),
+		Rejected: append([]Rejection{}, s.Rejected...),
+	}
+	for k, v := range s.Params {
+		out.Params[k] = v // scalars only (§4.5)
+	}
+	for id, d := range s.Devices {
+		d.Labels = copyStrings(d.Labels)
+		out.Devices[id] = d
+	}
+	return out
+}
+
+func copyStrings(m map[string]string) map[string]string {
+	out := make(map[string]string, len(m))
+	for k, v := range m {
+		out[k] = v
+	}
+	return out
+}
+
 // ErrState reports a malformed state document.
 var ErrState = errors.New("malformed state")
 

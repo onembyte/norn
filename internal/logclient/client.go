@@ -102,6 +102,9 @@ type Result struct {
 	// inclusion check, a proof bundle -- and re-fetching would be asking a
 	// second time for bytes already proven to belong to this head.
 	Served [][]byte
+	// fold is the replay that produced State, kept so a later verification
+	// can resume it from here instead of replaying the whole log (H4).
+	fold *replay.Replayer
 }
 
 // Anchor is everything a verifier is allowed to start from: the network it is
@@ -152,38 +155,7 @@ type Anchor struct {
 // and checking afterwards would mean acting on entries that were never shown
 // to belong to the log, exactly the trust a transparency log exists to remove.
 func Verify(f Fetcher, anchor Anchor) (*Result, error) {
-	if len(anchor.LogKeys) == 0 {
-		return nil, logErrorf("the anchor carries no log key; §10 requires the " +
-			"checkpoint signature to be checked, and there is nothing to check it against")
-	}
-	// An empty genesis hash would not be lenient -- replay would abort every
-	// log with `bad-genesis` -- but it would be silent: an empty state reads
-	// like a network with no devices rather than like a caller mistake. This
-	// exact slip cost an afternoon in 2.9e-ii, in a test helper whose JSON tag
-	// did not match `genesis_hash`.
-	if len(anchor.GenesisHash) != sha256.Size {
-		return nil, logErrorf("the anchor pins no genesis entry (%d-byte hash); "+
-			"without it a log for any other network would replay to an empty state",
-			len(anchor.GenesisHash))
-	}
-	raw, err := f.Fetch("checkpoint")
-	if err != nil {
-		return nil, refuse(refusal.Unserved, "fetching the checkpoint: %v", err)
-	}
-	cp, err := tlog.Verify(string(raw), anchor.LogKeys)
-	if err != nil {
-		code, _ := refusal.CodeOf(err)
-		return nil, carry(err, "%s: %v", checkpointRefusal[code], err)
-	}
-	if anchor.Origin != "" && cp.Origin != anchor.Origin {
-		return nil, refuse(refusal.Origin, "the checkpoint is for origin %q, and this anchor is for %q",
-			cp.Origin, anchor.Origin)
-	}
-
-	// Then the witnesses. A log can sign anything it likes, including two
-	// different histories for two different nodes; what it cannot do is get a
-	// quorum of witnesses to cosign both at the same size.
-	cosignatures, quorumTime, err := checkQuorum(anchor, string(raw))
+	raw, cp, cosignatures, quorumTime, err := verifyHead(f, anchor)
 	if err != nil {
 		return nil, err
 	}
@@ -198,6 +170,137 @@ func Verify(f Fetcher, anchor Anchor) (*Result, error) {
 	if err != nil {
 		return nil, logErrorf("building the tree: %v", err)
 	}
+	return finish(f, anchor, raw, cp, cosignatures, quorumTime, tree, entries, replay.New(anchor.Anchor), nil)
+}
+
+// VerifyFrom verifies a log as Verify does, starting from the head this node
+// holds (H4-b): it fetches only the entry bundles that hold an entry at or
+// past the held size and only the hash tiles whose path is new, appends the
+// new entries to a copy of the held tree, and resumes a copy of the held
+// replay. The consistency of held→new is the appending itself: if the served
+// head is the head of the held tree with the new entries appended, the served
+// log contains the held one (§10), with no proof from anyone.
+//
+// What it cannot see it does not judge. The entries and tiles below the held
+// size were verified when that head was adopted; a defect planted there since
+// is for the periodic full verification (H3), not for every cycle. And where
+// the cheap path cannot decide -- a head that is not the held tree extended,
+// a size below the held one, a head whose bundles below the held size do not
+// match -- it hands the whole question to Verify, so that whatever the answer
+// is, it is the same answer, code for code. A held result without a tree or
+// a fold is verified in full too.
+func VerifyFrom(held *Result, f Fetcher, anchor Anchor) (*Result, error) {
+	if held == nil || held.Tree == nil || held.fold == nil ||
+		int64(len(held.Served)) != held.Tree.Size() || held.Tree.Size() == 0 {
+		return Verify(f, anchor)
+	}
+	raw, cp, cosignatures, quorumTime, err := verifyHead(f, anchor)
+	if err != nil {
+		return nil, err
+	}
+	from := held.Tree.Size()
+	if cp.Size < from {
+		return Verify(f, anchor) // a rollback or a fork on a shorter branch: §10 decides
+	}
+
+	// The bundles from the one the held size falls in. Its entries below the
+	// held size must be the held ones -- a log that re-wrote them is not an
+	// extension of what this node holds, whatever its head says.
+	var fresh [][]byte
+	for index := from / tlog.TileWidth; cp.Size > from && index*tlog.TileWidth < cp.Size; index++ {
+		width := int(min(cp.Size-index*tlog.TileWidth, tlog.TileWidth))
+		bundle, err := fetchBundle(f, index, width)
+		if err != nil {
+			return nil, err
+		}
+		entries, err := tlog.DecodeBundle(bundle)
+		if err != nil {
+			return nil, refuse(refusal.Entries, "entry bundle %d does not frame: %v", index, err)
+		}
+		if len(entries) != width {
+			return nil, refuse(refusal.Entries, "entry bundle %d holds %d entries; a checkpoint "+
+				"of %d implies %d", index, len(entries), cp.Size, width)
+		}
+		for i, raw := range entries {
+			at := index*tlog.TileWidth + int64(i)
+			if at < from {
+				if !bytes.Equal(raw, held.Served[at]) {
+					return Verify(f, anchor)
+				}
+				continue
+			}
+			fresh = append(fresh, raw)
+		}
+	}
+	tree := held.Tree.Clone()
+	for _, raw := range fresh {
+		if err := tree.Append(raw); err != nil {
+			return nil, logErrorf("building the tree: %v", err)
+		}
+	}
+	if tree.Head() != cp.Root {
+		return Verify(f, anchor) // `head`, or a fork below the held size: §10 decides
+	}
+	entries := append(append([][]byte(nil), held.Served...), fresh...)
+	heldTiles, err := held.Tree.Tiles()
+	if err != nil {
+		return nil, logErrorf("computing the held tiles: %v", err)
+	}
+	unchanged := make(map[string]bool, len(heldTiles))
+	for _, tile := range heldTiles {
+		unchanged[tile.Path()] = true
+	}
+	return finish(f, anchor, raw, cp, cosignatures, quorumTime, tree, entries, held.fold.Clone(), unchanged)
+}
+
+// verifyHead is the part of §10 that reads only the checkpoint: the anchor's
+// own soundness, the log signature, the origin and the witness quorum.
+func verifyHead(f Fetcher, anchor Anchor) (string, tlog.Checkpoint, []cosign.Cosignature, *time.Time, error) {
+	var none tlog.Checkpoint
+	if len(anchor.LogKeys) == 0 {
+		return "", none, nil, nil, logErrorf("the anchor carries no log key; §10 requires the " +
+			"checkpoint signature to be checked, and there is nothing to check it against")
+	}
+	// An empty genesis hash would not be lenient -- replay would abort every
+	// log with `bad-genesis` -- but it would be silent: an empty state reads
+	// like a network with no devices rather than like a caller mistake. This
+	// exact slip cost an afternoon in 2.9e-ii, in a test helper whose JSON tag
+	// did not match `genesis_hash`.
+	if len(anchor.GenesisHash) != sha256.Size {
+		return "", none, nil, nil, logErrorf("the anchor pins no genesis entry (%d-byte hash); "+
+			"without it a log for any other network would replay to an empty state",
+			len(anchor.GenesisHash))
+	}
+	raw, err := f.Fetch("checkpoint")
+	if err != nil {
+		return "", none, nil, nil, refuse(refusal.Unserved, "fetching the checkpoint: %v", err)
+	}
+	cp, err := tlog.Verify(string(raw), anchor.LogKeys)
+	if err != nil {
+		code, _ := refusal.CodeOf(err)
+		return "", none, nil, nil, carry(err, "%s: %v", checkpointRefusal[code], err)
+	}
+	if anchor.Origin != "" && cp.Origin != anchor.Origin {
+		return "", none, nil, nil, refuse(refusal.Origin, "the checkpoint is for origin %q, and this anchor is for %q",
+			cp.Origin, anchor.Origin)
+	}
+
+	// Then the witnesses. A log can sign anything it likes, including two
+	// different histories for two different nodes; what it cannot do is get a
+	// quorum of witnesses to cosign both at the same size.
+	cosignatures, quorumTime, err := checkQuorum(anchor, string(raw))
+	if err != nil {
+		return "", none, nil, nil, err
+	}
+	return string(raw), cp, cosignatures, quorumTime, nil
+}
+
+// finish is the rest of §10 once the tree is in hand: the head, the stored
+// comparison, the tiles (all of them, or only those not in `unchanged`) and
+// the replay, resumed on `fold`.
+func finish(f Fetcher, anchor Anchor, raw string, cp tlog.Checkpoint, cosignatures []cosign.Cosignature,
+	quorumTime *time.Time, tree *tlog.Tree, entries [][]byte, fold *replay.Replayer,
+	unchanged map[string]bool) (*Result, error) {
 	if tree.Size() != cp.Size {
 		return nil, refuse(refusal.Entries, "checkpoint claims %d entries, %d were served",
 			cp.Size, tree.Size())
@@ -207,7 +310,7 @@ func Verify(f Fetcher, anchor Anchor) (*Result, error) {
 	}
 
 	// §10: a log only grows, and it contains everything it used to contain.
-	if err := checkAgainstStored(anchor.Stored, cp, tree, string(raw), anchor.Held); err != nil {
+	if err := checkAgainstStored(anchor.Stored, cp, tree, raw, anchor.Held); err != nil {
 		return nil, err
 	}
 
@@ -216,13 +319,16 @@ func Verify(f Fetcher, anchor Anchor) (*Result, error) {
 	// tiles -- but then a log serving corrupt tiles would be broken for every
 	// monitor and witness that fetches them, and the one program guaranteed to
 	// be looking would say nothing. `norn verify` is that program.
-	if err := checkTiles(f, tree); err != nil {
+	if err := checkTiles(f, tree, unchanged); err != nil {
 		return nil, err
 	}
 
-	return &Result{Checkpoint: cp, SignedCheckpoint: string(raw), Tree: tree,
+	// The fold is applied to what it has not seen: all of it for a fresh one,
+	// the entries past its size for one resumed.
+	state := fold.Apply(entries[fold.State().Size:]...)
+	return &Result{Checkpoint: cp, SignedCheckpoint: raw, Tree: tree,
 		Cosignatures: cosignatures, QuorumTime: quorumTime,
-		State: replay.Replay(anchor.Anchor, entries), Served: entries}, nil
+		State: state, Served: entries, fold: fold}, nil
 }
 
 // fetchEntries reads the entry bundles a checkpoint of `size` implies.
@@ -270,12 +376,17 @@ func fetchBundle(f Fetcher, index int64, width int) ([]byte, error) {
 
 // checkTiles requires every hash tile the tree implies to be served, and to be
 // the bytes the tree says.
-func checkTiles(f Fetcher, tree *tlog.Tree) error {
+// `unchanged` names tiles the held head already vouched for (by path, width
+// included, so an identical path is identical bytes); nil means check all.
+func checkTiles(f Fetcher, tree *tlog.Tree, unchanged map[string]bool) error {
 	tiles, err := tree.Tiles()
 	if err != nil {
 		return logErrorf("computing the expected tiles: %v", err)
 	}
 	for _, tile := range tiles {
+		if unchanged[tile.Path()] {
+			continue
+		}
 		served, err := f.Fetch(tile.Path())
 		if err != nil {
 			return refuse(refusal.Unserved, "the log does not serve %s, which tlog-tiles requires: %v",

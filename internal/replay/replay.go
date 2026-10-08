@@ -135,6 +135,20 @@ func (p *Replayer) Apply(entries ...[]byte) *state.State {
 	return p.st
 }
 
+// Clone is a copy of the fold that can be resumed without moving this one:
+// the state, the seen set and the abort travel together, as they must.
+func (p *Replayer) Clone() *Replayer {
+	seen := make(map[string]bool, len(p.r.seen))
+	for k := range p.r.seen {
+		seen[k] = true
+	}
+	return &Replayer{
+		r:       &replayer{anchor: p.r.anchor, verify: p.r.verify, seen: seen},
+		st:      p.st.Clone(),
+		aborted: p.aborted,
+	}
+}
+
 // State is the state so far.
 func (p *Replayer) State() *state.State { return p.st }
 
