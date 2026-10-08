@@ -239,7 +239,7 @@ var _ = tlogstore.Open
 // interface is exactly what Norn exists to notice, and asking it for a
 // checkpoint would be asking the intruder what the network looks like.
 func TestOnlyProvenPeersAreAddressed(t *testing.T) {
-	full, _, _ := writableLog(t)
+	full := advisoryLog(t)
 	fake := peertable.NewFake()
 
 	// The operator has written routes for a proven device *and* for an
@@ -556,7 +556,7 @@ func TestASilentPeerDoesNotStallEnforcement(t *testing.T) {
 // every other provider fault is. A route withheld in silence would look, to
 // the operator, like a peer Norn broke.
 func TestOverlappingRoutesAreReportedAsAProviderClaim(t *testing.T) {
-	full, _, _ := writableLog(t)
+	full := advisoryLog(t)
 	rec := &recorder{}
 	fake := peertable.NewFake()
 	a, err := New(Config{

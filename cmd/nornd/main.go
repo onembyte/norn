@@ -360,6 +360,7 @@ var eventLevels = map[string]slog.Level{
 	agent.EnforcingOnStaleState:   slog.LevelWarn,
 	agent.InterfaceUnavailable:    slog.LevelWarn,
 	agent.InterfaceUnconfigured:   slog.LevelWarn,
+	agent.RoutesUngranted:         slog.LevelWarn,
 	agent.ControlPlaneFight:       slog.LevelWarn,
 	agent.PeerRefused:             slog.LevelWarn,
 	agent.PeerRoundCut:            slog.LevelWarn,

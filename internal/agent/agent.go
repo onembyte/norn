@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"net/netip"
 	"path/filepath"
 	"time"
 
@@ -141,6 +142,10 @@ const (
 	// ProviderClaim: a provider had opinions about devices the log does not
 	// prove, or none about devices it does.
 	ProviderClaim = "PROVIDER_CLAIM"
+	// RoutesUngranted: a proven device has no grant, so under
+	// `params.routes = "granted"` it is installed with its key and no
+	// allowed-ips (§13.1, D-073). Said once per device.
+	RoutesUngranted = "ROUTES_UNGRANTED"
 	// ControlPlaneFight: the same key keeps coming back, so whoever owns this
 	// table disagrees with the log about who belongs on the network.
 	ControlPlaneFight = "CONTROL_PLANE_FIGHT"
@@ -278,6 +283,9 @@ type Agent struct {
 	// interface's current keyless spell, so it is said once per spell and not
 	// every T_poll.
 	saidUnconfigured bool
+	// saidUngranted holds the proven devices whose missing grant has been
+	// said (D-073), so each is said once while it lasts and not every T_poll.
+	saidUngranted map[string]bool
 	// frozen means this node has proof its log forked and will accept nothing
 	// further under this anchor (§11). frozenBy names the evidence, and
 	// frozenNote says why that file is not itself proof when it is not: a
@@ -777,6 +785,23 @@ func (a *Agent) apply(desired []peertable.Peer, report endpoint.Report) error {
 				"allowed-ips, so neither is installed with them -- WireGuard would route "+
 				"one device's addresses to the other", overlap)})
 	}
+	for _, widened := range report.Widened {
+		a.emit(Event{Kind: ProviderClaim,
+			Message: fmt.Sprintf("%s: the provider gave a proven device a prefix outside "+
+				"its grant, so it is withheld -- a provider may narrow what the log "+
+				"granted, never widen it", widened)})
+	}
+	ungranted := make(map[string]bool, len(report.Ungranted))
+	for _, id := range report.Ungranted {
+		ungranted[id] = true
+		if !a.saidUngranted[id] {
+			a.emit(Event{Kind: RoutesUngranted,
+				Message: fmt.Sprintf("%q is proven and was enrolled with no grant, so it is "+
+					"installed with its key and no allowed-ips: it sources nothing until a "+
+					"signer enrols it with one", id)})
+		}
+	}
+	a.saidUngranted = ungranted
 
 	actual, err := a.cfg.Device.Peers()
 	if err != nil {
@@ -852,9 +877,16 @@ func (a *Agent) desired(result *logclient.Result, own peertable.Key) ([]peertabl
 			local[id] = true
 			continue
 		}
-		devices = append(devices, endpoint.Device{ID: id, Key: key, Labels: device.Labels})
+		devices = append(devices, endpoint.Device{ID: id, Key: key, Labels: device.Labels,
+			Grant: grantOf(device.Labels)})
 	}
-	peers, report := endpoint.Desired(devices, a.cfg.Provider)
+	// §13.1: under `routes = "granted"`, the default, the grant bounds what
+	// the provider may give; "advisory" is D-026's reading, as given.
+	build := endpoint.DesiredGranted
+	if routes, _ := result.State.Params["routes"].(string); routes == state.RoutesAdvisory {
+		build = endpoint.Desired
+	}
+	peers, report := build(devices, a.cfg.Provider)
 	// Local hints are still about a proven device. Excluding it from peer
 	// routing must not turn its provider entry into an unproven claim.
 	unproven := report.Unproven[:0]
@@ -865,6 +897,15 @@ func (a *Agent) desired(result *logclient.Result, own peertable.Key) ([]peertabl
 	}
 	report.Unproven = unproven
 	return peers, report
+}
+
+// grantOf is a device's §4.0 grant as prefixes (D-073); nil is no grant.
+func grantOf(labels map[string]string) []netip.Prefix {
+	var out []netip.Prefix
+	for _, text := range proven.Grant(labels) {
+		out = append(out, netip.MustParsePrefix(text))
+	}
+	return out
 }
 
 // noteEvictions watches for the same key being put back over and over.

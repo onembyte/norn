@@ -89,6 +89,7 @@ func TestEveryEventIsReportedAtItsDeliberateLogLevel(t *testing.T) {
 		agent.EnforcingOnStaleState: slog.LevelWarn,
 		agent.InterfaceUnavailable:  slog.LevelWarn,
 		agent.InterfaceUnconfigured: slog.LevelWarn,
+		agent.RoutesUngranted:       slog.LevelWarn,
 		agent.ControlPlaneFight:     slog.LevelWarn,
 		agent.PeerRefused:           slog.LevelWarn,
 		agent.AdoptedFromPeer:       slog.LevelWarn,

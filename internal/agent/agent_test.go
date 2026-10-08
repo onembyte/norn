@@ -547,7 +547,7 @@ func TestTheOwnKeyIsNotAPeerButIsStillProven(t *testing.T) {
 			own := keyOfDevice(t, "nas")
 			fake.OwnPublicKey = own
 			rec := &recorder{}
-			a := newAgent(t, reconcile.Owner, servedLog(t), fake, rec)
+			a := newAgent(t, reconcile.Owner, advisoryLog(t), fake, rec)
 			a.cfg.RunDir = t.TempDir()
 			provider := endpoint.Static{Peers: map[string]endpoint.Hints{
 				"pi-cam": {AllowedIPs: []netip.Prefix{netip.MustParsePrefix("10.9.0.2/32")}},
@@ -600,10 +600,14 @@ func TestTheOwnKeyIsNotAPeerButIsStillProven(t *testing.T) {
 }
 
 func TestAnUnmaskedHintReachesTheTableMasked(t *testing.T) {
+	// `router` is the fixture's granted device (10.9.1.0/24, fd00::/64), so
+	// this runs under the default routes: the hint is masked before it is
+	// bounded by the grant, and a host address on the grant's own prefix is
+	// inside it.
 	fake := peertable.NewFake() // No kernel masking to conceal an unnormalised write.
 	a := newAgent(t, reconcile.Owner, servedLog(t), fake, &recorder{})
 	a.cfg.Provider = endpoint.Static{Peers: map[string]endpoint.Hints{
-		"pi-cam": {AllowedIPs: []netip.Prefix{netip.MustParsePrefix("10.9.0.5/24")}},
+		"router": {AllowedIPs: []netip.Prefix{netip.MustParsePrefix("10.9.1.5/24")}},
 	}}
 	if err := a.Once(); err != nil {
 		t.Fatal(err)
@@ -612,9 +616,9 @@ func TestAnUnmaskedHintReachesTheTableMasked(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := peertable.ByKey(peers)[keyOfDevice(t, "pi-cam")].AllowedIPs
-	if len(got) != 1 || got[0].String() != "10.9.0.0/24" {
-		t.Errorf("table received %v, want [10.9.0.0/24]", got)
+	got := peertable.ByKey(peers)[keyOfDevice(t, "router")].AllowedIPs
+	if len(got) != 1 || got[0].String() != "10.9.1.0/24" {
+		t.Errorf("table received %v, want [10.9.1.0/24]", got)
 	}
 }
 

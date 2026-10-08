@@ -38,7 +38,7 @@ func routedNode(t *testing.T, logDir, stateDir string, rec *recorder) *Agent {
 // had nobody to ask until the very log it could not reach had answered. The
 // head it restored proves the same peers it proved yesterday.
 func TestARebootedNodeCanStillNameThePeersItsHeldHeadProves(t *testing.T) {
-	dir, _, _ := writableLog(t)
+	dir := advisoryLog(t)
 	stateDir := t.TempDir()
 	if err := routedNode(t, dir, stateDir, &recorder{}).Once(); err != nil {
 		t.Fatal(err)

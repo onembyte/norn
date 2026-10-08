@@ -48,6 +48,10 @@ type Device struct {
 	ID     string
 	Key    peertable.Key
 	Labels map[string]string
+	// Grant is the §4.0 grant: the prefixes the signers authorised this
+	// device to source, masked. nil is no grant, which under
+	// `params.routes = "granted"` means a key and no routes (D-073).
+	Grant []netip.Prefix
 }
 
 // Report is what a provider had to say that could not be used.
@@ -67,20 +71,54 @@ type Report struct {
 	// specific matching prefix, so an overlap silently hands one device's
 	// addresses to another, and nothing in the log decided that (SEC-035).
 	Overlapping []string
+	// Widened are prefixes a provider gave a device outside that device's
+	// grant, as "router 0.0.0.0/0", withheld under `routes = "granted"`: a
+	// provider may narrow a grant and never widen it (D-073).
+	Widened []string
+	// Ungranted are proven devices with no grant, installed with their key
+	// and no allowed-ips under `routes = "granted"`.
+	Ungranted []string
 }
 
 // Empty reports whether everything a provider said was usable.
 func (r Report) Empty() bool {
 	return len(r.Unproven) == 0 && len(r.Unrouted) == 0 && len(r.Malformed) == 0 &&
-		len(r.Overlapping) == 0
+		len(r.Overlapping) == 0 && len(r.Widened) == 0 && len(r.Ungranted) == 0
 }
 
-// Desired builds the peer table the proven set implies.
+// DesiredGranted is Desired under `params.routes = "granted"` (§13.1, D-073):
+// a provider's prefix is kept only where it lies within the device's grant,
+// and a device with no grant is installed with its key and no allowed-ips.
+// In WireGuard a peer's allowed-ips is its authority to source those
+// addresses, so a provider may narrow a grant and never widen it; what it
+// tried to widen is reported, as an overlap is.
+func DesiredGranted(proven []Device, provider Provider) ([]peertable.Peer, Report) {
+	return desired(proven, provider, true)
+}
+
+// withinGrant reports whether every address of prefix lies inside one of
+// the grant's prefixes. Both sides are masked, so containment is a prefix
+// at least as long as a grant prefix whose network holds its first address.
+func withinGrant(prefix netip.Prefix, grant []netip.Prefix) bool {
+	for _, g := range grant {
+		if g.Addr().Is4() == prefix.Addr().Is4() && g.Bits() <= prefix.Bits() && g.Contains(prefix.Addr()) {
+			return true
+		}
+	}
+	return false
+}
+
+// Desired builds the peer table the proven set implies, with the provider's
+// prefixes as given: `params.routes = "advisory"` (D-026's reading).
 //
 // Every peer here comes from a proven device; the provider only decorates it.
 // A provider that mentions a device the log does not prove cannot add a peer
 // by doing so — it is reported and dropped.
 func Desired(proven []Device, provider Provider) ([]peertable.Peer, Report) {
+	return desired(proven, provider, false)
+}
+
+func desired(proven []Device, provider Provider, granted bool) ([]peertable.Peer, Report) {
 	var report Report
 	byID := make(map[string]bool, len(proven))
 	for _, device := range proven {
@@ -106,11 +144,34 @@ func Desired(proven []Device, provider Provider) ([]peertable.Peer, Report) {
 			peer.Endpoint = hints.Endpoint
 			peer.Keepalive = hints.Keepalive
 		}
+		if granted {
+			if proven[len(peers)].Grant == nil {
+				peer.AllowedIPs = nil
+				report.Ungranted = append(report.Ungranted, device.ID)
+			} else {
+				var kept []netip.Prefix
+				for _, prefix := range peer.AllowedIPs {
+					if withinGrant(prefix, device.Grant) {
+						kept = append(kept, prefix)
+					} else {
+						report.Widened = append(report.Widened, device.ID+" "+prefix.String())
+					}
+				}
+				peer.AllowedIPs = kept
+			}
+		}
 		peers = append(peers, peer)
 	}
+	// Overlaps are judged on what would be installed, after the bound.
 	report.Overlapping = withholdOverlaps(proven, peers)
+	ungranted := make(map[string]bool, len(report.Ungranted))
+	for _, id := range report.Ungranted {
+		ungranted[id] = true
+	}
 	for i, peer := range peers {
-		if len(peer.AllowedIPs) == 0 {
+		// A device with no grant has no routes because the log gave it none,
+		// not because no provider placed it: that is Ungranted, said once.
+		if len(peer.AllowedIPs) == 0 && !ungranted[proven[i].ID] {
 			report.Unrouted = append(report.Unrouted, proven[i].ID)
 		}
 	}
