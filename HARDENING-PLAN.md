@@ -45,7 +45,9 @@ incident that produced it. Read that section before the first firing.
 6. **Commit, tick in `BUILD-LOG.md`, push `master` as a fast-forward.** One
    sub-checkpoint per commit. Never force, never rebase pushed history. The
    owner's rules in `~/.claude/CLAUDE.md` apply: stage named paths, never
-   `git add -A`; the only trailer is `Co-Authored-By`; and until 2026-11-01
+   `git add -A`; **no attribution trailer at all** — no `Co-Authored-By`, no
+   `Claude-Session` (owner, 2026-10-08; a Codex lane's `Codex-Model` line
+   stays, it is the lane's report); and until 2026-11-01
    the head commit of every push carries `[skip ci]` (the account's Actions
    minutes are nearly spent; the full gate runs here). CI is Linux-only for
    the same reason; macOS is covered by this Mac.
