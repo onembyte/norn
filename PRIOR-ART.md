@@ -124,9 +124,10 @@ Nothing open provides, for WireGuard peer keys:
    has none.
 4. **Pre-provisioned trust anchors** (log key + witness policy + genesis hash
    delivered out of band) — TKA is TOFU.
-5. **Enforcement independent of the control plane** — reconcile the kernel's
-   WireGuard peer table against the proven set, so it works beside Headscale,
-   NetBird, innernet or plain `wg-quick` without patching any of them.
+5. **Enforcement independent of the control plane** — reconcile a WireGuard
+   interface's peer table against the proven set, so it works beside NetBird,
+   innernet or plain `wg-quick` without patching any of them. Tailscale and
+   Headscale are planned, not supported.
 
 Each piece has shipped somewhere. The assembly has not. That is Norn.
 

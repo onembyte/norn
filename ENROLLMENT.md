@@ -26,6 +26,13 @@ signature, so TKey, YubiKey-OpenPGP, software keys and password-manager agents a
 look identical to Norn. `kid` = derived from the agent's public key. No Norn key
 store to secure, no key format to invent.
 
+A signer key in an ssh-agent can be used by anything that can reach the
+agent's socket: any process running as that user, or a host you connect to with
+agent forwarding (`ssh -A`). The §4.2 domain prefix prevents cross-protocol
+signature reuse; it does not restrict who can ask the agent to sign. Use a
+dedicated agent for Norn keys and never forward it. Require confirmation for
+each use with `ssh-add -c`, or use a hardware key that requires a touch.
+
 **Tier 0 is a file because a device cannot type a passphrase.** The device key
 signs `rotate` and self-`revoke` (`SPEC.md` §4.3) with nobody at the keyboard, so
 that key lives on disk under 0600 — and an encrypted file would not help, since
@@ -153,7 +160,7 @@ history. Append-only means recovery = *new entries that supersede*.
 | # | Situation | Procedure | Downtime |
 |---|---|---|---|
 | R1 | Signer key **lost** | roots: `norn govern -trust norn.trust -t signer_remove -kid LOST_KID -key root.key -o remove.cbor`, then `norn govern -trust norn.trust -t signer_add -pk replacement.pub -key root.key -o add.cbor` | none |
-| R2 | Signer key **stolen** | roots: `norn govern -trust norn.trust -t signer_remove -kid STOLEN_KID -key root.key -o remove.cbor`; `norn audit --by <kid> --since <t>` lists everything that key signed; `revoke` rogue devices; re-`enroll` any it wrongly revoked | none for honest peers |
+| R2 | Signer key **stolen** | roots: `norn govern -trust norn.trust -t signer_remove -kid STOLEN_KID -key root.key -o remove.cbor` first, to stop the bleeding; then `norn audit -trust norn.trust -by STOLEN_KID` lists everything that key signed — it reads the log, so it works after the removal, and without `-since`, because the thief chose the `ts` of every entry it signed; `revoke` rogue devices; re-`enroll` any it wrongly revoked | none for honest peers |
 | R3 | One root of 2-of-3 lost or stolen | remaining two: `norn govern -trust norn.trust -t root_remove -kid LOST_KID -key root.key -o remove.cbor`, then `norn govern -trust norn.trust -t root_add -pk replacement.pub -key root.key -o add.cbor` (new root key). **Do it the same day** — with one root gone, the next loss is R5 | none |
 | R4 | Device rebuilt / device key lost | `revoke` + fresh `enroll` | that device only |
 | R5 | Root quorum lost or stolen | **re-genesis** (`norn migrate` is **planned**, not built): build a new `genesis` under new roots, auto-generate re-enrollment requests for every active device (device keys persist), batch-sign them, produce one new trust file. Deliver it to each device out of band. This is the one procedure that touches every device, and it is the price of losing the roots; `norn migrate` will make it an afternoon, not a month | until each device imports the new trust file |

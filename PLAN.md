@@ -6,9 +6,9 @@
 A key-transparency layer for WireGuard. Every device enrollment, key rotation and
 revocation is an entry in an append-only, witnessed, fully-replicated log. A node
 completes a handshake with a peer **only** if it holds a proof that the peer's key is
-in the log and not revoked. The coordination server (Headscale, NetBird, Tailscale,
-innernet, or a human with `wg-quick`) keeps doing what it does — Norn just makes it
-**unable to lie silently**.
+in the log and not revoked. The coordination server (NetBird, innernet, or a human
+with `wg-quick` today; Headscale and Tailscale planned) keeps doing what it does —
+Norn just makes it **unable to lie silently**.
 
 Started **2026-09-18**. Author: Franco Michetti (`onembyte`). Language: Go.
 
@@ -56,8 +56,9 @@ Three things make it not-a-clone (see `PRIOR-ART.md §The gap`):
 2. **The log travels over the tunnel.** Nodes serve checkpoints and tiles to each
    other, so a control plane that withholds updates (Tailscale's own acknowledged
    freeze attack) is detected and routed around.
-3. **It is implementation-independent.** Norn reconciles the kernel's WireGuard peer
-   table against the proven set. It needs no patch to Headscale, NetBird or `wg`.
+3. **It is implementation-independent.** Norn reconciles a readable and writable
+   WireGuard interface against the proven set. NetBird with a kernel interface,
+   innernet and `wg-quick` fit that path; Tailscale and Headscale support is planned.
 
 ## Non-goals
 
@@ -194,7 +195,7 @@ Reproducible demos — normative in `LAB.md` §2: D1a/b/c (one attack × plain W
 **PASS when:**
 - [ ] `make demos` from a clean `make lab-up`: all six `run.sh` assert green and render their tapes. **Nothing exists and nothing here can:** `lab/` and `demo/` are empty, and the contents are containers, a patched Headscale and NetBird, and rendered tapes. This is the lab's whole job.
 - [ ] D1a: rogue key never appears in `wg show` on node1. D1b: evicted with measured window, `CONTROL_PLANE_FIGHT` fires, `quarantine` isolates. D1c: `UNPROVEN_PEER` + phone push ≤ 1 s. **Every software half is tested (3.x, 5.1–5.6):** owner mode never installs an unproven key, an injected key is gone after exactly one cycle, `CONTROL_PLANE_FIGHT` fires on a key that keeps coming back, `quarantine` takes the interface out of service, and `UNPROVEN_PEER` maps to a critical alert on every configured output. The *measured window*, the three control planes and a phone receiving a push are the lab's.
-- [ ] D2: rogue enrollment visible, phone alert, `norn audit --by`, R2 executed, eviction time on screen. **The 5.7 audit found `norn audit --by` does not exist**, although `ENROLLMENT.md` R2 and `LAB.md` D2 both name it — it is what an operator runs the moment a signer key is stolen, to find out what was done with it. Tracked as 5.8. The rest of the line is software that exists: a valid-looking enrolment is reported at info like any other entry, which is D2's point — *transparency beats authority*.
+- [ ] D2: rogue enrollment visible, phone alert, `norn audit -trust norn.trust -by <16-hex-kid>`, R2 executed, eviction time on screen. **The 5.7 audit found `norn audit --by` did not exist**, although `ENROLLMENT.md` R2 and `LAB.md` D2 both named it; 5.8 built it, and it is what an operator runs the moment a signer key is stolen. The D2 demo and its phone alert are still unbuilt. A valid-looking enrolment is reported at info like any other entry, which is D2's point — *transparency beats authority*.
 - [x] D3: nodes stay fresh through a log freeze via gossip; fork evidence on both nodes; `norn verify-evidence` passes offline. **Closed in software by 4.5d, 4.6 and 4.9.** A node with an unreachable log adopts a peer's checkpoint; a fork produces evidence on the node that caught it *and* on every node it tells; and `norn verify-evidence` checks that evidence offline against a trust file alone, refusing four kinds of fabrication. Running it as a demo with tapes is the lab's, but no line of it is unproven.
 - [ ] Monitor: one notification received per rule in `LAB.md` §3 during the run; status page reachable over the tunnel. **Software done (5.1–5.6):** every rule in §3's table is implemented and tested, one round over the shipped fixture fires four of them, and the status page serves on a configured address and escapes what a device's own labels put on it. "Received" — on a phone, during a run, one per rule — needs the run.
 

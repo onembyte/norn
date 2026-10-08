@@ -5,8 +5,9 @@
 > Every mesh VPN trusts a coordination server that can hand your laptop an
 > attacker's key — and you would never know. Norn puts every device enrollment,
 > rotation and revocation in an append-only, witnessed log, and refuses any peer
-> that isn't in it. Works beside Headscale, NetBird or plain `wg-quick`. Changes
-> nothing in WireGuard.
+> that isn't in it. Works beside NetBird, innernet or plain `wg-quick` —
+> anything that leaves a WireGuard interface Norn can read and write; Tailscale
+> and Headscale are planned, not supported. Changes nothing in WireGuard.
 
 *Status (2026-10-07): 52 Go packages, 1038 tests, a frozen `SPEC.md`, and a
 vector suite a second implementer can use without this repository. **14 of 38
@@ -114,7 +115,7 @@ only) → **watchdog** (reconcile a control plane's table, window ≤ `T_poll`) 
 | A signing key is stolen. Afterwards, can you enumerate what it signed? | no | no | no | yes — `norn audit --by` |
 | Control plane goes silent or withholds updates | acknowledged freeze attack | certs keep working until they expire | undetected | nodes gossip checkpoints over the tunnel; staleness alarms |
 | Revocation | via the control plane | `pki.blocklist`, shipped in config | via the control plane | a logged entry, with a bounded window and an alarm if it is missed |
-| Runs beside your existing stack | Tailscale only | Nebula only | NetBird only | Headscale, NetBird, innernet or `wg-quick`, unpatched |
+| Runs beside your existing stack | Tailscale only | Nebula only | NetBird only | NetBird with a kernel WireGuard interface, innernet or `wg-quick`; Tailscale/Headscale planned |
 | Would I run it on something that matters today? | yes, it is GA | yes | yes | **no** — see the status line above |
 
 Sources and the longer argument are in `PRIOR-ART.md`. This table has not yet

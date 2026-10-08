@@ -11,9 +11,10 @@ when someone else runs it. This file is the path from "works on my NAS" to that.
 **Three sentences:** Every mesh VPN trusts a coordination server that can hand your
 laptop an attacker's key and you would never know. Norn puts every device
 enrollment, rotation and revocation in an append-only, witnessed log and refuses
-any peer that isn't in it. It works beside Headscale, NetBird or plain `wg-quick`,
-changes nothing in WireGuard, and needs no blockchain — except the 32 bytes per
-checkpoint we chose to anchor, and we explain exactly why.
+any peer that isn't in it. It works beside NetBird, innernet or plain `wg-quick`
+(Tailscale and Headscale are planned), changes nothing in WireGuard, and needs no
+blockchain — except the 32 bytes per checkpoint we chose to anchor, and we explain
+exactly why.
 
 **Never in the tagline:** "blockchain". It is answered in §6 and scored in
 `LEDGER-OPTIONS.md`.
@@ -26,7 +27,7 @@ kept true, two cannot.
 
 | Audience | What they want | Lead with |
 |---|---|---|
-| Self-hosters on Headscale / NetBird (r/selfhosted, r/WireGuard) | "can my control plane betray me, and would I know?" | D1c (Headscale #1432, live) and D1a |
+| Self-hosters on Headscale / NetBird (r/selfhosted, r/WireGuard) | "can my control plane betray me, and would I know?" | planned D1c (Headscale #1432) and D1a |
 | Transparency community (transparency-dev, Sigsum, C2SP) | correct reuse of their formats; a new *application* of tlogs | verbatim C2SP formats, an unmodified witness cosigning a Norn checkpoint, T1/T3 |
 | Security researchers | threat model, measured windows, honest limitations | `THREAT-MODEL.md`, `ENFORCEMENT.md` §5 numbers, D2 |
 | ZTNA / fintech infra teams | auditable device admission, evidence for SOC 2 / ISO device inventory | status page, proof bundles, monitor alerts |
@@ -42,7 +43,7 @@ directory that was never created.
 | `SPEC.md` | ✅ | frozen at v1; entries, replay, log layout, receipts, proofs, trust file |
 | `testdata/vectors/` | ✅ | byte-exact vectors, three provenances, checksummed, usable without this repo |
 | `contrib/norn-ref/` | ✅ | Python reference implementation, written from the spec alone; it *generates* the vectors |
-| `cmd/norn/` | ✅ | the CLI: `init`, `enroll`, `sign`, `submit`, `verify`, `verify-evidence`, `audit`, `stamp`, `monitor`, `status` |
+| `cmd/norn/` | ✅ | the CLI: `init`, `enroll`, `sign`, `submit`, `verify`, `verify-evidence`, `revoke`, `rotate`, `govern`, `audit`, `stamp`, `monitor`, `status` |
 | `cmd/nornd/` | ✅ | the node daemon: replay, quorum, gossip, reconcile |
 | `README.md` | ✅ | the pitch, the threat model in one screen, the comparison table, a runnable quickstart |
 | `THREAT-MODEL.md` | ✅ | 12 adversaries, 6 guarantees, and what Norn does not defend |
@@ -73,7 +74,7 @@ the one question each is actually qualified to destroy.
 | Sigsum / Glasklar | witness freshness and policy are their life's work | review `GOSSIP.md` §3–5, especially the degraded/hard-stale ladder |
 | torchwood / transparent-keyserver author | client-side proofs, policy parsing | "is this the intended use of `ThresholdPolicy` and `VerifyProof`?" |
 | tailscale-rs TKA author | the only other person who has reimplemented an authority chain | compare `SPEC.md` §5 replay with TKA's fork rules |
-| Headscale maintainers | #1307 / #1432 are open and unanswered | "observe mode is a partial answer to #1432 today; interested?" |
+| Headscale maintainers | #1307 / #1432 are open and unanswered | "Norn's planned observe integration is a partial answer to #1432; interested?" |
 | NetBird maintainers | the peer-admission hook Phase 7 needs | open an issue before the PR, never after |
 | Somebody who has run two of Tailnet Lock, Nebula and NetBird in anger | the comparison table is written by someone who has run none of them | "which row is unfair?" |
 
@@ -124,8 +125,9 @@ Norn records *every key that was ever signed*, which is the property that lets
 you enumerate the damage after a signing key is stolen. Tailnet Lock also
 distributes its authority updates through the control plane, and its own
 whitepaper acknowledges the resulting freeze attack. Norn's nodes gossip
-checkpoints to each other over the tunnel, and it runs beside Headscale,
-NetBird, innernet or plain `wg-quick`, which Tailnet Lock never will.
+checkpoints to each other over the tunnel, and it works with a readable and
+writable WireGuard interface, as with NetBird's kernel interface, innernet or
+plain `wg-quick`. Tailscale and Headscale support is planned.
 
 ### Who do I have to trust?
 
