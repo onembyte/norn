@@ -27,6 +27,8 @@
     "25-signature-nonzero-pad-bits",
     "26-cosignature-nonzero-pad-bits",
     "27-root-nonzero-pad-bits",
+    "29-root-unpadded",
+    "30-noncanonical-size-under-untrusted-signer",
     "08-forged-cosignature"
   ],
   "codes": {
@@ -57,7 +59,9 @@
     "25-signature-nonzero-pad-bits": "note",
     "26-cosignature-nonzero-pad-bits": "note",
     "27-root-nonzero-pad-bits": "checkpoint",
-    "28-witness-key-other-algorithm-length": "cosignature"
+    "28-witness-key-other-algorithm-length": "cosignature",
+    "29-root-unpadded": "checkpoint",
+    "30-noncanonical-size-under-untrusted-signer": "log-signature"
   },
   "comment": "each file is served in place of served/checkpoint, over the honest tiles, under trust.cbor; every one MUST be refused, with the SPEC §10.1 code `codes` names for it. `signature_blind_accepts` lists the ones whose only defect is a signature that does not verify: a reader that never calls Ed25519 accepts exactly those, and nothing else here",
   "reasons": {
@@ -88,7 +92,9 @@
     "25-signature-nonzero-pad-bits": "the log signature payload has nonzero unused base64 pad bits but decodes to the same valid signature",
     "26-cosignature-nonzero-pad-bits": "a witness cosignature payload has nonzero unused base64 pad bits but decodes to the same valid cosignature",
     "27-root-nonzero-pad-bits": "the root line has nonzero unused base64 pad bits but decodes to the same signed tree root",
-    "28-witness-key-other-algorithm-length": "a 68-byte payload under a listed witness's name and cosignature key ID is a cosignature failure, even beside its valid line"
+    "28-witness-key-other-algorithm-length": "a 68-byte payload under a listed witness's name and cosignature key ID is a cosignature failure, even beside its valid line",
+    "29-root-unpadded": "the root line drops its padding: a lenient decoder reads the same 32 bytes, and §6 requires the padded form",
+    "30-noncanonical-size-under-untrusted-signer": "a leading-zero size, signed by a key the anchor does not pin: the signature step comes first"
   },
   "rules": {
     "01-unsigned": {
@@ -201,6 +207,14 @@
     },
     "28-witness-key-other-algorithm-length": {
       "says": "A 68-byte payload under a listed witness's",
+      "section": "10"
+    },
+    "29-root-unpadded": {
+      "says": "standard base64 with padding, 32 bytes once decoded",
+      "section": "6"
+    },
+    "30-noncanonical-size-under-untrusted-signer": {
+      "says": "norn.trust.log_key",
       "section": "10"
     }
   },

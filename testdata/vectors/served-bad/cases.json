@@ -37,11 +37,25 @@
       "name": "overfull-entry-bundle",
       "path": "tile/entries/001.p/44",
       "says": "the bundle decodes but holds one more entry than the checkpoint size and its path imply"
+    },
+    {
+      "name": "missing-hash-tile",
+      "path": "tile/0/001.p/44",
+      "remove": true,
+      "says": "step 11 needs the hash tile to check the served tree, and it is not served: refused, not skipped"
+    },
+    {
+      "name": "missing-checkpoint",
+      "path": "checkpoint",
+      "remove": true,
+      "says": "no checkpoint is served, so there is nothing to verify: `unserved`, not a framing error over an empty note"
     }
   ],
   "codes": {
     "consistent-tampered-log": "head",
+    "missing-checkpoint": "unserved",
     "missing-entry-bundle": "unserved",
+    "missing-hash-tile": "unserved",
     "overfull-entry-bundle": "entries",
     "tampered-entry-bundle": "head",
     "tampered-hash-tile": "tiles"
@@ -52,7 +66,15 @@
       "says": "that comparison is what binds the entries to the head",
       "section": "6"
     },
+    "missing-checkpoint": {
+      "says": "any file a later step needs and cannot fetch",
+      "section": "10.1"
+    },
     "missing-entry-bundle": {
+      "says": "any file a later step needs and cannot fetch",
+      "section": "10.1"
+    },
+    "missing-hash-tile": {
       "says": "any file a later step needs and cannot fetch",
       "section": "10.1"
     },

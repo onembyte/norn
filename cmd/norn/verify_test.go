@@ -496,6 +496,7 @@ func TestATamperedHashTileIsRefusedByTheTileRule(t *testing.T) {
 	var doc struct {
 		Cases []struct {
 			Name, Path, File string
+			Remove           bool
 		} `json:"cases"`
 	}
 	if err := json.Unmarshal(raw, &doc); err != nil {
@@ -503,7 +504,11 @@ func TestATamperedHashTileIsRefusedByTheTileRule(t *testing.T) {
 	}
 	var found bool
 	for _, c := range doc.Cases {
-		if !strings.HasPrefix(c.Path, "tile/") || strings.HasPrefix(c.Path, "tile/entries/") {
+		// A tile the log does not serve at all is `unserved`, step 1's code,
+		// not the tile rule's: that case is checked where every served-bad
+		// code is (logclient), and this test is about a tile that is served
+		// and wrong.
+		if c.Remove || !strings.HasPrefix(c.Path, "tile/") || strings.HasPrefix(c.Path, "tile/entries/") {
 			continue
 		}
 		found = true

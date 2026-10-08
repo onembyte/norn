@@ -1389,6 +1389,8 @@ func writeBadServed(root, served string, size int64) error {
 		"consistent-tampered-log": refusal.Head,
 		"tampered-hash-tile":      refusal.Tiles,
 		"overfull-entry-bundle":   refusal.Entries,
+		"missing-hash-tile":       refusal.Unserved,
+		"missing-checkpoint":      refusal.Unserved,
 	}
 	servedCases := []map[string]any{
 		{"name": "tampered-entry-bundle", "path": bundlePath,
@@ -1416,6 +1418,15 @@ func writeBadServed(root, served string, size int64) error {
 			"file": "overfull-entry-bundle.bin",
 			"says": "the bundle decodes but holds one more entry than the checkpoint " +
 				"size and its path imply"},
+		// Cold gate run 13, D18: step 1's code for the two files no case had
+		// taken away. A reader that skips a tile it cannot fetch, or reports
+		// a missing checkpoint as a malformed one, passed.
+		{"name": "missing-hash-tile", "path": tilePath, "remove": true,
+			"says": "step 11 needs the hash tile to check the served tree, and it is " +
+				"not served: refused, not skipped"},
+		{"name": "missing-checkpoint", "path": "checkpoint", "remove": true,
+			"says": "no checkpoint is served, so there is nothing to verify: " +
+				"`unserved`, not a framing error over an empty note"},
 	}
 	if err := checkCodes("served-bad", namesOf(servedCases), servedCodes, refusal.Known); err != nil {
 		return err
@@ -1431,6 +1442,8 @@ func writeBadServed(root, served string, size int64) error {
 			"tampered-hash-tile":      {"section": "6", "says": "checking them is not optional"},
 			"consistent-tampered-log": {"section": "6", "says": "that comparison is what binds the entries to the head"},
 			"overfull-entry-bundle":   {"section": "6", "says": "A partial bundle holds **exactly** the number of entries its path declares"},
+			"missing-hash-tile":       {"section": "10.1", "says": "any file a later step needs and cannot fetch"},
+			"missing-checkpoint":      {"section": "10.1", "says": "any file a later step needs and cannot fetch"},
 		},
 		"cases":      servedCases,
 		"codes":      servedCodes,
@@ -3027,6 +3040,45 @@ func buildBadCheckpoints(root, origin string, key ed25519.PrivateKey,
 		"the root line has nonzero unused base64 pad bits but decodes to the same signed tree root",
 		badRoot})
 
+	// Cold gate run 13, D18: the root with its `=` dropped. A lenient decoder
+	// reads the same 32 bytes; §6 says padded. Re-signed and re-cosigned, so
+	// only the body's encoding can refuse it.
+	rootLines = strings.Split(strings.TrimSuffix(body, "\n"), "\n")
+	if !strings.HasSuffix(rootLines[2], "=") {
+		return nil, fmt.Errorf("the served root %q carries no padding to drop", rootLines[2])
+	}
+	rootLines[2] = strings.TrimRight(rootLines[2], "=")
+	unpadded, err := note.Sign(strings.Join(rootLines, "\n")+"\n", origin, key)
+	if err != nil {
+		return nil, err
+	}
+	unpadded, err = cosignWith(unpadded, signers...)
+	if err != nil {
+		return nil, err
+	}
+	out = append(out, badCheckpoint{"29-root-unpadded",
+		"the root line drops its padding: a lenient decoder reads the same 32 bytes, and §6 requires the padded form",
+		unpadded})
+
+	// Cold gate run 13, D4: §10.1 step 3 before step 4. A body with a
+	// non-canonical size, signed under the log's name by a key the anchor
+	// does not pin: `log-signature`, not `checkpoint`. Every other body fault
+	// in this directory is signed by the log, so a reader that parses the
+	// body before checking the signature refused each for the same reason.
+	sizeLines := strings.Split(strings.TrimSuffix(body, "\n"), "\n")
+	sizeLines[1] = "0" + sizeLines[1]
+	bodyAndKey, err := note.Sign(strings.Join(sizeLines, "\n")+"\n", origin, stranger)
+	if err != nil {
+		return nil, err
+	}
+	bodyAndKey, err = cosignWith(bodyAndKey, signers...)
+	if err != nil {
+		return nil, err
+	}
+	out = append(out, badCheckpoint{"30-noncanonical-size-under-untrusted-signer",
+		"a leading-zero size, signed by a key the anchor does not pin: the signature step comes first",
+		bodyAndKey})
+
 	out = append(out, badCheckpoint{"08-forged-cosignature",
 		"two cosignature lines, both naming witnesses the policy lists, one of which does not verify: " +
 			"the quorum is met only by a verifier that does not check them", forgedCosig})
@@ -3094,34 +3146,36 @@ func writeBadCheckpoints(root, origin string, key ed25519.PrivateKey,
 		// is looked for; 03 is signed under another origin's name, so the
 		// signature refuses it before its origin is read. `codes` below made
 		// the disagreement visible, and specdoc now holds the two together.
-		"01-unsigned":                           {"section": "7", "says": "carries **at least one signature line**"},
-		"02-wrong-log-key":                      {"section": "10", "says": "norn.trust.log_key"},
-		"03-wrong-origin":                       {"section": "10", "says": "whatever origin it names"},
-		"04-forged-log-signature":               {"section": "10", "says": "MUST\n  # verify"},
-		"05-one-cosignature-short":              {"section": "10", "says": "the quorum must be satisfied"},
-		"06-no-cosignatures":                    {"section": "10", "says": "the quorum must be satisfied"},
-		"07-unnamed-witness-only":               {"section": "10", "says": "is IGNORED, not refused"},
-		"08-forged-cosignature":                 {"section": "10", "says": "must verify"},
-		"09-extension-line":                     {"section": "6", "says": "exactly three lines"},
-		"10-wrong-body-origin":                  {"section": "10", "says": "which log this is about"},
-		"11-forged-cosignature-with-quorum":     {"section": "10", "says": "per line, not per witness"},
-		"12-second-line-from-one-witness":       {"section": "10", "says": "per line, not per witness"},
-		"13-ascii-dash-signature":               {"section": "7", "says": "signature line per signer"},
-		"14-unterminated-signature-block":       {"section": "7", "says": "including the last, ends in one"},
-		"15-size-leading-zero":                  {"section": "6", "says": "no leading zeroes"},
-		"17-root-wrong-length":                  {"section": "6", "says": "32 bytes once decoded"},
-		"21-origin-with-a-suffix":               {"section": "10", "says": "cp.origin == norn.trust.origin"},
-		"22-origin-case-changed":                {"section": "10", "says": "cp.origin == norn.trust.origin"},
-		"23-extra-final-newline":                {"section": "7", "says": "a second `0x0A` after the final signature creates a forbidden blank line"},
-		"24-log-key-other-algorithm-length":     {"section": "10", "says": "A 76-byte payload under the log's `0x01` key fails here"},
-		"28-witness-key-other-algorithm-length": {"section": "10", "says": "A 68-byte payload under a listed witness's"},
-		"25-signature-nonzero-pad-bits":         {"section": "7", "says": "unused pad bits MUST be zero"},
-		"26-cosignature-nonzero-pad-bits":       {"section": "7", "says": "unused pad bits MUST be zero"},
-		"27-root-nonzero-pad-bits":              {"section": "6", "says": "unused pad bits MUST be zero"},
-		"18-signature-name-with-space":          {"section": "7", "says": "contains no space"},
-		"19-signature-unpadded-base64":          {"section": "7", "says": "standard base64 **with padding**"},
-		"20-signature-payload-too-long":         {"section": "7", "says": "The decoded payload is **exactly** that length"},
-		"16-two-log-signatures":                 {"section": "10", "says": "Every signature line whose name and key id match"},
+		"01-unsigned":                                 {"section": "7", "says": "carries **at least one signature line**"},
+		"02-wrong-log-key":                            {"section": "10", "says": "norn.trust.log_key"},
+		"03-wrong-origin":                             {"section": "10", "says": "whatever origin it names"},
+		"04-forged-log-signature":                     {"section": "10", "says": "MUST\n  # verify"},
+		"05-one-cosignature-short":                    {"section": "10", "says": "the quorum must be satisfied"},
+		"06-no-cosignatures":                          {"section": "10", "says": "the quorum must be satisfied"},
+		"07-unnamed-witness-only":                     {"section": "10", "says": "is IGNORED, not refused"},
+		"08-forged-cosignature":                       {"section": "10", "says": "must verify"},
+		"09-extension-line":                           {"section": "6", "says": "exactly three lines"},
+		"10-wrong-body-origin":                        {"section": "10", "says": "which log this is about"},
+		"11-forged-cosignature-with-quorum":           {"section": "10", "says": "per line, not per witness"},
+		"12-second-line-from-one-witness":             {"section": "10", "says": "per line, not per witness"},
+		"13-ascii-dash-signature":                     {"section": "7", "says": "signature line per signer"},
+		"14-unterminated-signature-block":             {"section": "7", "says": "including the last, ends in one"},
+		"15-size-leading-zero":                        {"section": "6", "says": "no leading zeroes"},
+		"17-root-wrong-length":                        {"section": "6", "says": "32 bytes once decoded"},
+		"21-origin-with-a-suffix":                     {"section": "10", "says": "cp.origin == norn.trust.origin"},
+		"22-origin-case-changed":                      {"section": "10", "says": "cp.origin == norn.trust.origin"},
+		"23-extra-final-newline":                      {"section": "7", "says": "a second `0x0A` after the final signature creates a forbidden blank line"},
+		"24-log-key-other-algorithm-length":           {"section": "10", "says": "A 76-byte payload under the log's `0x01` key fails here"},
+		"28-witness-key-other-algorithm-length":       {"section": "10", "says": "A 68-byte payload under a listed witness's"},
+		"29-root-unpadded":                            {"section": "6", "says": "standard base64 with padding, 32 bytes once decoded"},
+		"30-noncanonical-size-under-untrusted-signer": {"section": "10", "says": "norn.trust.log_key"},
+		"25-signature-nonzero-pad-bits":               {"section": "7", "says": "unused pad bits MUST be zero"},
+		"26-cosignature-nonzero-pad-bits":             {"section": "7", "says": "unused pad bits MUST be zero"},
+		"27-root-nonzero-pad-bits":                    {"section": "6", "says": "unused pad bits MUST be zero"},
+		"18-signature-name-with-space":                {"section": "7", "says": "contains no space"},
+		"19-signature-unpadded-base64":                {"section": "7", "says": "standard base64 **with padding**"},
+		"20-signature-payload-too-long":               {"section": "7", "says": "The decoded payload is **exactly** that length"},
+		"16-two-log-signatures":                       {"section": "10", "says": "Every signature line whose name and key id match"},
 	}
 	for name := range reasons {
 		if _, ok := rules[name]; !ok {
@@ -3134,34 +3188,36 @@ func writeBadCheckpoints(root, origin string, key ed25519.PrivateKey,
 	// order refuses every file here too, and the suite cannot tell: 01 is
 	// `note` and not `log-signature`, 03 is `log-signature` and not `origin`.
 	codes := map[string]refusal.Code{
-		"01-unsigned":                           refusal.Note,
-		"02-wrong-log-key":                      refusal.LogSignature,
-		"03-wrong-origin":                       refusal.LogSignature,
-		"04-forged-log-signature":               refusal.LogSignature,
-		"05-one-cosignature-short":              refusal.Quorum,
-		"06-no-cosignatures":                    refusal.Quorum,
-		"07-unnamed-witness-only":               refusal.Quorum,
-		"08-forged-cosignature":                 refusal.Cosignature,
-		"09-extension-line":                     refusal.Checkpoint,
-		"10-wrong-body-origin":                  refusal.Origin,
-		"11-forged-cosignature-with-quorum":     refusal.Cosignature,
-		"12-second-line-from-one-witness":       refusal.Cosignature,
-		"13-ascii-dash-signature":               refusal.Note,
-		"14-unterminated-signature-block":       refusal.Note,
-		"15-size-leading-zero":                  refusal.Checkpoint,
-		"16-two-log-signatures":                 refusal.LogSignature,
-		"17-root-wrong-length":                  refusal.Checkpoint,
-		"18-signature-name-with-space":          refusal.Note,
-		"19-signature-unpadded-base64":          refusal.Note,
-		"20-signature-payload-too-long":         refusal.Note,
-		"21-origin-with-a-suffix":               refusal.Origin,
-		"22-origin-case-changed":                refusal.Origin,
-		"23-extra-final-newline":                refusal.Note,
-		"24-log-key-other-algorithm-length":     refusal.LogSignature,
-		"25-signature-nonzero-pad-bits":         refusal.Note,
-		"26-cosignature-nonzero-pad-bits":       refusal.Note,
-		"27-root-nonzero-pad-bits":              refusal.Checkpoint,
-		"28-witness-key-other-algorithm-length": refusal.Cosignature,
+		"01-unsigned":                                 refusal.Note,
+		"02-wrong-log-key":                            refusal.LogSignature,
+		"03-wrong-origin":                             refusal.LogSignature,
+		"04-forged-log-signature":                     refusal.LogSignature,
+		"05-one-cosignature-short":                    refusal.Quorum,
+		"06-no-cosignatures":                          refusal.Quorum,
+		"07-unnamed-witness-only":                     refusal.Quorum,
+		"08-forged-cosignature":                       refusal.Cosignature,
+		"09-extension-line":                           refusal.Checkpoint,
+		"10-wrong-body-origin":                        refusal.Origin,
+		"11-forged-cosignature-with-quorum":           refusal.Cosignature,
+		"12-second-line-from-one-witness":             refusal.Cosignature,
+		"13-ascii-dash-signature":                     refusal.Note,
+		"14-unterminated-signature-block":             refusal.Note,
+		"15-size-leading-zero":                        refusal.Checkpoint,
+		"16-two-log-signatures":                       refusal.LogSignature,
+		"17-root-wrong-length":                        refusal.Checkpoint,
+		"18-signature-name-with-space":                refusal.Note,
+		"19-signature-unpadded-base64":                refusal.Note,
+		"20-signature-payload-too-long":               refusal.Note,
+		"21-origin-with-a-suffix":                     refusal.Origin,
+		"22-origin-case-changed":                      refusal.Origin,
+		"23-extra-final-newline":                      refusal.Note,
+		"24-log-key-other-algorithm-length":           refusal.LogSignature,
+		"25-signature-nonzero-pad-bits":               refusal.Note,
+		"26-cosignature-nonzero-pad-bits":             refusal.Note,
+		"27-root-nonzero-pad-bits":                    refusal.Checkpoint,
+		"28-witness-key-other-algorithm-length":       refusal.Cosignature,
+		"29-root-unpadded":                            refusal.Checkpoint,
+		"30-noncanonical-size-under-untrusted-signer": refusal.LogSignature,
 	}
 	if err := checkCodes("checkpoints-bad", names, codes, refusal.Known); err != nil {
 		return err
