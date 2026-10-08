@@ -170,3 +170,68 @@ func TestACopyOfAPastEntryAppendedAfterTheHeldHeadIsADuplicate(t *testing.T) {
 		t.Errorf("the copy changed the active set: %d -> %d", before, len(a.last.State.ActiveWg))
 	}
 }
+
+// H3-a. Fifty cycles over an unchanged log are fifty checkpoint requests and
+// nothing else: no bundle, no tile. Before H4 every cycle re-fetched and
+// replayed the whole log, which at ten thousand entries and fifty nodes was
+// a self-inflicted denial of service (review F3a).
+func TestFiftyCyclesOverAnUnchangedLogFetchOnlyTheCheckpoint(t *testing.T) {
+	dir, _, _ := writableLog(t)
+	var mono time.Duration
+	a, log := incrementalNode(t, dir, t.TempDir(), &mono, &recorder{})
+	if err := a.Once(); err != nil {
+		t.Fatal(err)
+	}
+	log.reset()
+	for i := 1; i <= 50; i++ {
+		mono = time.Duration(i) * time.Second // well inside FullVerifyEvery
+		if err := a.Once(); err != nil {
+			t.Fatalf("cycle %d: %v", i, err)
+		}
+	}
+	if log.fetched["checkpoint"] != 50 {
+		t.Errorf("checkpoint fetched %d times in 50 cycles", log.fetched["checkpoint"])
+	}
+	for path, n := range log.fetched {
+		if strings.HasPrefix(path, "tile/") {
+			t.Errorf("%s fetched %d times over an unchanged log", path, n)
+		}
+	}
+}
+
+// H3-b. When the checkpoint changes, the next cycle verifies and adopts the
+// new head -- and fetches only what grew.
+func TestAChangedCheckpointIsAdoptedNextCycle(t *testing.T) {
+	dir, store, entries := writableLog(t)
+	var mono time.Duration
+	a, log := incrementalNode(t, dir, t.TempDir(), &mono, &recorder{})
+	if err := a.Once(); err != nil {
+		t.Fatal(err)
+	}
+	before := a.last.Checkpoint
+	appendRevoke(t, store, "nas", uint64(len(entries)))
+	log.reset()
+	mono = time.Second
+	if err := a.Once(); err != nil {
+		t.Fatal(err)
+	}
+	if a.last.Checkpoint.Size != before.Size+1 || a.last.Checkpoint.Root == before.Root {
+		t.Fatalf("the grown head was not adopted: %d -> %d", before.Size, a.last.Checkpoint.Size)
+	}
+	if a.last.State.Devices["nas"].Status == "active" {
+		t.Error("the appended revocation did not take effect")
+	}
+	want := map[string]bool{"checkpoint": true,
+		tlog.EntryBundlePath(0, int(a.last.Checkpoint.Size)): true,
+		tlog.TilePath(0, 0, int(a.last.Checkpoint.Size)):     true}
+	for path := range log.fetched {
+		if !want[path] {
+			t.Errorf("%s fetched for a one-entry growth", path)
+		}
+	}
+	for path := range want {
+		if log.fetched[path] == 0 {
+			t.Errorf("%s not fetched for a one-entry growth", path)
+		}
+	}
+}
