@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -554,4 +555,85 @@ func cosignedAtOf(t *testing.T, base string) int64 {
 		return 0
 	}
 	return got[0].Time.Unix()
+}
+
+// SEC-034. The log is the one server every node and the monitor read from,
+// and it served with http.ListenAndServe: no header, read, write or idle
+// timeout, and Go's 1 MB header cap. A client that sends half a request line
+// and then a byte a minute holds a connection -- and a goroutine and a file
+// descriptor -- for as long as it likes; enough of them and the log stops
+// answering anyone.
+func TestASlowHeadersClientIsCutOff(t *testing.T) {
+	was := readHeaderTimeout
+	readHeaderTimeout = 200 * time.Millisecond
+	t.Cleanup(func() { readHeaderTimeout = was })
+
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := newServer(l.Addr().String(), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	go srv.Serve(l)
+	t.Cleanup(func() { srv.Close() })
+
+	conn, err := net.Dial("tcp", l.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	// Half a request: never the blank line that ends the headers.
+	if _, err := conn.Write([]byte("GET /checkpoint HTTP/1.1\r\nHost: log\r\n")); err != nil {
+		t.Fatal(err)
+	}
+	if err := conn.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	started := time.Now()
+	_, err = io.ReadAll(conn)
+	var timeout net.Error
+	if errors.As(err, &timeout) && timeout.Timeout() {
+		t.Fatalf("the server held a half-sent request open for %s; it must cut it off", time.Since(started))
+	}
+	if took := time.Since(started); took > 3*time.Second {
+		t.Errorf("the slow client was cut off only after %s", took)
+	}
+}
+
+// A header bigger than any honest request is refused before it is buffered.
+func TestAnOversizedHeaderIsRefused(t *testing.T) {
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	srv.Config = newServer("", srv.Config.Handler)
+	srv.Start()
+	t.Cleanup(srv.Close)
+
+	req, err := http.NewRequest(http.MethodGet, srv.URL+"/checkpoint", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("X-Padding", strings.Repeat("x", 64<<10))
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusRequestHeaderFieldsTooLarge {
+		t.Errorf("a 64 KiB header was answered %d, want %d", resp.StatusCode, http.StatusRequestHeaderFieldsTooLarge)
+	}
+}
+
+// Every limit is set: the header and slow-client tests exercise two, and a
+// server that set those and forgot the write or idle timeout would pass them.
+func TestTheServerSetsEveryTimeout(t *testing.T) {
+	srv := newServer("127.0.0.1:0", http.NotFoundHandler())
+	for name, got := range map[string]time.Duration{
+		"ReadHeaderTimeout": srv.ReadHeaderTimeout, "ReadTimeout": srv.ReadTimeout,
+		"WriteTimeout": srv.WriteTimeout, "IdleTimeout": srv.IdleTimeout,
+	} {
+		if got <= 0 {
+			t.Errorf("%s is not set", name)
+		}
+	}
+	if srv.MaxHeaderBytes <= 0 || srv.MaxHeaderBytes > 64<<10 {
+		t.Errorf("MaxHeaderBytes = %d, want a cap well under Go's 1 MB default", srv.MaxHeaderBytes)
+	}
 }

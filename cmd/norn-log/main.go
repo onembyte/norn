@@ -151,7 +151,39 @@ func run(args []string) error {
 	if len(remote) > 0 && *interval > 0 {
 		go refresh(store, *interval)
 	}
-	return http.ListenAndServe(*listen, server.Handler())
+	return newServer(*listen, server.Handler()).ListenAndServe()
+}
+
+// The listener's limits (SEC-034). The log is the server every node and the
+// monitor read from, and it was served with http.ListenAndServe -- no header,
+// read, write or idle timeout and Go's 1 MB header cap -- so a client that
+// sent half a request line and then nothing held a connection, a goroutine
+// and a file descriptor for as long as it liked. Generous against honest use:
+// a request header is a few hundred bytes, a submission is one entry
+// (cbor.MaxEntryBytes, read under its own cap), and the largest response is
+// one tile or bundle. Variables so a test can shorten them.
+var (
+	readHeaderTimeout = 10 * time.Second
+	readTimeout       = 30 * time.Second
+	writeTimeout      = time.Minute
+	idleTimeout       = 2 * time.Minute
+)
+
+// maxHeaderBytes caps a request's header block well under Go's 1 MB default;
+// nothing a reader or submitter sends needs more than a few hundred bytes.
+const maxHeaderBytes = 16 << 10
+
+// newServer is the log's HTTP server with every limit set.
+func newServer(addr string, handler http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              addr,
+		Handler:           handler,
+		ReadHeaderTimeout: readHeaderTimeout,
+		ReadTimeout:       readTimeout,
+		WriteTimeout:      writeTimeout,
+		IdleTimeout:       idleTimeout,
+		MaxHeaderBytes:    maxHeaderBytes,
+	}
 }
 
 // checkKeyMatchesAnchor refuses a key the network's own trust file does not
