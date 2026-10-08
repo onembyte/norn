@@ -860,3 +860,82 @@ design beside D-065's closed codes, not a v1 fix.
 content: the signers re-issue with a new `ts`. That was already true of an
 exact repeat under D-031, so the rule becomes simpler, not stricter in kind.
 `log/89-two-sig-base` becomes `dup-entry`.
+
+## D-071 · A node that lost its state corroborates before it trusts, and a node that kept it remembers how old its view was (2026-10-07)
+Prompted by the IETF KEYTRANS architecture draft -10 (2026-10-07), whose §7.2
+"State Loss" says what this threat model borrowed its structure from without
+yet saying: a client that loses its local state loses its ability to detect a
+fork, and the mitigations are parameters — the interval between out-of-band
+checks and the auditor's maximum lag both far below the time between
+state-loss events — and, for clients whose state is ephemeral, a third party
+or a policy of not consuming what was inserted too recently. Norn's state is
+the stored checkpoint (§10) and the witness clock (§15); its out-of-band check
+is peer gossip every `T_g` (KT §3.3's third mechanism); its auditor is the
+witness quorum, with maximum lag `S`. `T_g` = 30 s and `S` = 10 min are both
+far below the interval between reinstalls, so the parameter rule holds. Three
+things did not, found by reading the agent against §7.2 (audit SEC-004's open
+remainder is two of them):
+
+**(a) The witness clock did not survive a restart.** The node's estimate of
+now was seeded by the first head to verify in the process, at age zero. A node
+that had called its view `degraded` for two hours — or had dropped every peer
+past `S_hard` — restarted into `fresh` on the very same head when the log
+served it again; a restart is something whoever keeps a log stale can also
+cause, so `S_hard` was a limit a restart lifted. **Decision:** the node writes
+its estimate of witness-time now — the newest quorum time it has seen, carried
+forward by monotonic time — to `<state_dir>/clock`, durably, whenever that
+estimate has advanced a minute since the last write, whatever the log is doing.
+At start the clock is seeded from the file, as a quorum time observed at
+monotonic zero. The seed is a lower bound on now — the estimate was true when
+written and time has not run backwards — so a head's age after a restart is at
+least the age it had at the last write, and nothing is called fresher than it
+was. A file that does not parse is ignored and reported; a missing one is a
+first start and silent. Seeding the clock from the restored head was rejected
+in H1 and stays rejected: a head's quorum time says when witnesses signed it,
+not how long this node has held it.
+
+**(b) A restarted node asked no peers until something verified**, because the
+peer list was read from the head verified in this process; a node rebooted
+while its log was down could not use the gossip that exists for exactly that.
+**Decision:** the peer list is read from the head the node holds — the restored
+one until something verifies. Those peers verified under the anchor as proven
+when the node last ran. The restored head is still never enforced (D-069).
+
+**(c) A node with no held head** — first start, state directory lost, mirror
+unusable — has nothing to compare its first head against, so §10 cannot catch
+a fork or a rollback for it: the first head verifies at any size, is enforced
+at once, and is not checked against a peer until `T_g` later. If that head is
+a branch cosigned by 2k−N colluding witnesses (A9), the node enforces the
+attacker's branch for a round and then freezes on it — the outcome §11 exists
+to prevent, and one a node with history would never reach, because it would
+have refused the branch. This is KT §7.2's "not consuming what was inserted
+too recently", for a node whose whole view was inserted recently.
+**Decision:** a node holding no previous head treats its first verified head
+as **uncorroborated**. It asks its proven peers in the same cycle, before
+enforcing, and in every following cycle until one answers; a peer whose head
+verifies under the anchor with the first head as the stored checkpoint
+corroborates it (equal or extending it, and then adopted as today). While
+uncorroborated the head **is** enforced when no peer answers — a node alone,
+or one whose peers are reachable only through the tunnel it has yet to
+configure (owner mode on a fresh interface), must be able to start — and the
+node says so once (`FIRST_HEAD_UNCORROBORATED`). A fork proven against a head
+this node enforced without corroboration leaves it no branch it can stand
+behind: the desired set is emptied, as past `S_hard`, and the node freezes.
+A node with no peers configured corroborates with nobody; its protection
+after state loss is the witness quorum alone, which the operator chose when
+leaving gossip off.
+
+**Rejected.** *Hold the first head until a peer answers* — an owner-mode node
+on a fresh interface can reach no peer until it enforces, and the first node
+of a network never could. *Freeze on the uncorroborated branch as §11 does
+for a held one* — continuity is §11's argument, and a node that enforced the
+branch a cycle ago has none. *Ask the witnesses* — `tlog-witness` has no read
+endpoint, and witnesses would then sit on the enforcement path. *Partition or
+mirror other networks' logs* (KT §5.3) — one log per network, replicated to
+every node, is the design; directories are a non-goal.
+
+**Cost, accepted.** One small durable write a minute; up to `r` peer requests
+per cycle while a head is uncorroborated, which ends with the first answer; a
+fresh node whose peers are reachable adopts `T_g` sooner than today. No wire
+format and no vector changes. `SPEC.md` §13.2 and §15 carry the node-contract
+sentences; `THREAT-MODEL.md` gains A13.

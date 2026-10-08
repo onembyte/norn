@@ -2,7 +2,7 @@
 
 Written **2026-09-18** (plan part 2). Everything in `SPEC.md` must trace back to
 an adversary here. Structure borrowed from Sigsum's design doc and the KEYTRANS
-architecture draft; content is Norn's.
+architecture draft (-08 then; A13 reads -10, 2026-10-07); content is Norn's.
 
 The one-sentence version, in Sigsum's style:
 
@@ -145,6 +145,16 @@ A fail-open bug admits rogue peers; a fail-closed bug takes the network down.
 |---|
 | Observe mode mandatory before enforce (D-005). Fuzzed decoder and replay (Phase 1 gate). Owner mode has no race window; watchdog mode has one (§5). Cold-model reimplementation from spec + vectors as an independence check. |
 
+### A13 — State loss
+A node loses what it held: a reinstall, a wiped or failed disk, a mirror that no longer verifies, or a first start. KEYTRANS architecture -10 §7.2 (2026-10-07): a client that loses its state loses its ability to detect a fork; the mitigations are an out-of-band check interval and an auditor lag both far below the time between state-loss events, and not consuming what was inserted too recently.
+
+| Case | Norn (D-071) |
+|---|---|
+| Restart or reboot with the state directory intact | §10's comparison still protects: the stored checkpoint, the learned keys and policy, and any fork evidence are read back (D-069). The witness clock is read back too, so a view that was `degraded` or `hard_stale` is so again; a restart lifts no staleness limit. The peers the held head proves are asked even before anything verifies here. |
+| No held head: first start, state lost, mirror unusable | The first verified head is **uncorroborated**: proven peers are asked in the same cycle and every cycle after until one answers; a peer holding another branch is a fork proven before anything was enforced. With no peer answering the head is enforced — a node must be able to start — and said so; a fork proven afterwards empties the peer set rather than freezing on the attacker's branch. Rollback exposure in that window is bounded by `S` (an older head is `degraded` past it) and ends at the first peer answer, at most `T_g` once the tunnel is up. |
+| No peers configured | Nobody to corroborate with: the witness quorum alone, and `S`. The operator chose that by leaving gossip off. |
+| Parameters | `T_g` = 30 s and `S` = 10 min against reinstalls measured in months: KT's "much less than" holds by three orders of magnitude. |
+
 ## 4. Guarantees
 
 | # | Guarantee | Rests on |
@@ -187,4 +197,5 @@ Availability under A1/A2/A9 · stolen WG private key before revocation · collud
 - **Root quorum = 1 in homelabs** is the realistic weak point (A4). Part 7 must make a 2-of-3 root with one key on paper/hardware *easy*, or nobody will do it.
 - **Freeze with all paths cut** (A1 + A5 together) is undetectable until a path returns; the degraded-state UX must make "I haven't seen a fresh checkpoint in 40 min" impossible to miss. Part 6.
 - **Watchdog window** (§5) — measure it; if > 1 s in practice, owner mode becomes the only enforce mode.
+- **State loss and gossip** (A13): a node that lost its state is protected after its first head only by its peers; a mesh whose nodes cannot reach each other over the tunnel (strict allowed-ips, no node-to-node routes) has no gossip and so no corroboration. H8's deployment kit must check that peers are reachable on the gossip port, and `norn status` should say when none has ever answered.
 - **Whether witnesses alone are enough**, or a consensus layer buys anything against A2/A9 — this is exactly the question `LEDGER-OPTIONS.md` (part 3) must answer with these adversaries as the scoring criteria.

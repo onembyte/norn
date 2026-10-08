@@ -1731,6 +1731,19 @@ held, not enforced: as above, a node on which no checkpoint has verified since
 startup leaves the interface untouched, and a restored checkpoint is not
 enforced until a checkpoint verifies in the new process.
 
+A node's witness clock persists as well (D-071): its estimate of witness-time
+now is written to the state directory as it advances, and at startup the clock
+is seeded from that estimate as an instant observed at monotonic zero, so a
+checkpoint is never judged fresher after a restart than it was before one. A
+node holding no stored checkpoint — a first start, or state that was lost —
+treats its first verified checkpoint as uncorroborated: it asks its proven
+peers in the same cycle, before enforcing, and in every cycle after until one
+answers; a peer's checkpoint that verifies with the first as the stored
+checkpoint corroborates it. With no peer answering the checkpoint is enforced
+and the node reports it. A fork proven against a checkpoint the node enforced
+uncorroborated makes the enforcer's desired set empty, as `hard_stale` does,
+and freezes the node.
+
 ### 13.3 Published proven set
 
 The in-memory set controls the enforcer. A node also publishes its last
@@ -1835,7 +1848,9 @@ quorum time: freshness is `unknown`, not an assertion of recency. On verifying
 a checkpoint with quorum time, the node records that time and the local
 monotonic reading. Its estimate of now is the newest quorum time it has seen
 plus monotonic elapsed time since seeing it; an older time MUST NOT move that
-estimate backwards. The age of a held checkpoint is this estimate minus that
+estimate backwards. The estimate survives a restart: the node writes it to its
+state directory as it advances and seeds the clock from it at startup, as an
+instant observed at monotonic zero (§13.2, D-071). The age of a held checkpoint is this estimate minus that
 checkpoint's quorum time. The **freshness states and their ordered thresholds
 are §8.1**, with `detect/staleness.json` as their table. Wall time MUST NOT
 decide freshness or which devices are proven (§5.3).

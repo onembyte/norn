@@ -39,8 +39,11 @@ verification logic but no chain replay or sync; its author's rollout note —
 
 ## 2. Key transparency (messaging)
 
-- **IETF KEYTRANS WG** — architecture draft -08 (Apr 2026), protocol draft on
-  standards track. Scope: end-user public keys for E2E *messaging*, billions of
+- **IETF KEYTRANS WG** — architecture draft -10 (7 Oct 2026; -08 was Apr 2026),
+  protocol draft on standards track. Its §7.2 (state loss) and §3.3 (three ways
+  to detect a fork: a third party, an anonymous channel, peer gossip) are the
+  model `THREAT-MODEL.md` A13 and D-071 answer; its §5.3 (partitioning across
+  logs) is a directory concern Norn does not have. Scope: end-user public keys for E2E *messaging*, billions of
   identities, prefix trees + log trees. Not network access; deliberately
   over-engineered for a closed mesh of 10¹–10⁵ devices.
 - **WhatsApp, Apple iMessage CKV, Signal** — shipped KT, same scope.
@@ -137,7 +140,7 @@ Each piece has shipped somewhere. The assembly has not. That is Norn.
 - Headscale #1307 (Tailnet Lock request) — https://github.com/juanfont/headscale/issues/1307
 - Headscale #1432 (compromise considerations) — https://github.com/juanfont/headscale/issues/1432
 - IETF KEYTRANS — https://datatracker.ietf.org/wg/keytrans/about/
-- KEYTRANS architecture -08 — https://datatracker.ietf.org/doc/draft-ietf-keytrans-architecture/08/
+- KEYTRANS architecture -10 — https://datatracker.ietf.org/doc/draft-ietf-keytrans-architecture/10/
 - KEYTRANS protocol — https://datatracker.ietf.org/doc/draft-ietf-keytrans-protocol/
 - Static CT API — https://c2sp.org/static-ct-api@v1.1.0
 - tlog-witness — https://c2sp.org/tlog-witness

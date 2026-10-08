@@ -133,6 +133,12 @@ incident that produced it. Read that section before the first firing.
   — the preimage without `sigs` — for every entry, accepted or rejected
   (audit SEC-001, option A); per-device sequence numbers are recorded for
   v1.1.
+- **D-071 (taken 2026-10-07, under the owner's instruction to review KEYTRANS
+  -10 §7.2 and build what it shows missing): the witness clock survives a
+  restart; a restarted node asks the peers its held head proves; a node with
+  no held head corroborates its first head with a peer before trusting it for
+  long**, enforcing it meanwhile only when no peer answers. Node contract; no
+  wire format, no vector.
 - **D-069 (recorded 2026-10-07 in H1-e): a node's stored checkpoint, and what it
   learned from it, survive a restart and a reboot.**
   §10's `stored_cp` and §11 rule 4's "forever" already imply it; the node did
@@ -256,6 +262,34 @@ a past entry re-appended with one unresolvable signature is accepted again.
   §4.0/§5.1/§5.2/§12.1, the log regenerated once with the negatives, vector 89
   re-declared, the "open defect" notes removed from README and
   `THREAT-MODEL.md`.
+
+#### HS-004r · 6.5m-sec-004r · State loss (SEC-004's remainder; KEYTRANS -10 §7.2; D-071) ⏱3 🔒
+*Why:* three gaps found by reading the agent against KT §7.2 on 2026-10-07,
+recorded in D-071: the witness clock restarts at the first head seen, so a
+restart lifts `S` and `S_hard`; a rebooted node reads its peer list from the
+head verified in this process, so it cannot gossip while its log is down; a
+node with no held head enforces its first head unchecked for a whole `T_g`.
+- a. **Red test:** a node `degraded` (and, with `S_hard`, `hard_stale`) on a
+  head restarts over the same state directory with the log serving the same
+  head; today it is `fresh`. Write the clock's estimate of now to
+  `<state_dir>/clock` (`durable.WriteFile`, a minute's cadence, whatever the
+  log does); seed the clock from it at start as a quorum time at monotonic
+  zero. A file that does not parse is `CLOCK_UNUSABLE` and ignored; a missing
+  one is silent. Controls: no seed; no write.
+- b. **Red test:** a node restarted with its log unreachable returns its
+  proven peers from `PeerAddresses`, and a peer carries it (T2 after a
+  reboot). `PeerAddresses` reads `held()`. Control: read `a.last`.
+- c. 🧠 **Red tests:** (1) a fresh owner node whose log serves a branch and
+  whose one peer holds the real log freezes in its first cycle with the
+  table untouched; (2) a fresh node whose peer is unreachable enforces, says
+  `FIRST_HEAD_UNCORROBORATED`, and on the next cycle — the peer up on the
+  other branch, well inside `T_g` — proves the fork, empties the table and
+  freezes; (3) a fresh node whose peer agrees is corroborated and asks again
+  only on `T_g`. Controls: no same-cycle round (1 fails); no per-cycle retry
+  (2 fails); no empty set on an uncorroborated fork (2's table assertion
+  fails).
+*Acceptance:* the tests, controls, full gate; `THREAT-MODEL.md` A13 and
+`SPEC.md` §13.2/§15 as D-071 says.
 
 #### H2 · 6.5m-ii · Network budgets: no fetch can stall enforcement (F2) ⏱2 🔒
 *Why:* `gossip.Peer.Fetch` (`internal/gossip/server.go:111`) uses
