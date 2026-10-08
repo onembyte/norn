@@ -758,11 +758,19 @@ func (a *Agent) fanout() int {
 // Only proven peers, and the distinction is the whole point. An unproven key
 // on the interface is exactly what Norn exists to notice; asking it for a
 // checkpoint would be asking the intruder what the network looks like.
+//
+// The head consulted is the one this node holds -- the restored one until
+// something verifies here (D-071 b). A node rebooted while its log is down is
+// the ordinary way to need gossip, and reading the peer list only from a head
+// verified in this process left that node nobody to ask until the log it
+// could not reach had answered. The restored head's peers verified under the
+// anchor when the node last ran; the head itself is still never enforced.
 func (a *Agent) PeerAddresses(port int) []string {
-	if a.last == nil || port <= 0 {
+	held := a.held()
+	if held == nil || port <= 0 {
 		return nil
 	}
-	desired, _ := a.desired(a.last)
+	desired, _ := a.desired(held)
 	out := make([]string, 0, len(desired))
 	for _, peer := range desired {
 		if addr, ok := gossip.Address(peer.AllowedIPs, port); ok {

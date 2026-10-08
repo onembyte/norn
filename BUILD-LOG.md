@@ -635,7 +635,7 @@ plan before the first line of code, and stops at **[decision]** and **[user]**.
 | 6.5m-iv | H4 | 🧠 Incremental fetch and replay (F3b–c) | a resumable replayer equal to a full replay at every split point; `VerifyFrom` equal to `Verify` code for code on every served, detect and checkpoint negative; one new entry fetches one bundle and the changed tiles | ⬜ |
 | 6.5m-sec-004r | HS-004r | 🧠 State loss: SEC-004's remainder, read against KEYTRANS -10 §7.2 (D-071) | a, b and c below; `THREAT-MODEL.md` A13; `SPEC.md` §13.2/§15 | ⬜ |
 | 6.5m-sec-004r-a | HS-004r-a | The witness clock survives a restart (D-071 a) | a node `degraded` or `hard_stale` on a head is so again after a restart on the same head; `<state_dir>/clock`, durable, a minute's cadence; a bad file reported and ignored |✅ |
-| 6.5m-sec-004r-b | HS-004r-b | Peers from the held head (D-071 b) | a node rebooted with its log down is carried by a peer its restored head proves | ⬜ |
+| 6.5m-sec-004r-b | HS-004r-b | Peers from the held head (D-071 b) | a node rebooted with its log down is carried by a peer its restored head proves |✅ |
 | 6.5m-sec-004r-c | HS-004r-c | 🧠 A first head is corroborated before it is trusted for long (D-071 c) | a fresh node whose peer holds the other branch freezes before enforcing; one whose peers are unreachable enforces, says so, and empties the set when the fork appears; a corroborated node asks again only on `T_g` | ⬜ |
 | 6.5m-sec-005bc | HS-005bc | Evidence checked under learned keys and the replayed policy (SEC-005 b, c) | `forkevidence.Check` takes the key set and the node's current policy; the agent, `pollEvidence` and `verify-evidence` pass them | ⬜ |
 | 6.5m-sec-027 | HS-027 | A wrong-length witness line is refused, not skipped (SEC-027) | as the log side already is (d-vii-a), after checking §10.1 | ⬜ |
@@ -675,6 +675,12 @@ plan before the first line of code, and stops at **[decision]** and **[user]**.
 | 7.0 | H17 | `ACTION-PLAN.md` and the email draft | a test plan for the owner; an email drafted in the form `wireguard.com` asks for, read from the page at the time; a pre-send checklist; **nothing sent** | ⬜ |
 | U1 | — | Observe mode on the homelab mesh (6.5m-vii) | **[user]** one node a day, then every node for seven days | ⬜ |
 | U2–U7 | — | Lab, nginx, OpenTimestamps, NAS, phone enrollment, LocalAPI on a real node, outside people | **[user]** `HARDENING-PLAN.md` Stage G | ⬜ |
+
+- **6.5m-sec-004r-b — a rebooted node can name the peers its held head proves.**
+  - **Red first:** a routed owner node runs once over a state directory; a second one over the same directory with the log unreachable from the start says `NO_STATE_YET`, as D-069 requires — and `PeerAddresses` returns nothing. Gossip exists for the node whose log is down, and a reboot while the log is down is the ordinary way to arrive there; audit SEC-004's open point 2.
+  - **The fix (D-071 b):** `PeerAddresses` consults `held()` — the restored head until something verifies in this process — instead of `a.last`. Those peers verified under the anchor when the node last ran, and `nornd` already wires `Peers` to this function, so a rebooted node's first cycle can now ask them. The restored head is still only held: the same test checks that nothing was installed.
+  - **Guard:** with no head at all — a first start with the log down — there is no peer to name. **One control**, restored byte for byte: reading `a.last` again fails the reboot test and nothing else.
+  - **Gate:** generators first (no change under `testdata/`), then `make test` (race) alone — green in all 49 packages with tests once the README count the guard asked for was set (958 tests) — `vectors-check`, 224 reference tests, `lint`, `fmt-check`, `vet` clean.
 
 - **6.5m-sec-004r-a — the witness clock survives a restart; `S_hard` is no longer a limit a restart lifts.**
   - **Red first, and the line that matters:** a node on the fixture log, two hours on the same head, is `degraded` (and `hard_stale` with `S_hard` = 1 h, its table emptied). A second agent over the same state directory, monotonic clock at zero, the log serving the very same head: `fresh`, no alarm, and "a restart reopened 6 peers an S_hard drop had closed" — audit SEC-004's open point 1, reproduced.
