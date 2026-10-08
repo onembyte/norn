@@ -64,6 +64,11 @@ const (
 	// restart, and its first cycle is as exposed to a rollback as every
 	// restart was before D-069. The mirror is ignored, never trusted.
 	MirrorUnusable = "MIRROR_UNUSABLE"
+	// ClockUnusable: the witness clock this node kept when it last ran could
+	// not be read back, or cannot be kept now. Until a head verifies the node
+	// has no clock, as on a first start -- and a view it had called stale may
+	// be called fresh again, which is what the file exists to prevent (D-071).
+	ClockUnusable = "CLOCK_UNUSABLE"
 	// AdoptedFromPeer: this node could not reach the log and took a checkpoint
 	// from a peer instead. It is worth saying out loud -- the log being
 	// unreachable is news even when gossip covered for it.
@@ -72,6 +77,14 @@ const (
 	// point of asking several is that any of them may be broken, behind, or
 	// lying.
 	PeerRefused = "PEER_REFUSED"
+)
+
+// clockFile, under the state directory, holds this node's estimate of
+// witness-time now when it last wrote it: clockMagic, then the instant as
+// Unix seconds, then a newline (D-071).
+const (
+	clockFile  = "clock"
+	clockMagic = "norn-clock/v1\n"
 )
 
 // DefaultDegradedAlarmEvery is GOSSIP part 5's "alarm every 5 min".
@@ -196,6 +209,10 @@ type Agent struct {
 	// clock remembers the newest instant any quorum vouched for. It is the
 	// node's only clock for deciding whether what it holds is current.
 	clock freshness.Clock
+	// clockWritten is the estimate of now last kept on disk (D-071 a), so a
+	// restart does not call a view fresher than this process had.
+	clockWritten    time.Time
+	clockWrittenSet bool
 	// frozen means this node has proof its log forked and will accept nothing
 	// further under this anchor (§11). frozenBy names the evidence, and
 	// frozenNote says why that file is not itself proof when it is not: a
@@ -280,9 +297,10 @@ func New(cfg Config) (*Agent, error) {
 		// together do not ask the same peers at the same moments.
 		peerOrder: rand.New(rand.NewSource(time.Now().UnixNano()))}
 	// A fork this node proved earlier outlives the process (§11), and so
-	// does the head it held (D-069).
+	// does the head it held (D-069) and how old it had become (D-071).
 	agent.loadFreeze()
 	agent.restoreHead()
+	agent.restoreClock()
 	return agent, nil
 }
 
@@ -458,6 +476,7 @@ func (a *Agent) Once() error {
 			// boot -- an outage Norn caused, protecting nothing.
 			a.emit(Event{Kind: NoStateYet,
 				Message: "no state has verified yet; the interface is left untouched"})
+			a.saveClock()
 			return verifyErr
 		}
 		a.emit(Event{Kind: EnforcingOnStaleState,
@@ -481,6 +500,7 @@ func (a *Agent) Once() error {
 	if verifyErr == nil && result != direct && result.QuorumTime != nil {
 		a.clock.Observe(*result.QuorumTime, a.cfg.Mono())
 	}
+	a.saveClock()
 	fresh := a.freshness(result)
 	a.reportFreshness(fresh)
 

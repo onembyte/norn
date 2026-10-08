@@ -326,6 +326,7 @@ var eventLevels = map[string]slog.Level{
 	agent.Degraded:              slog.LevelWarn,
 	agent.MirrorUnusable:        slog.LevelWarn,
 	agent.MirrorFailed:          slog.LevelWarn,
+	agent.ClockUnusable:         slog.LevelWarn,
 	agent.ClockSkew:             slog.LevelWarn,
 	reconcile.UnprovenPeer:      slog.LevelWarn,
 	reconcile.EvictedPeer:       slog.LevelWarn,
