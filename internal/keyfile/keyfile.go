@@ -23,10 +23,10 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
-	"runtime"
 
 	"github.com/onembyte/norn/internal/sshwire"
+
+	"github.com/onembyte/norn/internal/durable"
 )
 
 const (
@@ -261,51 +261,14 @@ func Write(path string, key ed25519.PrivateKey, comment string) error {
 	return publishKey(path, raw, (*os.File).Sync)
 }
 
+// publishKey is durable.Publish with this package's words on the one error
+// an operator will meet (H4-d folds the twin that lived here into durable).
 func publishKey(path string, raw []byte, syncFile func(*os.File) error) error {
-	temp, err := os.CreateTemp(filepath.Dir(path), ".norn-key-*")
+	err := durable.PublishWith(path, raw, 0o600, syncFile)
+	if errors.Is(err, durable.ErrExists) {
+		return fmt.Errorf("keyfile: %s already exists; remove it deliberately if you mean to replace that identity", path)
+	}
 	if err != nil {
-		return fmt.Errorf("keyfile: %w", err)
-	}
-	defer os.Remove(temp.Name())
-	if err := temp.Chmod(0o600); err != nil {
-		temp.Close()
-		return fmt.Errorf("keyfile: %w", err)
-	}
-	if _, err := temp.Write(raw); err != nil {
-		temp.Close()
-		return fmt.Errorf("keyfile: %w", err)
-	}
-	// Flush the bytes before publishing a name that another process can read.
-	if err := syncFile(temp); err != nil {
-		temp.Close()
-		return fmt.Errorf("keyfile: %w", err)
-	}
-	if err := temp.Close(); err != nil {
-		return fmt.Errorf("keyfile: %w", err)
-	}
-	// Linking is exclusive: a name created after Stat must never be replaced.
-	if err := os.Link(temp.Name(), path); err != nil {
-		if errors.Is(err, os.ErrExist) {
-			return fmt.Errorf("keyfile: %s already exists; remove it deliberately if you mean to replace that identity", path)
-		}
-		return fmt.Errorf("keyfile: %w", err)
-	}
-	// Remove the temporary before flushing the directory, so both name changes
-	// survive together with the already-synced key bytes.
-	if err := os.Remove(temp.Name()); err != nil {
-		return fmt.Errorf("keyfile: %w", err)
-	}
-	// Windows cannot open a directory for writing and orders its metadata
-	// itself, so the directory sync is skipped there, as internal/durable does.
-	if runtime.GOOS == "windows" {
-		return nil
-	}
-	dir, err := os.Open(filepath.Dir(path))
-	if err != nil {
-		return fmt.Errorf("keyfile: %w", err)
-	}
-	defer dir.Close()
-	if err := syncFile(dir); err != nil {
 		return fmt.Errorf("keyfile: %w", err)
 	}
 	return nil

@@ -21,6 +21,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/onembyte/norn/internal/durable"
 	"github.com/onembyte/norn/internal/tlog"
 )
 
@@ -95,14 +96,25 @@ func Write(dir string, cp tlog.Checkpoint, signedCheckpoint string, entries [][]
 	return write(dir, "checkpoint", []byte(signedCheckpoint))
 }
 
+// writeFile is the one writer every file of the mirror goes through --
+// durable, so a head on disk never names a file the disk did not receive
+// (H4-d; before this the mirror synced nothing, and after a power cut its
+// restored head could point at a torn bundle, which D-069's restart then
+// reported unusable). Replaceable so a test can watch the order.
+var writeFile = durable.WriteFile
+
+// write puts a file in place if its bytes are not already there. A new head
+// changes one partial bundle, the partial tiles and the checkpoint; the full
+// bundles and tiles below it are the same bytes at the same paths, and
+// rewriting them every head would turn a growing log into a disk benchmark
+// of its own history.
 func write(dir, rel string, data []byte) error {
 	path := filepath.Join(dir, filepath.FromSlash(rel))
+	if current, err := os.ReadFile(path); err == nil && bytes.Equal(current, data) {
+		return nil
+	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	temp := path + ".tmp"
-	if err := os.WriteFile(temp, data, 0o644); err != nil {
-		return err
-	}
-	return os.Rename(temp, path)
+	return writeFile(path, data, 0o644)
 }

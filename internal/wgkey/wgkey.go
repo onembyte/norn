@@ -19,9 +19,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
-	"runtime"
 	"strings"
+
+	"github.com/onembyte/norn/internal/durable"
 )
 
 // KeyLen is the length of a WireGuard key, public or private.
@@ -114,51 +114,14 @@ func WritePrivate(path string, private []byte) error {
 	return publishKey(path, []byte(Format(private)+"\n"), (*os.File).Sync)
 }
 
+// publishKey is durable.Publish with this package's words on the one error
+// an operator will meet (H4-d folds the twin that lived here into durable).
 func publishKey(path string, raw []byte, syncFile func(*os.File) error) error {
-	temp, err := os.CreateTemp(filepath.Dir(path), ".norn-wg-*")
+	err := durable.PublishWith(path, raw, 0o600, syncFile)
+	if errors.Is(err, durable.ErrExists) {
+		return fmt.Errorf("wgkey: %s already exists; remove it deliberately if you mean to replace that key", path)
+	}
 	if err != nil {
-		return fmt.Errorf("wgkey: %w", err)
-	}
-	defer os.Remove(temp.Name())
-	if err := temp.Chmod(0o600); err != nil {
-		temp.Close()
-		return fmt.Errorf("wgkey: %w", err)
-	}
-	if _, err := temp.Write(raw); err != nil {
-		temp.Close()
-		return fmt.Errorf("wgkey: %w", err)
-	}
-	// Flush the bytes before publishing a name that another process can read.
-	if err := syncFile(temp); err != nil {
-		temp.Close()
-		return fmt.Errorf("wgkey: %w", err)
-	}
-	if err := temp.Close(); err != nil {
-		return fmt.Errorf("wgkey: %w", err)
-	}
-	// Linking is exclusive: a name created after Stat must never be replaced.
-	if err := os.Link(temp.Name(), path); err != nil {
-		if errors.Is(err, os.ErrExist) {
-			return fmt.Errorf("wgkey: %s already exists; remove it deliberately if you mean to replace that key", path)
-		}
-		return fmt.Errorf("wgkey: %w", err)
-	}
-	// Remove the temporary before flushing the directory, so both name changes
-	// survive together with the already-synced key bytes.
-	if err := os.Remove(temp.Name()); err != nil {
-		return fmt.Errorf("wgkey: %w", err)
-	}
-	// Windows cannot open a directory for writing and orders its metadata
-	// itself, so the directory sync is skipped there, as internal/durable does.
-	if runtime.GOOS == "windows" {
-		return nil
-	}
-	dir, err := os.Open(filepath.Dir(path))
-	if err != nil {
-		return fmt.Errorf("wgkey: %w", err)
-	}
-	defer dir.Close()
-	if err := syncFile(dir); err != nil {
 		return fmt.Errorf("wgkey: %w", err)
 	}
 	return nil

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/onembyte/norn/internal/logclient"
 	"github.com/onembyte/norn/internal/replay"
@@ -235,4 +236,72 @@ func fixtureLogKey(t *testing.T) ed25519.PrivateKey {
 		t.Fatalf("no usable log key seed")
 	}
 	return ed25519.NewKeyFromSeed(seed)
+}
+
+// H4-d. A new head used to rewrite every bundle and every tile, and sync none
+// of them. A 300-entry log grown by one changes one partial bundle, one
+// partial tile and the checkpoint; the full bundle, the full tile and the
+// level-1 tile are the same bytes at the same paths and are left alone.
+func TestAGrownLogRewritesOnlyWhatChanged(t *testing.T) {
+	large, err := logclient.Verify(logclient.Dir(filepath.Join(vectors(), "served-large")), anchorOf(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	if err := Write(dir, large.Checkpoint, large.SignedCheckpoint, large.Served); err != nil {
+		t.Fatal(err)
+	}
+	before := modTimes(t, dir)
+	time.Sleep(20 * time.Millisecond) // so a rewrite is visible in the modification times
+
+	grown := append(append([][]byte(nil), large.Served...), []byte("one more entry"))
+	if err := Write(dir, headOf(t, grown), headFor(t, grown), grown); err != nil {
+		t.Fatal(err)
+	}
+	after := modTimes(t, dir)
+	for _, rel := range []string{tlog.EntryBundlePath(0, tlog.TileWidth), tlog.TilePath(0, 0, tlog.TileWidth), tlog.TilePath(1, 0, 1)} {
+		path := filepath.Join(dir, filepath.FromSlash(rel))
+		if !after[path].ModTime().Equal(before[path].ModTime()) {
+			t.Errorf("%s was rewritten although its bytes did not change", rel)
+		}
+	}
+	for _, rel := range []string{"checkpoint", tlog.EntryBundlePath(1, 45), tlog.TilePath(0, 1, 45)} {
+		if _, ok := after[filepath.Join(dir, filepath.FromSlash(rel))]; !ok {
+			t.Errorf("%s was not written", rel)
+		}
+	}
+}
+
+// Every file goes through one writer, and the checkpoint goes through it
+// last: a crash leaves a mirror advertising less than it holds, never more.
+func TestTheCheckpointIsWrittenLastAndOnlyChangesAreWritten(t *testing.T) {
+	var order []string
+	was := writeFile
+	writeFile = func(path string, data []byte, perm os.FileMode) error {
+		order = append(order, filepath.Base(path))
+		return was(path, data, perm)
+	}
+	t.Cleanup(func() { writeFile = was })
+
+	result := verified(t)
+	dir := t.TempDir()
+	if err := Write(dir, result.Checkpoint, result.SignedCheckpoint, result.Served); err != nil {
+		t.Fatal(err)
+	}
+	if len(order) == 0 || order[len(order)-1] != "checkpoint" {
+		t.Fatalf("writes in order %v; the checkpoint must be last", order)
+	}
+
+	// The same head, re-signed: only the checkpoint's bytes differ.
+	order = nil
+	resigned := headFor(t, result.Served)
+	if resigned == result.SignedCheckpoint {
+		t.Fatal("the re-signed head is byte-identical; the test cannot tell a rewrite")
+	}
+	if err := Write(dir, result.Checkpoint, resigned, result.Served); err != nil {
+		t.Fatal(err)
+	}
+	if len(order) != 1 || order[0] != "checkpoint" {
+		t.Errorf("a re-signed head wrote %v; only the checkpoint changed", order)
+	}
 }
