@@ -187,6 +187,47 @@ func TestEveryGenesisCaseAbortsAndMatchesItsState(t *testing.T) {
 	}
 }
 
+// Cold gate run 13, D17. `genesis/` holds the ways entry 0 MUST abort, and a
+// bound has two sides: `genesis-good/` holds geneses a reader MUST accept,
+// one single-entry log each. Its first is a `name` exactly at §4.0's 64-byte
+// cap, which a reader whose cap was 63 refused -- aborting the whole network
+// -- and no vector said so.
+func TestEveryAcceptedGenesisReplaysToItsState(t *testing.T) {
+	dirs, err := filepath.Glob(filepath.Join(vectorRoot(), "genesis-good", "*"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var checked int
+	for _, dir := range dirs {
+		info, err := os.Stat(dir)
+		if err != nil || !info.IsDir() {
+			continue
+		}
+		anchor, entries, _ := loadCase(t, dir)
+		st := Replay(anchor, entries)
+		if len(st.Rejected) != 0 || st.Size != 1 {
+			t.Errorf("%s: a genesis §4.0 permits must replay to size 1 with nothing rejected, "+
+				"got size %d and %+v", dir, st.Size, st.Rejected)
+			continue
+		}
+		got, err := st.MarshalCanonical()
+		if err != nil {
+			t.Fatal(err)
+		}
+		want, err := os.ReadFile(filepath.Join(dir, "state.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(got, want) {
+			t.Errorf("%s: state differs from its state.json", dir)
+		}
+		checked++
+	}
+	if checked == 0 {
+		t.Error("no accepted genesis case: every genesis vector is a refusal")
+	}
+}
+
 // The guarantee D-043 exists for: verification must be load-bearing.
 func TestASignatureBlindReplayDoesNotReproduceTheManifest(t *testing.T) {
 	anchor, entries, m := loadCase(t, filepath.Join(vectorRoot(), "log"))
@@ -1150,7 +1191,10 @@ func signedUnderAnyRole(t *testing.T, env *entry.Envelope, public []byte) bool {
 // enforcing only the cap and one enforcing only the floor are different bugs.
 func TestTheGenesisNameBoundsAreVectored(t *testing.T) {
 	names := genesisCaseNames(t)
-	for _, want := range []string{"name-too-long", "name-empty"} {
+	// Run 13, D17: 66 bytes and empty are both far from the cap. One byte
+	// past it is refused here, and the cap itself is accepted in
+	// `genesis-good/`.
+	for _, want := range []string{"name-too-long", "name-empty", "name-one-past-the-cap"} {
 		var found bool
 		for _, name := range names {
 			if strings.HasSuffix(name, want) {
@@ -1160,6 +1204,9 @@ func TestTheGenesisNameBoundsAreVectored(t *testing.T) {
 		if !found {
 			t.Errorf("no genesis case for %s: §4.0's `name` bound is unpinned at that end", want)
 		}
+	}
+	if _, err := os.Stat(filepath.Join(vectorRoot(), "genesis-good", "01-name-at-the-cap")); err != nil {
+		t.Errorf("no accepted genesis with a name at the cap: %v", err)
 	}
 }
 

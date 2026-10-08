@@ -60,6 +60,17 @@ class GenesisAborts(unittest.TestCase):
         self.assertEqual(state.rejected, [])
         self.assertEqual(state.size, 1)
 
+    def test_the_name_cap_is_pinned_on_both_sides(self):
+        """Run 13, D17: 64 bytes is a network, 65 is an abort -- in bytes, not runes."""
+        (_, raw, anchor), = fixture.genesis_accepts()
+        state = replay.replay(anchor, [raw])
+        self.assertEqual((state.size, state.rejected), (1, []))
+        self.assertEqual(len(state.to_dict()["name"].encode("utf-8")), 64)
+        past = {name: (raw, anchor) for name, raw, anchor in fixture.genesis_aborts()}
+        raw, anchor = past["20-name-one-past-the-cap"]
+        state = replay.replay(anchor, [raw])
+        self.assertEqual(state.rejected, [{"index": 0, "reason": "bad-genesis"}])
+
 
 class Expiry(unittest.TestCase):
     """A device enrolled with an expiry must carry it through to the state."""

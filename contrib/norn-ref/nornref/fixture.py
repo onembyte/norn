@@ -1165,8 +1165,31 @@ def genesis_aborts() -> list[tuple[str, bytes, "replay.Anchor"]]:
     bad_body("16-params-wrong-type", params={"staleness": True})
     bad_body("17-params-empty", params={})
     bad_body("15-name-empty", name="")
+    # Run 13, D17: 66 bytes and empty are both far from the cap, so a reader
+    # whose cap was 65 passed. One byte past it, in characters that make it
+    # 33 runes -- under the cap for a reader counting those.
+    bad_body("20-name-one-past-the-cap", name="é" * 32 + "a")
 
     assert good_anchor  # the good anchor is exercised by the log fixture
+    return cases
+
+
+def genesis_accepts() -> list[tuple[str, bytes, "replay.Anchor"]]:
+    """Geneses a reader MUST accept, one single-entry log each (run 13, D17).
+
+    A bound has two sides, and `genesis_aborts` holds only the refusing one: a
+    reader whose `name` cap was 63 bytes refused no vector, and on a real
+    network it would abort the whole log.
+    """
+    from . import replay
+
+    cases: list[tuple[str, bytes, replay.Anchor]] = []
+    # Exactly 64 bytes, 32 runes.
+    body = dict(genesis()["body"], name="é" * 32)
+    env = _signed(entry.new("genesis", NET, ts=T0, body=body),
+                  [("root1", "root"), ("root2", "root")])
+    raw = entry.encode(env)
+    cases.append(("01-name-at-the-cap", raw, replay.Anchor(NET, entry.leaf_hash(raw))))
     return cases
 
 
@@ -2165,6 +2188,12 @@ def enroll_requests() -> list[tuple[str, dict[str, Any]]]:
         ("req-reserved-hints", _request(
             "pi-cam", "pi-cam", "pi-cam", 50,
             labels={"ip": "not-a-cidr", "endpoint": "not-an-endpoint"})),
+        # Run 13, D17: `labels` is "≤ 32 entries", and no request carried more
+        # than two, so a reader whose cap was 31 passed. Thirty-two.
+        ("req-labels-at-the-cap", _request(
+            "pi-cam", "pi-cam", "pi-cam", 60,
+            labels={f"k{i:02d}": "v" for i in range(32)})),
+        # The other end, `labels: {}`, is D-072 b and waits on its answer.
     ]
 
 
@@ -2224,6 +2253,8 @@ def request_negatives() -> list[tuple[str, str, str]]:
         ("bool-expires", mutate(expires=True), "a CBOR bool where a uint is required"),
         ("expires-at-ts", _expires_at_ts(), "expires must be after ts"),
         ("too-many-labels", mutate(labels={f"k{i}": "v" for i in range(33)}), "over 32 labels"),
+        # Run 13, D17: label keys are 1-23 bytes, and only the top was vectored.
+        ("empty-label-key", _empty_label_key(), "a label key of zero bytes, under §4.0's 1-23"),
         # Run 12, D16: 257 bytes but only 129 code points, so the one-past
         # vector distinguishes the byte cap from a character-counting reader.
         ("oversize-label", mutate(labels={"ip": "é" * 128 + "x"}),
@@ -2384,6 +2415,32 @@ def _oversize_label_key() -> str:
     signature = KEYS["labelcap"].sign(patched_preimage)
     assert keymod.verify(KEYS["labelcap"].public, patched_preimage, signature)
     patched = _oversize_map_key(enrollreq.encode(request))
+    assert request["sig"] in patched
+    patched = patched.replace(request["sig"], signature, 1)
+    return bech32m.encode(enrollreq.HRP, patched)
+
+
+def _empty_label_key() -> str:
+    """A request whose one label key is the empty string (run 13, D17).
+
+    §4.0 bounds map keys at 1-23 bytes and only the top was vectored. The
+    encoder here refuses to write a zero-byte key, so it is patched in after
+    encoding and the request re-signed over the patched preimage, as
+    `_oversize_label_key` does at the other end: only the key's lower bound
+    can refuse it.
+    """
+    from . import bech32m, enrollreq, keys as keymod
+    request = _request("pi-cam", "pi-cam", "pi-cam", 10, labels={"empty-key-probe": "v"})
+    probe = cbor.encode("empty-key-probe")
+
+    def patch(raw: bytes) -> bytes:
+        assert raw.count(probe) == 1
+        return raw.replace(probe, cbor.encode(""), 1)
+
+    patched_preimage = patch(enrollreq.preimage(request))
+    signature = KEYS["pi-cam"].sign(patched_preimage)
+    assert keymod.verify(KEYS["pi-cam"].public, patched_preimage, signature)
+    patched = patch(enrollreq.encode(request))
     assert request["sig"] in patched
     patched = patched.replace(request["sig"], signature, 1)
     return bech32m.encode(enrollreq.HRP, patched)

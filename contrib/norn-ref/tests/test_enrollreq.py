@@ -221,6 +221,21 @@ class ShippedMapKeyCap(unittest.TestCase):
             enrollreq.decode_text(text)
 
 
+class ShippedLabelBounds(unittest.TestCase):
+    """Run 13, D17: `labels` and their keys, at the boundary rather than far past it."""
+
+    def test_thirty_two_labels_are_accepted(self):
+        text = (VECTOR_ROOT / "requests" / "req-labels-at-the-cap.txt").read_text().strip()
+        request = enrollreq.decode_text(text)
+        self.assertEqual(enrollreq.check(request, net=NET), request)
+        self.assertEqual(len(request["labels"]), 32)
+
+    def test_a_zero_byte_label_key_is_refused_by_the_cbor_profile(self):
+        text = (VECTOR_ROOT / "requests-bad" / "empty-label-key.txt").read_text().strip()
+        with self.assertRaisesRegex(enrollreq.RequestError, "map key must be 1-23 bytes"):
+            enrollreq.decode_text(text)
+
+
 class Check(unittest.TestCase):
     def test_accepts_a_good_request(self):
         req = signed()

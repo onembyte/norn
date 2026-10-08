@@ -35,7 +35,7 @@ OWNED = frozenset({
     "keys.json", "entries", "log", "genesis", "state.json",
     "trust.cbor", "trust.toml", "trust.fingerprint", "trust-bad", "trust-good",
     "receipt.note", "receipt.json", "receipt-bad", "requests", "requests-bad", "policies",
-    "entries-hostile", "proven", "log-empty",
+    "entries-hostile", "proven", "log-empty", "genesis-good",
 })
 
 #: Produced by `make vectors-log` from the Go implementation, because building
@@ -263,6 +263,7 @@ def write_genesis_aborts(out: pathlib.Path) -> None:
         "12-empty-roots": step6, "13-params-unknown-key": step6params,
         "14-name-too-long": step6, "15-name-empty": step6,
         "16-params-wrong-type": step6params, "17-params-empty": step6params,
+        "20-name-one-past-the-cap": step6,
         "18-bootstrap-sigs-wrong-role": step7,
         # The role string and the key SET are two different halves of step 7;
         # `18` varies the first and `19` the second (run 10, D15).
@@ -276,6 +277,30 @@ def write_genesis_aborts(out: pathlib.Path) -> None:
         "rules": genesis_rules,
         "comment": "each subdirectory is a one-entry log whose replay MUST abort "
                    "with bad-genesis; an abort stops replay, so cases cannot share a log",
+        "cases": index,
+    }) + "\n")
+
+
+def write_genesis_accepts(out: pathlib.Path) -> None:
+    """Geneses a reader MUST accept, one single-entry log per case (run 13, D17)."""
+    index = []
+    for name, raw, anchor in fixture.genesis_accepts():
+        folder = out / "genesis-good" / name
+        write(folder / "00-genesis.cbor", raw)
+        write(folder / "manifest.json", canonjson.dumps({
+            "anchor": {"net": anchor.net, "genesis_hash": anchor.genesis_hash},
+            "entries": [{"index": 0, "name": "00-genesis", "reason": ""}],
+        }) + "\n")
+        state = replay.replay(anchor, [raw])
+        if state.rejected or state.size != 1:
+            raise SystemExit(f"genesis-good case {name} does not replay")
+        write(folder / "state.json", state.to_json() + "\n")
+        index.append(name)
+    write(out / "genesis-good" / "cases.json", canonjson.dumps({
+        "rules": {"01-name-at-the-cap": {
+            "section": "4.0", "says": "| `name`, `reason` | UTF-8, 1–64 / 0–256 bytes |"}},
+        "comment": "each subdirectory is a one-entry log whose genesis a reader MUST "
+                   "accept: replay yields size 1, nothing rejected, and its state.json",
         "cases": index,
     }) + "\n")
 
@@ -743,6 +768,9 @@ _PROFILE_CASE_SIGNATURES = {
     # Re-signed over the patched preimage in 6.5c: the 24-byte key cannot
     # canonicalise away, so SPEC 4.0's second construction route applies.
     "oversize-label-key": "valid",
+    # The same route at the other end of the key bound (run 13, D17): the
+    # zero-byte key cannot canonicalise either, so it was re-signed too.
+    "empty-label-key": "valid",
     # The patch swaps two map entries, which canonicalises away when the
     # preimage is re-encoded, so the original signature still covers it --
     # SPEC 4.0's first construction route.
@@ -790,6 +818,7 @@ def main(argv: list[str]) -> int:
     write_entries(out)
     write_log(out)
     write_genesis_aborts(out)
+    write_genesis_accepts(out)
     write_trust_rejections(out)
     write_trust_acceptances(out)
     write_empty_log(out)
