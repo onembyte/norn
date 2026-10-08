@@ -290,15 +290,21 @@ func TestAForkedPeerIsAForkNotABrokenNeighbour(t *testing.T) {
 	rec := &recorder{}
 	fake := peertable.NewFake()
 
+	// The peer agrees with the log while the node starts, so the node's first
+	// head is corroborated (D-071 c) and this is a node with history, as the
+	// name says: one that then learns of the fork from a neighbour.
+	agreeing := httptest.NewServer(gossip.Handler(real, ""))
+	t.Cleanup(agreeing.Close)
 	peer := httptest.NewServer(gossip.Handler(forked, ""))
 	t.Cleanup(peer.Close)
+	peerURL := agreeing.URL
 
 	a, err := New(Config{
 		Anchor: anchor(t), Fetcher: logclient.Dir(real), Device: fake,
 		Mode: reconcile.Owner, RunDir: runDir, Emit: rec.emit,
 		Now:   func() time.Time { return time.Unix(fixtureCosignedAt, 0) },
 		Mono:  func() time.Duration { return 0 },
-		Peers: func() []string { return []string{peer.URL} },
+		Peers: func() []string { return []string{peerURL} },
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -311,6 +317,7 @@ func TestAForkedPeerIsAForkNotABrokenNeighbour(t *testing.T) {
 	// The log goes quiet, so the node asks its peers -- and one of them is
 	// serving the other history.
 	a.cfg.Fetcher = logclient.Dir(t.TempDir())
+	peerURL = peer.URL
 	_ = a.Once()
 
 	if rec.kinds()[Fork] == 0 {
@@ -333,8 +340,14 @@ func TestAForkedPeerIsAForkNotABrokenNeighbour(t *testing.T) {
 func TestHealthyButSplitLogFindsTheOtherBranchByCheckpointGossip(t *testing.T) {
 	real, _, entries := writableLog(t)
 	forked := forkedLog(t, entries, 40)
+	// The peer agrees at first, so the node's first head is corroborated
+	// (D-071 c; a fresh node whose peer disagrees is firsthead_test.go's
+	// case). The split appears at the next gossip round.
+	agreeing := httptest.NewServer(gossip.Handler(real, ""))
+	t.Cleanup(agreeing.Close)
 	peer := httptest.NewServer(gossip.Handler(forked, ""))
 	t.Cleanup(peer.Close)
+	peerURL := agreeing.URL
 	var mono time.Duration
 	runDir := t.TempDir()
 	rec := &recorder{}
@@ -343,7 +356,7 @@ func TestHealthyButSplitLogFindsTheOtherBranchByCheckpointGossip(t *testing.T) {
 		Mode: reconcile.Owner, RunDir: runDir, Emit: rec.emit,
 		Now:         func() time.Time { return time.Unix(fixtureCosignedAt, 0).Add(mono) },
 		Mono:        func() time.Duration { return mono },
-		Peers:       func() []string { return []string{peer.URL} },
+		Peers:       func() []string { return []string{peerURL} },
 		GossipEvery: 30 * time.Second,
 	})
 	if err != nil {
@@ -353,6 +366,7 @@ func TestHealthyButSplitLogFindsTheOtherBranchByCheckpointGossip(t *testing.T) {
 		t.Fatal(err)
 	}
 	held := a.last.Checkpoint
+	peerURL = peer.URL
 	mono = 30 * time.Second
 	_ = a.Once()
 	if rec.kinds()[Fork] == 0 || !a.Frozen() {

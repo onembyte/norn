@@ -233,10 +233,13 @@ const maxEvidenceProbe = 1 << 10
 // responsible for the fourth duty -- leaving the stored checkpoint and the
 // peer table exactly as they were -- which it does by returning without
 // touching either.
-func (a *Agent) recordFork(fork *logclient.ForkError) {
+// `held` is the head this node can speak for: what it holds, or -- while its
+// first head is being corroborated and nothing is held yet -- that first
+// head (D-071 c).
+func (a *Agent) recordFork(fork *logclient.ForkError, held *logclient.Result) {
 	a.frozen = true
 
-	path, err := a.writeEvidence(fork)
+	path, err := a.writeEvidence(fork, held)
 	if err != nil {
 		// A node that could not write the file is still forked, and the
 		// freeze must outlive this process all the same (§11): a marker
@@ -253,20 +256,26 @@ func (a *Agent) recordFork(fork *logclient.ForkError) {
 			"%v -- and the evidence could not be written (%v); %s", fork, err, kept)})
 		return
 	}
+	// A head enforced without a peer's corroboration is not one to hold on
+	// to (D-071 c); Once drops every peer right after this.
+	table := "the peer table is unchanged."
+	if a.last != nil && a.uncorroborated {
+		table = "this node enforced the head it holds without any peer's corroboration " +
+			"and has no branch to stand behind, so every peer is dropped (D-071)."
+	}
 	a.emit(Event{Kind: Fork, Message: fmt.Sprintf(
 		"this log signed two histories: at %d entries it gives %s where this node "+
 			"holds %s, and a quorum of witnesses cosigned both. Evidence: %s. This "+
 			"node will accept nothing further until it is given a new trust file "+
-			"(§11); the peer table is unchanged.",
-		fork.At, short(fork.Conflicting.Root[:]), short(fork.HeldRoot[:]), path)})
+			"(§11); %s",
+		fork.At, short(fork.Conflicting.Root[:]), short(fork.HeldRoot[:]), path, table)})
 }
 
 // writeEvidence builds the artifact and puts it where an operator will find it.
-func (a *Agent) writeEvidence(fork *logclient.ForkError) (string, error) {
+func (a *Agent) writeEvidence(fork *logclient.ForkError, held *logclient.Result) (string, error) {
 	if a.stateDir() == "" {
 		return "", errors.New("no state directory to write evidence to")
 	}
-	held := a.held()
 	if held == nil {
 		return "", errors.New("nothing held to compare against")
 	}

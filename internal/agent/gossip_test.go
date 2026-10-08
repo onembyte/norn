@@ -163,8 +163,11 @@ func TestPeersAreNotAskedWhenTheLogAnswers(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if asked() != 0 {
-		t.Errorf("peers were polled %d times before the first gossip interval", asked())
+	// Exactly one round: the first head's corroboration (D-071 c), in the
+	// cycle it verified. A healthy log is no reason for any other before T_g.
+	if asked() != 1 {
+		t.Errorf("peers were polled %d times before the first gossip interval; "+
+			"want only the first head's corroboration", asked())
 	}
 }
 
@@ -208,12 +211,14 @@ func TestHealthyLogChecksPeerCheckpointAtGossipInterval(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The request at 0 s is the first head's corroboration (D-071 c); from
+	// then on the cadence is T_g.
 	for _, tc := range []struct {
 		at   time.Duration
 		want int
 	}{
-		{0, 0}, {29 * time.Second, 0}, {30 * time.Second, 1},
-		{31 * time.Second, 1}, {60 * time.Second, 2},
+		{0, 1}, {29 * time.Second, 1}, {30 * time.Second, 2},
+		{31 * time.Second, 2}, {60 * time.Second, 3},
 	} {
 		mono = tc.at
 		if err := a.Once(); err != nil {
@@ -315,7 +320,12 @@ func prefixes(t *testing.T, texts ...string) []netip.Prefix {
 func TestADegradedNodeAsksItsPeersEvenWhenTheLogAnswers(t *testing.T) {
 	full, _, entries := writableLog(t)
 	stuck := shorterLog(t, entries[:45])
-	peerURL, asked := peerServing(t, full)
+	// The peer is as stuck as the log while the node starts, so the first head
+	// is corroborated at 45 (D-071 c); a peer that already had more would be
+	// adopted in that first cycle, which is the point of corroborating.
+	stuckPeerURL, _ := peerServing(t, stuck)
+	fullPeerURL, asked := peerServing(t, full)
+	peerURL := stuckPeerURL
 
 	var mono time.Duration
 	rec := &recorder{}
@@ -336,11 +346,12 @@ func TestADegradedNodeAsksItsPeersEvenWhenTheLogAnswers(t *testing.T) {
 		t.Fatalf("size = %d, want the stuck log's 45", a.last.Checkpoint.Size)
 	}
 	if asked() != 0 {
-		t.Error("peers were asked while the view was fresh")
+		t.Error("the peer with more was asked while the view was fresh")
 	}
 
 	// Time passes and nothing new is cosigned: the view goes stale even though
-	// the log is answering every request.
+	// the log is answering every request. The peer, meanwhile, has moved on.
+	peerURL = fullPeerURL
 	mono = 20 * time.Minute
 	if err := a.Once(); err != nil {
 		t.Fatal(err)

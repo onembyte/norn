@@ -69,6 +69,11 @@ const (
 	// has no clock, as on a first start -- and a view it had called stale may
 	// be called fresh again, which is what the file exists to prevent (D-071).
 	ClockUnusable = "CLOCK_UNUSABLE"
+	// FirstHeadUncorroborated: this node held no head, its first verified one
+	// was checked against no peer because none answered, and it is enforced
+	// on the log's word alone (D-071 c). Peers are asked every cycle until
+	// one answers; a fork proven meanwhile drops every peer.
+	FirstHeadUncorroborated = "FIRST_HEAD_UNCORROBORATED"
 	// AdoptedFromPeer: this node could not reach the log and took a checkpoint
 	// from a peer instead. It is worth saying out loud -- the log being
 	// unreachable is news even when gossip covered for it.
@@ -213,6 +218,13 @@ type Agent struct {
 	// restart does not call a view fresher than this process had.
 	clockWritten    time.Time
 	clockWrittenSet bool
+	// uncorroborated means this node held no head when its first one
+	// verified, and no peer has yet answered with a head consistent with it
+	// (D-071 c). Peers are asked every cycle while it is set, and a fork
+	// proven while it is set drops every peer. saidUncorroborated keeps the
+	// alarm to once.
+	uncorroborated     bool
+	saidUncorroborated bool
 	// frozen means this node has proof its log forked and will accept nothing
 	// further under this anchor (§11). frozenBy names the evidence, and
 	// frozenNote says why that file is not itself proof when it is not: a
@@ -440,7 +452,7 @@ func (a *Agent) Once() error {
 	// equivocated, and §11 gives a node four things to do about it.
 	var fork *logclient.ForkError
 	if errors.As(verifyErr, &fork) {
-		a.recordFork(fork)
+		a.recordFork(fork, a.held())
 		return verifyErr
 	}
 
@@ -453,11 +465,34 @@ func (a *Agent) Once() error {
 		direct = result
 	}
 	mono := a.cfg.Mono()
-	periodic := a.cfg.Peers != nil && a.checkpointAskedSet &&
-		mono-a.checkpointAsked >= a.cfg.GossipEvery
-	if verifyErr != nil || a.isStale(result) || periodic {
+
+	// A node with no held head has nothing §10 can compare its first head
+	// against, so a fork or a rollback in that head is invisible to it until
+	// a peer speaks -- and a peer spoke only at T_g, after the head had been
+	// enforced (D-071 c, KEYTRANS -10 §7.2). So the first head is checked
+	// against the peers in the cycle it verifies, before anything is
+	// enforced, and in every cycle after until one answers. A peer's head
+	// that verifies with this one as the stored checkpoint corroborates it;
+	// one on another branch is a fork, proven with the table untouched.
+	asked := false
+	if verifyErr == nil && a.cfg.Peers != nil && (a.held() == nil || a.uncorroborated) {
+		a.uncorroborated, asked = true, true
 		a.checkpointAsked, a.checkpointAskedSet = mono, true
-		if fromPeer, peer := a.askPeers(anchor); fromPeer != nil &&
+		if fromPeer, peer := a.askPeers(a.anchorFor(result), result); fromPeer != nil {
+			a.uncorroborated = false
+			if fromPeer.Checkpoint.Size > result.Checkpoint.Size {
+				a.emit(Event{Kind: AdoptedFromPeer, Message: fmt.Sprintf(
+					"took size %d from peer %s, which corroborates this node's first "+
+						"head and extends it", fromPeer.Checkpoint.Size, peer)})
+				result = fromPeer
+			}
+		}
+	}
+	periodic := !asked && a.cfg.Peers != nil && a.checkpointAskedSet &&
+		mono-a.checkpointAsked >= a.cfg.GossipEvery
+	if !asked && (verifyErr != nil || a.isStale(result) || periodic) {
+		a.checkpointAsked, a.checkpointAskedSet = mono, true
+		if fromPeer, peer := a.askPeers(anchor, a.held()); fromPeer != nil &&
 			(verifyErr != nil || fromPeer.Checkpoint.Size > result.Checkpoint.Size) {
 			a.emit(Event{Kind: AdoptedFromPeer, Message: fmt.Sprintf(
 				"took size %d from peer %s, which is signed by the same keys: %s",
@@ -466,6 +501,19 @@ func (a *Agent) Once() error {
 		}
 	}
 	if a.frozen {
+		// A head this node enforced without any peer's corroboration, now
+		// proven to be one of two branches, is not a view it can stand
+		// behind: §11's continuity argument -- hold what you were enforcing
+		// -- needs a head that was enforced *because* it agreed with the
+		// past, and this one was enforced because nobody answered. So the
+		// desired set is emptied, as past S_hard, rather than left as the
+		// log chose it (D-071 c).
+		if a.last != nil && a.uncorroborated {
+			if err := a.apply(nil, endpoint.Report{}); err != nil {
+				return err
+			}
+			return errors.New("agent: frozen by a fork proven against an uncorroborated head; every peer is dropped")
+		}
 		return errors.New("agent: frozen by a fork found in a peer checkpoint; the interface is untouched")
 	}
 	if verifyErr != nil {
@@ -512,6 +560,14 @@ func (a *Agent) Once() error {
 		return errors.New("agent: frozen by a fork a peer proved; the interface is untouched")
 	}
 
+	if verifyErr == nil && a.uncorroborated && !a.saidUncorroborated {
+		a.saidUncorroborated = true
+		a.emit(Event{Kind: FirstHeadUncorroborated, Message: fmt.Sprintf(
+			"this node held no head, and no peer answered about its first one (size %d): "+
+				"it is enforced on the log's word alone. Peers are asked every cycle until "+
+				"one answers; a fork proven meanwhile drops every peer (D-071)",
+			result.Checkpoint.Size)})
+	}
 	if err := a.reconcile(result, fresh); err != nil {
 		return err
 	}
@@ -594,6 +650,13 @@ func (a *Agent) reconcile(result *logclient.Result, fresh proven.Freshness) erro
 	if fresh.State == freshness.HardStale {
 		desired, report = nil, endpoint.Report{}
 	}
+	return a.apply(desired, report)
+}
+
+// apply makes the interface match `desired`, in this node's mode, and says
+// what it did. An empty set is how both hard-stale and an uncorroborated
+// fork drop every peer (§13.2).
+func (a *Agent) apply(desired []peertable.Peer, report endpoint.Report) error {
 	for _, id := range report.Unproven {
 		a.emit(Event{Kind: ProviderClaim,
 			Message: fmt.Sprintf("the endpoint provider has hints for %q, which the log does not prove", id)})
@@ -790,7 +853,9 @@ func (a *Agent) PeerAddresses(port int) []string {
 //
 // Peer checkpoint rounds run on T_g even with a healthy log, and immediately
 // when that log is unusable or stale. They do not run on every local poll.
-func (a *Agent) askPeers(anchor logclient.Anchor) (*logclient.Result, string) {
+//
+// `held` is the head a fork found here is recorded against (see recordFork).
+func (a *Agent) askPeers(anchor logclient.Anchor, held *logclient.Result) (*logclient.Result, string) {
 	if a.cfg.Peers == nil {
 		return nil, ""
 	}
@@ -805,7 +870,7 @@ func (a *Agent) askPeers(anchor logclient.Anchor) (*logclient.Result, string) {
 			// which is the whole point of the first Phase 4 gate line.
 			var fork *logclient.ForkError
 			if errors.As(err, &fork) {
-				a.recordFork(fork)
+				a.recordFork(fork, held)
 				return nil, ""
 			}
 			// Otherwise: one neighbour being broken, lying or behind is not
