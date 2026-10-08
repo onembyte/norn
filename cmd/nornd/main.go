@@ -336,6 +336,7 @@ var eventLevels = map[string]slog.Level{
 	agent.InterfaceUnavailable:    slog.LevelWarn,
 	agent.ControlPlaneFight:       slog.LevelWarn,
 	agent.PeerRefused:             slog.LevelWarn,
+	agent.PeerRoundCut:            slog.LevelWarn,
 	agent.AdoptedFromPeer:         slog.LevelWarn,
 	agent.NoStateYet:              slog.LevelWarn,
 	agent.ProviderClaim:           slog.LevelWarn,

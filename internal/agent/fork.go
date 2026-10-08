@@ -2,6 +2,7 @@ package agent
 
 import (
 	"bytes"
+	"context"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -116,8 +117,16 @@ func (a *Agent) pollEvidence() {
 	}
 	a.evidenceAsked, a.evidenceAskedSet = mono, true
 
-	for _, addr := range gossip.Choose(a.cfg.Peers(), a.fanout(), a.peerOrder) {
-		raw, err := gossip.Peer(addr).Fetch("evidence")
+	// One budget for the round, as for checkpoints (H2-b).
+	ctx, cancel := context.WithTimeout(context.Background(), a.cfg.RoundBudget)
+	defer cancel()
+	chosen := gossip.Choose(a.cfg.Peers(), a.fanout(), a.peerOrder)
+	for i, addr := range chosen {
+		if ctx.Err() != nil {
+			a.roundCut("evidence", i, len(chosen))
+			break
+		}
+		raw, err := gossip.Within(ctx, gossip.Peer(addr)).Fetch("evidence")
 		if err != nil {
 			continue // almost every peer, almost always
 		}

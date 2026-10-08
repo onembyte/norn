@@ -1,6 +1,7 @@
 package gossip
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -154,10 +155,36 @@ func client() *http.Client {
 	}
 }
 
-// Fetch implements logclient.Fetcher.
+// Fetch implements logclient.Fetcher, with no bound beyond the per-request
+// one. A round of reads shares a budget through Within.
 func (p Peer) Fetch(path string) ([]byte, error) {
-	base := strings.TrimSuffix(string(p), "/")
-	resp, err := client().Get(base + Prefix + strings.TrimPrefix(path, "/"))
+	return Within(context.Background(), p).Fetch(path)
+}
+
+// BoundPeer is a peer read under a context: a round of asking peers has one
+// budget, start to finish, and every read in it ends when the budget does --
+// including the ones that had not started, which `Fetch` refuses at once
+// rather than opening a connection the deadline would close.
+type BoundPeer struct {
+	ctx  context.Context
+	peer Peer
+}
+
+// Within binds reads from a peer to `ctx`.
+func Within(ctx context.Context, peer Peer) BoundPeer { return BoundPeer{ctx: ctx, peer: peer} }
+
+// Fetch implements logclient.Fetcher.
+func (b BoundPeer) Fetch(path string) ([]byte, error) {
+	if err := b.ctx.Err(); err != nil {
+		return nil, fmt.Errorf("peer %s: the round's budget is spent: %w", b.peer, err)
+	}
+	base := strings.TrimSuffix(string(b.peer), "/")
+	req, err := http.NewRequestWithContext(b.ctx, http.MethodGet,
+		base+Prefix+strings.TrimPrefix(path, "/"), nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := client().Do(req)
 	if err != nil {
 		return nil, err
 	}

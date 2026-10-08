@@ -13,6 +13,7 @@
 package agent
 
 import (
+	"context"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -78,6 +79,10 @@ const (
 	// from a peer instead. It is worth saying out loud -- the log being
 	// unreachable is news even when gossip covered for it.
 	AdoptedFromPeer = "ADOPTED_FROM_PEER"
+	// PeerRoundCut: a round of asking peers ran out of its budget before every
+	// peer was asked. The ones not reached were not asked, and the cycle went
+	// on to reconcile -- which is the point of the budget (H2-b).
+	PeerRoundCut = "PEER_ROUND_CUT"
 	// PeerRefused: one peer could not be used this round. Not an outage -- the
 	// point of asking several is that any of them may be broken, behind, or
 	// lying.
@@ -91,6 +96,12 @@ const (
 	clockFile  = "clock"
 	clockMagic = "norn-clock/v1\n"
 )
+
+// DefaultRoundBudget is how long one round of asking peers may take in all. A
+// per-request bound (gossip.FetchTimeout) turns a silent peer from "forever"
+// into one timeout; a round of r of them is still r timeouts, twice a cycle.
+// The round budget makes the worst case one budget, whatever r is.
+const DefaultRoundBudget = 5 * time.Second
 
 // DefaultDegradedAlarmEvery is GOSSIP part 5's "alarm every 5 min".
 const DefaultDegradedAlarmEvery = 5 * time.Minute
@@ -184,6 +195,10 @@ type Config struct {
 	// GossipEvery is T_g: how often to ask proven peers for checkpoints and
 	// evidence, even while the log answers. Defaults to DefaultGossipEvery.
 	GossipEvery time.Duration
+	// RoundBudget bounds one round of asking peers -- for checkpoints, or for
+	// evidence -- start to finish, whatever r is and whatever each peer does
+	// (H2-b). Defaults to DefaultRoundBudget.
+	RoundBudget time.Duration
 	Emit        func(Event)
 
 	// FightPolicy is what to do when the same key keeps coming back:
@@ -279,6 +294,9 @@ func New(cfg Config) (*Agent, error) {
 	}
 	if cfg.GossipEvery <= 0 {
 		cfg.GossipEvery = DefaultGossipEvery
+	}
+	if cfg.RoundBudget <= 0 {
+		cfg.RoundBudget = DefaultRoundBudget
 	}
 	if cfg.Mono == nil {
 		// time.Since carries Go's monotonic reading, which does not move when
@@ -861,8 +879,19 @@ func (a *Agent) askPeers(anchor logclient.Anchor, held *logclient.Result) (*logc
 	}
 	var best *logclient.Result
 	var from string
-	for _, addr := range gossip.Choose(a.cfg.Peers(), a.fanout(), a.peerOrder) {
-		result, err := verify(gossip.Peer(addr), anchor)
+	// One budget for the round (H2-b): a silent peer costs its per-request
+	// timeout, and r of them would cost r timeouts before the cycle could
+	// reconcile. Peers the budget did not reach were not asked, and the
+	// cycle says so and goes on.
+	ctx, cancel := context.WithTimeout(context.Background(), a.cfg.RoundBudget)
+	defer cancel()
+	chosen := gossip.Choose(a.cfg.Peers(), a.fanout(), a.peerOrder)
+	for i, addr := range chosen {
+		if ctx.Err() != nil {
+			a.roundCut("checkpoint", i, len(chosen))
+			break
+		}
+		result, err := verify(gossip.Within(ctx, gossip.Peer(addr)), anchor)
 		if err != nil {
 			// A second *history* is not a broken neighbour. §11 does not care
 			// which source it arrived from, and a peer is how a node learns
@@ -884,6 +913,14 @@ func (a *Agent) askPeers(anchor logclient.Anchor, held *logclient.Result) (*logc
 		}
 	}
 	return best, from
+}
+
+// roundCut reports a round of asking peers that its budget ended early.
+func (a *Agent) roundCut(what string, asked, chosen int) {
+	a.emit(Event{Kind: PeerRoundCut, Message: fmt.Sprintf(
+		"the %s round spent its %s budget after %d of %d peers; the rest were not "+
+			"asked this round, and the cycle goes on to reconcile",
+		what, a.cfg.RoundBudget, asked, chosen)})
 }
 
 // checkClock compares this machine's wall clock against witness time and
