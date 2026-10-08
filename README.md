@@ -8,7 +8,7 @@
 > that isn't in it. Works beside Headscale, NetBird or plain `wg-quick`. Changes
 > nothing in WireGuard.
 
-*Status (2026-10-07): 52 Go packages, 943 tests, a frozen `SPEC.md`, and a
+*Status (2026-10-07): 52 Go packages, 945 tests, a frozen `SPEC.md`, and a
 vector suite a second implementer can use without this repository. **14 of 38
 gate lines** in `PLAN.md` are ticked — every gate that needs a running lab, a
 measurement or a second pair of eyes is still open. No Norn has ever guarded a
@@ -26,7 +26,7 @@ $ go build -o norn ./cmd/norn
 $ ./norn verify -trust testdata/vectors/trust.cbor -log testdata/vectors/served
 network    norn-testnet
 anchor     Y2KM-WGEJ-5GCD-X3HA
-size       138 entries
+size       145 entries
 ...
 11 device(s), 6 active:
 ```
@@ -89,7 +89,7 @@ twelve adversaries, is `THREAT-MODEL.md`.
 |---|---|---|
 | **G1** | Every peer in the table has an inclusion proof under a checkpoint the node accepted, and replays to `active`. | correct verifier · intact `norn.trust` · fewer than k faulty witnesses |
 | **G2** | Two honest nodes never accept incompatible histories; a fork yields non-repudiable proof and is held forever. | fewer than max(0, 2k−N) witnesses colluding with the log — one, under 2-of-3 · Ed25519 + SHA-256 · with 2k ≤ N the quorum alone proves nothing about a fork and detection rests on gossip; 3-of-3 makes the bound k, but any one witness down stalls cosigning |
-| **G3** | The log can publish garbage; it cannot grant access. Replay admits only entries valid under the signer state at that point. **Open defect SEC-001:** a past entry re-appended with one junk signature applies again — a fix awaits a decision (`BUILD-LOG.md`). | signer keys not compromised |
+| **G3** | The log can publish garbage; it cannot grant access. Replay admits only entries valid under the signer state at that point. | signer keys not compromised |
 | **G4** | A node on a stale checkpoint goes `degraded` and alarms; a revocation lands within a bounded window or somebody is told. | one honest path to a fresh checkpoint — the log **or** a peer |
 | **G5** | Every accepted key traces to an entry signed by an identifiable signer. | a monitor exists and runs |
 | **G6** | A node never trusts a log, witness set or genesis it was not provisioned with. | an out-of-band channel |

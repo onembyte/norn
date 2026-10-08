@@ -263,9 +263,11 @@ func TestTheWatcherKeepsTheAnchorKeyAfterLearningOthers(t *testing.T) {
 	}
 }
 
-// The shipped log carries exactly this: `70-profile-base` and
-// `89-two-sig-base` are one signed content under two signature lists. A first
-// round over it must say so, and a later round must not say so again.
+// The shipped log carries six re-signed copies (`bad-copy-*`, D-070): past
+// entries under a new signature list, each replay now refuses as a duplicate
+// and each the monitor must still point at, because a copy is an attempt. A
+// first round over it must say so once per copy, naming the original, and a
+// later round must not say so again.
 func TestAReSignedCopyInTheLogIsReportedOnce(t *testing.T) {
 	w := New(anchorOf(t), Default())
 	w.Now = func() time.Time { return time.Unix(fixtureCosigned, 0) }
@@ -277,12 +279,20 @@ func TestAReSignedCopyInTheLogIsReportedOnce(t *testing.T) {
 			repeated = append(repeated, a)
 		}
 	}
-	if len(repeated) != 1 {
-		t.Fatalf("repeated-entry alerts = %d, want 1 (entry 89 re-signs entry 70): %+v",
+	if len(repeated) != 6 {
+		t.Fatalf("repeated-entry alerts = %d, want 6, one per bad-copy entry: %+v",
 			len(repeated), repeated)
 	}
-	if !strings.Contains(repeated[0].Message, "89") || !strings.Contains(repeated[0].Message, "70") {
-		t.Errorf("the alert should name both entries: %q", repeated[0].Message)
+	for _, original := range []string{"entry 37", "entry 28", "entry 35", "entry 16", "entry 89"} {
+		found := false
+		for _, a := range repeated {
+			if strings.Contains(a.Message, original) {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("no alert names the copied %s", original)
+		}
 	}
 	for _, a := range w.Round(served, nil) {
 		if a.Rule == "repeated-entry" {
@@ -362,12 +372,14 @@ func TestAReSignedCopyLandingLaterIsStillRecognised(t *testing.T) {
 	w.Round(logclient.Dir(dir), nil) // the whole log, remembered
 
 	// Entry 37 enrolled `spare`, revoked at 39. The same signed content under
-	// one more, unresolvable signature is new bytes to a byte-keyed replay.
+	// one more, unresolvable signature is new bytes -- and a different junk
+	// kid from the fixture's own copy at 114, or this would be that entry's
+	// exact bytes, which the rejected-entry rule reports instead.
 	env, err := entry.Decode(entries[37])
 	if err != nil {
 		t.Fatal(err)
 	}
-	env.Sigs = append(env.Sigs, entry.Signature{Kid: "ffffffffffffffff", Role: "signer",
+	env.Sigs = append(env.Sigs, entry.Signature{Kid: "fffffffffffffff0", Role: "signer",
 		Sig: make([]byte, ed25519.SignatureSize)})
 	copy, err := entry.Encode(env)
 	if err != nil {

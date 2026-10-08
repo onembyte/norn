@@ -8,6 +8,8 @@ beyond asking `_authorised` how many valid signatures of a role an entry has.
 
 from __future__ import annotations
 
+import hashlib
+
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -436,6 +438,24 @@ def _apply_genesis(anchor: Anchor, env: dict[str, Any]) -> State:
     return state
 
 
+def _dup_key(raw: bytes, net: bytes) -> bytes:
+    """The duplicate key of SPEC 5.1 step 1 (D-070).
+
+    The content hash -- SHA-256 of the signature preimage -- when the entry
+    decodes and its envelope passes 4.1, `net` included: the same signed
+    content under any other signature list is the same entry, so a copy with
+    a junk signature added, a surplus one dropped or a role relabelled is
+    `dup-entry`, not a second application (audit SEC-001). The entry hash
+    otherwise, so a copy of an undecodable entry is still `dup-entry`.
+    """
+    try:
+        env = cbor.decode(raw)
+        _check_envelope(env, net)
+    except (cbor.ProfileError, Reject):
+        return entry.entry_hash(raw)
+    return hashlib.sha256(entry.preimage(env)).digest()
+
+
 # -- the loop -------------------------------------------------------------
 
 def replay(anchor: Anchor, raw_entries: list[bytes]) -> State:
@@ -459,11 +479,11 @@ def replay(anchor: Anchor, raw_entries: list[bytes]) -> State:
         return state  # abort: without a genesis there is nothing to verify against
 
     state.size = 1
-    seen = {entry.entry_hash(raw_entries[0])}
+    seen = {_dup_key(raw_entries[0], anchor.net)}
 
     for index, raw in enumerate(raw_entries[1:], start=1):
         try:
-            digest = entry.entry_hash(raw)
+            digest = _dup_key(raw, anchor.net)
             if digest in seen:
                 raise Reject("dup-entry")
             # Recorded before validation: an exact entry is usable at most once,

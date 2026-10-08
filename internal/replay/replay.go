@@ -10,6 +10,7 @@ package replay
 import (
 	"bytes"
 	"crypto/ed25519"
+	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 
@@ -106,8 +107,22 @@ type replayer struct {
 	seen   map[string]bool
 }
 
+// remember records an entry's duplicate key (§5.1 step 1) and reports whether
+// it was new. The key is the content hash when the entry decodes and its
+// envelope passes §4.1, `net` included: the same signed content under any other
+// signature list is then the same entry, so a copy of a past entry with one
+// unresolvable signature added, a surplus one dropped or a role relabelled is
+// `dup-entry` rather than a second application (D-070, audit SEC-001). For an
+// entry that does not decode the key is its bytes, so a copy of it is still
+// `dup-entry` and not a second `decode`.
 func (r *replayer) remember(raw []byte) bool {
 	key := string(entry.EntryHash(raw))
+	if env, err := entry.Decode(raw); err == nil && bytes.Equal(env.Net, r.anchor.Net) {
+		if pre, err := entry.Preimage(env); err == nil {
+			sum := sha256.Sum256(pre)
+			key = string(sum[:])
+		}
+	}
 	if r.seen[key] {
 		return false
 	}

@@ -408,7 +408,7 @@ func TestRun12CoverageFindingsAreNamedOrAdmitted(t *testing.T) {
 		t.Fatal("§12.1 is missing")
 	}
 	for _, vector := range []string{
-		"127-bad-repeated-kid", "bad-held-root-at-same-size",
+		"134-bad-repeated-kid", "bad-held-root-at-same-size",
 		"fork-on-a-longer-branch", "tampered-bundle-under-a-stored-head",
 		"bad-none-group-member",
 		"log/99-bad-precedence-decode-before-unknown-type",

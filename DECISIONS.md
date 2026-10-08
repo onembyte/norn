@@ -198,6 +198,8 @@ the vectors rather than a placeholder string. Changed `entries/13-policy` and
 `log/28-policy` bytes; no other entry moved.
 
 ## D-031 · An exact entry is usable at most once, accepted or rejected (2026-09-19, 0.7a)
+*Key superseded by D-070 (2026-10-07): "exact" is the signed content for an entry that decodes, the bytes otherwise. The intent stands.*
+
 Raised by the cold-model gate as an undecided question (D15). Entry hashes enter
 the `dup-entry` seen-set **before** validation, so a rejected entry cannot be
 re-inserted at a later index to take effect against a changed state. Concretely:

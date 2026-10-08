@@ -442,8 +442,11 @@ func TestAReSignedCopyOfAnEntryIsRefusedNamingTheOriginal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Sorted last, so the decoder's ordering rule does not refuse it first.
-	env.Sigs = append(env.Sigs, entry.Signature{Kid: "ffffffffffffffff", Role: "signer",
+	// Sorted last, so the decoder's ordering rule does not refuse it first --
+	// and a different junk kid from the fixture's own copy (`bad-copy-enroll-
+	// spare-extra-sig`, D-070), or these would be that entry's exact bytes
+	// and the idempotent resubmission above would answer with its receipt.
+	env.Sigs = append(env.Sigs, entry.Signature{Kid: "fffffffffffffff0", Role: "signer",
 		Sig: make([]byte, ed25519.SignatureSize)})
 	copy, err := entry.Encode(env)
 	if err != nil {

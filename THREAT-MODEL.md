@@ -59,7 +59,7 @@ Capabilities: withhold entries, stop signing, present different histories to dif
 | Goal | Norn |
 |---|---|
 | Split view | **Detected** unless ≥ k witnesses collude (G2). Non-repudiable proof: two cosigned checkpoints of the same size with different roots, or a failed consistency proof. |
-| Append invalid entries to grant access | **Harmless**: verifiers ignore entries that fail signer-state validation at replay (G3). **Except, until fixed — open defect SEC-001:** a past valid entry re-appended with one junk signature is not a duplicate and applies again (a revoked device returns, a raised quorum falls). Needs no key. Fix awaiting a decision (`BUILD-LOG.md`, 6.5m-sec-001b). |
+| Append invalid entries to grant access | **Harmless**: verifiers ignore entries that fail signer-state validation at replay (G3). A past valid entry re-appended under a different signature list is the same entry and is refused as a duplicate (D-070; audit SEC-001, 2026-10-07). |
 | Withhold / freeze | **Detected** via staleness (G4). DoS only. |
 | Rewrite history | **Detected**: consistency proof fails against any earlier checkpoint held by any node or witness. |
 
@@ -151,7 +151,7 @@ A fail-open bug admits rogue peers; a fail-closed bug takes the network down.
 |---|---|---|
 | **G1 Peer authenticity** | In enforce mode, every peer in the node's WG table has an inclusion proof, under a checkpoint the node accepted, and its replayed status is `active`. | correct verifier; intact `norn.trust`; < k faulty witnesses |
 | **G2 Non-equivocation** | Two honest nodes never accept incompatible histories. A fork yields a non-repudiable proof and is held forever (KEYTRANS rule: once forked, reject everything inconsistent with the held view). | fewer than max(0, 2k−N) witnesses colluding with the log — one, under 2-of-3 (A9); Ed25519 + SHA-256 sound; with 2k ≤ N the quorum alone proves nothing about a fork and detection rests on gossip; 3-of-3 makes the bound k, but any one witness down stalls cosigning |
-| **G3 Validity independent of the log** | Replay admits only entries valid under the signer state at that point. The log can publish garbage; it cannot grant access. **Open defect SEC-001** breaks this today (see A2). | signer keys not compromised beyond A3/A4 |
+| **G3 Validity independent of the log** | Replay admits only entries valid under the signer state at that point. The log can publish garbage; it cannot grant access. | signer keys not compromised beyond A3/A4 |
 | **G4 Bounded staleness** | A node acting on a checkpoint older than S is `degraded` and alarms. A `Revoke` is effective on every honest, connected node within T_c + T_g + T_poll or that node alarms. | at least one honest path to a fresh checkpoint (log or peer) |
 | **G5 Transparency / accountability** | Every accepted key traces to a log entry signed by an identifiable signer. Monitors see every entry within T_c + monitor lag. | monitor exists and runs (procedural) |
 | **G6 No TOFU** | A node never trusts a log, witness set or genesis it was not provisioned with. | out-of-band channel (A10) |

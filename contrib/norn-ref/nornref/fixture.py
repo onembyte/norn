@@ -770,6 +770,33 @@ def log() -> list[LogItem]:
               _first_undecodable(b), "dup-entry")
     b.add_raw(f"{b.index}-bad-repeat-of-genesis", b.items[0].raw, "dup-entry")
 
+    # D-070 (audit SEC-001): a duplicate is a repeated *signed content*, not a
+    # repeated byte string. `sigs` lies outside every signature, so a past
+    # entry with one unresolvable signature added, a surplus one dropped or a
+    # role relabelled is new bytes whose original signatures still count --
+    # and keyed on bytes it applied again: `enroll-spare` re-enrolled a device
+    # revoked two entries later, `policy` rolled the quorum back from three of
+    # three to two of three, `rotate-nas` and `signer_add-signer3` each undid
+    # a later entry. Every copy is `dup-entry`, at step 1, before any rule
+    # that would otherwise judge it.
+    by_name = {item.name: item.raw for item in b.items}
+    for name in ("enroll-spare", "policy", "rotate-nas", "signer_add-signer3"):
+        original = next(raw for label, raw in by_name.items() if label.endswith("-" + name))
+        b.add_raw(f"{b.index}-bad-copy-{name}-extra-sig",
+                  _copy_with_extra_signature(original), "dup-entry")
+    original = next(raw for label, raw in by_name.items() if label.endswith("-enroll-spare"))
+    b.add_raw(f"{b.index}-bad-copy-enroll-spare-role-relabelled",
+              _copy_with_role_relabelled(original), "dup-entry")
+    original = next(raw for label, raw in by_name.items() if label.endswith("-two-sig-base"))
+    b.add_raw(f"{b.index}-bad-copy-two-sig-base-surplus-dropped",
+              _copy_with_surplus_dropped(original), "dup-entry")
+
+    # SEC-010: a rejected `params` entry changes nothing. `mmd` is valid and
+    # sorts first; `staleness` is a bool where a uint belongs. A handler that
+    # writes as it validates has changed `mmd` by the time it rejects.
+    b.add(f"{b.index}-bad-params-mixed-validity",
+          b.build("params", {"mmd": 60, "staleness": True}, roots3), "decode")
+
     # --- J12's tail: rules some *other* rule happened to refuse first.
 
     # §4.0 bounds a `kid` in a `signer_remove`/`root_remove` **body** to
@@ -1814,9 +1841,40 @@ def labelled_base(after: int) -> bytes:
     return entry.encode(_signed(env, [("signer1", "signer"), ("signer3", "signer")]))
 
 
+def _copy_with_extra_signature(raw: bytes) -> bytes:
+    """The same signed content with one unresolvable signature appended.
+
+    Sorted last, so the sigs-ordering rule does not refuse it first; a zero
+    signature under a `kid` nothing resolves is ignored (§5.2), not fatal.
+    """
+    env = cbor.decode(raw)
+    junk = {"kid": "f" * 16, "role": "signer", "sig": bytes(64)}
+    env["sigs"] = sorted(env["sigs"] + [junk], key=lambda s: s["kid"])
+    return entry.encode(env)
+
+
+def _copy_with_role_relabelled(raw: bytes) -> bytes:
+    """The same signed content with the first signature's role changed."""
+    env = cbor.decode(raw)
+    env["sigs"][0]["role"] = "root" if env["sigs"][0]["role"] != "root" else "signer"
+    return entry.encode(env)
+
+
+def _copy_with_surplus_dropped(raw: bytes) -> bytes:
+    """The same signed content with every signature but the first dropped."""
+    env = cbor.decode(raw)
+    env["sigs"] = env["sigs"][:1]
+    return entry.encode(env)
+
+
 def two_sig_base(after: int) -> bytes:
-    """A valid note with two signatures: the sigs-ordering control."""
-    env = entry.new("note", NET, ts=T0 + 9000, after=after, body={"text": "profile probe"})
+    """A valid note with two signatures: the sigs-ordering control.
+
+    Its text differs from `profile_base`'s on purpose: since D-070 two entries
+    with one signed content are one entry, and a control that is itself
+    `dup-entry` controls nothing.
+    """
+    env = entry.new("note", NET, ts=T0 + 9000, after=after, body={"text": "two-signature probe"})
     return entry.encode(_signed(env, [("signer1", "signer"), ("root1", "root")]))
 
 

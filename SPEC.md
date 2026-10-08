@@ -101,10 +101,12 @@ map of three pairs is `0xA3`, never `0xB8 0x03`. The rule is stated in the
 Integers row above because that is where a value's own encoding is described,
 and it is restated here because a reader implements from the row and the rows
 are field by field. Reading it as a rule about integers alone gives one
-logical entry several legal encodings, and `entry_hash` is over the bytes as
-received (§4.1) — so two encodings of one governance entry are two distinct
-leaves that both replay, which walks around the `dup-entry` defence by exactly
-the route the consume-the-whole-input rule in §4.1 exists to close.
+logical entry several legal encodings. Since D-070 a decodable entry's
+duplicate key is its `content_hash`, which a second encoding of the same
+content shares — but a second encoding that this profile refuses never reaches
+that check, and the rule is what makes it refuse: a reader that admits it has
+two leaves that both replay, which is the route the consume-the-whole-input
+rule in §4.1 exists to close.
 `log/*-bad-cbor-nonshortest` patches an integer and
 `log/*-bad-cbor-nonshortest-length` patches a text-string header; a reader
 that refuses the first and accepts the second holds the narrow rule.
@@ -137,7 +139,8 @@ Derived values:
 |---|---|
 | `kid(pk)` | lowercase hex of `SHA-256(pk)[0:8]` — 16 ASCII chars, as a text string |
 | entry bytes | the full envelope **with** `sigs`, deterministically encoded |
-| `entry_hash` | `SHA-256` of the entry **as received**, byte for byte — identity for de-duplication. Not of a re-encoded canonical form: §5.1 records it at step 1, *before* the entry is decoded at step 2, so an entry that never decodes must still have one |
+| `entry_hash` | `SHA-256` of the entry **as received**, byte for byte. The de-duplication identity of an entry that does **not** decode (§5.1 step 1), and the name an entry is found by (`norn-log`'s resubmission check, the entries mirror). Not of a re-encoded canonical form: an entry that never decodes must still have one |
+| `content_hash` | `SHA-256` of the signature preimage below — the de-duplication identity of every entry that **does** decode (D-070). `sigs` lies outside every signature, so an entry's bytes can change while its signed content, and every valid signature on it, stay the same: keyed on bytes, a copy of a past entry with one unresolvable signature added, a surplus one dropped or a role relabelled was a new entry whose original signatures still counted, and it applied again |
 | leaf hash | `SHA-256(0x00 ‖ entry bytes)` (RFC 6962 §2.1) |
 | signature preimage | the 14-byte prefix `norn/entry/v1\n` (13 ASCII characters and one `0x0A`), then the envelope encoded **without** the `sigs` key |
 
@@ -167,9 +170,11 @@ A decoder MUST consume the **whole** input: bytes after the item are a
 violation of the profile, not padding to skip. This is the difference between
 reading one item and validating a document, and it is load-bearing — a
 signature covers the decoded envelope, so appending a byte to an entry leaves
-every signature valid while changing its `entry_hash`, which is what
-`dup-entry` is keyed on. A decoder that stops at the end of the item lets the
-same governance entry be applied twice.
+every signature valid while changing its bytes. A decoder that stops at the
+end of the item hands replay a second encoding of the same governance entry;
+since D-070 the duplicate key of a decodable entry is its signed content, which
+the byte does not change, but a reader whose decoder stops early has already
+left the profile, and `60-bad-trailing-byte` must be `decode`, not `dup-entry`.
 
 A decoder MUST bound its own resource use. Two limits, both normative:
 
@@ -397,7 +402,7 @@ Replay of an **empty** list of entries yields the zero state of §5.3 with
 
 **Entry 0 (genesis).** In order — though unlike §5.2's ordering, **every failure here is `bad-genesis`**, so no artifact distinguishes one arrangement of these steps from another. The order below is the one that reads most naturally; it is not a guarantee, and §12.1 records it as unvectored.
 
-1. `entry_hash` is recorded as seen.
+1. The duplicate key of §5.1 step 1 is recorded as seen.
 2. Decode per §4.0 and check the envelope per §4.1. Any failure → **abort** (`bad-genesis`).
 3. `t` MUST be `genesis`, and `net` MUST equal `anchor.net` → else **abort** (`bad-genesis`).
 4. `leaf_hash` MUST equal `anchor.genesis_hash` → else **abort** (`bad-genesis`).
@@ -422,8 +427,14 @@ unusable has nothing to verify later entries against.
 
 **Entries 1…n.** For each, in order:
 
-1. `entry_hash` already seen → reject (`dup-entry`). Every entry that reaches
-   this step is added to the seen set, **whether or not it is later rejected**.
+1. **Duplicate check** (D-070). The entry's duplicate key is its `content_hash`
+   if steps 2 and 3 would accept it — it decodes per §4.0 and its envelope
+   passes §4.1, `net` included — and its `entry_hash` otherwise. A key already
+   seen → reject (`dup-entry`). Every entry that reaches this step adds its key
+   to the seen set, **whether or not it is later rejected** (D-031): the first
+   appearance of a signed content is the only one replay will ever apply, so a
+   copy of a past entry under any other signature list is `dup-entry` here,
+   before any later rule can judge it.
 2. Decode per §4.0 → on failure reject (`decode`).
 3. Envelope check per §4.1: exactly the permitted keys, **every member of the
    type §4.1 gives it** (`t` text, `ts` and `after` uint, `body` a map), `v` = 1,
@@ -478,7 +489,7 @@ time** (§5.3), not at replay, so the state itself stays clock-independent.
 | `unknown-type` | `t` not in §4.3 |
 | `bad-genesis` | index 0 is not `genesis` or its leaf hash ≠ `trust.genesis_hash` (**aborts replay**) |
 | `dup-genesis` | `genesis` at index > 0 |
-| `dup-entry` | `entry_hash` already seen |
+| `dup-entry` | the duplicate key — `content_hash` for an entry that decodes, `entry_hash` otherwise (§5.1 step 1) — already seen |
 | `after` | `after` > index |
 | `threshold` | fewer valid signatures of the required role than the threshold |
 | `no-device-sig` | `enroll`/`rotate` lacks a required valid signature by a device key — for `enroll` that is the **embedded request's own** signature (§4.3), for `rotate` a signature on the envelope. **Not `revoke`** — a `revoke` may be authorised by signers, roots *or* the device, so a `revoke` carrying none of the three is `threshold` (§5.1). |
@@ -606,7 +617,7 @@ devices on a number nobody signed.
 - Layout, tiles, entry bundles, and `checkpoint` exactly per `tlog-tiles`. Tile height 8 (width 256), as torchwood requires.
 - A checkpoint body is exactly three lines (`c2sp.org/tlog-checkpoint`): the origin, the tree size in decimal with **no leading zeroes**, and the root as **standard base64 with padding, 32 bytes once decoded** — any other decoded length is an error, and so is base64 the line's own length does not account for. The root MUST use canonical RFC 4648 §3.5 encoding: unused pad bits MUST be zero, so decoding and re-encoding MUST reproduce the exact line. A different final character that decodes to the same root is invalid. `0124` and `124` are the same number and two spellings of one head. The length bound is not decoration: a reader that skips it and also skips the rebuild below accepts a head that is not a SHA-256 root at all, and the two rules are the only ones that look at that line (cold gate run 10, D11).
 - Leaf hash = `H(0x00 ‖ entry_bytes)` (RFC 6962 §2.1). An entry bundle is each entry's length as a **big-endian** uint16 followed by that many bytes, repeated — the framing `c2sp.org/tlog-tiles` defines, and the reason §4.0's `MAX_ENTRY_BYTES` is 65535 rather than 65536. A partial bundle holds **exactly** the number of entries its path declares.
-- **The paths, restated.** `c2sp.org/tlog-tiles` defines them and this document does not vary them — but it restates them here for the same reason §7 restates the note framing and §9.1 the policy grammar: a verifier cannot be written without them, and a reader holding this document and the vectors has no other copy. A hash tile at level `L` covering index group `N` is `tile/<L>/<N>`, and an entry bundle is `tile/entries/<N>`, where `<N>` is the tile's index written in **three-digit groups, most significant first, joined by `/`** — `0`, `1000` and `1234567` are `000`, `x001/000` and `x001/x234/567`, with every group but the last prefixed `x`. A tile that is not yet full is **partial**: its path gains `.p/<W>`, where `<W>` is how many of the 256 entries it holds. So a log of 138 entries serves its only hash tile at `tile/0/000.p/138` and its only bundle at `tile/entries/000.p/138` — both of which this suite ships, and every concrete path written here is one a reader can open. When a tile fills, the `.p/<W>` suffix goes away and the path is the bare group; the next tile starts again at width 1. Tile height is 8, so width is 256 and level `L` covers 256^(L+1) leaves.
+- **The paths, restated.** `c2sp.org/tlog-tiles` defines them and this document does not vary them — but it restates them here for the same reason §7 restates the note framing and §9.1 the policy grammar: a verifier cannot be written without them, and a reader holding this document and the vectors has no other copy. A hash tile at level `L` covering index group `N` is `tile/<L>/<N>`, and an entry bundle is `tile/entries/<N>`, where `<N>` is the tile's index written in **three-digit groups, most significant first, joined by `/`** — `0`, `1000` and `1234567` are `000`, `x001/000` and `x001/x234/567`, with every group but the last prefixed `x`. A tile that is not yet full is **partial**: its path gains `.p/<W>`, where `<W>` is how many of the 256 entries it holds. So a log of 138 entries serves its only hash tile at `tile/0/000.p/145` and its only bundle at `tile/entries/000.p/145` — both of which this suite ships, and every concrete path written here is one a reader can open. When a tile fills, the `.p/<W>` suffix goes away and the path is the bare group; the next tile starts again at width 1. Tile height is 8, so width is 256 and level `L` covers 256^(L+1) leaves.
 - A verifier rebuilds the tree from the **entry bundles** and compares its head with the signed checkpoint; that comparison is what binds the entries to the head. The served `tile/<L>/…` hashes MUST also agree with the tree it rebuilt. They are not needed to reach the head, and checking them is not optional: a node serves the tiles it fetched onward to its peers (§15), so a node that accepted tiles it never checked would pass on a lie it had the means to catch.
 - The checkpoint is a `tlog-checkpoint` note: `origin` line = §2 `origin`, size, root; **no extension lines**. Signed by the log key; cosigned by witnesses per `tlog-cosignature` v1.
 - The log MUST issue a new checkpoint after every append and at least every `checkpoint_interval`.
@@ -1362,7 +1373,7 @@ naming that rule is how the generators and the placement guards check it.
 | `keys.json` | every test key: Ed25519 `{seed, public, kid}` by name, X25519 public keys by name, and `net` |
 | `entries/NN-<type>.cbor` | one valid entry per type, canonical bytes |
 | `entries/NN-<type>.json` | mirror: `{entry, entry_hash, leaf_hash, preimage_sha256, size}` where `size` is the byte length of the `.cbor`. The `entry` object mirrors the **CBOR**, so an optional field absent from the entry is absent here too — unlike `state.json`, where §5.3's schema fields are always emitted |
-| `log/NN-<name>.cbor` | the replay fixture, **138 entries** in order. The file names are labels, not the order: **read the sequence from `manifest.json`**, never by globbing and sorting |
+| `log/NN-<name>.cbor` | the replay fixture, **145 entries** in order. The file names are labels, not the order: **read the sequence from `manifest.json`**, never by globbing and sorting |
 | `log/NN-<name>.reason` | beside each entry that must be rejected: its §5.2 reason code |
 | `log/manifest.json` | `{"anchor": {"net", "genesis_hash"}, "entries": [{"index", "name", "reason"}]}` — the replay input and expected outcome; `reason` is `""` for an accepted entry |
 | `state.json` | canonical replay output for `log/` (§5.3) |
@@ -1441,15 +1452,15 @@ this table drifted out of date the moment one was.
 | §5.3 genesis `params` is **overlaid** | `state.json`'s `checkpoint_interval`, which the genesis body does not set and the §4.5 default supplies | a reader that *replaces* the defaults instead loses the key entirely |
 | §4.3 the request's `ts` is unconstrained | `enroll-request-from-the-future`: an accepted `enroll` whose embedded request is dated ten days after the entry carrying it | the check a reader is most likely to add unasked |
 | §4.4 `after` is a floor | `after-below-index` | `bad-after` |
-| §5 replay, 15 of the 16 reason codes | the log | **95 rejecting entries** |
-| §4.2 signatures resolve against the state **before** this entry | the whole log, every governance entry | `log/126-bad-root_add-counts-its-own-key`: `root_thr` is 3, two valid root signatures, and a third by the key in its own body. Under §4.2 that is two of three and the entry is `threshold`; under the other reading it is a root quorum that **bootstraps itself**. No other entry is signed by a key it adds, so `ResolveKeysAfterEntry` passed all 622 checks. §9.4 makes the same ordering argument for log keys — a stolen log key cannot name its own successor — and the root-key version was stated once and exercised by nothing (cold gate run 11, D8) |
+| §5 replay, 15 of the 16 reason codes | the log | **102 rejecting entries** |
+| §4.2 signatures resolve against the state **before** this entry | the whole log, every governance entry | `log/133-bad-root_add-counts-its-own-key`: `root_thr` is 3, two valid root signatures, and a third by the key in its own body. Under §4.2 that is two of three and the entry is `threshold`; under the other reading it is a root quorum that **bootstraps itself**. No other entry is signed by a key it adds, so `ResolveKeysAfterEntry` passed all 622 checks. §9.4 makes the same ordering argument for log keys — a stolen log key cannot name its own successor — and the root-key version was stated once and exercised by nothing (cold gate run 11, D8) |
 | §5 `bad-genesis` | — | `genesis/`; it cannot appear in the log, since it aborts replay |
 | §5.1 genesis | the log's entry 0 | **19 abort paths** in `genesis/`, one single-entry log each. Two of them are step 7's two halves: `18-bootstrap-sigs-wrong-role` varies the **role string** a signature declares, `19-bootstrap-sigs-from-signers` varies the **key set** it resolves against — signed only by keys the body lists under `signers`, each line declaring `root`. Step 6 requires the two sets disjoint, so a reader that bootstrap-resolves against `signers` too admits a network this one aborts on (cold gate run 10, D15) |
-| §5.1 seen set, §4.3 roles | — | `bad-repeat-of-rejected`, `bad-one-of-two-signers`, `bad-role-mismatch`. Step 1's two stated properties are `bad-repeat-of-undecodable` (the hash is recorded **before** the entry is decoded, so a copy of one that never decoded is `dup-entry` and not a second `decode`) and `bad-repeat-of-genesis` (entry 0's hash is recorded too, so a byte copy of it is `dup-entry` and not `dup-genesis`) |
+| §5.1 seen set, §4.3 roles | — | `bad-repeat-of-rejected`, `bad-one-of-two-signers`, `bad-role-mismatch`. Step 1's two stated properties are `bad-repeat-of-undecodable` (the key is recorded **before** the entry is decoded, so a copy of one that never decoded is `dup-entry` and not a second `decode`) and `bad-repeat-of-genesis` (entry 0's key is recorded too, so a byte copy of it is `dup-entry` and not `dup-genesis`). The key being the **signed content** of a decodable entry (D-070) is held by six entries: `bad-copy-enroll-spare-extra-sig`, `bad-copy-policy-extra-sig`, `bad-copy-rotate-nas-extra-sig` and `bad-copy-signer_add-signer3-extra-sig` (a past entry re-appended with one unresolvable signature), `bad-copy-enroll-spare-role-relabelled`, and `bad-copy-two-sig-base-surplus-dropped` — every one `dup-entry`, and under a byte key every one applied again (the first re-enrols a device revoked two entries later; the second rolls the quorum back). `two-sig-base` carries its own text so it stays the sigs-ordering control rather than becoming a duplicate of `profile-base` |
 | §5.2 `bad-thr` | — | both halves: `bad-thr-zero` and `bad-thr` (value above the set size) |
 | §5.1 a `policy` entry is a policy | `policy-rotated`, which raises the quorum from 2 of 3 to 3 of 3 | `bad-policy-unparseable`: text that is well-formed, under the size cap, and not a `tlog-policy` |
 | §4.3 `revoke`'s three authorisations | `revoke-by-roots`, `revoke-self-laptop` (the device authorising its own revocation, and the only signature on it) | `bad-revoke-neither-quorum`: one signer of two and two roots of three — short on every rule independently, and a quorum only if the counts are pooled |
-| §5.1 `params`: non-empty, §4.5 keys, right types | `params` entries in the log | `bad-params-empty`, `bad-params-unknown-key`, `bad-params-wrong-type` — a CBOR `true` where a uint belongs, which a loose decoder reads as 1 — and `bad-params-flag-as-uint`, the reverse: `rotate_needs_signer` given as `1`, which a reader that treats any truthy value as on accepts. The same key rule at entry 0 is `genesis/13-params-unknown-key`, where the two readings differ by the whole log: one aborts to the zero state, the other replays every entry |
+| §5.1 `params`: non-empty, §4.5 keys, right types; a rejected entry changes nothing | `params` entries in the log | `bad-params-mixed-validity` (`mmd` valid and first in key order, `staleness` a bool: a handler that writes as it validates has changed `mmd` by the time it rejects, and `state.json` shows it did not), `bad-params-empty`, `bad-params-unknown-key`, `bad-params-wrong-type` — a CBOR `true` where a uint belongs, which a loose decoder reads as 1 — and `bad-params-flag-as-uint`, the reverse: `rotate_needs_signer` given as `1`, which a reader that treats any truthy value as on accepts. The same key rule at entry 0 is `genesis/13-params-unknown-key`, where the two readings differ by the whole log: one aborts to the zero state, the other replays every entry |
 | §14.1 key order above the BMP | `enroll-astral-labels`, whose labels carry one astral key and one private-use key: the only pair in the suite where UTF-8 bytewise order and UTF-16 code-unit order disagree | — |
 | §5.3 state, incl. D-028 and `expires` | `state.json`, `enroll-contractor` | `signer_remove-below-threshold` accepted, then `signer_add-recover` |
 | §5.3 a witness counts at its **newest** verifying line | `served-twice-cosigned/`: one witness answers twice and both lines verify, so the head is valid and only the tie-break decides. `cases.json` records the instant it must come out at, and the one an oldest-line reader would get instead | `checkpoints-bad/12-second-line-from-one-witness` cannot pin this — its second line does not verify, so §10's per-line rule refuses the checkpoint first |
@@ -1546,7 +1557,7 @@ admits its holes, so:
   signature counting never fires. Confirmed by deleting it: every check stays
   green. It is written down because a reader who counts signatures without it
   is relying on a rule two sections away, and that is worth saying once —
-  and that rule **is** vectored: `log/127-bad-repeated-kid` carries one root's
+  and that rule **is** vectored: `log/134-bad-repeated-kid` carries one root's
   signature element three times and is `decode`. The two rules hide each
   other: a reader lax about both lets one root meet a three-root quorum, and
   until that entry shipped, nothing in the suite checked either (cold gate
@@ -1592,8 +1603,9 @@ admits its holes, so:
   entry.** Unobservable: entry 0 aborts whenever the two differ, so no file can
   tell the two readings apart. Recorded here because a reader will look.
 - **`entry_hash` being over the bytes *as received* rather than a
-  re-canonicalised form.** §5.1 step 1's *ordering* is vectored — a copy of an
-  entry that never decoded is `dup-entry` — but the received-versus-recanonical
+  re-canonicalised form**, for the entries that do not decode and so keep it
+  as their duplicate key (D-070). §5.1 step 1's *ordering* is vectored — a copy
+  of an entry that never decoded is `dup-entry` — but the received-versus-recanonical
   half cannot be: the only entry whose raw bytes differ from its canonical form
   violates §4.0, and is `decode` at step 2 before any hash of a canonical form
   could be taken. `60-bad-trailing-byte` is caught by the whole-input rule, not
