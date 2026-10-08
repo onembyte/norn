@@ -244,7 +244,7 @@ checkpoint, the design is wrong — so that is a gate line, not an aspiration.
 | 2.4 | `internal/logclient` | fetches checkpoint + bundles from a served directory and reproduces `state.json` byte for byte | ✅ |
 | 2.5 | Tamper and restart | a flipped byte, a forged head, a missing bundle and a wrong anchor are each refused; a restart changes neither checkpoint nor state | ✅ |
 | 2.6a | Checkpoint format accepted by the ecosystem | `transparency-dev/formats` — the package witnesses use — parses and verifies a Norn checkpoint unchanged | ✅ |
-| 2.6b | A running witness cosigns | an **unmodified** `transparency-dev/witness` returns a cosignature over `add-checkpoint`. Needs a witness process, so it belongs to the lab | ⬜ Phase 4 |
+| 2.6b | A running witness cosigns | an **unmodified** `transparency-dev/witness` returns a cosignature over `add-checkpoint`. Needs a witness process, so it belongs to the lab | ✅ closed by 4.4 (`4a2d5a7`); rerun under `NORN_REQUIRE_WITNESS=1` by 6.5m-viii |
 | 2.7 | §6/§8/§10 vectors | a served tile directory and six proof bundles enter the suite; only §6 cosignatures remain, and they need a running witness | ✅ |
 | 2.8 | HTTP fetch + `norn verify` | a log served over plain HTTP verifies from the command line and prints its state | ✅ |
 | 2.9 | The rest of the CLI | subdivided below — `init`, `enroll`, `sign`, `submit`, `status` are five flows, not one checkpoint | ✅ |
@@ -695,7 +695,7 @@ plan before the first line of code, and stops at **[decision]** and **[user]**.
 | 6.5l-x | H6 | Sealed runs under D-068 | see the 6.5l-x row above | ⬜ |
 | 6.5m-v | H7 | [codex: gpt-6-astra/high] Mesh simulation: T1–T8 in CI | `internal/sim` runs N agents over real loopback gossip with a programmable log; T1, T1b, T2–T8 pass in simulated time, each with a control that disables the mechanism it proves; `make lab-sim` | ⬜ |
 | 6.5m-vi | H8 | [codex: gpt-6.1-sol/high] Observe-mode deployment kit | a hardened systemd unit and example config, each checked by a test; `/metrics` with `GOSSIP.md` §9's names; a log-server Dockerfile; `OBSERVE.md` | ⬜ |
-| 6.5m-viii | H9 | Reconcile 2.6b with 4.4 | the witness interop test runs (not skips) and passes under `NORN_REQUIRE_WITNESS=1`; row 2.6b says what 4.4 already proved | ⬜ |
+| 6.5m-viii | H9 | Reconcile 2.6b with 4.4 | the witness interop test runs (not skips) and passes under `NORN_REQUIRE_WITNESS=1`; row 2.6b says what 4.4 already proved | ✅ |
 | 6.5m-ix | H10 | [codex: gpt-6.1-sol/high] Tailscale/Headscale observe via LocalAPI | an event-driven, read-only peer source over a fake LocalAPI; `-backend tailscale` refuses every mode but observe; no `tailscale.com` dependency | ⬜ |
 | 6.5m-x | H11 | [codex: gpt-6.1-sol/high] The log server scales and rate-limits (F8) | a submission replays one entry, not the log; a per-source limit returns §7's 429 | ⬜ |
 | 6.5m-xi | H12 | [codex: gpt-6.1-sol/medium] Split `cmd/norn-genlog` (F9) | one file per vector set; `make vectors-log` leaves `testdata/` unchanged | ⬜ |
@@ -714,6 +714,13 @@ plan before the first line of code, and stops at **[decision]** and **[user]**.
 | U2–U7 | — | Lab, nginx, OpenTimestamps, NAS, phone enrollment, LocalAPI on a real node, outside people | **[user]** `HARDENING-PLAN.md` Stage G | ⬜ |
 | U8 | — | The v0.1 tag; the scope email to `keytrans@ietf.org`, drafted here, sent by you | **[user]** not before the lab soak; the 2 Nov 2026 cutoff is not a target | ⬜ |
 | U9 | — | Render and, if U8's answer makes it in scope, submit the `-00` problem statement | **[user]** `kramdown-rfc`, a Datatracker account | ⬜ |
+
+- **6.5m-viii — rows 2.6b and 4.4 agree: the witness interop test runs, not skips, and passes; 2.6b is ticked as closed by 4.4.**
+  - **What was wrong.** Row 2.6b ("a running witness cosigns") still said "⬜ Phase 4", though row 4.4 had closed it on 2026-09-19 (`4a2d5a7`) and `PLAN.md`'s line was ticked "Closed by 4.4". The review read the stale row; H9 found it while the plan was being written. Nothing to build — only to prove the test still does what 4.4 said, here, today.
+  - **Run.** `NORN_REQUIRE_WITNESS=1 go test ./internal/interop/ -v` with `build/omniwitness` and `build/generate_keys` already present: `TestAnUnmodifiedWitnessCosignsANornCheckpoint` **ran** (no skip line) and passed in 1.7 s — the witness generated its own key with its own tool, `norn init` built a network requiring it, `norn-log` pushed to it over `tlog-witness`, an unmodified `omniwitness` cosigned, and `norn verify` accepted the checkpoint.
+  - **Control**, restored byte for byte (digest checked): Norn's quorum check made to pass without any cosignature fails the test at its negative half — "a checkpoint with the witness's cosignature removed was accepted" (`witness_test.go:188`) — which is what that half exists to catch: step 6's acceptance proves nothing unless the same checkpoint without the line is refused.
+  - **Row 2.6b** now reads "✅ closed by 4.4 (`4a2d5a7`); rerun under `NORN_REQUIRE_WITNESS=1` by 6.5m-viii". No other change.
+  - **Gate:** generators first (no change under `testdata/`), then `make test` (race) alone — green in all 49 packages with tests, 1055 tests — `vectors-check`, 230 reference tests, `lint`, `fmt-check`, `vet` clean.
 
 - **6.11-c — the documents say what D-073 built: routes are bounded by the grant, a seventh guarantee, and the comparison row (Codex lane P, integrated after it hit the usage limit). H18 complete.**
   - **The lane.** `gpt-6-luna`, medium, documents only. It edited all four documents its brief named and then stopped at the Codex subscription's usage limit — before its gate and its commit message. Per the owner's rule 11 its tree was checked file by file: four files changed, each a finished piece of the brief, nothing half-written. Integrated here, with the commit message written by the integrator.
