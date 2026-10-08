@@ -514,6 +514,14 @@ def write_trust(out: pathlib.Path) -> None:
     add_case("leaf-hash-nonzero-pad-bits.note", "\n".join(changed) + "\n", "leaf-hash",
              "unused pad bits in the leaf hash MUST be zero")
 
+    # Cold gate run 13, D18: the same hash with its padding dropped. It decodes
+    # to the right 32 bytes for a lenient reader, and re-encoding does not give
+    # the line back, so it is `leaf-hash`.
+    changed = body_lines.copy()
+    changed[2] = leaf_text[:-1]
+    add_case("leaf-hash-unpadded.note", "\n".join(changed) + "\n", "leaf-hash",
+             "The leaf hash MUST be standard base64 and decode to exactly 32 bytes")
+
     # The same receipt with one leading zero, re-signed so only its spelling is
     # wrong. `ParseUint` alone accepts this second representation.
     changed = body_lines.copy()
@@ -532,10 +540,42 @@ def write_trust(out: pathlib.Path) -> None:
              "A nonzero checking time at or after the deadline MUST refuse the receipt",
              raw_signed=signed, now_unix=deadline)
 
+    # Cold gate run 13, D4. Every case above fails one step, so a reader that
+    # swapped two adjacent steps refused each for the same reason and passed.
+    # Each below fails a step and the one after it, re-signed (the first by the
+    # wrong key, which is its earlier fault), so only the order decides. Each
+    # cites the rule of the step that decides it.
+    def two_faults(**lines: str) -> str:
+        changed = body_lines.copy()
+        for index, value in lines.items():
+            changed[int(index[1:])] = value
+        return "\n".join(changed) + "\n"
+
+    foreign_leaf = base64.b64encode(hashlib.sha256(b"a different entry").digest()).decode("ascii")
+    add_case("order-log-signature-before-receipt.note", two_faults(l0="norn/receipt/v2"),
+             "log-signature", "The note MUST verify under the anchored log key", signer="logkey2")
+    add_case("order-receipt-before-origin.note",
+             two_faults(l0="norn/receipt/v2", l1="norn/elsewhere"), "receipt",
+             "The first line MUST be")
+    add_case("order-origin-before-leaf-hash.note",
+             two_faults(l1="norn/elsewhere", l2="!!!!"), "origin",
+             "The origin line MUST equal the anchored origin")
+    add_case("order-leaf-hash-before-deadline.note",
+             two_faults(l2="!!!!", l3="0" + body_lines[3]), "leaf-hash",
+             "The leaf hash MUST be standard base64 and decode to exactly 32 bytes")
+    add_case("order-deadline-before-entry.note",
+             two_faults(l2=foreign_leaf, l3="0" + body_lines[3]), "deadline",
+             "The deadline MUST be canonical decimal")
+    add_case("order-entry-before-expired.note", two_faults(l2=foreign_leaf),
+             "entry", "the submitted entry's leaf hash MUST equal the receipt's leaf hash",
+             now_unix=deadline)
+
     write(out / "receipt-bad" / "cases.json", canonjson.dumps({
         "comment": "receipt refusal vectors in §7 check order. Body and signer "
                    "negatives are re-signed; extra-final-newline is malformed note "
-                   "framing and expired-at-deadline uses the explicit time in its case",
+                   "framing and expired-at-deadline uses the explicit time in its case. "
+                   "Each order- case fails two adjacent steps and MUST be refused for "
+                   "the earlier, whose rule it cites",
         "cases": cases,
         "rules": rules,
         "codes": codes,
