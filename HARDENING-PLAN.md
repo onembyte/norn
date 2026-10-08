@@ -113,8 +113,20 @@ incident that produced it. Read that section before the first firing.
       report names, rebase onto `master`, run the full gate, write the journal
       entry and tick the row, push. A lane whose work does not survive review
       is sent back with the reason, or redone here.
-    - At most **two lanes at once**, on files disjoint from each other and
-      from the row the loop is on.
+    - At most **two code lanes at once, plus one lane that edits documents
+      only**, on files disjoint from each other and from the row the loop is
+      on.
+    - **Delegate by default (owner's instruction, 2026-10-08: "use codex
+      sessions to work with you from your instructions, to optimize your
+      usage").** Every row that is not 🧠, needs no network, no Claude agent
+      and no person is tagged `[codex: <model>/<effort>]` and built by a lane;
+      the loop writes the brief, reviews every line, reruns the controls and
+      integrates. It builds a row itself only when the row cannot be
+      delegated, or when every lane slot is taken by files the row would
+      touch. Lanes may now regenerate vectors (never hand-edit them) and add
+      the `SPEC.md` §12/§12.1 rows their vectors need, nothing normative
+      (`~/norn-lanes/RULES.md` rules 1 and 5): the integrator applies the
+      sources, regenerates here, and `vectors-check` proves the result.
     - **Order by model (owner's instruction, 2026-10-07):** a firing on
       Mythos takes the first 🧠 row and lets finished lanes wait; a firing on
       Opus integrates finished lanes and takes untagged rows, and stops with a
