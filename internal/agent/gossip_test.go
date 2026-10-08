@@ -551,3 +551,46 @@ func TestASilentPeerDoesNotStallEnforcement(t *testing.T) {
 		}
 	}
 }
+
+// SEC-035 (row 035-ii): an overlap the provider created is said out loud, as
+// every other provider fault is. A route withheld in silence would look, to
+// the operator, like a peer Norn broke.
+func TestOverlappingRoutesAreReportedAsAProviderClaim(t *testing.T) {
+	full, _, _ := writableLog(t)
+	rec := &recorder{}
+	fake := peertable.NewFake()
+	a, err := New(Config{
+		Anchor: anchor(t), Fetcher: logclient.Dir(full), Device: fake,
+		Mode: reconcile.Owner, Emit: rec.emit,
+		Provider: endpoint.Static{Peers: map[string]endpoint.Hints{
+			"nas":    {AllowedIPs: prefixes(t, "10.9.0.0/24")},
+			"pi-cam": {AllowedIPs: prefixes(t, "10.9.0.3/32")},
+		}},
+		Now:  func() time.Time { return time.Unix(fixtureCosignedAt, 0) },
+		Mono: func() time.Duration { return 0 },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Once(); err != nil {
+		t.Fatal(err)
+	}
+	said := false
+	for _, e := range rec.events {
+		if e.Kind == ProviderClaim && strings.Contains(e.Message, "overlap") &&
+			strings.Contains(e.Message, "nas") && strings.Contains(e.Message, "pi-cam") {
+			said = true
+		}
+	}
+	if !said {
+		t.Errorf("the overlap was not reported: %v", rec.kinds())
+	}
+	peers, _ := fake.Peers()
+	for _, peer := range peers {
+		for _, prefix := range peer.AllowedIPs {
+			if prefix.Overlaps(netip.MustParsePrefix("10.9.0.3/32")) {
+				t.Errorf("an overlapping route was installed: %v", prefix)
+			}
+		}
+	}
+}

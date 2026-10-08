@@ -301,3 +301,65 @@ func TestAHintsFileCannotAddAPeerEither(t *testing.T) {
 		t.Errorf("unproven = %v", report.Unproven)
 	}
 }
+
+// SEC-035 (row 035-ii). Two proven devices whose allowed-ips overlap is a
+// provider fault, not a routing choice: WireGuard sends a packet to the peer
+// with the most specific prefix, so the wider device silently loses the
+// narrower one's addresses -- or, for equal prefixes, whichever was written
+// last wins. Neither device gets the overlapping prefix; both stay in the
+// desired set, because the log proves them; and the report says so.
+func TestDesiredRefusesOverlappingAllowedIPsAmongProvenDevices(t *testing.T) {
+	devices := []Device{device(t, "subnet", 1, nil), device(t, "host", 2, nil)}
+	provider := Static{Peers: map[string]Hints{
+		"subnet": {AllowedIPs: []netip.Prefix{netip.MustParsePrefix("10.9.0.0/24")}},
+		"host":   {AllowedIPs: []netip.Prefix{netip.MustParsePrefix("10.9.0.2/32")}},
+	}}
+	peers, report := Desired(devices, provider)
+	if len(peers) != 2 {
+		t.Fatal("proven identities must remain in the desired set")
+	}
+	for _, peer := range peers {
+		if len(peer.AllowedIPs) != 0 {
+			t.Errorf("overlapping routes were installed for a proven device: %v", peer.AllowedIPs)
+		}
+	}
+	if len(report.Overlapping) != 1 {
+		t.Fatalf("overlaps reported = %v, want one naming both devices", report.Overlapping)
+	}
+	for _, want := range []string{"subnet", "10.9.0.0/24", "host", "10.9.0.2/32"} {
+		if !strings.Contains(report.Overlapping[0], want) {
+			t.Errorf("the overlap report should name %q: %q", want, report.Overlapping[0])
+		}
+	}
+	if report.Empty() {
+		t.Error("a report carrying an overlap is not empty")
+	}
+}
+
+// Only the overlapping prefix is withheld. A device's other routes are its
+// own, and disjoint devices are untouched.
+func TestOnlyTheOverlappingPrefixIsWithheld(t *testing.T) {
+	devices := []Device{device(t, "a", 1, nil), device(t, "b", 2, nil), device(t, "c", 3, nil)}
+	provider := Static{Peers: map[string]Hints{
+		"a": {AllowedIPs: []netip.Prefix{netip.MustParsePrefix("10.9.0.1/32"), netip.MustParsePrefix("10.8.0.0/24")}},
+		"b": {AllowedIPs: []netip.Prefix{netip.MustParsePrefix("10.9.0.1/32")}},
+		"c": {AllowedIPs: []netip.Prefix{netip.MustParsePrefix("10.7.0.1/32")}},
+	}}
+	peers, report := Desired(devices, provider)
+	routes := map[byte][]netip.Prefix{}
+	for _, peer := range peers {
+		routes[peer.Key[0]] = peer.AllowedIPs
+	}
+	if len(routes[1]) != 1 || routes[1][0] != netip.MustParsePrefix("10.8.0.0/24") {
+		t.Errorf("a kept %v; want only its non-overlapping 10.8.0.0/24", routes[1])
+	}
+	if len(routes[2]) != 0 {
+		t.Errorf("b kept the overlapping %v", routes[2])
+	}
+	if len(routes[3]) != 1 {
+		t.Errorf("c, which overlaps nobody, lost its route: %v", routes[3])
+	}
+	if len(report.Overlapping) != 1 {
+		t.Errorf("overlaps reported = %v, want the one equal pair", report.Overlapping)
+	}
+}

@@ -744,6 +744,12 @@ func (a *Agent) apply(desired []peertable.Peer, report endpoint.Report) error {
 		a.emit(Event{Kind: ProviderClaim,
 			Message: fmt.Sprintf("%q is proven but no provider gave it any routes", id)})
 	}
+	for _, overlap := range report.Overlapping {
+		a.emit(Event{Kind: ProviderClaim,
+			Message: fmt.Sprintf("%s: the provider gave two proven devices overlapping "+
+				"allowed-ips, so neither is installed with them -- WireGuard would route "+
+				"one device's addresses to the other", overlap)})
+	}
 
 	actual, err := a.cfg.Device.Peers()
 	if err != nil {

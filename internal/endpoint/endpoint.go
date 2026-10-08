@@ -61,11 +61,18 @@ type Report struct {
 	Unrouted []string
 	// Malformed are hints that did not parse, by device and field.
 	Malformed []string
+	// Overlapping are pairs of proven devices whose allowed-ips overlap, as
+	// "a 10.9.0.0/24 overlaps b 10.9.0.2/32". Neither device is given the
+	// overlapping prefix: WireGuard routes a packet to the peer with the most
+	// specific matching prefix, so an overlap silently hands one device's
+	// addresses to another, and nothing in the log decided that (SEC-035).
+	Overlapping []string
 }
 
 // Empty reports whether everything a provider said was usable.
 func (r Report) Empty() bool {
-	return len(r.Unproven) == 0 && len(r.Unrouted) == 0 && len(r.Malformed) == 0
+	return len(r.Unproven) == 0 && len(r.Unrouted) == 0 && len(r.Malformed) == 0 &&
+		len(r.Overlapping) == 0
 }
 
 // Desired builds the peer table the proven set implies.
@@ -94,12 +101,59 @@ func Desired(proven []Device, provider Provider) ([]peertable.Peer, Report) {
 			peer.Endpoint = hints.Endpoint
 			peer.Keepalive = hints.Keepalive
 		}
-		if len(peer.AllowedIPs) == 0 {
-			report.Unrouted = append(report.Unrouted, device.ID)
-		}
 		peers = append(peers, peer)
 	}
+	report.Overlapping = withholdOverlaps(proven, peers)
+	for i, peer := range peers {
+		if len(peer.AllowedIPs) == 0 {
+			report.Unrouted = append(report.Unrouted, proven[i].ID)
+		}
+	}
 	return peertable.Sorted(peers), report
+}
+
+// withholdOverlaps removes from every peer each prefix that overlaps a prefix
+// of another peer, and says which pairs did. Both sides lose the prefix: the
+// provider gave two devices the same addresses, and choosing one would be
+// Norn deciding something nobody signed. A device's other prefixes are its
+// own and stay. peers[i] belongs to proven[i].
+func withholdOverlaps(proven []Device, peers []peertable.Peer) []string {
+	var found []string
+	withheld := make([]map[netip.Prefix]bool, len(peers))
+	for i := range peers {
+		withheld[i] = map[netip.Prefix]bool{}
+	}
+	for i := range peers {
+		for j := i + 1; j < len(peers); j++ {
+			for _, a := range peers[i].AllowedIPs {
+				for _, b := range peers[j].AllowedIPs {
+					if !a.Overlaps(b) {
+						continue
+					}
+					withheld[i][a], withheld[j][b] = true, true
+					first, second := proven[i].ID+" "+a.String(), proven[j].ID+" "+b.String()
+					if second < first {
+						first, second = second, first
+					}
+					found = append(found, first+" overlaps "+second)
+				}
+			}
+		}
+	}
+	for i := range peers {
+		if len(withheld[i]) == 0 {
+			continue
+		}
+		var kept []netip.Prefix
+		for _, prefix := range peers[i].AllowedIPs {
+			if !withheld[i][prefix] {
+				kept = append(kept, prefix)
+			}
+		}
+		peers[i].AllowedIPs = kept
+	}
+	sort.Strings(found)
+	return found
 }
 
 // Static answers from a table an operator wrote, keyed by device id.

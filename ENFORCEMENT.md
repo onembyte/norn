@@ -71,6 +71,10 @@ connected it yet). Never writes. Mandatory first mode everywhere (D-005).
 - The endpoint provider may supply endpoints / allowed-ips **only for keys in
   `proven`**; keys it mentions that are not proven are logged and dropped. A control
   plane thus degrades to an *endpoint directory* — the role it should have had.
+- Two proven devices whose provider-supplied allowed-ips overlap get neither
+  overlapping prefix, and the pair is reported (`PROVIDER_CLAIM`): WireGuard routes
+  to the most specific prefix, so an overlap would hand one device's addresses to
+  another, and nothing in the log decided that. Each device keeps its other routes.
 - Norn never deliberately writes a rogue key. An external writer's change is
   corrected on the next cycle; the window depends on polling and reconfiguration.
 
