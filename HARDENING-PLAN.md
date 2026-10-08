@@ -133,6 +133,11 @@ incident that produced it. Read that section before the first firing.
   — the preimage without `sigs` — for every entry, accepted or rejected
   (audit SEC-001, option A); per-device sequence numbers are recorded for
   v1.1.
+- **D-072 (open, written 2026-10-08):** five protocol questions from the
+  audit — a frozen watchdog's evictions, an empty `labels` map, the Ed25519
+  rule at the edges, log-key retirement, enforcing under `quorum none` — with
+  a recommendation each; `BUILD-LOG.md`'s DECISION block says how to answer.
+  Rows 021r–033r wait on their part; nothing else does.
 - **D-071 (taken 2026-10-07, under the owner's instruction to review KEYTRANS
   -10 §7.2 and build what it shows missing): the witness clock survives a
   restart; a restarted node asks the peers its held head proves; a node with

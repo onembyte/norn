@@ -665,7 +665,12 @@ plan before the first line of code, and stops at **[decision]** and **[user]**.
 | 6.5m-sec-008b | HS-008b | [codex: gpt-6-astra/high] `norn rotate` (SEC-008) | the device's current key signs; the incoming `device_pk` signs too (D-032); a signer when `rotate_needs_signer`; `after` set by default | ⬜ |
 | 6.5m-sec-008c | HS-008c | [codex: gpt-6-astra/high] a governance builder (SEC-008) | `signer_add/remove/thr`, `root_add/remove/thr`, `log_key`, `policy`, `params`, `note`, each root-signed and extendable; `-yes` refused | ⬜ |
 | 6.5m-sec-docs | HS-docs | [codex: gpt-6-luna/medium] The documents say what exists (SEC-020, 026, 008, 014) | the Headscale claim, the ssh-agent warning, "only `enroll` exists" until HS-008, runbook R7 | ⬜ |
-| 6.5m-sec-dec | HS-dec | 🧠 One DECISION block for the protocol questions the audit raised | a frozen watchdog's evictions (021), an empty `labels` map (022), the Ed25519 rule at the edges (023), log-key retirement (014), enforcing modes under `quorum none` (033) | ⬜ |
+| 6.5m-sec-dec | HS-dec | 🧠 One DECISION block for the protocol questions the audit raised | a frozen watchdog's evictions (021), an empty `labels` map (022), the Ed25519 rule at the edges (023), log-key retirement (014), enforcing modes under `quorum none` (033) |✅ |
+| 6.5m-sec-021r | HS-021r | A frozen node names what it is not evicting (D-072 a) — *needs D-072 a answered* | `FROZEN` repeats on the degraded cadence and lists the unproven keys on the interface; no eviction while frozen (status quo) unless the answer says otherwise | ⬜ |
+| 6.5m-sec-022r | HS-022r | [codex: gpt-6.1-sol/high] An empty `labels` map is refused as present-but-empty (D-072 b) — *needs D-072 b answered* | §16.1 says it; both implementations refuse `labels: {}` at the decoder; `requests-bad/empty-labels`; the log regenerated if a vector lands in `log/` | ⬜ |
+| 6.5m-sec-023r | HS-023r | 🧠 §3 names the Ed25519 verification rule and the suite holds its edges (D-072 c) — *needs D-072 c answered* | canonical `A`, `R`, `S`; keys admitted only of order `L`; the equation stated; vectors: a small-order key in `genesis/`, a non-canonical key, `S ≥ L`, a torsion `R`; Go and the reference agree on every one | ⬜ |
+| 6.5m-sec-014r | HS-014r | [codex: gpt-6-luna/medium] R7 says rotation is not revocation (D-072 d) — *needs D-072 d answered* | `ENROLLMENT.md` R7 and `THREAT-MODEL.md` A2: a compromised log key is contained by the witness quorum and remedied by a new trust file; retirement recorded for v1.1 | ⬜ |
+| 6.5m-sec-033r | HS-033r | `nornd` refuses to enforce under `quorum none` without saying so (D-072 e) — *needs D-072 e answered* | owner/watchdog refuse to start when the effective policy is `quorum none` unless `allow_no_quorum` is set; observe is always allowed; a policy lowered to none while running alarms on the degraded cadence; one sentence in §13.2 | ⬜ |
 | 6.5l-ix | H5 | Run 13's findings | see the 6.5l-ix row above; subdivided from `HARDENING-PLAN.md` H5. **[decision]** for D2, D6, D9, D12, D13 | ⬜ |
 | 6.5l-x | H6 | Sealed runs under D-068 | see the 6.5l-x row above | ⬜ |
 | 6.5m-v | H7 | Mesh simulation: T1–T8 in CI | `internal/sim` runs N agents over real loopback gossip with a programmable log; T1, T1b, T2–T8 pass in simulated time, each with a control that disables the mechanism it proves; `make lab-sim` | ⬜ |
@@ -682,6 +687,12 @@ plan before the first line of code, and stops at **[decision]** and **[user]**.
 | 7.0 | H17 | `ACTION-PLAN.md` and the email draft | a test plan for the owner; an email drafted in the form `wireguard.com` asks for, read from the page at the time; a pre-send checklist; **nothing sent** | ⬜ |
 | U1 | — | Observe mode on the homelab mesh (6.5m-vii) | **[user]** one node a day, then every node for seven days | ⬜ |
 | U2–U7 | — | Lab, nginx, OpenTimestamps, NAS, phone enrollment, LocalAPI on a real node, outside people | **[user]** `HARDENING-PLAN.md` Stage G | ⬜ |
+
+- **6.5m-sec-dec — one DECISION block for the five protocol questions the audit raised; no 🧠 row remains.**
+  - **The block** (above the D-071 block in this file) takes SEC-021, 022, 023, 014 and 033 in turn: what is true on master, the options with what each costs, and a recommendation each — keep a frozen node's hands off the interface but have it name what it is not evicting; make a present-but-empty `labels` map a schema fault; have §3 admit only prime-order keys with canonical encodings and state the verification equation, vectored at the edges; say in R7 that rotation is not revocation and leave retirement to v1.1; have `nornd` refuse to enforce under `quorum none` unless a setting says so. Every recommendation is the first option, and the block says how to answer.
+  - **What it unblocks.** Five rows (021r, 022r, 023r, 014r, 033r), each marked with the part it needs, with owners by rule 12: 023r is a protocol row with new vectors and stays Mythos; 022r and 014r are lanes; 021r and 033r are Opus. Nothing else on the track waits on them.
+  - **What is claimed and what is not.** Part (c) rests on the known divergence between Go's `crypto/ed25519` and libsodium at small-order and non-canonical points, which the triage confirmed as a gap by reading; exactly which edges Go's std library refuses today is marked *to confirm when the row is built*, not asserted.
+  - **Gate:** generators first (no change under `testdata/`), then `make test` (race) alone — green in all 49 packages with tests, 984 tests — `vectors-check`, 224 reference tests, `lint`, `fmt-check`, `vet` clean. Documents only.
 
 - **6.5m-iv-d — the mirror writes only what changed, durably, checkpoint last; the `publishKey` twins fold into `durable`; H4 closes.**
   - **Red first.** A 300-entry log grown by one rewrote its full bundle, its full tile and its level-1 tile — the same bytes at the same paths — and the mirror's writer was a plain temp-and-rename that synced nothing, so after a power cut its head could name a file the disk never received and D-069's restart reported the mirror unusable (the cost D-069 accepted and this row pays). And `durable` had no exclusive publication: a `Publish` stub that replaced failed both of the twins' tests moved there.
@@ -2437,6 +2448,70 @@ The audit lives on branch `claude/tender-mccarthy-bzllsp` (`docs/audit/SECURITY_
 | 036 | low | **Confirmed.** CI has no `permissions:`, pins actions by tag, installs `pynacl` unpinned, never sets `NORN_REQUIRE_WITNESS`, and has no scheduled run. The `vectors-check`/`fork/` claim was not checked | `ci.yml` | 6.5m-ci |
 
 ---
+
+## DECISION — 6.5m-sec-dec: five protocol questions the audit raised (written 2026-10-08; **open**, to be recorded as D-072 when answered)
+
+Each part is a question SPEC.md does not answer, found by the audit and confirmed on master (the AUDIT TRIAGE table above); each comes with a recommendation and what it would cost, so the owner can answer with a letter per part. Nothing here changes a wire format; (b), (c) and (e) change what a conforming implementation accepts or refuses, which is why they wait.
+
+### (a) SEC-021 — a frozen watchdog evicts nothing
+
+**What is true.** §13.2: a proven fork "freezes the node at its last verified state … and refuses further checkpoint adoption or interface changes under that anchor." `Once` returns before reconciling, so a frozen **watchdog** stops evicting unproven keys — the one thing a watchdog exists to do — until an operator delivers a new trust file. The audit calls that an open door; §13.2 calls it the rule.
+
+| Option | What it means | Cost |
+|---|---|---|
+| **A — keep §13.2, and say what the door is (recommended)** | A frozen node changes nothing on the interface, as now; but `FROZEN` repeats on the degraded cadence (5 min) and **names the unproven keys it sees and is not evicting**, so an operator reads the exposure, not just the fact of a freeze. | None to the protocol. An intruder admitted by the control plane during a freeze stays until a person acts — which is already true of every freeze, and a freeze is already the loudest thing a node does. |
+| B — a frozen watchdog keeps evicting against its frozen state | Keys in neither branch are intruders under any reading; evicting them takes no side. | It does take a side: a key enrolled only on the *other* branch is unproven to this node and would be evicted, which is the node deciding the fork — the thing §11 forbids. Telling "in neither branch" from "in the other branch" needs the other branch's entries, which a node has for a peer-found fork and not for a log-found one. |
+| C — a frozen watchdog evicts only keys provably in neither branch | B without the side-taking, when the other branch is held. | A third enforcement state in §13.2 and §11, two code paths that must agree, and vectors; for a window that A already makes visible. v1 is frozen. |
+
+**Recommendation: A.** Rejected: B (takes a side), C (a new state for a window A makes visible). Implementation row: 021r, Opus.
+
+### (b) SEC-022 — an empty `labels` map
+
+**What is true.** §16.1 lists `labels` as OPTIONAL and §4.0 says an OPTIONAL field is *absent, never null* — and says nothing about an OPTIONAL map that is present and empty. Go rebuilds a request's preimage without `labels` when the map is empty, so a request signed over `labels: {}` (one byte, `0xa0`) fails its own signature; the reference was not probed. §5.3's state carries `labels: {}` when an enrolment had none, which is a *state* convention, not a request one.
+
+| Option | What it means | Cost |
+|---|---|---|
+| **A — present means non-empty (recommended)** | §16.1 (and §4.3's `labels` row): a `labels` map, when present, MUST carry at least one pair; `labels: {}` is refused by the decoder as a schema fault. One encoding for "no labels": absence. | Both implementations refuse at the decoder (Go accepts `{}` today in `fields.Labels` and then fails the signature, which is the right outcome by the wrong road); one vector, `requests-bad/empty-labels`; a sentence in §16.1 and §4.3. |
+| B — `{}` is legal and signed over | A request may carry an empty map and it is part of the preimage. | Two encodings of the same request — one with `labels` absent and one with it empty — with different signatures and different bytes, which is exactly the ambiguity §4.0's whole-input and shortest-form rules exist to remove. |
+
+**Recommendation: A.** Rejected: B (two encodings of one request). Implementation row: 022r, Codex (`gpt-6.1-sol/high`).
+
+### (c) SEC-023 — the Ed25519 rule at the edges
+
+**What is true.** §3 says "Ed25519" and cites RFC 8032, which permits either verification equation and says nothing a verifier must do about non-canonical encodings or small-order points. Implementations differ there: Go's `crypto/ed25519` and libsodium (the reference, through PyNaCl) are known to disagree on signatures involving small-order or non-canonical keys and points. For a transparency log that is **two verifiers disagreeing about the state** — a signer could craft an entry that Go accepts and the reference refuses, or the reverse: equivocation across readers by a party that holds a key, and nothing in the log would show it.
+
+| Option | What it means | Cost |
+|---|---|---|
+| **A — admit only prime-order keys, require canonical encodings, state the equation (recommended)** | §3: every public key that enters the state or a trust file (roots, signers, `device_pk`, log keys, witness keys) MUST be the canonical encoding of a point of order exactly `L` — checked as `[L]A = O`, which rejects small-order and mixed-order points alike — or it is refused as `decode` where keys are admitted (genesis, `signer_add`, `root_add`, `log_key`, `enroll`'s request, §9's trust file). Every signature MUST have `S < L` and canonical `R`, and `R` MUST be of order `L` too. With `A` and `R` of prime order the cofactored and cofactorless equations agree, so §3 can say "RFC 8032 §5.1.7, cofactorless" and know every conforming verifier reaches the same answer. | Go: the std library cannot check point order; `filippo.io/edwards25519` (pure Go, the library behind the std implementation) can — one small dependency, one check at every admission point and in `entry.Verify`. Reference: libsodium's `crypto_core_ed25519_is_valid_point` checks canonical, non-small-order, main-subgroup; PyNaCl exposes it. Vectors for every edge: a small-order key as a root in `genesis/`, a non-canonical `A`, `S ≥ L`, a torsion `R`. Each a `decode` or a signature failure, the same in both. **To confirm when the row is built**, not assumed here: exactly what Go's std `Verify` rejects today (`S ≥ L` is believed refused; small-order `A` believed accepted). |
+| B — name Go's behaviour as the rule | §3 says "as `crypto/ed25519` verifies". | A rule stated as "whatever one library does", which a second implementer cannot read; and libsodium already differs, so the reference would have to reimplement Go's edges by hand. |
+| C — leave §3 as it is | — | The disagreement stands, unvectored and unnamed; a cold-model reader cannot know which answer the suite expects at these edges because the suite has none. |
+
+**Recommendation: A.** Rejected: B (a rule by reference to one library), C (leaves two verifiers able to disagree). Implementation row: 023r, Mythos — a protocol row with new vectors.
+
+### (d) SEC-014 — rotation is not revocation of a log key
+
+**What is true.** §9.4 and 6.5l-vii-d-xii-iv: learned log keys accumulate and are never retired, because the overlap is what lets a reader with an old trust file replay into the rotation. Runbook R7 offers a `log_key` rotation as the remedy for a *compromised* key — after which the stolen key still verifies checkpoints at every reader, forever. What already contains it: a checkpoint needs a witness quorum (§10 step 3), so a stolen log key alone signs nothing a node accepts unless 2k−N witnesses collude too (A9), and receipts (§7) are advisory.
+
+| Option | What it means | Cost |
+|---|---|---|
+| **A — say so, and keep the protocol (recommended for v1)** | R7 reworded: a `log_key` entry is for *planned* rotation; a compromised log key is contained by the witness quorum and remedied the way every trust-root event is — a new trust file, re-provisioned (§9, A10) — and `THREAT-MODEL.md` A2 carries the sentence. Retirement recorded for v1.1 beside SEC-001's option E. | A document change. A network whose witnesses are also compromised was already lost under A9. |
+| B — verifier-side retirement | A `log_key_remove` entry (or a field on `log_key`); after replaying it, a node accepts a checkpoint signed only by the retired key when its size is ≤ the entry's index, so a stale reader can still replay into the retirement, and refuses newer heads under it. | A new entry type or field, a new §10 rule with a size condition, vectors, both implementations, and a new way for a root quorum to break liveness (retire the only key). v1 is frozen; this is the shape of a v1.1 row. |
+
+**Recommendation: A now, B recorded for v1.1.** Implementation row: 014r, Codex (`gpt-6-luna/medium`, documents).
+
+### (e) SEC-033 — enforcing under `quorum none`
+
+**What is true.** `quorum none` is a legal policy (§9, §10 step 3) under which nobody corroborates a head and nobody vouches for the time: freshness is `unknown` forever (§15), so `S` and `S_hard` never apply, and a log operator alone can show every node any head. `nornd` starts in `owner` or `watchdog` under it without a word.
+
+| Option | What it means | Cost |
+|---|---|---|
+| **A — refuse to start enforcing under it unless told to (recommended)** | `nornd` refuses `owner` and `watchdog` when the *effective* policy — the trust file's, or the one replayed from the mirror it restored — is `quorum none`, naming the setting that overrides it (`allow_no_quorum`, as `hard_stale` is a setting); `observe` is always allowed. A `policy` entry that lowers the quorum to none while the node runs is the roots' decision: the node keeps enforcing and alarms `QUORUM_NONE` on the degraded cadence until it is restarted, when the refusal applies. One sentence in §13.2 (a node contract, like D-069's). | A lab with one witness and no policy must set a flag it was not setting. That is the point. |
+| B — alarm only | `QUORUM_NONE` on a cadence, no refusal. | A node that enforces an uncorroborated log on day one says so every five minutes and nobody reads it; the audit's own finding. |
+| C — refuse outright | No override. | The lab in `LAB.md` §1 runs `1-of-1`, not none; but a single-machine demo with no witness at all would have no enforcing mode, and a demo is where people first see the thing. |
+
+**Recommendation: A.** Rejected: B (an alarm nobody reads), C (no demo mode). Implementation row: 033r, Opus.
+
+**How to answer:** one letter per part, e.g. "a-A b-A c-A d-A e-A". Every recommendation is the first option. Rows 021r–033r are blocked until their part is answered; the rest of the track is not.
 
 ## DECISION TAKEN — 6.5m-sec-004r: what a node that lost its state can still know (KEYTRANS -10 §7.2, read 2026-10-07; taken 2026-10-07 as D-071)
 
