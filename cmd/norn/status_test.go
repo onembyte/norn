@@ -1,12 +1,84 @@
 package main
 
 import (
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/onembyte/norn/internal/logclient"
+	"github.com/onembyte/norn/internal/state"
+	"github.com/onembyte/norn/internal/trust"
 )
+
+func verifiedStatus(t *testing.T) (*trust.Trust, *logclient.Result) {
+	t.Helper()
+	anchor, err := loadAnchor(filepath.Join(vectors(), "trust.cbor"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := logclient.Verify(logclient.Dir(filepath.Join(vectors(), "served")), anchorFor(anchor))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return anchor, result
+}
+
+func renderedStatus(t *testing.T, anchor *trust.Trust, result *logclient.Result, wall time.Time) string {
+	t.Helper()
+	output, err := os.CreateTemp(t.TempDir(), "status")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer output.Close()
+	original := os.Stdout
+	os.Stdout = output
+	defer func() { os.Stdout = original }()
+	printStatus(anchor, result, 0, wall)
+	raw, err := os.ReadFile(output.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(raw)
+}
+
+func TestStatusJudgesExpiryAtWitnessTime(t *testing.T) {
+	anchor, result := verifiedStatus(t)
+	if result.QuorumTime == nil {
+		t.Fatal("the fixture must have a witness quorum time")
+	}
+	witness := *result.QuorumTime
+	d := result.State.Devices["nas"]
+	d.Status = state.StatusActive
+	d.Expires = uint64(witness.Add(time.Hour).Unix())
+	result.State.Devices = map[string]state.Device{"nas": d}
+	out := renderedStatus(t, anchor, result, witness.Add(2*time.Hour))
+	if !strings.Contains(out, "1 proven, 0 revoked, 0 expired") {
+		t.Errorf("the local clock expired an active device:\n%s", out)
+	}
+	if !strings.Contains(out, "expiry judged at "+witness.UTC().Format(time.RFC3339)) {
+		t.Errorf("status omits the witness instant used for expiry:\n%s", out)
+	}
+}
+
+func TestStatusDoesNotJudgeExpiryWithoutWitnessTime(t *testing.T) {
+	anchor, result := verifiedStatus(t)
+	anchor.Policy = "quorum none\n"
+	result.QuorumTime = nil
+	d := result.State.Devices["nas"]
+	d.Status = state.StatusActive
+	d.Expires = 1
+	result.State.Devices = map[string]state.Device{"nas": d}
+	out := renderedStatus(t, anchor, result, time.Unix(1_900_000_000, 0))
+	if !strings.Contains(out, "1 proven, 0 revoked, 0 expired") {
+		t.Errorf("status guessed expiry without a witness clock:\n%s", out)
+	}
+	if !strings.Contains(out, "no witness time; expiry not judged") {
+		t.Errorf("status omits the missing expiry clock:\n%s", out)
+	}
+}
 
 func statusOutput(t *testing.T, args ...string) string {
 	t.Helper()

@@ -63,10 +63,12 @@ func (k Key) Short() string { return k.String()[:8] + "…" }
 
 // Peer is one row of the cryptokey routing table.
 type Peer struct {
-	Key        Key
-	AllowedIPs []netip.Prefix
-	Endpoint   netip.AddrPort // zero when unknown; an endpoint is optional
-	Keepalive  time.Duration  // zero means none
+	Key Key
+	// PresharedKey is operator-managed; zero means none.
+	PresharedKey [KeyLen]byte
+	AllowedIPs   []netip.Prefix
+	Endpoint     netip.AddrPort // zero when unknown; an endpoint is optional
+	Keepalive    time.Duration  // zero means none
 }
 
 // SameRouting reports whether two peers would route identically.

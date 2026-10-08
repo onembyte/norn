@@ -67,7 +67,13 @@ func printStatus(anchor *trust.Trust, result *logclient.Result, recent int, now 
 		hex.EncodeToString(result.Checkpoint.Root[:8]))
 
 	fmt.Print(freshnessLine(result.QuorumTime, result.Cosignatures, anchor.Policy, now))
-	printPeers(result.State, now)
+	at := proven.EvaluationTime(result)
+	if at.IsZero() {
+		fmt.Println("expiry      no witness time; expiry not judged")
+	} else {
+		fmt.Printf("expiry      expiry judged at %s (witness time)\n", at.UTC().Format(time.RFC3339))
+	}
+	printPeers(result.State, at)
 	printRecent(result, recent, now)
 }
 

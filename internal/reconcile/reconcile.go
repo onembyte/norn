@@ -105,6 +105,9 @@ func Decide(mode Mode, actual, desired []peertable.Peer) Plan {
 		// learned where the provider supplied none.
 		target := make([]peertable.Peer, 0, len(desired))
 		for _, peer := range peertable.Sorted(desired) {
+			// The log says nothing about preshared keys, so enforcement
+			// preserves the operator's choice for every peer it keeps.
+			peer.PresharedKey = have[peer.Key].PresharedKey
 			target = append(target, withLearnedEndpoint(peer, have[peer.Key]))
 		}
 		if routingDiffers(have, want) {

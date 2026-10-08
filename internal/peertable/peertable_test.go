@@ -146,6 +146,32 @@ func TestUpdateEndpointsRefusesToAdd(t *testing.T) {
 	}
 }
 
+func TestFakeKeepsPresharedKeysAcrossReadsRewritesAndEndpointUpdates(t *testing.T) {
+	current := Peer{Key: key(t, 1)}
+	current.PresharedKey[0] = 7
+	fake := NewFake(current)
+	check := func() {
+		t.Helper()
+		peers, err := fake.Peers()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(peers) != 1 || peers[0].PresharedKey != current.PresharedKey {
+			t.Error("the fake table lost the preshared key")
+		}
+	}
+	check()
+	if err := fake.Replace([]Peer{current}); err != nil {
+		t.Fatal(err)
+	}
+	check()
+	refresh := Peer{Key: current.Key, Endpoint: netip.MustParseAddrPort("192.0.2.1:51820")}
+	if err := fake.UpdateEndpoints([]Peer{refresh}); err != nil {
+		t.Fatal(err)
+	}
+	check()
+}
+
 // Inject is how a test plays the other writer: a key appears without Norn
 // having asked for it, which is the whole situation watchdog mode exists for.
 func TestInjectDoesNotLookLikeANornWrite(t *testing.T) {

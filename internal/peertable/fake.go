@@ -97,6 +97,11 @@ func (f *Fake) UpdateEndpoints(peers []Peer) error {
 		}
 	}
 	for _, peer := range peers {
+		// Like WireGuard, an endpoint refresh with no preshared key leaves
+		// the operator's existing key alone.
+		if peer.PresharedKey == ([KeyLen]byte{}) {
+			peer.PresharedKey = f.peers[peer.Key].PresharedKey
+		}
 		f.peers[peer.Key] = peer
 	}
 	f.Calls = append(f.Calls, Call{Op: "update", Peers: Sorted(peers)})

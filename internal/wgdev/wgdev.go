@@ -101,7 +101,7 @@ func (d *Device) configure(config wgtypes.Config) error {
 
 // toWG converts one peer into wgctrl's shape.
 //
-// Two of these fields are pointers in wgctrl, and nil means "leave it as it
+// These optional fields are pointers in wgctrl, and nil means "leave it as it
 // is". That is exactly what Norn wants when a provider supplied nothing: a
 // roaming peer's endpoint was learned from its handshakes and exists nowhere
 // else, so writing a zero there would take the peer offline until it happened
@@ -118,12 +118,16 @@ func toWG(peer peertable.Peer, updateOnly bool) wgtypes.PeerConfig {
 	if peer.Endpoint.IsValid() {
 		config.Endpoint = net.UDPAddrFromAddrPort(peer.Endpoint)
 	}
+	if peer.PresharedKey != ([peertable.KeyLen]byte{}) {
+		preshared := wgtypes.Key(peer.PresharedKey)
+		config.PresharedKey = &preshared
+	}
 	if peer.Keepalive > 0 {
 		keepalive := peer.Keepalive
 		config.PersistentKeepaliveInterval = &keepalive
 	}
 	if updateOnly {
-		// A refresh must not rewrite routing: send only reachability.
+		// A refresh must not rewrite routing.
 		config.ReplaceAllowedIPs = false
 		config.AllowedIPs = nil
 	}
@@ -133,9 +137,10 @@ func toWG(peer peertable.Peer, updateOnly bool) wgtypes.PeerConfig {
 // fromWG converts what the kernel reports.
 func fromWG(peer wgtypes.Peer) peertable.Peer {
 	out := peertable.Peer{
-		Key:        peertable.Key(peer.PublicKey),
-		AllowedIPs: fromIPNets(peer.AllowedIPs),
-		Keepalive:  peer.PersistentKeepaliveInterval,
+		Key:          peertable.Key(peer.PublicKey),
+		PresharedKey: [peertable.KeyLen]byte(peer.PresharedKey),
+		AllowedIPs:   fromIPNets(peer.AllowedIPs),
+		Keepalive:    peer.PersistentKeepaliveInterval,
 	}
 	if peer.Endpoint != nil {
 		if addr, ok := netip.AddrFromSlice(peer.Endpoint.IP); ok {

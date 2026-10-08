@@ -58,6 +58,8 @@ connected it yet). Never writes. Mandatory first mode everywhere (D-005).
   eviction raises `UNPROVEN_PEER` as observe mode would**: correcting an attack
   silently would leave the attempt invisible, and the attempt is the thing worth
   knowing about.
+  Owner rewrites carry through each kept peer's existing preshared key, which
+  the log does not manage.
 - **A rewrite keeps an endpoint the interface has learned** where the provider
   supplies none. WireGuard learns a peer's endpoint from its handshakes, and for
   a roaming peer it exists nowhere else; rewriting the table with a zero

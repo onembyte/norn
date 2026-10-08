@@ -36,6 +36,32 @@ func TestKeysSurviveTheConversion(t *testing.T) {
 	}
 }
 
+func TestPresharedKeysSurviveReadsRewritesAndUpdates(t *testing.T) {
+	var preshared [peertable.KeyLen]byte
+	preshared[0] = 7
+	reported := wgtypes.Peer{PublicKey: wgtypes.Key(key(t, 1)),
+		PresharedKey: wgtypes.Key(preshared)}
+	peer := fromWG(reported)
+	if peer.PresharedKey != preshared {
+		t.Error("reading the interface lost the preshared key")
+	}
+	// Exercise writing independently of reading, so either lost conversion
+	// produces its own failure rather than hiding behind the other.
+	peer.PresharedKey = preshared
+	for _, updateOnly := range []bool{false, true} {
+		config := toWG(peer, updateOnly)
+		if config.PresharedKey == nil || *config.PresharedKey != wgtypes.Key(preshared) {
+			t.Errorf("updateOnly=%v: writing the peer lost the preshared key", updateOnly)
+		}
+	}
+	for _, updateOnly := range []bool{false, true} {
+		config := toWG(peertable.Peer{Key: peer.Key}, updateOnly)
+		if config.PresharedKey != nil {
+			t.Error("an absent preshared key must leave an existing key alone")
+		}
+	}
+}
+
 // The property from 3.2, at the layer that finally touches a kernel: no
 // endpoint means "leave it alone", not "clear it". Getting this wrong takes a
 // roaming peer offline until it happens to handshake again.

@@ -88,6 +88,35 @@ func TestOwnerReplacesWhenTheKeysDiffer(t *testing.T) {
 	}
 }
 
+func TestOwnerCarriesPresharedKeysThroughARewrite(t *testing.T) {
+	wanted := peer(t, 1, "10.9.0.1/32")
+	wanted.Endpoint = netip.MustParseAddrPort("192.0.2.1:51820")
+	current := wanted
+	current.PresharedKey[0] = 7
+	fake := peertable.NewFake(current, peer(t, 9, "10.9.0.9/32"))
+	actual, err := fake.Peers()
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan := Decide(Owner, actual, []peertable.Peer{wanted})
+	if len(plan.Replace) != 1 {
+		t.Fatal("the rogue peer must force a full replacement")
+	}
+	if plan.Replace[0].PresharedKey != current.PresharedKey {
+		t.Error("owner rewrite discarded the operator's preshared key")
+	}
+	if err := Apply(fake, plan); err != nil {
+		t.Fatal(err)
+	}
+	installed, err := fake.Peers()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(installed) != 1 || installed[0].PresharedKey != current.PresharedKey {
+		t.Error("the rewritten table lost the preshared key")
+	}
+}
+
 // The hijack that keeps a proven key: the control plane leaves the key alone
 // and widens its allowed-ips to everything.
 func TestOwnerReplacesWhenAllowedIPsWiden(t *testing.T) {
