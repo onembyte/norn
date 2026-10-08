@@ -47,6 +47,7 @@ Capabilities: full control of every config a node receives (peers, endpoints, al
 |---|---|
 | Inject a rogue peer | **Prevented** in enforce mode (G1). **Detected** in observe mode ≤ T_poll. |
 | Swap a legit peer's key (MITM) | **Prevented** in enforce mode: the swapped key has no inclusion proof (G1). |
+| Widen a legit peer's routes (hand it `0.0.0.0/0`) | **Prevented** in enforce mode under `routes = granted` (G7); the attempt is reported. |
 | Withhold new entries / checkpoints (freeze) | **Detected**: nodes fetch checkpoints from peers over the tunnel (G4). Not prevented if *all* paths are cut. |
 | Remove a legit peer / poison endpoints (DoS) | **Not prevented.** Owner mode keeps the peer *listed*, but endpoints and NAT traversal still come from the control plane. Availability is a non-goal. |
 | Change ACLs so rogue-but-listed peers can reach more | Out of scope until *policy transparency* (v2 backlog). |
@@ -165,6 +166,7 @@ A node loses what it held: a reinstall, a wiped or failed disk, a mirror that no
 | **G4 Bounded staleness** | A node acting on a checkpoint older than S is `degraded` and alarms. A `Revoke` is effective on every honest, connected node within T_c + T_g + T_poll or that node alarms. | at least one honest path to a fresh checkpoint (log or peer) |
 | **G5 Transparency / accountability** | Every accepted key traces to a log entry signed by an identifiable signer. Monitors see every entry within T_c + monitor lag. | monitor exists and runs (procedural) |
 | **G6 No TOFU** | A node never trusts a log, witness set or genesis it was not provisioned with. | out-of-band channel (A10) |
+| **G7 Route authenticity** | In enforce mode under `params.routes = "granted"`, every allowed-ip a node installs for a peer lies within that peer's grant, the prefixes its enrollment carried. | G1's assumptions; the signers granted what they meant to |
 
 ## 5. Enforcement modes and the watchdog window
 

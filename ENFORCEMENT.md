@@ -135,13 +135,22 @@ control plane's, not Norn's — G4 non-goal).
 
 ## 5. Endpoint providers (owner mode only)
 
-Keys come from the log. Endpoints, allowed-ips and keepalives come from a provider,
-which is deliberately *untrusted for keys*:
+Keys come from the log. Endpoints, allowed-ips and keepalives come from a provider.
+Providers are untrusted for keys and for the width of routes. Under
+`params.routes = "granted"` (the default), a provider's prefix is installed only
+when it lies within the device's grant. A provider may narrow a grant but never
+widen it; a widened prefix is withheld and reported as `PROVIDER_CLAIM`. A device
+with no grant is installed with its key and no routes, and `ROUTES_UNGRANTED` is
+reported once per device. The provider's endpoint and keepalive remain in use.
+
+So a device enrolled without an `ip` label sources nothing until a signer re-enrols
+it with a grant, or the network's roots set `routes = "advisory"` in a `params`
+entry.
 
 | Provider | Source | Notes |
 |---|---|---|
 | `static` | `[[peer]]` blocks in `nornd.toml` keyed by `device_id` | homelab default; a `wg-quick` file with only `[Interface]` plus Norn is a complete setup |
-| `labels` | `labels.ip`, `labels.endpoint` in the `enroll` entry | advisory hints signed by a signer; good enough for static-IP labs |
+| `labels` | `labels.ip`, `labels.endpoint` in the `enroll` entry | `labels.ip` is the grant; `labels.endpoint` remains an advisory hint signed by a signer |
 | `file` | a JSON file some other daemon writes | escape hatch for any control plane |
 | `netbird` / `headscale` | adapter reading the control plane's view (Phase 7) | control plane becomes an endpoint directory |
 

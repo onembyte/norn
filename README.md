@@ -83,7 +83,7 @@ don't stop CAs from issuing — make every issuance public and let anyone check.
 
 ## Threat model in one screen
 
-The six guarantees, and what each one actually rests on. The long version, with
+The seven guarantees, and what each one actually rests on. The long version, with
 twelve adversaries, is `THREAT-MODEL.md`.
 
 | | Guarantee | Rests on |
@@ -94,6 +94,7 @@ twelve adversaries, is `THREAT-MODEL.md`.
 | **G4** | A node on a stale checkpoint goes `degraded` and alarms; a revocation lands within a bounded window or somebody is told. | one honest path to a fresh checkpoint — the log **or** a peer |
 | **G5** | Every accepted key traces to an entry signed by an identifiable signer. | a monitor exists and runs |
 | **G6** | A node never trusts a log, witness set or genesis it was not provisioned with. | an out-of-band channel |
+| **G7** | Under `routes = granted`, a peer's installed routes stay within its enrollment grant. | G1's assumptions · signers granted what they meant to |
 
 **What Norn never defends:** availability under a hostile control plane, log or
 witness set · a stolen WireGuard private key before it is revoked · a log and a
@@ -110,6 +111,7 @@ only) → **watchdog** (reconcile a control plane's table, window ≤ `T_poll`) 
 | | Tailnet Lock | Nebula | NetBird | **Norn** |
 |---|---|---|---|---|
 | Can the control plane add a device you never approved? | no, while it is on | no — only the offline CA can | yes | no |
+| Can the control plane widen a legitimate peer's routes? | yes — signatures cover node keys; the control plane keeps addresses, routes and packet filters | no — the CA signs each host's IPs and subnets into its certificate | yes | no — under `routes = granted`, the enrollment's grant bounds them |
 | Is there a record of **every key ever authorised**? | no — the chain records who may *sign*, not what was signed | no | no | yes, append-only |
 | Can a third party check that record without being trusted? | — | — | — | yes — witnessed checkpoints, replayable by anyone |
 | A signing key is stolen. Afterwards, can you enumerate what it signed? | no | no | no | yes — `norn audit --by` |
@@ -127,7 +129,7 @@ been reviewed by anyone who has run two of these in anger; that gate is open.
 |---|---|
 | `PLAN.md` | phases, gates, fixed decisions |
 | `PRIOR-ART.md` | why this doesn't exist yet |
-| `THREAT-MODEL.md` | 12 adversaries, 6 guarantees, what Norn does *not* defend |
+| `THREAT-MODEL.md` | 12 adversaries, 7 guarantees, what Norn does *not* defend |
 | `SECURITY.md` | how to report a vulnerability, and what is in scope |
 | `CONTRIBUTING.md` | the gate, how a change is made, and why `SPEC.md` changes only by decision |
 | `LEDGER-OPTIONS.md` | do we need a blockchain? (scored; answer: 32 bytes of one, optionally) |

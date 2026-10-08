@@ -46,7 +46,7 @@ directory that was never created.
 | `cmd/norn/` | ✅ | the CLI: `init`, `enroll`, `sign`, `submit`, `verify`, `verify-evidence`, `revoke`, `rotate`, `govern`, `audit`, `stamp`, `monitor`, `status` |
 | `cmd/nornd/` | ✅ | the node daemon: replay, quorum, gossip, reconcile |
 | `README.md` | ✅ | the pitch, the threat model in one screen, the comparison table, a runnable quickstart |
-| `THREAT-MODEL.md` | ✅ | 12 adversaries, 6 guarantees, and what Norn does not defend |
+| `THREAT-MODEL.md` | ✅ | 12 adversaries, 7 guarantees, and what Norn does not defend |
 | `PRIOR-ART.md` | ✅ | the gap, with sources, found before building |
 | `LEDGER-OPTIONS.md` | ✅ | the blockchain question answered with a scoring table |
 | `GOSSIP.md` | ✅ | witnesses, freshness, peer gossip, split-view tests |

@@ -193,6 +193,8 @@ to `r = 3` random proven peers, including when its direct log answers. An
 unusable or stale log triggers an immediate peer round. The node runs §15's
 source-neutral verification on each answer. Consistency proofs are computed
 locally from tiles, so a peer serves data, never claims.
+A peer is addressed through its allowed-ips, so under `routes = "granted"` only
+devices with a grant can be asked.
 
 Every one of these reads is bounded, and the bounds are **implementation
 defaults, not protocol** (`HARDENING-PLAN.md` H2): `nornd` gives one read from a
