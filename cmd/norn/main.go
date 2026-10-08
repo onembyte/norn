@@ -37,6 +37,7 @@ var commands = map[string]command{
 	"enroll":          enrollCmd,
 	"init":            initCmd,
 	"monitor":         monitorCmd,
+	"revoke":          revokeCmd,
 	"sign":            signCmd,
 	"stamp":           stampCmd,
 	"status":          statusCmd,
@@ -53,6 +54,7 @@ commands:
   enroll   build a signed enrollment request for this device (SPEC §16)
   init     create a network: roots, thresholds, genesis and the trust file
   monitor  watch a network and report what it sees (LAB.md §3)
+  revoke   sign or extend a device revocation for submission
   sign     verify a request and sign the enroll entry it asks for
   stamp    obtain an OpenTimestamps proof for a log's checkpoint (advisory)
   status   what this node can prove about the network right now

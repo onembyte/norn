@@ -131,8 +131,11 @@ normative in `SPEC.md` §16.3.
   until it sees the entry included, then swaps; peers switch at their next checkpoint.
   Gap ≤ T_c + T_g. Overlapping dual-key grace is v1 backlog.
 - **Revoke** (the entry is normative, `SPEC.md` §4.3; the `norn revoke` subcommand
-  is **planned**): a signer revokes `pi-cam --reason lost`; a device self-revokes
-  on suspicion; roots revoke in an emergency. Effect on
+  exists): a signer runs `norn revoke -trust norn.trust -device pi-cam -reason lost -key signer.key -o revoke.cbor`.
+  If more signatures are needed, another signer extends it with `-in revoke.cbor`;
+  submit the completed entry with `norn submit -trust norn.trust revoke.cbor`.
+  A device self-revokes with `-role device` and its own key file; roots revoke
+  in an emergency with `-role root` and interactive confirmation. Effect on
   every honest node ≤ T_c + T_g + T_poll (G4), measured by lab T7.
 - **Expiry**: `enroll.expires` for guests and contractors; evaluated at checkpoint
   time, so a laptop that never comes back simply falls out.
