@@ -132,6 +132,7 @@ been reviewed by anyone who has run two of these in anger; that gate is open.
 | `THREAT-MODEL.md` | 12 adversaries, 7 guarantees, what Norn does *not* defend |
 | `SECURITY.md` | how to report a vulnerability, and what is in scope |
 | `CONTRIBUTING.md` | the gate, how a change is made, and why `SPEC.md` changes only by decision |
+| `RELEASE-NOTES-v0.1.md` | what v0.1 is, what it guarantees and on what, and what has not happened yet |
 | `LEDGER-OPTIONS.md` | do we need a blockchain? (scored; answer: 32 bytes of one, optionally) |
 | `SPEC.md` | entries, replay, log layout, receipts, proofs, trust file — frozen at v1 |
 | `ENFORCEMENT.md` | observe / owner / watchdog modes; integration matrix |

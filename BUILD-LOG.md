@@ -703,9 +703,9 @@ plan before the first line of code, and stops at **[decision]** and **[user]**.
 | 6.5m-xii | H13 | [codex: gpt-6.1-sol/medium] Documents tell the truth about scale and plans (F10–F12) | the scale ceiling stated as numbers; every "planned" checked against the code; each new factual sentence guarded | ⬜ |
 | 6.7 | H14 | `contrib/verify-py/`, kept | a cold-built standard-library verifier passes every vector, committed as written with its provenance; `make verify-py` in `make ci` | ⬜ |
 | 6.6 | H15 | Phase 6 gate audit | see the 6.6 row above | ⬜ |
-| 6.12 | H19 | `SECURITY.md`, `CONTRIBUTING.md`, release notes for v0.1 | **a** [codex: gpt-6-luna/medium] the two files; **b** `RELEASE-NOTES-v0.1.md`, the tag is U8 | ⬜ |
+| 6.12 | H19 | `SECURITY.md`, `CONTRIBUTING.md`, release notes for v0.1 | **a** [codex: gpt-6-luna/medium] the two files; **b** `RELEASE-NOTES-v0.1.md`, the tag is U8 | ✅ |
 | 6.12-a | H19-a | [codex: gpt-6-luna/medium] `SECURITY.md` and `CONTRIBUTING.md` | private reporting (honest about a private repository), scope and §7's non-goals; the gate, controls, the vectors' provenances, `SPEC.md` by decision only | ✅ |
-| 6.12-b | H19-b | [codex: gpt-6-luna/medium] `RELEASE-NOTES-v0.1.md` | what v0.1 is and does not claim, the gate it passed; the tag is U8 | ⬜ |
+| 6.12-b | H19-b | [codex: gpt-6-luna/medium] `RELEASE-NOTES-v0.1.md` | what v0.1 is and does not claim, the gate it passed; the tag is U8 | ✅ |
 | 6.10 | H16 | [codex: gpt-6.1-sol/medium] Hand-over material | `TRY-NORN.md` with every command run in a test; a review packet for the comparison table | ⬜ |
 | 6.13 | H20 | 🧠 `KEYTRANS-MAPPING.md` | every Norn concept against `draft-ietf-keytrans-protocol` as it stands then: equivalent, partial, none — and where each *none* belongs | ⬜ |
 | 7.0 | H17 | `ACTION-PLAN.md` and the email draft | a test plan for the owner; an email drafted in the form `wireguard.com` asks for, read from the page at the time; a pre-send checklist; **nothing sent** | ⬜ |
@@ -714,6 +714,13 @@ plan before the first line of code, and stops at **[decision]** and **[user]**.
 | U2–U7 | — | Lab, nginx, OpenTimestamps, NAS, phone enrollment, LocalAPI on a real node, outside people | **[user]** `HARDENING-PLAN.md` Stage G | ⬜ |
 | U8 | — | The v0.1 tag; the scope email to `keytrans@ietf.org`, drafted here, sent by you | **[user]** not before the lab soak; the 2 Nov 2026 cutoff is not a target | ⬜ |
 | U9 | — | Render and, if U8's answer makes it in scope, submit the `-00` problem statement | **[user]** `kramdown-rfc`, a Datatracker account | ⬜ |
+
+- **6.12-b — `RELEASE-NOTES-v0.1.md` (Codex lane Q, integrated). H19 complete.**
+  - **The lane.** `gpt-6-luna`, medium, documents only, started after the Codex reset. It finished cleanly: one new file, its document guards green, no red test or control (documents only, and no guard reads the file — said rather than invented).
+  - **Checked against the tree, not taken on its word:** the thirteen CLI commands are exactly `cmd/norn`'s dispatch table; 14 of 38 `PLAN.md` gate lines are ticked (counted: 14 `[x]`, 24 `[ ]`); run 13 scored 1,353 of 1,353 and was `SPEC INSUFFICIENT`, so D-068 is not met; the seven guarantees match `THREAT-MODEL.md` §4; D-073's no-grant consequence is stated with its pointer. It writes no date, no tag, no download link: the tag is U8.
+  - **What review changed:** three links into `BUILD-LOG.md` carried fragment anchors GitHub would never generate (the headings begin "DECISION —" and slugs drop dots); they are plain links naming the section. The README's file table lists the notes.
+  - **H19 complete:** 6.12-a (`SECURITY.md`, `CONTRIBUTING.md`) and 6.12-b.
+  - **Gate:** generators first (no change under `testdata/`), then `make test` (race) alone — green in all 49 packages with tests, 1058 tests — `vectors-check`, 230 reference tests, `lint`, `fmt-check`, `vet` clean.
 
 - **6.5l-ix-e — a same-size fork that MUST be proven, the bundle cap pinned at and one past, and policy before held in §11.1 (Codex lane O, integrated).**
   - **The lane.** `gpt-6-astra`, high — fork evidence is the subtle part of the suite. The first run of lane O stopped at the Codex usage limit having read the code and changed nothing; this is the rerun after the reset, the first lane to use the amended rules (regenerating vectors itself, adding §12/§12.1 rows).
