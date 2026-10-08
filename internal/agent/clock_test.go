@@ -12,6 +12,7 @@ import (
 	"github.com/onembyte/norn/internal/logclient"
 	"github.com/onembyte/norn/internal/peertable"
 	"github.com/onembyte/norn/internal/reconcile"
+	"github.com/onembyte/norn/internal/trust"
 )
 
 // agingNode is an owner-mode node over a state directory whose clock a test
@@ -193,20 +194,11 @@ func TestAQuorumNoneNodeWithAClockFileStillEnforces(t *testing.T) {
 		[]byte(clockMagic+strconv.FormatInt(fixtureCosignedAt, 10)+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	// The fixture's witnesses, listed and named, with nobody required.
-	doc := *anchor(t)
-	var lines []string
-	for _, line := range strings.Split(doc.Policy, "\n") {
-		if strings.HasPrefix(line, "quorum ") {
-			line = "quorum none"
-		}
-		lines = append(lines, line)
-	}
-	doc.Policy = strings.Join(lines, "\n")
+	doc := quorumNoneAnchor(t)
 	fake := peertable.NewFake()
 	rec := &recorder{}
 	a, err := New(Config{
-		Anchor: &doc, Fetcher: logclient.Dir(dir), Device: fake,
+		Anchor: doc, Fetcher: logclient.Dir(dir), Device: fake,
 		Mode: reconcile.Owner, RunDir: t.TempDir(), StateDir: stateDir, Emit: rec.emit,
 		Hard: time.Hour,
 		Now:  func() time.Time { return time.Unix(fixtureCosignedAt, 0) },
@@ -226,5 +218,66 @@ func TestAQuorumNoneNodeWithAClockFileStillEnforces(t *testing.T) {
 	}
 	if got := a.Freshness(); got != freshness.Unknown {
 		t.Errorf("freshness = %q, want unknown", got)
+	}
+}
+
+// quorumNoneAnchor is the fixture's trust file with nobody required: the
+// witnesses listed and named, as §9.1 asks, and the quorum line `none`.
+func quorumNoneAnchor(t *testing.T) *trust.Trust {
+	t.Helper()
+	doc := *anchor(t)
+	var lines []string
+	for _, line := range strings.Split(doc.Policy, "\n") {
+		if strings.HasPrefix(line, "quorum ") {
+			line = "quorum none"
+		}
+		lines = append(lines, line)
+	}
+	doc.Policy = strings.Join(lines, "\n")
+	return &doc
+}
+
+// SEC-033. A node whose view has no age -- `quorum none`, where nobody
+// vouches for any instant -- said nothing at all, cycle after cycle: an
+// operator could not tell a network that asked for no corroboration from one
+// whose witnesses had quietly gone. `unknown` is said out loud, on the same
+// cadence `degraded` repeats on, and the peer table is kept.
+func TestUnknownFreshnessIsSaidOnACadence(t *testing.T) {
+	// A log from before the fixture's `policy` entry (28) and its `log_key`
+	// rotation (27): the trust file's `quorum none` is then what every cycle
+	// verifies under. The full fixture publishes three of three, which would
+	// make the second cycle fresh.
+	_, _, entries := writableLog(t)
+	dir := shorterLog(t, entries[:20])
+	var mono time.Duration
+	rec := &recorder{}
+	fake := peertable.NewFake()
+	a, err := New(Config{
+		Anchor: quorumNoneAnchor(t), Fetcher: logclient.Dir(dir), Device: fake,
+		Mode: reconcile.Owner, RunDir: t.TempDir(), Emit: rec.emit,
+		Now:  func() time.Time { return time.Unix(fixtureCosignedAt, 0) },
+		Mono: func() time.Duration { return mono },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, step := range []struct {
+		at   time.Duration
+		want int
+	}{
+		{0, 1}, {time.Minute, 1}, {4 * time.Minute, 1},
+		{DefaultDegradedAlarmEvery, 2}, {DefaultDegradedAlarmEvery + time.Minute, 2},
+		{2 * DefaultDegradedAlarmEvery, 3},
+	} {
+		mono = step.at
+		if err := a.Once(); err != nil {
+			t.Fatalf("at %s: %v", step.at, err)
+		}
+		if got := rec.kinds()[FreshnessUnknown]; got != step.want {
+			t.Errorf("at %s: %s alarms = %d, want %d", step.at, FreshnessUnknown, got, step.want)
+		}
+	}
+	if peers, _ := fake.Peers(); len(peers) == 0 {
+		t.Error("an unknown view emptied the table")
 	}
 }

@@ -143,6 +143,7 @@ State machine:
 hard-stale age > S_hard (opt-in)       enforcer drops all peers (owner: ReplacePeers []; watchdog: evict all)
 fresh      age ≤ S (10 min)            normal
 degraded   otherwise                   keep proven set; alarm every 5 min; poll all sources every 10 s
+unknown    no quorum time (quorum none) keep proven set; alarm every 5 min (FRESHNESS_UNKNOWN)
 ```
 
 **Tested top to bottom, first match wins** — `hard-stale` before `fresh`, per

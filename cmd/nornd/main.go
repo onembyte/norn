@@ -348,6 +348,7 @@ var eventLevels = map[string]slog.Level{
 	agent.Quarantined:             slog.LevelError,
 	agent.QuarantineFailed:        slog.LevelError,
 	agent.Degraded:                slog.LevelWarn,
+	agent.FreshnessUnknown:        slog.LevelWarn,
 	agent.MirrorUnusable:          slog.LevelWarn,
 	agent.MirrorFailed:            slog.LevelWarn,
 	agent.ClockUnusable:           slog.LevelWarn,

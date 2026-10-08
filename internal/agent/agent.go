@@ -53,6 +53,12 @@ const (
 	// peer stopped being proven -- but it is said out loud, on a cadence, for
 	// as long as it lasts (GOSSIP part 5).
 	Degraded = "DEGRADED"
+	// FreshnessUnknown: no witness vouches for any instant -- the policy asks
+	// for no corroboration -- so this node cannot tell how old its view is.
+	// The peer table is kept, and it is said on the degraded cadence, so a
+	// network that asked for no witnesses is never mistaken for one whose
+	// witnesses quietly went (SEC-033).
+	FreshnessUnknown = "FRESHNESS_UNKNOWN"
 	// HardStale: the view aged past S_hard, so the enforcer drops every peer.
 	// This is a deliberate outage: past that age this node would rather be
 	// disconnected than enforce a view nobody has vouched for since.
@@ -703,10 +709,18 @@ func (a *Agent) reportFreshness(fresh proven.Freshness) {
 				roundAge(fresh.Age))})
 			a.staleSince = mono
 		}
+	case freshness.Unknown:
+		if a.staleState != freshness.Unknown || mono-a.staleSince >= a.cfg.DegradedAlarmEvery {
+			a.emit(Event{Kind: FreshnessUnknown, Message: "no witness vouches for any " +
+				"instant, so this node cannot tell how old its view is; keeping the peer " +
+				"table. A policy of `quorum none` asked for exactly this; any other " +
+				"policy should not be here"})
+			a.staleSince = mono
+		}
 	}
 	if fresh.State != a.staleState {
 		a.staleState = fresh.State
-		if fresh.State == freshness.Degraded {
+		if fresh.State == freshness.Degraded || fresh.State == freshness.Unknown {
 			a.staleSince = mono
 		}
 	}
