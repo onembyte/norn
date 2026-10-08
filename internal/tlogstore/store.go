@@ -26,6 +26,7 @@ import (
 
 	upstream "golang.org/x/mod/sumdb/tlog"
 
+	"github.com/onembyte/norn/internal/note"
 	"github.com/onembyte/norn/internal/tlog"
 )
 
@@ -102,6 +103,20 @@ func Open(dir, origin string, key ed25519.PrivateKey, opts ...Option) (*Store, e
 	if err := s.recover(); err != nil {
 		return nil, err
 	}
+	// The bundles are authoritative, but they can be lost as well as torn.
+	// The checkpoint this store last signed says how many entries there were;
+	// recovering fewer means the tail is gone, and a store that opened anyway
+	// would sign and publish a smaller head -- a log that shrank, which every
+	// node refuses as a rollback and a self-witnessed log proves as a fork
+	// against itself (SEC-011). Refusing to open is the honest answer: the
+	// operator restores the bundles first. A checkpoint *behind* the bundles
+	// is the designed crash (it is written last) and a torn one is the same
+	// case; both open at the bundles' size and republish.
+	if published, ok := s.publishedSize(); ok && published > s.tree.Size() {
+		return nil, storeErrorf("the published checkpoint says %d entries and the bundles "+
+			"recover %d; the log's tail is lost -- restore the entry bundles before "+
+			"this log serves, or it would shrink", published, s.tree.Size())
+	}
 	// Republish the head under this store's current configuration. The file on
 	// disk was written by whatever was running last, which may have had no
 	// witness, a different one, or an older key.
@@ -149,6 +164,26 @@ func (s *Store) SignedCheckpoint() (string, error) {
 		return "", storeErrorf("cosigning the head failed: %v", err)
 	}
 	return cosigned, nil
+}
+
+// publishedSize reads the size the on-disk checkpoint claims, if there is one
+// that parses. Its signature is not checked: it was this store's own, and a
+// forged larger number here can only make a store refuse to open, never
+// publish anything.
+func (s *Store) publishedSize() (int64, bool) {
+	raw, err := os.ReadFile(filepath.Join(s.dir, "checkpoint"))
+	if err != nil {
+		return 0, false
+	}
+	text, _, err := note.Split(string(raw))
+	if err != nil {
+		return 0, false
+	}
+	cp, err := tlog.ParseCheckpoint(text)
+	if err != nil {
+		return 0, false
+	}
+	return cp.Size, true
 }
 
 // recover rebuilds the tree from the entry bundles on disk. The bundles are the

@@ -513,3 +513,61 @@ func TestAPartialIsReadOnlyAtTheWidthItsNameClaims(t *testing.T) {
 		t.Fatalf("reopened at size %d, want 5: a file named 9 holding four entries was read", reopened.Size())
 	}
 }
+
+// SEC-011, the damage a reader cannot resolve. If the bundles recover fewer
+// entries than the checkpoint this store last signed and published claims,
+// the entries are lost, and a store that opened anyway would sign and publish
+// a smaller head -- a log that shrank, which every node refuses as a rollback
+// and a self-witnessed log proves as a fork against itself. Refusing to open
+// is the honest answer: the operator restores the bundles first.
+func TestAStoreRefusesToOpenBelowTheCheckpointItSigned(t *testing.T) {
+	dir, partial := fiveEntries(t)
+	if err := os.RemoveAll(partial); err != nil {
+		t.Fatal(err)
+	}
+	_, err := Open(dir, "norn/test", testLogKey(t))
+	if err == nil {
+		t.Fatal("a store whose bundles are gone opened, and would have published a smaller head")
+	}
+	for _, want := range []string{"5", "0", "restore"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal should carry %q: %v", want, err)
+		}
+	}
+}
+
+// The checkpoint is written last, so a crash before it leaves a checkpoint
+// behind the bundles; that is the designed case and must still open, at the
+// bundles' size. A checkpoint torn by the crash is the same case.
+func TestAStoreOpensWhenTheCheckpointIsBehindOrTorn(t *testing.T) {
+	t.Run("behind", func(t *testing.T) {
+		dir, _ := fiveEntries(t)
+		four, err := tlog.Build(suiteEntries(t)[:4])
+		if err != nil {
+			t.Fatal(err)
+		}
+		signed, err := four.Checkpoint("norn/test").Sign(testLogKey(t))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "checkpoint"), []byte(signed), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		reopened, err := Open(dir, "norn/test", testLogKey(t))
+		if err != nil {
+			t.Fatalf("a checkpoint behind the bundles refused to open: %v", err)
+		}
+		if reopened.Size() != 5 {
+			t.Errorf("reopened at %d, want the bundles' 5", reopened.Size())
+		}
+	})
+	t.Run("torn", func(t *testing.T) {
+		dir, _ := fiveEntries(t)
+		if err := os.WriteFile(filepath.Join(dir, "checkpoint"), []byte("norn/test\n5\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := Open(dir, "norn/test", testLogKey(t)); err != nil {
+			t.Fatalf("a torn checkpoint refused to open: %v", err)
+		}
+	})
+}
