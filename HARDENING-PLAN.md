@@ -149,6 +149,12 @@ incident that produced it. Read that section before the first firing.
   remaining hole a compromised coordinator had — hand a legitimate peer
   `0.0.0.0/0` — closes. Proof-carrying admission and devices-as-witnesses
   are recorded for v1.1. H18; the block is in `BUILD-LOG.md`.
+- **D-074 (open, written 2026-10-08):** cold gate run 13's eight protocol
+  questions — bundle and receipt keys after a rotation, a checkpoint's age,
+  the signed-note profile and UTF-8, "the same keys", line order in a
+  policy, verifier-key syntax, a `genesis` refusal code, CBOR simple
+  values — with a recommendation each; `BUILD-LOG.md`'s 6.5l-ix-b block
+  says how to answer. H5-f waits on it; H5-d and H5-e do not.
 - **D-071 (taken 2026-10-07, under the owner's instruction to review KEYTRANS
   -10 §7.2 and build what it shows missing): the witness clock survives a
   restart; a restarted node asks the peers its held head proves; a node with

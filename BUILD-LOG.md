@@ -686,7 +686,7 @@ plan before the first line of code, and stops at **[decision]** and **[user]**.
 | 6.5l-ix-d-ii | H5-d-ii | D4 (§10.1), D18 (served path) | `checkpoints-bad/` `cp-body-before-sig` (a non-canonical size under an untrusted signer: `log-signature`, not `checkpoint`); an unpadded root, re-signed and re-cosigned (`checkpoint`); a served log missing a hash tile and one missing its checkpoint (`unserved`) | ⬜ |
 | 6.5l-ix-d-iii | H5-d-iii | D18: tile paths past 999, the trust file's origin case | the path a tile index ≥ 1000 is served at, vectored; a trust file whose `origin` differs only in case from its log key's name, refused | ⬜ |
 | 6.5l-ix-e | H5-e | Fork and proofs: D14, D15, D4 (§11.1) | a sound same-size fork in `fork/`'s `sound`; `proofs/at-the-cap` and `proofs-bad/one-past-the-cap`, grown with unlisted witnesses' lines; the held-before-policy two-fault evidence; §12.1's bundle-cap bullet removed | ⬜ |
-| 6.5l-ix-b | H5-b | 🧠 One DECISION block: D2, D5, D6, D7, D8, D10, D12, D13 | a recommendation each, as the triage below states the question; the rows that need an answer wait, the rest of H5 does not | ⬜ |
+| 6.5l-ix-b | H5-b | 🧠 One DECISION block: D2, D5, D6, D7, D8, D10, D12, D13 | a recommendation each, as the triage below states the question; the rows that need an answer wait, the rest of H5 does not | ✅ |
 | 6.5l-ix-f | H5-f | Prose, and the decisions applied: D4's sentence, D11, D16, D19, and b's answers | "still normative, merely untested"; the name a learned key signs under; the served-rotated and served-superseded manifests; the coverage rows; each answered part of b in SPEC and both implementations | ⬜ |
 | 6.11 | H18 | Route authorization: a peer's allowed-ips are what the log granted (D-073) | the one hole a compromised coordinator keeps: a legitimate peer handed `0.0.0.0/0`. The enrollment's `ip` label becomes the grant; `params.routes` | ⬜ |
 | 6.11-a | H18-a | 🧠 SPEC: the grant, `params.routes`, the node contract in §13.2, vectors | §4.0, §4.5, §13.2; `proven/` carries each device's grant in both implementations; a `params` entry that switches `routes`; D-026's hint half superseded | ⬜ |
@@ -712,6 +712,12 @@ plan before the first line of code, and stops at **[decision]** and **[user]**.
 | U2–U7 | — | Lab, nginx, OpenTimestamps, NAS, phone enrollment, LocalAPI on a real node, outside people | **[user]** `HARDENING-PLAN.md` Stage G | ⬜ |
 | U8 | — | The v0.1 tag; the scope email to `keytrans@ietf.org`, drafted here, sent by you | **[user]** not before the lab soak; the 2 Nov 2026 cutoff is not a target | ⬜ |
 | U9 | — | Render and, if U8's answer makes it in scope, submit the `-00` problem statement | **[user]** `kramdown-rfc`, a Datatracker account | ⬜ |
+
+- **6.5l-ix-b — run 13's eight protocol questions, one DECISION block with a recommendation each (open, D-074 when answered).**
+  - **What it is.** The questions 6.5l-ix-a's triage classed as *protocol* — D2 (what key verifies a bundle or receipt after a log-key rotation), D5 (two definitions of a checkpoint's age), D6 (whose signed-note rules win, lines from keys nobody holds, UTF-8), D7 ("the same keys": text or public key), D8 (a directive after `quorum`), D10 (the key id's case and "a Unicode space"), D12 (no code for a served log whose entry 0 is not the genesis), D13 (CBOR simple values) — each with what both implementations do today, verified in the tree rather than recalled: `proof.Bundle.Check` and `norn submit` under the trust file's key alone; `agent.freshness` is §15's; `note.Verify` and `cosign.Verify` match name and key id before applying a length; both trust validators compare whole verifier-key text; both policy parsers accept a directive after `quorum`; both accept lowercase key ids only; the two whitespace predicates diverge on U+001C–U+001F; `checkGenesis` refuses with a plain error; both decoders refuse the other simple values.
+  - **The recommendations**, all the first option: verify bundles and receipts under the verifier's trusted keys and current policy; §15's age, stated once; write what the verifiers do and require UTF-8; the same verifier key as text; any line order; lowercase hex and the Unicode `White_Space` property; a `genesis` code made by the verifier; simple values forbidden. Four change code (a, c, f, g) and each will be one sitting of H5-f; the rest are prose and vectors. Nothing changes a wire format.
+  - **Why a block and not a fix.** Each changes what a conforming implementation accepts or refuses in a way `SPEC.md` does not already state — rule 7's first class — even where both implementations already agree; D7 and D13 in particular are "write down what they do", and a stranger cannot know that without the sentence.
+  - **Gate:** documents only, and run in full anyway: generators first (no change under `testdata/`), then `make test` (race) alone — green in all 49 packages with tests, 1048 tests — `vectors-check`, 227 reference tests, `lint`, `fmt-check`, `vet` clean.
 
 - **plan — the watcher's IETF brief reviewed against the datatracker and this tree; D-073 taken; H18–H21 and U8–U9 added.**
   - **The ask.** The owner's research watcher produced a decision brief for Mythos (Norn's distinctness, what to reuse, whether and how to approach the IETF); a friend in security read it and thought the whole thing "a mystery nobody could build". The owner asked for a review, for what would make Norn worth running, and for an IETF plan; then answered "yes" to the four additions proposed.
@@ -2684,6 +2690,103 @@ The audit lives on branch `claude/tender-mccarthy-bzllsp` (`docs/audit/SECURITY_
 | 036 | low | **Confirmed.** CI has no `permissions:`, pins actions by tag, installs `pynacl` unpinned, never sets `NORN_REQUIRE_WITNESS`, and has no scheduled run. The `vectors-check`/`fork/` claim was not checked | `ci.yml` | 6.5m-ci |
 
 ---
+
+## DECISION — 6.5l-ix-b: eight protocol questions cold gate run 13 raised (written 2026-10-08; **open**, to be recorded as D-074 when answered)
+
+Each part is a question `SPEC.md` answers two ways or not at all, found by run 13 and confirmed against both implementations in the 6.5l-ix-a triage; each comes with what the code does today, a recommendation and its cost, so the owner can answer with a letter per part. Every recommendation is the first option. Nothing here changes a wire format. Rows: H5-f applies the answers and will be split into one sitting per part that changes code; the rest of H5 does not wait.
+
+### (a) D2 — after a log-key rotation, what key verifies a bundle or a receipt
+
+**What is true.** §9.4 lets the roots rotate the log key inside the log, and a node verifies checkpoints under the trust file's key plus every `log_key` of a state it has accepted (`anchorUnder`, D-020, D-069). But §8.1 says a bundle's checkpoint verifies under "this network's log key" and §7 a receipt under "the anchored log key", and that is what the code does: `proof.Bundle.Check` verifies under `anchor.LogKey` alone and parses the trust file's policy; `norn submit` checks a receipt under the trust file's key alone. Once `overlap` has passed the log signs with the new key only, so a holder of `norn.trust` — the audience §8 sells bundles to ("checked by someone holding only `norn.trust`") — can verify no bundle or receipt made afterwards, and a node that has replayed the rotation refuses them too. The fixture rotates twice (entries 27 and 90).
+
+| Option | What it means | Cost |
+|---|---|---|
+| **A — bundles and receipts verify under the verifier's trusted log keys and its current policy (recommended)** | §7 and §8.1: "under the log keys the verifier trusts (§9.4: the trust file's, plus every `log_key` of a state it has accepted) and the policy of that state". §8 says what that means for a stranger: a bundle made after a rotation is checkable by a reader that has replayed the log through the rotation, or holds a trust file issued since; one holding only an older `norn.trust` sees `log-signature`, which is the truth. | `proof.Check` and `receipt.Check` take the key list and policy `logclient.Anchor` already carries; `norn submit` and `norn verify` pass learned keys when they have replayed; two vectors in the `served-rotated` style (a bundle and a receipt signed by `logkey2`: refused fresh, accepted informed). Both implementations. |
+| B — the log keeps signing with the trust file's key forever | Every head, bundle and receipt carries the original key's signature too. | Impossible after a key is retired for compromise, which is what rotation is for. |
+| C — leave as written | — | §8's promise is false after the first rotation, and the suite has no vector that says so. |
+
+**Recommendation: A.** Rejected: B (defeats retirement), C (a false promise). Code: yes (Go `proof`, `receipt` callers; the reference's bundle check).
+
+### (b) D5 — two definitions of a checkpoint's age
+
+**What is true.** §8.1 condition 4 defines `elapsed` as monotonic now minus the monotonic reading when the node learned *this* checkpoint's quorum time. §15 defines the node's estimate of now as the newest quorum time it has ever seen plus monotonic time since, never moving backwards, and a checkpoint's age as that estimate minus the checkpoint's quorum time — then says the thresholds are §8.1's. They agree only while the held head carries the newest quorum time seen. A grown head cosigned by a different witness subset, or by witnesses with slower clocks, can carry an *older* quorum time; run 13's example gives `fresh` under §8.1 and `hard_stale` under §15 at the same instant, and §13.2 then empties the peer set under one reading and not the other. The node implements §15 (`agent.freshness`, D-071); the reference has no freshness; `detect/staleness.json` supplies `elapsed` as a number, so no vector can see the difference.
+
+| Option | What it means | Cost |
+|---|---|---|
+| **A — §15's definition, stated once (recommended)** | §8.1: "`elapsed` is the age §15 defines: the node's running estimate of now minus this checkpoint's quorum time." The estimate is a lower bound the node has already proven from an earlier head, so a head whose witnesses were slow is as old as the node knows it to be, not as young as its own stamp says. `staleness.json` gains a case built from two (quorum time, learned-at) pairs so the difference is vectored. | Prose; one `detect/` case; no code (the node already does this). |
+| B — §8.1's definition | Age counts from when the node learned the head. | A later head with an older stamp looks fresher than the node knows it to be: a slow or colluding witness subset gains up to the skew. Rejected. |
+| C — keep both and say they agree | — | They do not. |
+
+**Recommendation: A.** Rejected: B (a witness clock can buy freshness), C (false). Code: no; one vector.
+
+### (c) D6 — whose signed-note rules win, lines from keys nobody holds, and UTF-8
+
+**What is true.** The preamble says the reused C2SP specifications win on conflict; §10 says Norn's stricter note rules exceed them; §7 says every signature line's decoded length must be 68 or 76 bytes and anything else is malformed framing — including lines from keys the reader does not hold, whose algorithm §7 itself says it cannot know. Read literally, a shared log carrying one cosignature from a witness on a third algorithm is refused by every Norn reader, the outcome §10 forbids ("a reader that refuses over one stops accepting checkpoints everybody else accepts"). Both verifiers already do the sane thing since 6.5m-sec-027: match a line's name and key id to a trusted key first, apply that key's length to a matched line, and ignore the rest (`note.Verify`, `cosign.Verify`). Nothing says whether note text or key names must be UTF-8.
+
+| Option | What it means | Cost |
+|---|---|---|
+| **A — write what both verifiers do, and require UTF-8 (recommended)** | Preamble: "§7 and §10 are Norn's profile of `c2sp.org/signed-note`, `tlog-checkpoint` and `tlog-cosignature`, and govern where they are stricter." §7: framing applies to every line (the base64 decodes, the key id is present); the 68/76 length applies only to a line whose name and key id match a trusted key; any other line is ignored. The signed text and every signature line MUST be valid UTF-8, and a note that is not is `note`. Vectors: the served head plus a stranger's 70-byte line, **accepted**; a stranger's line whose name is not UTF-8, **`note`**. | Prose; two `checkpoints-bad`/`served-extra-witness`-style vectors; the Go verifiers already comply, the UTF-8 check is one line each. The reference has no note verifier. |
+| B — the length rule on every line, as written | — | Refuses the shared log §10 says a reader must accept. Rejected. |
+| C — the reused specifications win | Drop Norn's per-line rules. | §10's per-line rules exist because of cold gate run 8 D21 (a valid line beside a forgery under the same key). Rejected. |
+
+**Recommendation: A.** Rejected: B, C. Code: the UTF-8 check; two vectors.
+
+### (d) D7 — "the same keys": which comparison
+
+**What is true.** §9.1 says a trust file's policy MUST name the witnesses `witnesses` lists "with the same keys", and its grammar table says keys are compared by parsed public key — a rule written for duplicate detection. Both implementations compare the whole verifier-key text (`trust.go`: `named[w.Name] != w.Key`; `trust.py`: `named[name] != witness["key"]`), which is stricter: a policy that publishes pi's public key under the name `pi-alt` is refused by both and accepted under the table's reading. The stricter one is right, because §10 matches a cosignature line by **name and key id**, and a node that took the policy's vkey would then match none of pi's real cosignatures.
+
+| Option | What it means | Cost |
+|---|---|---|
+| **A — the same verifier key, as text (recommended)** | §9.1's `policy` row: "the same verifier key — name, algorithm and public key — compared as canonical text; a policy that names a listed witness's public key under another name is a different key". The same for the `log` line against `log_key`. Vector: `trust-bad/` with only the policy's vkey name changed. | Prose; one vector; no code. |
+| B — the same public key | — | Lets two names for one key into a file, and §10's matching then depends on which one a node picked. Rejected. |
+
+**Recommendation: A.** Code: no; one vector.
+
+### (e) D8 — may a directive follow the `quorum` line
+
+**What is true.** §9.1 says there is exactly one `quorum` line and that it names something defined earlier; it does not say whether `witness`, `group` or `log` lines may follow it. Both parsers accept them. Which decides whether a root-signed `policy` entry is applied, and whether a trust file loads.
+
+| Option | What it means | Cost |
+|---|---|---|
+| **A — lines may appear in any order (recommended)** | §9.1's grammar table: "`quorum` may appear anywhere; the only ordering rule is that a `quorum` or `group` line names only what an earlier line defined". Vector: `policies/directive-after-quorum`, accepted. | Prose; one vector; no code. |
+| B — `quorum` MUST be last | — | Refuses what both implementations accept today, for nothing the grammar needs. Rejected. |
+
+**Recommendation: A.** Code: no; one vector.
+
+### (f) D10 — verifier-key syntax: the key id's case, and "a Unicode space"
+
+**What is true.** §7 writes the key id as "8 hex digits" with its case unstated; both implementations accept lowercase only (Go compares against `hex.EncodeToString`, the reference against `.hex()`), so `+BEA4A666+` is refused by both and permitted by the text. §9.1 forbids "a Unicode space" in a key name without saying which characters those are, and here the implementations **diverge**: Go's `unicode.IsSpace` (the Unicode White_Space property) and Python's `str.isspace` (which also counts U+001C–U+001F) disagree on those four, so a verifier key whose name carries one is accepted by one implementation and refused by the other — measured in the triage, not imagined.
+
+| Option | What it means | Cost |
+|---|---|---|
+| **A — lowercase hex; the Unicode White_Space property (recommended)** | §7: "8 lowercase hex digits"; §9.1: "a character with the Unicode `White_Space` property (25 code points in Unicode 15)". Vectors: a vkey with an uppercase id, refused; a name with U+00A0 inside it, refused; a name with U+001C inside it, **accepted** — the one that splits the two readers today. | Prose; three vectors; the reference replaces `str.isspace` with the explicit White_Space set (Python has no property check); Go unchanged. |
+| B — ASCII whitespace only | — | Leaves U+00A0 and U+2003 inside names an operator reads and a line-splitter may or may not honour. Rejected. |
+
+**Recommendation: A.** Code: the reference's predicate; three vectors.
+
+### (g) D12 — a served log whose entry 0 is not the anchored genesis has no refusal code
+
+**What is true.** §10.1's codes are a closed list; §9.3 says a node MUST refuse a log whose entry 0 is not its `genesis_hash`; §5.1 says an entry-0 failure aborts replay to the zero state. Read together, a served log whose first entry is a different root-signed genesis, under a fresh cosigned checkpoint, passes every §10.1 step and replays to nothing — and the enforcer gets an empty set. SEC-029 made the node refuse it (`checkGenesis`, `ErrLog`), with a plain error and no code, and only the node: `norn verify` and the monitor have no such refusal.
+
+| Option | What it means | Cost |
+|---|---|---|
+| **A — a `genesis` code, made by the verifier (recommended)** | §10.1 gains `genesis` between `head` and `fork`: "the served log's entry 0 is not the anchored genesis (replay aborts with `bad-genesis` at index 0)". `logclient.Verify` makes the refusal itself, so the node, `norn verify`, the monitor and `verify-evidence` agree; `checkGenesis` moves into the verifier. Vector: `served-bad/other-genesis`, a tiled log whose entry 0 is another root-signed genesis under a fresh cosigned head. | A closed list grows by one; `refusal`'s table and its guards; one Go-generated vector; the reference's loop (if it has the served path) refuses the same. |
+| B — adopt the aborted state | The loop accepts, replay records `{0, bad-genesis}`, the proven set is empty. | A log operator who serves the wrong genesis empties every table — the fail direction SEC-029 refused. Rejected. |
+
+**Recommendation: A.** Code: yes (the verifier, `refusal`); one vector.
+
+### (h) D13 — CBOR simple values other than the four named
+
+**What is true.** §4.0 forbids floats, tags, `undefined`, indefinite lengths and `null`, and permits booleans; it says nothing about simple values 0–19 and 32–255, which RFC 8949's deterministic encoding allows. Both decoders refuse them (the reference's message for simple 32 calls it a float — cosmetic). §11.1's codes then split between `cbor` and `schema` on prose that does not decide.
+
+| Option | What it means | Cost |
+|---|---|---|
+| **A — forbid them, say so (recommended)** | §4.0: "Simple values other than `false` (20) and `true` (21) are forbidden." `entries-hostile/bare-simple` (simple 16); `fork/bad-simple-size` is `cbor`. | Prose; two vectors; the reference's message. |
+| B — permit them | — | A second encoding of nothing, and a decoder-specific behaviour. Rejected. |
+
+**Recommendation: A.** Code: no (a message); two vectors.
+
+**How to answer:** one letter per part, e.g. "a-A b-A c-A d-A e-A f-A g-A h-A". H5-f waits on every part; H5-d and H5-e do not. Parts (a), (c), (f) and (g) change code and will each be one sitting of H5-f.
 
 ## DECISION — D-073: route authorization now; proof-carrying admission and devices as witnesses recorded for v1.1 (taken 2026-10-08)
 
