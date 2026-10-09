@@ -59,3 +59,20 @@ func TestTheCIWorkflowRunsSupportedActionsAndNoSchedule(t *testing.T) {
 		}
 	}
 }
+
+// HC-c (audit SEC-017). `go.mod`'s `go` line is the oldest Go that may build
+// the module, and with no `toolchain` line it is also what CI builds with:
+// setup-go installed exactly `go1.26.0`, and govulncheck found 35 reachable
+// standard-library vulnerabilities in it, every one fixed in a later patch.
+// The `toolchain` line names the release CI builds and tests with. Only its
+// presence needs checking here: the go command itself refuses a `toolchain`
+// no newer than the `go` line ("updates to go.mod needed").
+func TestGoModNamesAPatchedToolchain(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join(root(t), "go.mod"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !regexp.MustCompile(`(?m)^toolchain go\d+\.\d+\.\d+\s*$`).Match(raw) {
+		t.Error("go.mod names no `toolchain`: CI builds with the `go` line's release, which govulncheck found vulnerable")
+	}
+}
