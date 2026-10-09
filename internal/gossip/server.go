@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -132,6 +133,20 @@ func SetTimeout(d time.Duration) {
 	transport.ResponseHeaderTimeout = d
 }
 
+// SetTransport installs an in-memory transport for a serial simulation and
+// returns the previous override. Nil restores the normal transport. Callers
+// must scope the override around their rounds; it applies to every peer read.
+func SetTransport(t http.RoundTripper) http.RoundTripper {
+	transportMu.Lock()
+	defer transportMu.Unlock()
+	previous := transportOverride
+	transportOverride = t
+	return previous
+}
+
+var transportMu sync.RWMutex
+var transportOverride http.RoundTripper
+
 // transport is the default one with a header deadline: `Timeout` alone still
 // lets a peer that never sends its status line hold the connection open
 // until the whole budget is spent, which is the slow-loris in one line.
@@ -146,9 +161,15 @@ var transport = func() *http.Transport {
 // followed to another address, so a compromised peer cannot send this node's
 // reads somewhere it did not choose.
 func client() *http.Client {
+	transportMu.RLock()
+	t := transportOverride
+	transportMu.RUnlock()
+	if t == nil {
+		t = transport
+	}
 	return &http.Client{
 		Timeout:   timeout,
-		Transport: transport,
+		Transport: t,
 		CheckRedirect: func(*http.Request, []*http.Request) error {
 			return errors.New("a peer does not redirect")
 		},

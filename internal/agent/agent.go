@@ -218,6 +218,9 @@ type Config struct {
 	// Fanout is `r`: how many peers to ask per round. Defaults to
 	// gossip.DefaultFanout.
 	Fanout int
+	// PeerOrder supplies a node-local random stream for reproducible simulations.
+	// Nil keeps the independently seeded order used by the daemon.
+	PeerOrder *rand.Rand
 	// GossipEvery is T_g: how often to ask proven peers for checkpoints and
 	// evidence, even while the log answers. Defaults to DefaultGossipEvery.
 	GossipEvery time.Duration
@@ -378,6 +381,9 @@ func New(cfg Config) (*Agent, error) {
 		// Each node walks the mesh in its own order, so two nodes started
 		// together do not ask the same peers at the same moments.
 		peerOrder: rand.New(rand.NewSource(time.Now().UnixNano()))}
+	if cfg.PeerOrder != nil {
+		agent.peerOrder = cfg.PeerOrder
+	}
 	// A fork this node proved earlier outlives the process (§11), and so
 	// does the head it held (D-069) and how old it had become (D-071). The
 	// head comes back first: the evidence behind a freeze is checked under

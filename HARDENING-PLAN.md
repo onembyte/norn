@@ -514,6 +514,10 @@ the Phase 4 security properties and exist only on paper.
 *Note:* simulated time proves ordering and bounds in the code; it does not
 replace the lab's wall-clock measurements (H-user rows), and the result
 files say so.
+*Changed (2026-10-09, 6.5m-v-a):* each node's gossip reaches the peer's real
+handler through an in-memory `RoundTripper`, not a loopback server: a
+simulator that depends on the kernel's scheduling is not deterministic, and a
+Codex lane cannot bind a socket. The socket layer stays with the lab (U2).
 
 #### H8 · 6.5m-vi · Observe-mode deployment kit ⏱3
 - a. `contrib/systemd/nornd.service`: observe by default; `Restart=always`;
