@@ -162,7 +162,7 @@ entry.
 | innernet | kernel | innernet daemon | observe; watchdog flaps | Phase 3: check if innernet can run with peer management off; else upstream hook |
 | NetBird — Linux | kernel (preferred) | NetBird engine, re-syncs on updates | observe; watchdog **will flap** | **Phase 7: upstream PR — a peer-admission hook in the engine** (`AdmitPeer(pubkey) bool`). NetBird is Go and open; this is a credible, high-visibility contribution |
 | NetBird — macOS / Windows | wireguard-go via UAPI | same | observe / watchdog via UAPI socket | same PR |
-| Tailscale / Headscale | wireguard-go inside tailscaled, no UAPI | tailscaled | **observe only**, event-driven: `client/local` `WatchIPNBus(NotifyPeerWireGuardState)` + `status --json` peer keys diffed against `proven` | none without patching tailscaled — which is exactly what Tailnet Lock is. Norn's value here is *independent detection* of a control plane the operator doesn't trust (Headscale #1432) |
+| Tailscale / Headscale | wireguard-go inside tailscaled, no UAPI | tailscaled | **observe only**, event-driven: the LocalAPI's IPN bus (`watch-ipn-bus`, mask `NotifyPeerWireGuardState`) as a wake-up and `status` peer keys diffed against `proven`, spoken directly over tailscaled's socket with no `tailscale.com` module (`internal/tslocal`, H10; the endpoints, the mask and the JSON fields are unvalidated against a real tailscaled until U6) | none without patching tailscaled — which is exactly what Tailnet Lock is. Norn's value here is *independent detection* of a control plane the operator doesn't trust (Headscale #1432) |
 | Windows WireGuardNT | kernel | whoever | owner / watchdog | verify ioctl write path in Phase 3 |
 | Nebula, ZeroTier, OpenZiti | not WireGuard | — | out of scope | — |
 

@@ -22,6 +22,10 @@ import (
 // and a deployment can keep everything in one.
 type Config struct {
 	Interface string `toml:"interface"`
+	// Backend defaults to wgctrl. Tailscale also covers Headscale nodes,
+	// because both expose their peer keys through tailscaled's LocalAPI.
+	Backend         string `toml:"backend"`
+	TailscaleSocket string `toml:"tailscale_socket"`
 	// Mode defaults to observe, and that default is load-bearing: a daemon
 	// that enforced because a field was missing would take a network down on
 	// a typo (D-005).

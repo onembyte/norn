@@ -30,6 +30,7 @@ import (
 	"github.com/onembyte/norn/internal/proven"
 	"github.com/onembyte/norn/internal/reconcile"
 	"github.com/onembyte/norn/internal/trust"
+	"github.com/onembyte/norn/internal/tslocal"
 	"github.com/onembyte/norn/internal/wgdev"
 )
 
@@ -50,6 +51,8 @@ func main() {
 func run(args []string) error {
 	fs := flag.NewFlagSet("nornd", flag.ContinueOnError)
 	configPath := fs.String("config", "", "a nornd.toml to read settings from")
+	backend := fs.String("backend", "", "peer source: wgctrl (default) or tailscale (observe only)")
+	tailscaleSocket := fs.String("tailscale-socket", "", "tailscaled Unix socket (default "+tslocal.DefaultSocket+")")
 	iface := fs.String("iface", "", "the WireGuard interface to watch")
 	mode := fs.String("mode", "", "observe (default), owner or watchdog")
 	trustPath := fs.String("trust", "", "path to norn.trust")
@@ -86,6 +89,8 @@ func run(args []string) error {
 	}
 	// Flags win, so a running node can be overridden without editing a file.
 	config.Interface = pick(*iface, config.Interface)
+	config.Backend = pick(*backend, config.Backend, "wgctrl")
+	config.TailscaleSocket = pick(*tailscaleSocket, config.TailscaleSocket, tslocal.DefaultSocket)
 	config.Mode = pick(*mode, config.Mode)
 	config.Trust = pick(*trustPath, config.Trust)
 	config.Log = pick(*logLocation, config.Log)
@@ -116,15 +121,25 @@ func run(args []string) error {
 // build turns settings into a running agent, refusing anything unusable before
 // the first cycle rather than during it.
 func build(config Config, logger *slog.Logger) (*agent.Agent, time.Duration, error) {
-	if config.Interface == "" {
-		return nil, 0, errors.New("-iface is required: nornd watches one WireGuard interface")
-	}
-	if config.Trust == "" {
-		return nil, 0, errors.New("-trust is required: a node without an anchor proves nothing")
-	}
 	mode, err := ParseMode(config.Mode)
 	if err != nil {
 		return nil, 0, err
+	}
+	backend := pick(config.Backend, "wgctrl")
+	switch backend {
+	case "wgctrl":
+		if config.Interface == "" {
+			return nil, 0, errors.New("-iface is required: nornd watches one WireGuard interface")
+		}
+	case "tailscale":
+		if mode != reconcile.Observe {
+			return nil, 0, tslocal.ErrReadOnly
+		}
+	default:
+		return nil, 0, fmt.Errorf("unknown backend %q; use wgctrl or tailscale", backend)
+	}
+	if config.Trust == "" {
+		return nil, 0, errors.New("-trust is required: a node without an anchor proves nothing")
 	}
 	peerTimeout, err := ParsePeerTimeout(config.PeerTimeout)
 	if err != nil {
@@ -163,7 +178,7 @@ func build(config Config, logger *slog.Logger) (*agent.Agent, time.Duration, err
 		return nil, 0, err
 	}
 	logger.Info("nornd configuration",
-		"interface", config.Interface, "mode", mode, "poll", interval,
+		"backend", backend, "interface", config.Interface, "mode", mode, "poll", interval,
 		"trust", config.Trust, "run_dir", config.RunDir, "state_dir", config.StateDir,
 		"fight_policy", fightPolicy)
 	if fightPolicy == agent.PolicyQuarantine {
@@ -198,7 +213,12 @@ func build(config Config, logger *slog.Logger) (*agent.Agent, time.Duration, err
 		return nil, 0, err
 	}
 
-	device, err := openDevice(config.Interface)
+	var device peertable.Device
+	if backend == "tailscale" {
+		device, err = openTailscale(config.TailscaleSocket)
+	} else {
+		device, err = openDevice(config.Interface)
+	}
 	if err != nil {
 		return nil, 0, err
 	}
@@ -264,6 +284,9 @@ func build(config Config, logger *slog.Logger) (*agent.Agent, time.Duration, err
 // interface; nothing else replaces it.
 var openDevice = func(name string) (peertable.Device, error) { return wgdev.Open(name) }
 
+// openTailscale is separate so wiring tests never need a running tailscaled.
+var openTailscale = func(socket string) (peertable.Device, error) { return tslocal.Open(socket) }
+
 // gossipDirs is what this node serves its peers: the mirror it verified and
 // the evidence of any fork it proved, from wherever the agent keeps them.
 func gossipDirs(config Config) (mirror, evidence string) {
@@ -297,6 +320,12 @@ func providerFor(config Config) (endpoint.Provider, error) {
 // might be counting on it to — the agent has already made sure a failure does
 // not disturb the peer table.
 func loop(ctx context.Context, cycle *agent.Agent, interval time.Duration, logger *slog.Logger) error {
+	watchCtx, cancelWatch := context.WithCancel(ctx)
+	defer cancelWatch()
+	changes, err := cycle.WatchPeerChanges(watchCtx)
+	if err != nil {
+		return fmt.Errorf("opening peer-change stream: %w", err)
+	}
 	cycles, failures := 0, 0
 	for {
 		if err := cycle.Once(); err != nil {
@@ -312,6 +341,17 @@ func loop(ctx context.Context, cycle *agent.Agent, interval time.Duration, logge
 			timer.Stop()
 			logger.Info("nornd stopping", "cycles", cycles, "failed", failures)
 			return nil
+		case err, ok := <-changes:
+			timer.Stop()
+			if ctx.Err() != nil {
+				return nil
+			}
+			if !ok {
+				return errors.New("peer-change stream closed unexpectedly")
+			}
+			if err != nil {
+				return fmt.Errorf("peer-change stream failed: %w", err)
+			}
 		case <-timer.C:
 		}
 	}

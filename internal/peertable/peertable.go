@@ -14,6 +14,7 @@
 package peertable
 
 import (
+	"context"
 	"encoding/base64"
 	"fmt"
 	"net/netip"
@@ -136,4 +137,12 @@ type Device interface {
 	// UpdateEndpoints refreshes reachability for keys already present, and
 	// must not add a key that is absent (UpdateOnly).
 	UpdateEndpoints(peers []Peer) error
+}
+
+// ChangeSource is an optional event source alongside Device. A nil event asks
+// the reader to fetch a fresh table; a non-nil event means the stream failed.
+// The caller owns the context and must cancel it when observation stops.
+// Poll-only backends need not implement it.
+type ChangeSource interface {
+	Watch(context.Context) (<-chan error, error)
 }

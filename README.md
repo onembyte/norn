@@ -7,9 +7,10 @@
 > rotation and revocation in an append-only, witnessed log, and refuses any peer
 > that isn't in it. Works beside NetBird, innernet or plain `wg-quick` —
 > anything that leaves a WireGuard interface Norn can read and write; Tailscale
-> and Headscale are planned, not supported. Changes nothing in WireGuard.
+> and Headscale get observe mode only, not yet run against a real tailscaled.
+> Changes nothing in WireGuard.
 
-*Status (2026-10-07): 53 Go packages, 1087 tests, a frozen `SPEC.md`, and a
+*Status (2026-10-07): 54 Go packages, 1102 tests, a frozen `SPEC.md`, and a
 vector suite a second implementer can use without this repository. **14 of 38
 gate lines** in `PLAN.md` are ticked — every gate that needs a running lab, a
 measurement or a second pair of eyes is still open. No Norn has ever guarded a
@@ -117,7 +118,7 @@ only) → **watchdog** (reconcile a control plane's table, window ≤ `T_poll`) 
 | A signing key is stolen. Afterwards, can you enumerate what it signed? | no | no | no | yes — `norn audit --by` |
 | Control plane goes silent or withholds updates | acknowledged freeze attack | certs keep working until they expire | undetected | nodes gossip checkpoints over the tunnel; staleness alarms |
 | Revocation | via the control plane | `pki.blocklist`, shipped in config | via the control plane | a logged entry, with a bounded window and an alarm if it is missed |
-| Runs beside your existing stack | Tailscale only | Nebula only | NetBird only | NetBird with a kernel WireGuard interface, innernet or `wg-quick`; Tailscale/Headscale planned |
+| Runs beside your existing stack | Tailscale only | Nebula only | NetBird only | NetBird with a kernel WireGuard interface, innernet or `wg-quick`; Tailscale/Headscale observe only, not yet run against a real tailscaled |
 | Would I run it on something that matters today? | yes, it is GA | yes | yes | **no** — see the status line above |
 
 Sources and the longer argument are in `PRIOR-ART.md`. This table has not yet
