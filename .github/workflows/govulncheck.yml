@@ -1,0 +1,13 @@
+name: govulncheck
+# By hand only. The owner's Actions-budget rule (~/.claude/CLAUDE.md,
+# 2026-10-07) forbids a `schedule:` trigger until 2026-11-01, and a push
+# already runs ci.yml; a docclaims test holds both.
+on: [workflow_dispatch]
+jobs:
+  govulncheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with: { go-version-file: go.mod }
+      - run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...

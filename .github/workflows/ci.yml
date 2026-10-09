@@ -4,6 +4,8 @@ name: ci
 # most of the account's included minutes -- pull_request is dropped because
 # it double-runs a push, and a newer run on the same ref cancels an older one.
 # The full gate still runs on this Mac before every push.
+# The actions are their v7 majors, all on Node 24 (checked against each
+# action.yml and its release notes, 2026-10-08; a docclaims test holds it).
 on: [push, workflow_dispatch]
 concurrency:
   group: ci-${{ github.ref }}
@@ -23,8 +25,8 @@ jobs:
       # Linux, and only here; a skip on this job is a failure.
       NORN_REQUIRE_TMPFS: "1"
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with: { go-version-file: go.mod }
       - run: make ci
       - run: make lint
@@ -32,10 +34,10 @@ jobs:
   reference:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with: { go-version-file: go.mod }
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with: { python-version: '3.13' }
       - name: install the reference implementation's one dependency
         run: python3 -m venv contrib/norn-ref/.venv && contrib/norn-ref/.venv/bin/pip install -q pynacl

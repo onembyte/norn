@@ -1,0 +1,61 @@
+package docclaims
+
+import (
+	"os"
+	"path/filepath"
+	"regexp"
+	"strconv"
+	"strings"
+	"testing"
+)
+
+// HC. Every CI run warned that actions/checkout@v4, setup-go@v5 and
+// setup-python@v5 target Node 20, which GitHub now forces onto Node 24. The
+// workflow is a claim about what runs, and nothing checked it: a step copied
+// from an old snippet would bring Node 20 back without a sound. The minimums
+// are each action's first Node 24 major, read from its action.yml (`runs:
+// using: node24`) on 2026-10-08.
+//
+// The row also fixes the trigger: until the owner lifts the Actions-budget
+// rule (2026-11-01) a job runs on push or by hand, never on a `schedule:`.
+func TestTheCIWorkflowRunsSupportedActionsAndNoSchedule(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join(root(t), ".github", "workflows", "ci.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// govulncheck runs only by hand: it is the one job the row names, and a
+	// vulnerability scan on every push would spend what the budget rule saves.
+	vuln, err := os.ReadFile(filepath.Join(root(t), ".github", "workflows", "govulncheck.yml"))
+	if err != nil {
+		t.Fatalf("the govulncheck workflow the row names is missing: %v", err)
+	}
+	if !strings.Contains(string(vuln), "on: [workflow_dispatch]") {
+		t.Error("govulncheck.yml must run by hand only (`on: [workflow_dispatch]`)")
+	}
+	workflow := string(raw) + "\n" + string(vuln)
+	firstNode24 := map[string]int{"checkout": 5, "setup-go": 6, "setup-python": 6}
+	uses := regexp.MustCompile(`uses:\s*actions/([a-z-]+)@v(\d+)`)
+	seen := map[string]bool{}
+	for _, m := range uses.FindAllStringSubmatch(workflow, -1) {
+		name, major := m[1], m[2]
+		minimum, known := firstNode24[name]
+		if !known {
+			t.Errorf("actions/%s is not one this test knows the Node 24 major of: add it", name)
+			continue
+		}
+		seen[name] = true
+		if n, _ := strconv.Atoi(major); n < minimum {
+			t.Errorf("actions/%s@v%s targets Node 20; v%d is its first Node 24 major", name, major, minimum)
+		}
+	}
+	for name := range firstNode24 {
+		if !seen[name] {
+			t.Errorf("the workflow no longer uses actions/%s; this test is out of date", name)
+		}
+	}
+	for _, line := range strings.Split(workflow, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "schedule:") {
+			t.Errorf("a `schedule:` trigger, which the Actions-budget rule forbids until 2026-11-01: %q", line)
+		}
+	}
+}
