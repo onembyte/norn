@@ -1,9 +1,11 @@
 package sim
 
 import (
+	"bytes"
 	"crypto/ed25519"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/netip"
 	"os"
@@ -16,9 +18,13 @@ import (
 	"github.com/onembyte/norn/internal/agent"
 	"github.com/onembyte/norn/internal/cosign"
 	"github.com/onembyte/norn/internal/entry"
+	"github.com/onembyte/norn/internal/forkevidence"
 	"github.com/onembyte/norn/internal/freshness"
+	"github.com/onembyte/norn/internal/gossip"
 	"github.com/onembyte/norn/internal/logclient"
+	"github.com/onembyte/norn/internal/monitor"
 	"github.com/onembyte/norn/internal/peertable"
+	"github.com/onembyte/norn/internal/policy"
 	"github.com/onembyte/norn/internal/proven"
 	"github.com/onembyte/norn/internal/refusal"
 	"github.com/onembyte/norn/internal/replay"
@@ -26,14 +32,264 @@ import (
 	"github.com/onembyte/norn/internal/trust"
 )
 
-// These are GOSSIP.md §8's T2, T4 and T6. Simulated time proves ordering and
-// bounds in the code; it does not replace the lab's wall-clock measurements.
-// No sleeps, listeners or verifier substitutes are involved.
+// These are GOSSIP.md §8's T1, T1b, T2, T4 and T6. Simulated time proves
+// ordering and bounds in the code; it does not replace the lab's wall-clock
+// measurements. No sleeps, listeners or verifier substitutes are involved.
 const (
 	cosignedAt = 1_760_003_600
 	tg         = 10 * time.Second
 	staleness  = time.Minute
 )
+
+func TestT1BothNodesProveTheSplitViewAndFreeze(t *testing.T) {
+	t.Log("Simulated time proves code ordering and bounds; it does not replace the lab's wall-clock measurements.")
+	a, b, m := splitView(t)
+	start, mark := m.Elapsed, len(m.Events)
+	before := []heldState{held(t, m.Nodes[0]), held(t, m.Nodes[1])}
+	latencies := map[string]time.Duration{}
+	for m.Elapsed-start < 2*tg {
+		forkCycle(t, m, tg, 0, 1)
+		for i, node := range m.Nodes[:2] {
+			if node.Agent.Frozen() {
+				if _, seen := latencies[node.ID]; !seen {
+					checkSplitEvidence(t, a, b, nodeEvidence(t, node))
+					if !hasEvent(m.Events[mark:], node.ID, agent.Fork, "a quorum of witnesses cosigned both") {
+						t.Fatalf("%s froze without its own FORK alarm", node.ID)
+					}
+					latencies[node.ID] = m.Elapsed - start
+				}
+				if !reflect.DeepEqual(before[i], held(t, node)) {
+					t.Fatalf("%s changed its held state on the fork", node.ID)
+				}
+			}
+		}
+	}
+	for i, node := range m.Nodes[:2] {
+		latency, ok := latencies[node.ID]
+		if !ok {
+			t.Fatalf("%s did not freeze within 2*T_g", node.ID)
+		}
+		// Each node must make its own accusation, so evidence polling cannot
+		// hide a missing comparison in this scenario.
+		if !hasEvent(m.Events[mark:], node.ID, agent.Fork, "a quorum of witnesses cosigned both") ||
+			!hasEvent(m.Events[mark:], node.ID, agent.Frozen, "refusing every checkpoint") {
+			t.Fatalf("%s did not emit FORK and FROZEN_BY_FORK within 2*T_g", node.ID)
+		}
+		raw := nodeEvidence(t, node)
+		ev := checkSplitEvidence(t, a, b, raw)
+		if ev.Held != before[i].Checkpoint {
+			t.Fatalf("%s did not accuse from its own held branch", node.ID)
+		}
+		t.Logf("T1 %s evidence, freeze and FORK latency: %s simulated (bound %s); FROZEN_BY_FORK by %s", node.ID, latency, 2*tg, m.Elapsed-start)
+	}
+
+	// The existing monitor.Watcher collects evidence from the real gossip
+	// endpoint. Its fork-evidence alert reports receipt, not verification;
+	// the independent §11.1 check above proves that these bytes are sound.
+	// Its next round is at 3*T_g, with dispatch in memory and no socket.
+	watcher := monitor.New(a.doc, monitor.Default())
+	watcher.Now = func() time.Time { return m.Nodes[0].Wall }
+	// Even a new, consistent extension of either original branch must not
+	// lift the freeze or republish the proven set under this trust file.
+	a.params(t, map[string]any{"staleness": uint64(120)})
+	b.params(t, map[string]any{"staleness": uint64(121)})
+	forkCycle(t, m, tg, 0, 1)
+	var alerts []monitor.Alert
+	func() {
+		previous := gossip.SetTransport(m)
+		defer gossip.SetTransport(previous)
+		alerts = watcher.Round(logclient.Dir(a.dir), []monitor.Node{
+			{Name: m.Nodes[0].ID, URL: "http://10.77.0.1:8099"},
+			{Name: m.Nodes[1].ID, URL: "http://10.77.0.2:8099"},
+		})
+	}()
+	for i, node := range m.Nodes[:2] {
+		received := false
+		for _, alert := range alerts {
+			if alert.Rule == "fork-evidence" && alert.Level == monitor.Critical && alert.Subject == node.ID {
+				received = true
+			}
+		}
+		if !received || m.Elapsed-start > 3*tg {
+			t.Fatalf("monitor did not receive %s's evidence within 3*T_g: %+v", node.ID, alerts)
+		}
+		if !node.Agent.Frozen() || !reflect.DeepEqual(before[i], held(t, node)) {
+			t.Fatalf("%s resumed after a consistent extension", node.ID)
+		}
+	}
+	t.Logf("T1 monitor evidence receipt latency: %s simulated (bound %s)", m.Elapsed-start, 3*tg)
+}
+
+func TestT1bANodeSeeingOnlyBranchAFreezesFromPeerEvidence(t *testing.T) {
+	t.Log("Simulated time proves code ordering and bounds; it does not replace the lab's wall-clock measurements.")
+	a, b, m := splitView(t)
+	node1, node3 := m.Nodes[0], m.Nodes[2]
+	before := held(t, node3)
+	start, mark := m.Elapsed, len(m.Events)
+
+	// Node3 can reach only node1, whose mirror holds A; its direct source
+	// also stays on A. Node2's B checkpoint is unreachable throughout this
+	// scenario. Evidence contains B's signed head, but checkpoint gossip
+	// must never provide it to node3 as a candidate for adoption.
+	delete(m.handlers, "http://10.77.0.2:8099")
+	// Produce evidence through a real agent's direct-log comparison. This
+	// keeps the propagation control independent of T1's peer comparison:
+	// disabling that comparison must not erase T1b's source of evidence.
+	node1.Gossip = false
+	node1.Log.Source = logclient.Dir(b.dir)
+	forkCycle(t, m, 0, 0)
+	if !node1.Agent.Frozen() || !hasEvent(m.Events[mark:], node1.ID, agent.Fork, "a quorum of witnesses cosigned both") {
+		t.Fatal("node1 did not produce evidence from the direct split view")
+	}
+	sourceEvidence := nodeEvidence(t, node1)
+	ev := checkSplitEvidence(t, a, b, sourceEvidence)
+	if held(t, node1).Checkpoint != ev.Held || ev.Held != before.Checkpoint {
+		t.Fatal("node1's checkpoint endpoint no longer serves branch A")
+	}
+	var latency time.Duration
+	for m.Elapsed-start < 3*tg {
+		forkCycle(t, m, tg, 2)
+		if node3.Agent.Frozen() {
+			latency = m.Elapsed - start
+			break
+		}
+	}
+	if !node3.Agent.Frozen() {
+		t.Fatal("node3 did not freeze via peer evidence within 3*T_g")
+	}
+	if !hasEvent(m.Events[mark:], node3.ID, agent.Fork, "peer http://10.77.0.1:8099 proved") {
+		t.Fatal("node3 did not attribute its FORK alarm to node1's evidence")
+	}
+	if !bytes.Equal(sourceEvidence, nodeEvidence(t, node3)) {
+		t.Fatal("node3 did not persist the evidence it received")
+	}
+	checkSplitEvidence(t, a, b, nodeEvidence(t, node3))
+	if !reflect.DeepEqual(before, held(t, node3)) {
+		t.Fatal("node3 changed its proven set, checkpoint or peer table on peer evidence")
+	}
+	t.Logf("T1b node3 evidence, freeze and FORK latency: %s simulated (bound %s)", latency, 3*tg)
+
+	// A healthy extension on A, and time beyond the freshness threshold,
+	// cannot undo §11's permanent freeze or trigger further enforcement.
+	a.params(t, map[string]any{"staleness": uint64(120)})
+	forkCycle(t, m, tg, 2)
+	if !hasEvent(m.Events[mark:], node3.ID, agent.Frozen, "refusing every checkpoint") {
+		t.Fatal("node3 did not report FROZEN_BY_FORK on its next cycle")
+	}
+	t.Logf("T1b node3 FROZEN_BY_FORK latency: %s simulated", m.Elapsed-start)
+	forkCycle(t, m, staleness+tg, 2)
+	if !node3.Agent.Frozen() || !reflect.DeepEqual(before, held(t, node3)) || !bytes.Equal(sourceEvidence, nodeEvidence(t, node3)) {
+		t.Fatal("node3 resumed or changed state after freezing on peer evidence")
+	}
+}
+
+// splitView first corroborates a common prefix, so §11's unchanged-table
+// contract applies rather than D-071's uncorroborated-first-head drop. The
+// split is delivered between gossip rounds, and each node verifies its own
+// log's complete tree before the next exchange exposes the disagreement.
+func splitView(t *testing.T) (*fixture, *fixture, *Mesh) {
+	t.Helper()
+	a := newFixture(t)
+	// The second tlogstore replays the same fixture prefix and uses the same
+	// log and witness keys. Neither checkpoint nor verifier is substituted.
+	b := newFixture(t)
+	prefix := a.store.Checkpoint()
+	if b.store.Checkpoint() != prefix {
+		t.Fatal("the branches do not start from the same prefix")
+	}
+	m := a.mesh(t)
+	goodCycle(t, m, 0)
+	goodCycle(t, m, 0)
+	a.params(t, map[string]any{"staleness": uint64(60)})
+	b.params(t, map[string]any{"staleness": uint64(61)})
+	acp, bcp := a.store.Checkpoint(), b.store.Checkpoint()
+	if acp.Size != prefix.Size+1 || bcp.Size != acp.Size || acp.Root == bcp.Root {
+		t.Fatal("the log did not produce equal-size branches with different final entries")
+	}
+	rules, err := policy.Parse(a.doc.Policy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, branch := range []*fixture{a, b} {
+		result, err := logclient.Verify(logclient.Dir(branch.dir), branch.anchor())
+		if err != nil {
+			t.Fatalf("branch does not verify on its own: %v", err)
+		}
+		root, err := result.Tree.HeadAt(prefix.Size)
+		if err != nil || root != prefix.Root {
+			t.Fatalf("branch lost the common prefix: %v", err)
+		}
+		sigs, err := cosign.Verify(result.SignedCheckpoint, rules.Keys())
+		names := map[string]bool{}
+		for _, sig := range sigs {
+			names[sig.Name] = true
+		}
+		if err != nil || len(names) != 3 {
+			t.Fatalf("branch must have all three genuine witness cosignatures: %v (%d witnesses)", err, len(names))
+		}
+	}
+	m.Nodes[1].Log.Source = logclient.Dir(b.dir)
+	for _, node := range m.Nodes {
+		node.Gossip = false
+	}
+	goodCycle(t, m, time.Second)
+	for i, node := range m.Nodes {
+		want := acp
+		if i == 1 {
+			want = bcp
+		}
+		if got := view(t, node).Checkpoint; got.Size != want.Size || got.Root != hex.EncodeToString(want.Root[:]) {
+			t.Fatalf("%s did not adopt its assigned branch: %+v", node.ID, got)
+		}
+		node.Gossip = true
+	}
+	return a, b, m
+}
+
+func forkCycle(t *testing.T, m *Mesh, delta time.Duration, indices ...int) {
+	t.Helper()
+	for i, err := range m.Cycle(delta, indices...) {
+		node := m.Nodes[indices[i]]
+		// Direct detection returns the verifier's typed error; peer detection
+		// and later frozen cycles return the agent's refusal instead.
+		var fork *logclient.ForkError
+		if err != nil && (!node.Agent.Frozen() || (!errors.As(err, &fork) && !strings.Contains(err.Error(), "fork"))) {
+			t.Fatalf("%s at %s: unexpected error: %v", node.ID, m.Elapsed, err)
+		}
+	}
+}
+
+func nodeEvidence(t *testing.T, node *Node) []byte {
+	t.Helper()
+	paths, err := filepath.Glob(filepath.Join(node.Dir, agent.ForkDir, "*.evidence"))
+	if err != nil || len(paths) != 1 {
+		t.Fatalf("%s evidence files = %v: %v", node.ID, paths, err)
+	}
+	raw, err := os.ReadFile(paths[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	return raw
+}
+
+func checkSplitEvidence(t *testing.T, a, b *fixture, raw []byte) *forkevidence.Evidence {
+	t.Helper()
+	ev, err := forkevidence.Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	finding, err := forkevidence.Check(ev, a.doc.Origin, []string{a.doc.LogKey}, a.doc.Policy)
+	if err != nil {
+		t.Fatalf("written evidence does not prove a fork: %v", err)
+	}
+	acp, bcp := a.store.Checkpoint(), b.store.Checkpoint()
+	if finding.Size != acp.Size || bcp.Size != acp.Size || len(ev.Proof) != 0 ||
+		!((finding.Held == acp.Root && finding.Claimed == bcp.Root) || (finding.Held == bcp.Root && finding.Claimed == acp.Root)) ||
+		!bytes.Equal(ev.HeldRoot, finding.Held[:]) {
+		t.Fatalf("evidence does not name the two branches at their shared size: %+v", finding)
+	}
+	return ev
+}
 
 func TestT2PeersCarryTheNewHeadWhenTheLogFreezes(t *testing.T) {
 	t.Log("Simulated time proves code ordering and bounds; it does not replace the lab's wall-clock measurements.")
