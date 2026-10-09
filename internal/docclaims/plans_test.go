@@ -158,6 +158,21 @@ func TestTheEnrollmentPlansMatchTheCommandTableAndFlags(t *testing.T) {
 	}
 }
 
+func TestRotationIsNotRevocation(t *testing.T) {
+	for _, claim := range []struct {
+		file, phrase string
+	}{
+		{"ENROLLMENT.md", "Rotation does not revoke"},
+		{"THREAT-MODEL.md", "verifier-side retirement is recorded for v1.1"},
+	} {
+		t.Run(claim.file, func(t *testing.T) {
+			if !strings.Contains(document(t, claim.file), claim.phrase) {
+				t.Errorf("%s does not say %q", claim.file, claim.phrase)
+			}
+		})
+	}
+}
+
 // Only production string literals count. Comments about a future exporter,
 // tests and an unrelated monitor inbox cannot make a node endpoint exist.
 func productionHasLiteral(t *testing.T, dir, want string) bool {

@@ -10,7 +10,7 @@
 > and Headscale get observe mode only, not yet run against a real tailscaled.
 > Changes nothing in WireGuard.
 
-*Status (2026-10-07): 54 Go packages, 1134 tests, a frozen `SPEC.md`, and a
+*Status (2026-10-07): 54 Go packages, 1135 tests, a frozen `SPEC.md`, and a
 vector suite a second implementer can use without this repository. **14 of 38
 gate lines** in `PLAN.md` are ticked — every gate that needs a running lab, a
 measurement or a second pair of eyes is still open. No Norn has ever guarded a

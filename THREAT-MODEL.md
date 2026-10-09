@@ -55,7 +55,7 @@ Capabilities: full control of every config a node receives (peers, endpoints, al
 This is the adversary Tailnet Lock defends against; Norn adds gossip (freeze) and no-TOFU (A1 at bootstrap, see A10).
 
 ### A2 — Compromised log operator
-Capabilities: withhold entries, stop signing, present different histories to different clients (split view), append garbage. Cannot forge valid entries (no signer keys).
+Capabilities: withhold entries, stop signing, present different histories to different clients (split view), append garbage. Cannot forge valid entries (no signer keys). A stolen log key alone signs no checkpoint a node accepts unless 2k−N witnesses collude too (A9); the witness quorum contains it, the remedy is a new trust file, and verifier-side retirement is recorded for v1.1 (D-072 (d)).
 
 | Goal | Norn |
 |---|---|
