@@ -32,9 +32,10 @@ import (
 	"github.com/onembyte/norn/internal/trust"
 )
 
-// These are GOSSIP.md §8's T1, T1b, T2, T4 and T6. Simulated time proves
-// ordering and bounds in the code; it does not replace the lab's wall-clock
-// measurements. No sleeps, listeners or verifier substitutes are involved.
+// These are GOSSIP.md §8's T1, T1b, T2, T4, T5, T6 and T7. Simulated time
+// proves ordering and bounds in the code; it does not replace the lab's
+// wall-clock measurements. No sleeps, listeners or verifier substitutes are
+// involved.
 const (
 	cosignedAt = 1_760_003_600
 	tg         = 10 * time.Second
@@ -479,6 +480,242 @@ func TestT6NodesHoldDegradeAndRecoverWhenWitnessQuorumReturns(t *testing.T) {
 		}
 	}
 	t.Logf("T6 all-node recovery latency: %s simulated", m.Elapsed-recovered)
+}
+
+func TestT5OnlyTheSkewedNodeAlarmsWithoutChangingEnforcement(t *testing.T) {
+	t.Log("Simulated time proves code ordering and bounds; it does not replace the lab's wall-clock measurements.")
+	f := newFixture(t)
+	// An honest clock must stay quiet even when the cosignature is hours
+	// old. This separates wall minus witness time from the actual skew,
+	// which subtracts monotonic age (GOSSIP.md §5).
+	f.params(t, map[string]any{"staleness": uint64((3 * time.Hour) / time.Second)})
+	m := f.mesh(t)
+	goodCycle(t, m, 0)
+	goodCycle(t, m, 2*time.Hour)
+	before := make([]heldState, len(m.Nodes))
+	sets := make([]proven.Set, len(m.Nodes))
+	for i, node := range m.Nodes {
+		before[i], sets[i] = held(t, node), view(t, node)
+		if hasEvent(m.Events, node.ID, agent.ClockSkew, "") {
+			t.Fatalf("%s reported an old cosignature as clock skew", node.ID)
+		}
+	}
+	start, mark := m.Elapsed, len(m.Events)
+	shiftWall(m.Nodes[1], 2*time.Hour)
+	var recovered time.Duration
+	for cycle := 0; cycle < 3; cycle++ {
+		if cycle == 2 {
+			recovered = m.Elapsed
+			shiftWall(m.Nodes[1], -2*time.Hour)
+		}
+		round := len(m.Events)
+		goodCycle(t, m, tg)
+		for _, event := range m.Events[round:] {
+			if event.Node != m.Nodes[1].ID || !(cycle < 2 && event.Kind == agent.ClockSkew) {
+				t.Fatalf("unexpected event during clock skew and recovery: %+v", event)
+			}
+		}
+		for i, node := range m.Nodes {
+			wantAlarm := i == 1 && cycle < 2
+			if got := hasEvent(m.Events[round:], node.ID, agent.ClockSkew, "2h0m0s"); got != wantAlarm {
+				t.Fatalf("%s CLOCK_SKEW in cycle %d = %v, want %v", node.ID, cycle+1, got, wantAlarm)
+			}
+			if !wantAlarm && hasEvent(m.Events[round:], node.ID, agent.ClockSkew, "") {
+				t.Fatalf("%s alarmed with an honest clock", node.ID)
+			}
+			if node.Mono != m.Elapsed || node.Agent.Freshness() != freshness.Fresh ||
+				hasEvent(m.Events[mark:], node.ID, agent.Degraded, "") || hasEvent(m.Events[mark:], node.ID, agent.HardStale, "") {
+				t.Fatalf("%s changed monotonic time or freshness during wall-clock skew", node.ID)
+			}
+			got, set := held(t, node), view(t, node)
+			if set.AgeSeconds == nil || *set.AgeSeconds != int64(m.Elapsed/time.Second) {
+				t.Fatalf("%s's age did not follow honest monotonic time", node.ID)
+			}
+			// Publication time is explicitly local, and age advances with
+			// monotonic time. Every authoritative field and peer write must
+			// stay unchanged through both the alarm and its recovery.
+			set.WrittenAt, set.AgeSeconds = sets[i].WrittenAt, sets[i].AgeSeconds
+			got.Published = before[i].Published
+			if !reflect.DeepEqual(sets[i], set) || !reflect.DeepEqual(before[i], got) {
+				t.Fatalf("%s changed its proven set, held checkpoint or peer table", node.ID)
+			}
+		}
+		if cycle == 0 {
+			t.Logf("T5 node2 CLOCK_SKEW latency: %s simulated (one cycle, %s)", m.Elapsed-start, tg)
+		}
+		if cycle == 2 {
+			t.Logf("T5 node2 alarm cessation latency: %s simulated (one cycle, %s)", m.Elapsed-recovered, tg)
+		}
+	}
+}
+
+// shiftWall leaves the monotonic clock and every witness untouched.
+func shiftWall(node *Node, delta time.Duration) { node.Wall = node.Wall.Add(delta) }
+
+func TestT7NodesEvictTheRevokedDeviceWithinThePropagationBound(t *testing.T) {
+	t.Log("Simulated time proves code ordering and bounds; it does not replace the lab's wall-clock measurements.")
+	f := newFixture(t)
+	initial, err := logclient.Verify(logclient.Dir(f.dir), f.anchor())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// T_c is the replayed params.checkpoint_interval, in seconds (the log
+	// command's -checkpoint-interval cadence). T_g is tg, passed by mesh
+	// to agent.Config.GossipEvery. T_poll is this scheduler's poll value,
+	// used below to call Once, matching nornd's 200 ms DefaultPoll.
+	seconds, ok := initial.State.Params["checkpoint_interval"].(uint64)
+	if !ok || seconds == 0 {
+		t.Fatal("the fixture has no checkpoint interval")
+	}
+	tc := time.Duration(seconds) * time.Second
+	const poll = 200 * time.Millisecond
+	bound := tc + tg + poll
+	// Keep freshness out of this propagation test. The pending checkpoint
+	// may spend the full T_c waiting to become visible to the clients.
+	f.params(t, map[string]any{"staleness": uint64((2 * bound) / time.Second)})
+	m := f.mesh(t)
+	goodCycle(t, m, 0)
+	goodCycle(t, m, 0)
+	revoked := m.Nodes[2].Device.OwnPublicKey
+	before := make([]heldState, 2)
+	for i, node := range m.Nodes[:2] {
+		before[i] = held(t, node)
+		if !holdsPeer(before[i].Peers, revoked) || len(before[i].Peers) != 2 {
+			t.Fatalf("%s did not initially install node3 and the other peer", node.ID)
+		}
+	}
+	old := f.snapshot(t)
+	for _, node := range m.Nodes {
+		node.Log.Source = logclient.Dir(old)
+	}
+	start, mark := m.Elapsed, len(m.Events)
+	f.revoke(t, "pi-cam")
+	// Append publishes immediately in tlogstore. Withhold its new directory
+	// for a full T_c to model the checkpoint cadence, then let only node1
+	// fetch it directly. Node2's direct log stays at the valid old head, so
+	// its eviction must come from gossip, with no error-triggered fallback.
+	goodCycle(t, m, tc, 1)
+	for i, node := range m.Nodes[:2] {
+		if !reflect.DeepEqual(before[i].Peers, held(t, node).Peers) {
+			t.Fatalf("%s evicted node3 before the new head was delivered", node.ID)
+		}
+	}
+	m.Nodes[0].Log.Source = logclient.Dir(f.dir)
+	latencies := map[string]time.Duration{}
+	for m.Elapsed-start < bound {
+		// Poll node2 first so it cannot see node1's new mirror in the same
+		// cycle that node1 first adopts it.
+		goodCycle(t, m, poll, 1, 0)
+		for i, node := range m.Nodes[:2] {
+			now := held(t, node)
+			if node.Agent.Freshness() != freshness.Fresh {
+				t.Fatalf("%s became stale during revoke propagation", node.ID)
+			}
+			if holdsPeer(now.Peers, revoked) {
+				continue
+			}
+			if _, seen := latencies[node.ID]; seen {
+				continue
+			}
+			wantPeers := []peertable.Peer{}
+			for _, peer := range before[i].Peers {
+				if peer.Key != revoked {
+					wantPeers = append(wantPeers, peer)
+				}
+			}
+			if !reflect.DeepEqual(wantPeers, now.Peers) || len(now.Devices) != 2 ||
+				view(t, node).Checkpoint.Size != f.store.Checkpoint().Size {
+				t.Fatalf("%s did not enforce just the revocation from the new head", node.ID)
+			}
+			for _, device := range now.Devices {
+				if device.DeviceID == "pi-cam" {
+					t.Fatalf("%s still proves the revoked device", node.ID)
+				}
+			}
+			latencies[node.ID] = m.Elapsed - start
+		}
+		if len(latencies) == 2 {
+			break
+		}
+	}
+	for _, node := range m.Nodes[:2] {
+		latency, ok := latencies[node.ID]
+		if !ok || latency > bound {
+			t.Fatalf("%s did not evict node3 within T_c + T_g + T_poll = %s", node.ID, bound)
+		}
+		t.Logf("T7 %s eviction latency: %s simulated (bound %s = T_c %s + T_g %s + T_poll %s)", node.ID, latency, bound, tc, tg, poll)
+	}
+	if !hasEvent(m.Events[mark:], m.Nodes[1].ID, agent.AdoptedFromPeer,
+		fmt.Sprintf("took size %d from peer http://10.77.0.1:8099", f.store.Checkpoint().Size)) {
+		t.Fatal("node2 did not adopt the revocation from node1 through gossip")
+	}
+	writeT7Results(t, latencies, bound)
+}
+
+func holdsPeer(peers []peertable.Peer, key peertable.Key) bool {
+	for _, peer := range peers {
+		if peer.Key == key {
+			return true
+		}
+	}
+	return false
+}
+
+// revoke uses the prefix's two-of-three signer quorum. The store signs and
+// cosigns its new checkpoint through the same path as every fixture append.
+func (f *fixture) revoke(t *testing.T, id string) {
+	t.Helper()
+	f.append(t, "revoke", map[string]any{"device_id": id, "reason": "lost"}, "signer", "signer1", "signer2")
+}
+
+func writeT7Results(t *testing.T, latencies map[string]time.Duration, bound time.Duration) {
+	t.Helper()
+	dir := os.Getenv("NORN_SIM_RESULTS")
+	if dir == "" {
+		return
+	}
+	info, err := os.Stat(dir)
+	if err != nil || !info.IsDir() {
+		return
+	}
+	// Resolve symlinks as well as relative paths so an explicitly supplied
+	// result directory can never put an artifact in the source tree.
+	dir, err = filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir, err = filepath.Abs(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, err = filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rel, err := filepath.Rel(root, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))) {
+		t.Log("NORN_SIM_RESULTS is inside the source tree; no result file written")
+		return
+	}
+	result := struct {
+		Latencies map[string]time.Duration `json:"latencies_ns"`
+		Bound     time.Duration            `json:"bound_ns"`
+		TimeBasis string                   `json:"time_basis"`
+	}{latencies, bound, "Simulated time proves code ordering and bounds; it does not replace the lab's wall-clock measurements."}
+	raw, err := json.MarshalIndent(result, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "t7.json"), append(raw, '\n'), 0o644); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // The fixture follows agent/gate_test.go's writableLog and appendRevoke, and
