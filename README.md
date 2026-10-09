@@ -129,6 +129,7 @@ been reviewed by anyone who has run two of these in anger; that gate is open.
 |---|---|
 | `PLAN.md` | phases, gates, fixed decisions |
 | `PRIOR-ART.md` | why this doesn't exist yet |
+| `KEYTRANS-MAPPING.md` | every Norn concept against IETF Key Transparency: equivalent, partial or none, and what that decides |
 | `THREAT-MODEL.md` | 12 adversaries, 7 guarantees, what Norn does *not* defend |
 | `SECURITY.md` | how to report a vulnerability, and what is in scope |
 | `CONTRIBUTING.md` | the gate, how a change is made, and why `SPEC.md` changes only by decision |
