@@ -1,7 +1,7 @@
 GO      ?= go
 PKGS    := ./...
 
-.PHONY: all test vet fmt fmt-check lint ci vectors vectors-log vectors-check ref-test tidy verify-py
+.PHONY: all test vet fmt fmt-check lint ci vectors vectors-log vectors-check ref-test tidy verify-py lab-sim
 
 all: ci
 
@@ -11,6 +11,25 @@ all: ci
 # teaches people to re-run rather than to read.
 test:
 	$(GO) test -race -count=1 -timeout 30m $(PKGS)
+
+# This runs the simulator and reports simulated latency, not the lab's
+# wall-clock measurements: GOSSIP.md section 8's lab/tests/ are the lab's
+# scripts, run by make lab-test. T7 refuses results inside the source tree,
+# so the default result directory is under the system's temporary directory;
+# set LAB_SIM_RESULTS to keep them somewhere else.
+LAB_SIM_RESULTS ?= $(or $(TMPDIR),/tmp)/norn-lab-sim
+lab-sim:
+	@set -eu; mkdir -p "$(LAB_SIM_RESULTS)"; \
+	log=$$(mktemp "$(LAB_SIM_RESULTS)/run.XXXXXX"); \
+	trap 'rm -f "$$log"' EXIT HUP INT TERM; status=0; \
+	NORN_SIM_RESULTS="$(LAB_SIM_RESULTS)" $(GO) test -count=1 -v -run 'TestT[0-9]' ./internal/sim >"$$log" 2>&1 || status=$$?; \
+	awk '/[.]go:[0-9]+: T[0-9].*latency: .*simulated/ { \
+	  sub(/^.*[.]go:[0-9]+: /, ""); key=$$1; \
+	  if (!(key in lines)) order[++n]=key; \
+	  lines[key]=lines[key] (lines[key] ? "; " : "") $$0; \
+	} /Simulated time proves/ { sub(/^.*[.]go:[0-9]+: /, ""); caveat=$$0 } \
+	END { for (i=1; i<=n; i++) print lines[order[i]]; if (caveat) print caveat }' "$$log"; \
+	if [ $$status -ne 0 ]; then cat "$$log" >&2; fi; exit $$status
 
 vet:
 	$(GO) vet $(PKGS)

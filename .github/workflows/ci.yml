@@ -45,3 +45,11 @@ jobs:
         run: make ref-test
       - name: committed vectors match their generators
         run: make vectors-check
+
+  lab-sim:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with: { go-version-file: go.mod }
+      - run: make lab-sim

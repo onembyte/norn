@@ -23,6 +23,19 @@ func TestTheCIWorkflowRunsSupportedActionsAndNoSchedule(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// H7-f keeps the simulator visible as its own Linux job, rather than
+	// relying on the full suite to happen to run its scenarios.
+	job := regexp.MustCompile(`(?m)^  lab-sim:\n(?:^    .*\n|^\n)*`).FindString(string(raw))
+	if job == "" {
+		t.Error("ci.yml must have a lab-sim job")
+	} else {
+		if !regexp.MustCompile(`(?m)^    runs-on: ubuntu-latest$`).MatchString(job) {
+			t.Error("the lab-sim job must run on ubuntu-latest")
+		}
+		if !regexp.MustCompile(`(?m)^      - run: make lab-sim$`).MatchString(job) {
+			t.Error("the lab-sim job must call make lab-sim")
+		}
+	}
 	// govulncheck runs only by hand: it is the one job the row names, and a
 	// vulnerability scan on every push would spend what the budget rule saves.
 	vuln, err := os.ReadFile(filepath.Join(root(t), ".github", "workflows", "govulncheck.yml"))
@@ -56,6 +69,24 @@ func TestTheCIWorkflowRunsSupportedActionsAndNoSchedule(t *testing.T) {
 	for _, line := range strings.Split(workflow, "\n") {
 		if strings.HasPrefix(strings.TrimSpace(line), "schedule:") {
 			t.Errorf("a `schedule:` trigger, which the Actions-budget rule forbids until 2026-11-01: %q", line)
+		}
+	}
+}
+
+// H7-f runs the simulator, not the lab's wall-clock scripts. Its result
+// directory must be supplied explicitly so T7 can write its measurements.
+func TestTheMakefileRunsTheSimulatorWithAResultDirectory(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join(root(t), "Makefile"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := regexp.MustCompile(`(?m)^lab-sim:[^\n]*\n(?:^\t.*\n)*`).FindString(string(raw))
+	if target == "" {
+		t.Fatal("Makefile must have a lab-sim target")
+	}
+	for _, name := range []string{"./internal/sim", "NORN_SIM_RESULTS"} {
+		if !strings.Contains(target, name) {
+			t.Errorf("the lab-sim recipe must name %s", name)
 		}
 	}
 }
