@@ -3,6 +3,7 @@ package logserver
 import (
 	"math"
 	"net"
+	"net/netip"
 	"time"
 )
 
@@ -35,7 +36,8 @@ type tokenBucket struct {
 }
 
 // limit spends a token before any body read or fold, keyed only by the remote
-// host without its port. Proxy headers are untrusted and ignored: behind a
+// IPv4 address or IPv6 /64, so rotating addresses within one prefix cannot
+// exhaust the source map. Proxy headers are untrusted and ignored: behind a
 // reverse proxy every client shares its bucket, the safe default until a
 // later row defines a trusted-proxy option. A separate lock keeps slow bodies
 // and appends from delaying refusals at the door.
@@ -43,6 +45,14 @@ func (s *Server) limit(remote string) int {
 	host, _, err := net.SplitHostPort(remote)
 	if err != nil {
 		host = remote // A bare host still gets one bucket, never a proxy's claim.
+	}
+	if addr, err := netip.ParseAddr(host); err == nil {
+		addr = addr.Unmap()
+		if addr.Is4() {
+			host = addr.String()
+		} else {
+			host = netip.PrefixFrom(addr.WithZone(""), 64).Masked().String()
+		}
 	}
 	s.bucketMu.Lock()
 	defer s.bucketMu.Unlock()

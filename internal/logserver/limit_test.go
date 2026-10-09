@@ -135,3 +135,59 @@ func TestManySourcesCannotGrowTheBucketMapPastItsBound(t *testing.T) {
 		t.Fatalf("idle buckets remain: map has %d sources, want 1", len(s.buckets))
 	}
 }
+
+func TestRemoteSourcesUseIPv4AddressesAndIPv6Prefixes(t *testing.T) {
+	for _, c := range []struct {
+		name, first, second, key string
+		want                     int
+	}{
+		{"addresses in one IPv6 prefix share a bucket", "[2001:db8:1:2::1]:1111", "[2001:db8:1:2::ffff]:2222", "2001:db8:1:2::/64", http.StatusTooManyRequests},
+		{"different IPv6 prefixes have separate buckets", "[2001:db8:1:2::1]:1111", "[2001:db8:1:3::1]:2222", "2001:db8:1:2::/64", http.StatusBadRequest},
+		{"mapped IPv4 shares the IPv4 bucket", "192.0.2.1:1111", "[::ffff:192.0.2.1]:2222", "192.0.2.1", http.StatusTooManyRequests},
+		{"IPv4 shares the mapped IPv4 bucket", "[::ffff:192.0.2.1]:1111", "192.0.2.1:2222", "192.0.2.1", http.StatusTooManyRequests},
+		{"different IPv4 addresses have separate buckets", "192.0.2.1:1111", "192.0.2.2:2222", "192.0.2.1", http.StatusBadRequest},
+		{"link local zones do not divide an IPv6 prefix", "[fe80::1%eth0]:1111", "[fe80::2%eth1]:2222", "fe80::/64", http.StatusTooManyRequests},
+		{"bare IPv6 uses a canonical prefix", "2001:0DB8:0001:0002::1", "[2001:db8:1:2::2]:2222", "2001:db8:1:2::/64", http.StatusTooManyRequests},
+		{"unparseable hosts keep their own bucket", "unparseable-host", "unparseable-host:2222", "unparseable-host", http.StatusTooManyRequests},
+		{"different unparseable hosts have separate buckets", "unparseable-host", "another-host:2222", "unparseable-host", http.StatusBadRequest},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			s, _, _ := seededServer(t, WithRateLimit(1, 1))
+			s.now = func() time.Time { return time.Unix(1_800_000_000, 0) }
+			if w := requestFrom(s, c.first, "198.51.100.1", nil); w.Code != http.StatusBadRequest {
+				t.Fatalf("first request: %d, want 400", w.Code)
+			}
+			if w := requestFrom(s, c.second, "198.51.100.2", nil); w.Code != c.want {
+				t.Errorf("second request: %d, want %d", w.Code, c.want)
+			}
+			if s.buckets[c.key] == nil {
+				t.Errorf("no bucket for canonical source %q", c.key)
+			}
+		})
+	}
+}
+
+func TestAFloodWithinOneIPv6PrefixLeavesRoomForAFreshIPv4Source(t *testing.T) {
+	s, _, _ := seededServer(t, WithRateLimit(1, 1))
+	s.now = func() time.Time { return time.Unix(1_800_000_000, 0) }
+	var firstMismatch string
+	for i := 0; i <= maxSources; i++ {
+		remote := fmt.Sprintf("[2001:db8:1:2::%x]:1234", i)
+		want := http.StatusTooManyRequests
+		if i == 0 {
+			want = http.StatusBadRequest
+		}
+		if w := requestFrom(s, remote, "", nil); w.Code != want && firstMismatch == "" {
+			firstMismatch = fmt.Sprintf("address %d: %d, want %d", i, w.Code, want)
+		}
+	}
+	if firstMismatch != "" {
+		t.Error(firstMismatch)
+	}
+	if len(s.buckets) != 1 || s.sources.Len() != 1 {
+		t.Errorf("one IPv6 prefix occupies %d map slots and %d list slots, want 1 each", len(s.buckets), s.sources.Len())
+	}
+	if w := requestFrom(s, "192.0.2.1:1234", "", nil); w.Code != http.StatusBadRequest {
+		t.Errorf("fresh IPv4 source: %d, want 400", w.Code)
+	}
+}
