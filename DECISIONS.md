@@ -957,3 +957,83 @@ within its grant; the coordinator becomes an address book. *Devices as witnesses
 nodes cosign the heads they verified, and a policy may name k of a network's own
 devices. Each is a wire protocol with its own freshness and denial-of-service
 questions. `HARDENING-PLAN.md` H18, D-073's block in `BUILD-LOG.md`.
+
+## D-072 · Five audit questions: a fork shrinks the enforced set to what both branches agree on; one Ed25519 predicate; v1 keeps log-key retirement and `quorum none` behind explicit settings (2026-10-09)
+The owner's answers of 2026-10-09 to the audit's five questions (`BUILD-LOG.md`'s
+6.5m-sec-dec block), after reviewing the recommendations; (a) and (c) are the
+owner's own, sharpened in review.
+**(a) A proven fork freezes authorization at the last state both branches agree
+on, and keeps enforcing it — the enforced set may shrink and never grow** (the
+owner's option D; superseding the recommendation to change nothing on the
+interface). Once equivocation is proven a node consumes no new authorization
+state from either branch. The safe state is the common prefix: the largest size
+at which both branches have the same tree. The node keeps on its interface only
+peers that are both enforced now and authorized at that prefix, so whatever
+either branch added after the split — the rogue a split view exists to install —
+is removed, and anything revoked after it stays out. The detecting node computes
+the split from its own entries and the conflicting tree it just verified; a node
+that only receives evidence needs the evidence to carry the split (its size, the
+root there, and a consistency proof to each branch) — a change to §11.1's
+evidence format. With no split point established, a node **fails closed** by
+default (empty desired set): a fork is cryptographic proof that the log and a
+witness quorum misbehaved, unlike staleness, which is why `S_hard` stays opt-in
+while this does not. The `FORK` alarm is critical and repeats until a new trust
+file. Accepted costs, stated: legitimate devices enrolled after the split, on the
+honest branch too, lose their peers until recovery; an attacker who holds the log
+key and 2k−N witnesses gains a way to cut a network off. Rejected: changing
+nothing on the interface (leaves a split view's rogue connected after detection);
+evicting against the node's own branch (keeps the rogue, which is on that branch).
+**(b) A `labels` map, when present, carries at least one pair**; `labels: {}` is a
+decode fault. One encoding of "no labels": absence.
+**(c) §3 defines one implementation-independent predicate, NORN-ED25519-v1**,
+covering canonical encodings of `A` and `R`, `S < L`, small-order and torsion
+points, subgroup membership and the verification equation; admitting keys and
+verifying signatures both follow it. The C2SP CCTV Ed25519 vectors (fetched with
+the owner's leave, vendored with their provenance) and Norn's own edge vectors
+decide it: Go, the Python reference and the cold-built verifier must give the
+same answer on every one. A disagreement by `contrib/verify-py`, which is kept
+byte for byte, is a finding answered by a new cold run, not a patch. A Mythos
+review precedes the merge. A Rust implementation is not required.
+Rejected: "as Go's `crypto/ed25519` verifies" (not a rule a second implementer
+can read); leaving §3 as it is (two verifiers can disagree about a state).
+**(d) v1: a `log_key` entry is for planned rotation;** a compromised log key is
+contained by the witness quorum and remedied by a new trust file (R7, A2).
+Verifier-side retirement is recorded for v1.1.
+**(e) `nornd` refuses `owner` and `watchdog` under an effective `quorum none`**
+unless `allow_no_quorum` is set; `observe` always runs; a policy lowered to none
+while running alarms on the degraded cadence until restart.
+Rows: 6.5m-sec-021r (a), 022r (b), 023r (c), 014r (d), 033r (e).
+
+## D-074 · Cold gate run 13's eight questions: keys after rotation, one age, the signed-note profile, exact vkey comparison, sequential names, an ASCII key-name grammar, a `genesis` code, an allow-listed CBOR profile (2026-10-09)
+The owner's answers of 2026-10-09 to run 13's eight questions (`BUILD-LOG.md`'s
+6.5l-ix-b block), with the owner's refinements.
+**(a)** Bundles and receipts verify under every log key the verifier trusts for
+the origin and the policy of that state; a signature line's key name and key id
+select the candidate key — no trial of every key — and unknown lines are
+ignored. Retirement stays a trust-policy change.
+**(b)** One normative age: §15's, the node's estimate of now from witness-signed
+time (a lower bound that never moves backwards) minus the checkpoint's quorum
+time. A Mythos review precedes the merge and states the exact boundaries (`>` or
+`≥` at `S` and `S_hard`) and that clock skew never changes freshness.
+**(c)** §7 and §10 are Norn's profile of the reused signed-note specifications:
+lines whose name and key id match no trusted key are ignored; known lines follow
+the witness policy; the signed text and every line MUST be valid UTF-8.
+**(d)** "The same keys" means the same verifier key compared as canonical text —
+name, algorithm and public key — for `witness` against `witnesses` and `log`
+against `log_key`.
+**(e)** Lines may follow `quorum`; names resolve in order — a `quorum` or `group`
+line names only what an earlier line defined — and nothing defined later changes
+an earlier line.
+**(f)** Key ids are 8 **lowercase** hex digits. Key names in trust files and
+policies follow an explicit **ASCII** grammar instead of a Unicode whitespace
+predicate (whose tables differ between Go and Python); Norn's own log key names
+are origins and already ASCII. A stranger's cosignature line with any other name
+is still ignored, not refused (c).
+**(g)** A served log whose entry 0 is not the anchored genesis — or that has no
+entry 0 — is refused with a new `genesis` code by the shared verifier, so the
+node, `norn verify`, the monitor and evidence checking agree. High priority.
+**(h)** §4.0 states its CBOR profile as an allow-list: unsigned integers, byte and
+text strings, arrays, maps, `false` and `true`; every other type, simple value
+included, is refused; the existing rules (shortest form, definite lengths,
+strictly increasing keys, the whole input) stand, with vectors for each.
+Rows: 6.5l-ix-f's sub-rows (H5-f-a … h).

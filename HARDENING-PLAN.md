@@ -147,11 +147,13 @@ incident that produced it. Read that section before the first firing.
   — the preimage without `sigs` — for every entry, accepted or rejected
   (audit SEC-001, option A); per-device sequence numbers are recorded for
   v1.1.
-- **D-072 (open, written 2026-10-08):** five protocol questions from the
-  audit — a frozen watchdog's evictions, an empty `labels` map, the Ed25519
-  rule at the edges, log-key retirement, enforcing under `quorum none` — with
-  a recommendation each; `BUILD-LOG.md`'s DECISION block says how to answer.
-  Rows 021r–033r wait on their part; nothing else does.
+- **D-072 (taken 2026-10-09, the owner's answers):** a proven fork freezes
+  authorization at the common prefix both branches agree on and keeps
+  enforcing it — the set shrinks, never grows, and fails closed when no split
+  point can be established; one NORN-ED25519-v1 predicate decided by the C2SP
+  CCTV vectors and Norn's own; `labels: {}` refused; v1 keeps log-key
+  retirement for v1.1; `nornd` refuses to enforce under `quorum none` unless
+  `allow_no_quorum`. Rows 021r–033r; `DECISIONS.md` D-072.
 - **D-073 (taken 2026-10-08, owner's "yes" to the review of the watcher's
   IETF brief): a peer's allowed-ips are bounded by what its enrollment
   granted.** `labels.ip` stops being advisory: under `params.routes =
@@ -161,12 +163,12 @@ incident that produced it. Read that section before the first firing.
   remaining hole a compromised coordinator had — hand a legitimate peer
   `0.0.0.0/0` — closes. Proof-carrying admission and devices-as-witnesses
   are recorded for v1.1. H18; the block is in `BUILD-LOG.md`.
-- **D-074 (open, written 2026-10-08):** cold gate run 13's eight protocol
-  questions — bundle and receipt keys after a rotation, a checkpoint's age,
-  the signed-note profile and UTF-8, "the same keys", line order in a
-  policy, verifier-key syntax, a `genesis` refusal code, CBOR simple
-  values — with a recommendation each; `BUILD-LOG.md`'s 6.5l-ix-b block
-  says how to answer. H5-f waits on it; H5-d and H5-e do not.
+- **D-074 (taken 2026-10-09, the owner's answers):** bundles and receipts
+  under every trusted log key, selected by name and key id; §15's age, after
+  a Mythos review of its boundaries; the signed-note profile with UTF-8;
+  verifier keys compared as text; names resolved in order; lowercase key ids
+  and an ASCII key-name grammar; a `genesis` refusal code; §4.0 as an
+  allow-list. H5-f, split one row per part; `DECISIONS.md` D-074.
 - **D-071 (taken 2026-10-07, under the owner's instruction to review KEYTRANS
   -10 §7.2 and build what it shows missing): the witness clock survives a
   restart; a restarted node asks the peers its held head proves; a node with
