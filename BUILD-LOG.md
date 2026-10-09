@@ -703,7 +703,7 @@ plan before the first line of code, and stops at **[decision]** and **[user]**.
 | 6.5m-ci-a | HC-a | The three actions on their Node 24 majors, govulncheck by hand, and a guard | `actions/checkout`, `setup-go`, `setup-python` at v7 (each `action.yml` reads `node24`; the major releases' notes read for what touches this workflow); `govulncheck.yml` on `workflow_dispatch` only; a `docclaims` test refuses a Node 20 major, a `schedule:` trigger, or govulncheck on push | ✅ |
 | 6.5m-ci-b | HC-b | One CI run, green, with no deprecation annotation | *needs* the Actions-budget rule lifted (2026-11-01) or the owner's go-ahead for a run: every push carries `[skip ci]` until then | ⬜ |
 | 6.5m-xii | H13 | [codex: gpt-6.1-sol/medium] Documents tell the truth about scale and plans (F10–F12) | the scale ceiling stated as numbers; every "planned" checked against the code; each new factual sentence guarded | ⬜ |
-| 6.7 | H14 | `contrib/verify-py/`, kept | a cold-built standard-library verifier passes every vector, committed as written with its provenance; `make verify-py` in `make ci` | ⬜ |
+| 6.7 | H14 | [codex: gpt-6.1-sol/high, on a sealed copy] `contrib/verify-py/`, kept | a cold-built standard-library verifier passes every vector, committed as written with its provenance; `make verify-py` in `make ci` | ⬜ |
 | 6.6 | H15 | Phase 6 gate audit | see the 6.6 row above | ⬜ |
 | 6.12 | H19 | `SECURITY.md`, `CONTRIBUTING.md`, release notes for v0.1 | **a** [codex: gpt-6-luna/medium] the two files; **b** `RELEASE-NOTES-v0.1.md`, the tag is U8 | ✅ |
 | 6.12-a | H19-a | [codex: gpt-6-luna/medium] `SECURITY.md` and `CONTRIBUTING.md` | private reporting (honest about a private repository), scope and §7's non-goals; the gate, controls, the vectors' provenances, `SPEC.md` by decision only | ✅ |
@@ -716,6 +716,12 @@ plan before the first line of code, and stops at **[decision]** and **[user]**.
 | U2–U7 | — | Lab, nginx, OpenTimestamps, NAS, phone enrollment, LocalAPI on a real node, outside people | **[user]** `HARDENING-PLAN.md` Stage G | ⬜ |
 | U8 | — | The v0.1 tag; the scope email to `keytrans@ietf.org`, drafted here, sent by you | **[user]** not before the lab soak; the 2 Nov 2026 cutoff is not a target | ⬜ |
 | U9 | — | Render and, if U8's answer makes it in scope, submit the `-00` problem statement | **[user]** `kramdown-rfc`, a Datatracker account | ⬜ |
+
+- **plan — H14 delegated to a sealed Codex lane; H15 re-sequenced after the rows it audits.**
+  - **H14** (`contrib/verify-py/`, the independent verifier) was planned for a fresh Claude agent on a sealed copy. Under rule 12's delegate-by-default it goes to a Codex lane (`gpt-6.1-sol`, high) in a sealed directory — `SPEC.md` and `testdata/vectors/` only — with the gate prompt's constraints and a log audit for any path into the repository. Independence is the row's point, and a model family other than the one that wrote Norn reads the spec more independently; it also spends the Codex quota rather than this loop's.
+  - **H15** (the Phase 6 gate audit) could run now with the cold-model line recorded open, but every `PLAN.md` gate line already carries an audit note, and H7's simulator and H8–H11 will move several of them; an audit now would be redone. Its *Needs* now reads H6–H14.
+  - **What that leaves this loop while the Codex quota is spent (resets 00:49):** the first non-Codex row is H20, 🧠, so the owner was notified, as the loop's rule says, and switched to Mythos.
+  - **Gate:** documents only, and run in full anyway: generators first (no change under `testdata/`), then `make test` (race) alone — green in all 49 packages with tests, 1059 tests; the run outlived a session restart and was read back from its log — `vectors-check`, 230 reference tests, `lint`, `fmt-check`, `vet` clean.
 
 - **6.5m-ci-a — CI's three actions are on their Node 24 majors (v7), and a test keeps them there. HC split: the run that shows it green waits on the Actions budget.**
   - **What was wrong.** Every CI run warned that `actions/checkout@v4`, `setup-go@v5` and `setup-python@v5` target Node 20, which GitHub now forces onto Node 24.

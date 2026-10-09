@@ -597,9 +597,17 @@ A fresh agent on a sealed copy (the gate prompt's constraints verbatim)
 builds a Python standard-library verifier and a harness over every vector;
 committed as written with `PROVENANCE.md` (sealed commit, prompt, date,
 transcript audit); `make verify-py`, in `make ci`; never edited by hand.
+*Delegated (2026-10-08, rule 12's delegate-by-default):* the fresh builder is a
+Codex lane (`gpt-6.1-sol`, high) working in a sealed directory — `SPEC.md` and
+`testdata/vectors/` only, no implementation — under the gate prompt's
+constraints verbatim, its log audited for any path into the repository. A
+model family other than the one that wrote Norn is the more independent reader.
 
 #### H15 · 6.6 · Phase 6 gate audit ⏱1
-*Needs:* H6 finished, or the gate line recorded as open with the reason.
+*Needs:* H6–H14 ticked (H6's cold-model line may be recorded open with its
+reason). Re-sequenced 2026-10-08: every gate line already carries an audit
+note, and an audit run before H7's simulator and H8–H11 land would be redone
+when they do.
 Each `PLAN.md` gate line and each `PUBLICATION.md` inventory row against
 what exists (✅ fails if missing, ⬜ fails if present); what needs people.
 
