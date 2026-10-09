@@ -82,6 +82,11 @@ func verifyEvidenceCmd(args []string) error {
 	fmt.Printf("network     %s  (%s)\n", anchor.Name, anchor.Origin)
 	fmt.Printf("anchor      %s\n", fingerprint)
 	fmt.Printf("checked by  %s\n", source)
+	if finding.Split == 0 {
+		fmt.Printf("split: none claimed\n")
+	} else {
+		fmt.Printf("split: %d\n", finding.Split)
+	}
 	fmt.Printf("at size     %d entries\n", finding.Size)
 	fmt.Printf("  root A    %s\n", hex.EncodeToString(finding.Held[:]))
 	fmt.Printf("  root B    %s\n", hex.EncodeToString(finding.Claimed[:]))

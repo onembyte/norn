@@ -316,11 +316,11 @@ func (a *Agent) writeEvidence(fork *logclient.ForkError, held *logclient.Result)
 	var evidence *forkevidence.Evidence
 	var err error
 	if fork.Conflicting.Size > fork.Stored.Size {
-		evidence, err = forkevidence.Build(fork.Tree, fork.Signed,
-			held.SignedCheckpoint, fork.Stored)
+		evidence, err = forkevidence.Build(fork.Tree, fork.Held, fork.Signed,
+			held.SignedCheckpoint)
 	} else {
-		evidence, err = forkevidence.Build(fork.Held, held.SignedCheckpoint,
-			fork.Signed, fork.Conflicting)
+		evidence, err = forkevidence.Build(fork.Held, fork.Tree, held.SignedCheckpoint,
+			fork.Signed)
 	}
 	if err != nil {
 		return "", err

@@ -66,15 +66,15 @@ func TestParseFollowsSection11_1sOrder(t *testing.T) {
 	}{
 		// Two faults: §11.1 step 2 decides.
 		{"a version this reader does not speak, and a key version 1 lacks", evrefusal.Version,
-			func(m map[string]any) { m["version"] = uint64(2); m["surprise"] = "a v2 field" }},
+			func(m map[string]any) { m["version"] = uint64(3); m["surprise"] = "a v2 field" }},
 		{"no version at all, and a key version 1 lacks", evrefusal.Version,
 			func(m map[string]any) { delete(m, "version"); m["surprise"] = "a v2 field" }},
 		{"a version that is text", evrefusal.Version,
 			func(m map[string]any) { m["version"] = "1" }},
 		// One fault each, in the schema step.
-		{"an unknown key under version 1", evrefusal.Schema,
+		{"an unknown key under a supported version", evrefusal.Schema,
 			func(m map[string]any) { m["surprise"] = "x" }},
-		{"a missing key under version 1", evrefusal.Schema,
+		{"a missing key under a supported version", evrefusal.Schema,
 			func(m map[string]any) { delete(m, "policy") }},
 		{"a held_root of 31 bytes", evrefusal.Schema,
 			func(m map[string]any) { m["held_root"] = short }},

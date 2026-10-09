@@ -86,17 +86,6 @@ func branch(t *testing.T, entries [][]byte) (*tlog.Tree, string) {
 	return tree, signed
 }
 
-// headOf is the parsed head of a checkpoint this test signed itself.
-func headOf(t *testing.T, signed string) tlog.Checkpoint {
-	t.Helper()
-	cp, err := tlog.Verify(signed, []string{
-		note.VerifierKey(origin, logKey(t).Public().(ed25519.PublicKey))})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return cp
-}
-
 func entriesNamed(prefix string, n int) [][]byte {
 	out := make([][]byte, 0, n)
 	for i := 0; i < n; i++ {
@@ -109,9 +98,9 @@ func entriesNamed(prefix string, n int) [][]byte {
 // shorter head whose history is not this log's history.
 func TestEvidenceProvesEquivocationAtDifferentSizes(t *testing.T) {
 	mine, mineSigned := branch(t, entriesNamed("mine-", 20))
-	_, theirsSigned := branch(t, entriesNamed("theirs-", 10))
+	theirs, theirsSigned := branch(t, entriesNamed("theirs-", 10))
 
-	ev, err := Build(mine, mineSigned, theirsSigned, headOf(t, theirsSigned))
+	ev, err := Build(mine, theirs, mineSigned, theirsSigned)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,9 +123,9 @@ func TestEvidenceProvesEquivocationAtDifferentSizes(t *testing.T) {
 // is needed, because the two signatures say it on their own.
 func TestEvidenceAtTheSameSizeNeedsNoProof(t *testing.T) {
 	mine, mineSigned := branch(t, entriesNamed("mine-", 10))
-	_, theirsSigned := branch(t, entriesNamed("theirs-", 10))
+	theirs, theirsSigned := branch(t, entriesNamed("theirs-", 10))
 
-	ev, err := Build(mine, mineSigned, theirsSigned, headOf(t, theirsSigned))
+	ev, err := Build(mine, theirs, mineSigned, theirsSigned)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -155,9 +144,8 @@ func TestEvidenceAtTheSameSizeNeedsNoProof(t *testing.T) {
 func TestConsistentHeadsAreNotEvidence(t *testing.T) {
 	mine, mineSigned := branch(t, entriesNamed("mine-", 20))
 	shorter, shorterSigned := branch(t, entriesNamed("mine-", 10))
-	_ = shorter
 
-	if _, err := Build(mine, mineSigned, shorterSigned, headOf(t, shorterSigned)); err == nil {
+	if _, err := Build(mine, shorter, mineSigned, shorterSigned); err == nil {
 		t.Fatal("a fork was claimed between a log and its own earlier self")
 	}
 }
@@ -166,10 +154,10 @@ func TestConsistentHeadsAreNotEvidence(t *testing.T) {
 // otherwise pass.
 func TestFabricatedEvidenceIsRefused(t *testing.T) {
 	mine, mineSigned := branch(t, entriesNamed("mine-", 20))
-	_, theirsSigned := branch(t, entriesNamed("theirs-", 10))
+	theirs, theirsSigned := branch(t, entriesNamed("theirs-", 10))
 	logVKey, _, policy := trustKeys(t)
 
-	good, err := Build(mine, mineSigned, theirsSigned, headOf(t, theirsSigned))
+	good, err := Build(mine, theirs, mineSigned, theirsSigned)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -225,8 +213,8 @@ func TestFabricatedEvidenceIsRefused(t *testing.T) {
 // It round-trips through a file, because it is a file that gets emailed.
 func TestEvidenceRoundTripsThroughAFile(t *testing.T) {
 	mine, mineSigned := branch(t, entriesNamed("mine-", 20))
-	_, theirsSigned := branch(t, entriesNamed("theirs-", 10))
-	ev, err := Build(mine, mineSigned, theirsSigned, headOf(t, theirsSigned))
+	theirs, theirsSigned := branch(t, entriesNamed("theirs-", 10))
+	ev, err := Build(mine, theirs, mineSigned, theirsSigned)
 	if err != nil {
 		t.Fatal(err)
 	}

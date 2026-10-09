@@ -87,6 +87,34 @@
     {
       "name": "bad-size-mismatch",
       "says": "claims a disagreement"
+    },
+    {
+      "name": "bad-split-above-size",
+      "says": "above size"
+    },
+    {
+      "name": "bad-split-proof-held",
+      "says": "held split proof does not chain"
+    },
+    {
+      "name": "bad-split-proof-conflicting",
+      "says": "conflicting split proof does not chain"
+    },
+    {
+      "name": "bad-split-zero-with-a-proof",
+      "says": "two empty proofs"
+    },
+    {
+      "name": "bad-split-root-length",
+      "says": "split_root"
+    },
+    {
+      "name": "bad-twelve-keys",
+      "says": "unknown field"
+    },
+    {
+      "name": "bad-version-three",
+      "says": "unsupported version"
     }
   ],
   "codes": {
@@ -109,11 +137,18 @@
     "bad-size-above-held": "size",
     "bad-size-mismatch": "size",
     "bad-size-zero": "proof",
+    "bad-split-above-size": "proof",
+    "bad-split-proof-conflicting": "proof",
+    "bad-split-proof-held": "proof",
+    "bad-split-root-length": "schema",
+    "bad-split-zero-with-a-proof": "proof",
+    "bad-twelve-keys": "schema",
     "bad-unverifiable-conflicting": "conflicting",
     "bad-version-and-unknown-key": "version",
+    "bad-version-three": "version",
     "bad-wrong-version": "version"
   },
-  "comment": "evidence that MUST NOT be acted on, checked against trust.cbor. bad-consistent is a log and its own earlier self -- every signature valid, both heads cosigned, the roots agreeing. bad-other-origin is a real fork of another network, which this anchor has no business accepting. `says` is a semantic hint, a phrase the refusal is about; `codes` names the SPEC §11.1 code each MUST be refused with, and the code is the contract. `policy-not-the-readers.cbor` is not listed here: it carries a policy the reader does not share and MUST still prove the fork, because the field is informational and the reader's own policy decides",
+  "comment": "Version-1 sound twins prove the fork, claims no split. The understated split is one below the true prefix and is accepted (§11.1). evidence that MUST NOT be acted on, checked against trust.cbor. bad-consistent is a log and its own earlier self -- every signature valid, both heads cosigned, the roots agreeing. bad-other-origin is a real fork of another network, which this anchor has no business accepting. `says` is a semantic hint, a phrase the refusal is about; `codes` names the SPEC §11.1 code each MUST be refused with, and the code is the contract. `policy-not-the-readers.cbor` is not listed here: it carries a policy the reader does not share and MUST still prove the fork, because the field is informational and the reader's own policy decides",
   "rules": {
     "bad-bool-size": {
       "says": "the `size` field is a boolean rather than a uint",
@@ -140,7 +175,7 @@
       "section": "11.1"
     },
     "bad-open-schema": {
-      "says": "a closed map of exactly these seven keys",
+      "says": "a closed map of exactly these seven keys at",
       "section": "11.1"
     },
     "bad-other-origin": {
@@ -191,12 +226,40 @@
       "says": "no file can show a disagreement at size 0",
       "section": "11.1"
     },
+    "bad-split-above-size": {
+      "says": "check `split` is not above `size`",
+      "section": "11.1"
+    },
+    "bad-split-proof-conflicting": {
+      "says": "`split_proof_conflicting` chains it to `conflicting`'s",
+      "section": "11.1"
+    },
+    "bad-split-proof-held": {
+      "says": "`split_proof_held` chains (`split`, `split_root`) to `held`'s",
+      "section": "11.1"
+    },
+    "bad-split-root-length": {
+      "says": "| `split_root` | bytes (32) |",
+      "section": "11.1"
+    },
+    "bad-split-zero-with-a-proof": {
+      "says": "A `split` that is 0 carries an all-zero `split_root` and two empty proofs.",
+      "section": "11.1"
+    },
+    "bad-twelve-keys": {
+      "says": "exactly eleven keys at version 2",
+      "section": "11.1"
+    },
     "bad-unverifiable-conflicting": {
       "says": "verify **both** checkpoints",
       "section": "11.1"
     },
     "bad-version-and-unknown-key": {
       "says": "a key set is only closed relative to a version",
+      "section": "11.1"
+    },
+    "bad-version-three": {
+      "says": "the map's `version` is not `1` or `2`",
       "section": "11.1"
     },
     "bad-wrong-version": {
@@ -209,6 +272,12 @@
     "evidence",
     "policy-not-the-readers",
     "evidence-at-64",
-    "evidence-at-the-cap"
+    "evidence-at-the-cap",
+    "evidence-at-same-size-v1",
+    "evidence-v1",
+    "policy-not-the-readers-v1",
+    "evidence-at-64-v1",
+    "evidence-at-the-cap-v1",
+    "evidence-understated-split"
   ]
 }

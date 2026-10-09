@@ -484,8 +484,8 @@ func writeEvidenceFor(t *testing.T, dir, logDir string, entries [][]byte) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	evidence, err := forkevidence.Build(held.Tree, held.SignedCheckpoint,
-		other.SignedCheckpoint, other.Checkpoint)
+	evidence, err := forkevidence.Build(held.Tree, other.Tree, held.SignedCheckpoint,
+		other.SignedCheckpoint)
 	if err != nil {
 		t.Fatal(err)
 	}

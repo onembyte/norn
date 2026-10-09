@@ -25,12 +25,7 @@ func forkedPair(t *testing.T, anchor *trust.Trust) *forkevidence.Evidence {
 
 	mineSigned := signAndCosign(t, anchor, mine)
 	theirsSigned := signAndCosign(t, anchor, theirs)
-	head, err := tlog.Verify(theirsSigned, []string{anchor.LogKey})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	evidence, err := forkevidence.Build(mine, mineSigned, theirsSigned, head)
+	evidence, err := forkevidence.Build(mine, theirs, mineSigned, theirsSigned)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -189,11 +184,7 @@ func pairUnder(t *testing.T, anchor *trust.Trust, key string, witnesses ...strin
 	}
 	mine, theirs := treeOver(t, "mine-", 20), treeOver(t, "theirs-", 10)
 	theirsSigned := sign(theirs)
-	cp, err := tlog.ParseCheckpoint(strings.SplitN(theirsSigned, "\n\n", 2)[0] + "\n")
-	if err != nil {
-		t.Fatal(err)
-	}
-	evidence, err := forkevidence.Build(mine, sign(mine), theirsSigned, cp)
+	evidence, err := forkevidence.Build(mine, theirs, sign(mine), theirsSigned)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -273,5 +264,27 @@ func TestVerifyEvidenceFromTheLogAppliesTheRaisedQuorum(t *testing.T) {
 		"-log", filepath.Join(vectors(), "served"), path)
 	if err == nil || !strings.Contains(stderr, "does not prove a fork") {
 		t.Fatalf("two witnesses proved a fork to a reader who read the raise to three: %v\n%s", err, stderr)
+	}
+}
+
+func TestVerifyEvidenceReportsTheSplitOrNoClaim(t *testing.T) {
+	bin := nornBinary(t)
+	trustFile := filepath.Join(vectors(), "trust.cbor")
+	for _, tc := range []struct{ name, want string }{
+		{"evidence", "split: 40"},
+		{"evidence-v1", "split: none claimed"},
+		{"evidence-understated-split", "split: 39"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			out, stderr, err := run(t, bin, "verify-evidence", "-trust", trustFile, filepath.Join(vectors(), "fork", tc.name+".cbor"))
+			if err != nil || !strings.Contains(out, tc.want) {
+				t.Fatalf("wanted %q: %v\n%s%s", tc.want, err, out, stderr)
+			}
+		})
+	}
+	ev := forkedPair(t, readAnchor(t, trustFile))
+	out, stderr, err := run(t, bin, "verify-evidence", "-trust", trustFile, writeEvidenceFile(t, ev))
+	if err != nil || !strings.Contains(out, "split: none claimed") {
+		t.Fatalf("zero split: %v\n%s%s", err, out, stderr)
 	}
 }

@@ -38,7 +38,7 @@ func writeForkEvidence(root, origin string, key ed25519.PrivateKey,
 	if err != nil {
 		return err
 	}
-	forkedSigned, forkedCP, err := forkedBranch(root, origin, key, entries, signers, forkAt+1)
+	forkedSigned, forkedTree, forkedCP, err := forkedBranch(root, origin, key, entries, signers, forkAt+1)
 	if err != nil {
 		return err
 	}
@@ -47,7 +47,7 @@ func writeForkEvidence(root, origin string, key ed25519.PrivateKey,
 	if err != nil {
 		return err
 	}
-	evidence, err := forkevidence.Build(heldTree, heldSigned, forkedSigned, forkedCP)
+	evidence, err := forkevidence.Build(heldTree, forkedTree, heldSigned, forkedSigned)
 	if err != nil {
 		return err
 	}
@@ -74,11 +74,11 @@ func writeForkEvidence(root, origin string, key ed25519.PrivateKey,
 	// branch when the smaller size is a power of two, and the only sound
 	// evidence was at 41, so a reader that dropped that branch passed every
 	// file. This one is at 64, below a held branch of 127.
-	signed64, cp64, err := forkedBranch(root, origin, key, entries, signers, 64)
+	signed64, tree64, _, err := forkedBranch(root, origin, key, entries, signers, 64)
 	if err != nil {
 		return err
 	}
-	at64, err := forkevidence.Build(heldTree, heldSigned, signed64, cp64)
+	at64, err := forkevidence.Build(heldTree, tree64, heldSigned, signed64)
 	if err != nil {
 		return err
 	}
@@ -92,11 +92,11 @@ func writeForkEvidence(root, origin string, key ed25519.PrivateKey,
 	}
 	// Cold gate run 13, D14. The two signed roots prove a same-size fork
 	// without a consistency path. Every previous same-size file was refused.
-	sameSigned, sameCP, err := forkedBranch(root, origin, key, entries, signers, len(entries))
+	sameSigned, sameTree, _, err := forkedBranch(root, origin, key, entries, signers, len(entries))
 	if err != nil {
 		return err
 	}
-	same, err := forkevidence.Build(heldTree, heldSigned, sameSigned, sameCP)
+	same, err := forkevidence.Build(heldTree, sameTree, heldSigned, sameSigned)
 	if err != nil {
 		return err
 	}
@@ -109,7 +109,7 @@ func writeForkEvidence(root, origin string, key ed25519.PrivateKey,
 		return err
 	}
 	return writeForkNegatives(root, origin, key, entries, heldSigned, heldTree, signers,
-		evidence, forkedSigned, forkedCP)
+		evidence, forkedTree, forkedSigned, forkedCP)
 }
 
 // forkedBranch is a branch of `size` entries that agrees with `entries` up to
@@ -118,23 +118,28 @@ func writeForkEvidence(root, origin string, key ed25519.PrivateKey,
 // difficulty of a fork: every signature checks out, and only holding both
 // heads reveals it.
 func forkedBranch(root, origin string, key ed25519.PrivateKey, entries [][]byte,
-	signers []cosignpkg.Signer, size int) (string, tlog.Checkpoint, error) {
+	signers []cosignpkg.Signer, size int) (string, *tlog.Tree, tlog.Checkpoint, error) {
 	if size < 1 || size-1 > len(entries) {
-		return "", tlog.Checkpoint{}, fmt.Errorf("a branch of %d cannot share %d entries' history",
+		return "", nil, tlog.Checkpoint{}, fmt.Errorf("a branch of %d cannot share %d entries' history",
 			size, len(entries))
 	}
 	branch := append([][]byte(nil), entries[:size-1]...)
 	divergent, err := forkEntry(root)
 	if err != nil {
-		return "", tlog.Checkpoint{}, err
+		return "", nil, tlog.Checkpoint{}, err
 	}
-	signed, err := signedHeadOver(root, origin, key, append(branch, divergent), signers)
+	branch = append(branch, divergent)
+	tree, err := tlog.Build(branch)
 	if err != nil {
-		return "", tlog.Checkpoint{}, err
+		return "", nil, tlog.Checkpoint{}, err
+	}
+	signed, err := signedHeadOver(root, origin, key, branch, signers)
+	if err != nil {
+		return "", nil, tlog.Checkpoint{}, err
 	}
 	cp, err := tlog.Verify(signed, []string{note.VerifierKey(origin,
 		key.Public().(ed25519.PublicKey))})
-	return signed, cp, err
+	return signed, tree, cp, err
 }
 
 // writeForkNegatives ships the two refusals §12.1 has claimed since Phase 4.
@@ -144,7 +149,7 @@ func forkedBranch(root, origin string, key ed25519.PrivateKey, entries [][]byte,
 // directory could check that a fork is proved and nothing about what is not.
 func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 	entries [][]byte, heldSigned string, heldTree *tlog.Tree,
-	signers []cosignpkg.Signer, evidence *forkevidence.Evidence,
+	signers []cosignpkg.Signer, evidence *forkevidence.Evidence, forkedTree *tlog.Tree,
 	forkedSigned string, forkedCP tlog.Checkpoint) error {
 
 	dir := filepath.Join(root, "fork")
@@ -174,7 +179,7 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 	for _, hash := range proof {
 		consistent.Proof = append(consistent.Proof, append([]byte(nil), hash[:]...))
 	}
-	raw, err := consistent.Encode()
+	raw, err := encodeVersionOne(consistent)
 	if err != nil {
 		return err
 	}
@@ -232,7 +237,7 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 	for _, hash := range proofB {
 		other.Proof = append(other.Proof, append([]byte(nil), hash[:]...))
 	}
-	rawOther, err := other.Encode()
+	rawOther, err := encodeVersionOne(other)
 	if err != nil {
 		return err
 	}
@@ -265,7 +270,7 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 		return fmt.Errorf("the fork vector's proof is empty; a forged one would prove nothing")
 	}
 	forged.Proof[0][0] ^= 0x01
-	rawForged, err := forged.Encode()
+	rawForged, err := encodeVersionOne(forged)
 	if err != nil {
 		return err
 	}
@@ -285,7 +290,7 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 		Size: forkedCP.Size, HeldRoot: append([]byte(nil), evidence.HeldRoot...),
 		Proof: evidence.Proof, Policy: policyOf(root),
 	}
-	rawHalf, err := halfVerified.Encode()
+	rawHalf, err := encodeVersionOne(halfVerified)
 	if err != nil {
 		return err
 	}
@@ -301,7 +306,7 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 		Size: forkedCP.Size - 1, HeldRoot: append([]byte(nil), evidence.HeldRoot...),
 		Proof: evidence.Proof, Policy: policyOf(root),
 	}
-	rawMismatch, err := mismatched.Encode()
+	rawMismatch, err := encodeVersionOne(mismatched)
 	if err != nil {
 		return err
 	}
@@ -333,7 +338,7 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 		Proof:    [][]byte{append([]byte(nil), evidence.HeldRoot...)},
 		Policy:   policyOf(root),
 	}
-	rawSameSize, err := atSameSize.Encode()
+	rawSameSize, err := encodeVersionOne(atSameSize)
 	if err != nil {
 		return err
 	}
@@ -358,7 +363,7 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 		Size: forkedCP.Size, HeldRoot: append([]byte(nil), evidence.HeldRoot...),
 		Proof: evidence.Proof, Policy: quorumNonePolicy(root),
 	}
-	rawPermissive, err := permissive.Encode()
+	rawPermissive, err := encodeVersionOne(permissive)
 	if err != nil {
 		return err
 	}
@@ -374,7 +379,7 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 		Size: forkedCP.Size, HeldRoot: append([]byte(nil), evidence.HeldRoot...),
 		Proof: evidence.Proof, Policy: "this is not a tlog-policy\n",
 	}
-	rawUnparseable, err := unparseable.Encode()
+	rawUnparseable, err := encodeVersionOne(unparseable)
 	if err != nil {
 		return err
 	}
@@ -390,7 +395,7 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 	if err != nil {
 		return err
 	}
-	rawTwoFaults, err := twoFaults.Encode()
+	rawTwoFaults, err := encodeVersionOne(&twoFaults)
 	if err != nil {
 		return err
 	}
@@ -406,11 +411,8 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 	if err != nil {
 		return err
 	}
-	foreign := &forkevidence.Evidence{
-		Held: heldSigned, Conflicting: forkedSigned,
-		Size: forkedCP.Size, HeldRoot: append([]byte(nil), evidence.HeldRoot...),
-		Proof: evidence.Proof, Policy: unmeetablePolicy(root, ghost),
-	}
+	foreign := *evidence
+	foreign.Policy = unmeetablePolicy(root, ghost)
 	rawForeign, err := foreign.Encode()
 	if err != nil {
 		return err
@@ -429,7 +431,7 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 		return err
 	}
 	if err := os.WriteFile(filepath.Join(dir, "bad-wrong-version.cbor"),
-		withVersion(raw, 2), 0o644); err != nil {
+		withVersion(raw, 3), 0o644); err != nil {
 		return err
 	}
 	// 6.5l-vii-b-ii. Built, like the two above, on `raw` -- the bad-consistent
@@ -439,7 +441,7 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 	// checks the keys first says `schema`, which is what this repository's own
 	// reader said until this file existed.
 	if err := os.WriteFile(filepath.Join(dir, "bad-version-and-unknown-key.cbor"),
-		withVersion(withExtraKey(raw, "surprise", "a key version 1 does not have"), 2),
+		withVersion(withExtraKey(raw, "surprise", "a key version 1 does not have"), 3),
 		0o644); err != nil {
 		return err
 	}
@@ -452,7 +454,7 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 		Size: int64(len(entries)) + 1, HeldRoot: append([]byte(nil), evidence.HeldRoot[:31]...),
 		Proof: evidence.Proof, Policy: policyOf(root),
 	}
-	rawShortRoot, err := shortRoot.Encode()
+	rawShortRoot, err := encodeVersionOne(shortRoot)
 	if err != nil {
 		return err
 	}
@@ -472,7 +474,7 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 	// which is bad-consistent -- with `size` written in a longer form than the
 	// shortest (§4.0). A decoder that accepts any well-formed CBOR proves the
 	// fork from it; a reader of deterministic CBOR refuses it as `cbor`.
-	sound, err := evidence.Encode()
+	sound, err := encodeVersionOne(evidence)
 	if err != nil {
 		return err
 	}
@@ -500,7 +502,7 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 		Size: forkedCP.Size, HeldRoot: append([]byte(nil), evidence.HeldRoot...),
 		Proof: shortHash, Policy: policyOf(root),
 	}
-	rawShortProof, err := shortProof.Encode()
+	rawShortProof, err := encodeVersionOne(shortProof)
 	if err != nil {
 		return err
 	}
@@ -512,7 +514,7 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 	// conflicting head really is `size` entries -- cold gate run 12 (D17)
 	// found it was the 41-entry one, so step 7's other half ("conflicting's
 	// size equals `size`") refused it too and its own rule was not isolated.
-	beyondSigned, _, err := forkedBranch(root, origin, key, entries, signers, len(entries)+1)
+	beyondSigned, _, _, err := forkedBranch(root, origin, key, entries, signers, len(entries)+1)
 	if err != nil {
 		return err
 	}
@@ -521,7 +523,7 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 		Size: int64(len(entries)) + 1, HeldRoot: append([]byte(nil), evidence.HeldRoot...),
 		Proof: evidence.Proof, Policy: policyOf(root),
 	}
-	rawAbove, err := aboveHeld.Encode()
+	rawAbove, err := encodeVersionOne(aboveHeld)
 	if err != nil {
 		return err
 	}
@@ -539,7 +541,7 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 		Held: heldSigned, Conflicting: heldSigned, Size: int64(len(entries)),
 		HeldRoot: bytes.Repeat([]byte{0x42}, 32), Policy: policyOf(root),
 	}
-	rawForgedRoot, err := forgedRoot.Encode()
+	rawForgedRoot, err := encodeVersionOne(forgedRoot)
 	if err != nil {
 		return err
 	}
@@ -559,7 +561,7 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 		Held: heldSigned, Conflicting: emptySigned, Size: 0,
 		HeldRoot: bytes.Repeat([]byte{0x42}, 32), Policy: policyOf(root),
 	}
-	rawAtZero, err := atZero.Encode()
+	rawAtZero, err := encodeVersionOne(atZero)
 	if err != nil {
 		return err
 	}
@@ -573,14 +575,14 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 	// fork (it is in `sound`). Exactly one byte past, sound in every other
 	// respect: `oversize` -- and a reader whose cap is one byte too lax
 	// decodes it and proves the fork from it.
-	atCap, err := evidenceOfSize(root, evidence, forkevidence.MaxEvidenceBytes)
+	atCap, err := evidenceOfSize(root, evidence, forkevidence.MaxEvidenceBytes, 2)
 	if err != nil {
 		return err
 	}
 	if err := os.WriteFile(filepath.Join(dir, "evidence-at-the-cap.cbor"), atCap, 0o644); err != nil {
 		return err
 	}
-	onePast, err := evidenceOfSize(root, evidence, forkevidence.MaxEvidenceBytes+1)
+	onePast, err := evidenceOfSize(root, evidence, forkevidence.MaxEvidenceBytes+1, 1)
 	if err != nil {
 		return err
 	}
@@ -599,7 +601,7 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 		Size: forkedCP.Size, HeldRoot: append([]byte(nil), evidence.HeldRoot...),
 		Proof: evidence.Proof, Policy: hugePolicy(root),
 	}
-	rawPadded, err := padded.Encode()
+	rawPadded, err := encodeVersionOne(padded)
 	if err != nil {
 		return err
 	}
@@ -616,7 +618,7 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 	// evidence schema still requires `size` to be an unsigned integer. Start
 	// with sound evidence so this file reaches that schema check with every
 	// other field and proof intact.
-	rawBoolSize, err := evidence.Encode()
+	rawBoolSize, err := encodeVersionOne(evidence)
 	if err != nil {
 		return err
 	}
@@ -636,6 +638,94 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 	if err := os.WriteFile(filepath.Join(dir, "bad-bool-size.cbor"),
 		rawBoolSize, 0o644); err != nil {
 		return err
+	}
+
+	// The split claim is authenticated separately from the fork. Starting
+	// each negative from sound evidence keeps every earlier reader step intact.
+	splitRaw, err := evidence.Encode()
+	if err != nil {
+		return err
+	}
+	splitCases := []struct {
+		name, hint, phrase string
+		code               evrefusal.Code
+		change             func(map[string]any)
+	}{
+		{"bad-split-above-size", "above size", "check `split` is not above `size`", evrefusal.Proof, func(m map[string]any) { m["split"] = uint64(evidence.Size + 1) }},
+		{"bad-split-proof-held", "held split proof does not chain", "`split_proof_held` chains (`split`, `split_root`) to `held`'s", evrefusal.Proof, func(m map[string]any) { m["split_proof_held"] = []any{make([]byte, 32)} }},
+		{"bad-split-proof-conflicting", "conflicting split proof does not chain", "`split_proof_conflicting` chains it to `conflicting`'s", evrefusal.Proof, func(m map[string]any) { m["split_proof_conflicting"] = []any{make([]byte, 32)} }},
+		{"bad-split-zero-with-a-proof", "two empty proofs", "A `split` that is 0 carries an all-zero `split_root` and two empty proofs.", evrefusal.Proof, func(m map[string]any) {
+			m["split"] = uint64(0)
+			m["split_root"] = make([]byte, 32)
+			m["split_proof_conflicting"] = []any{}
+		}},
+		{"bad-split-root-length", "split_root", "| `split_root` | bytes (32) |", evrefusal.Schema, func(m map[string]any) { m["split_root"] = make([]byte, 31) }},
+		{"bad-twelve-keys", "unknown field", "exactly eleven keys at version 2", evrefusal.Schema, func(m map[string]any) { m["surprise"] = "an unpermitted evidence key" }},
+		{"bad-version-three", "unsupported version", "the map's `version` is not `1` or `2`", evrefusal.Version, func(m map[string]any) { m["version"] = uint64(3) }},
+	}
+	for _, c := range splitCases {
+		value, err := cbor.Decode(splitRaw)
+		if err != nil {
+			return err
+		}
+		m := value.(map[string]any)
+		c.change(m)
+		raw, err := cbor.Encode(m)
+		if err != nil {
+			return err
+		}
+		if err := os.WriteFile(filepath.Join(dir, c.name+".cbor"), raw, 0o644); err != nil {
+			return err
+		}
+	}
+	understated := *evidence
+	understated.Split--
+	splitRoot, err := heldTree.HeadAt(understated.Split)
+	if err != nil {
+		return err
+	}
+	understated.SplitRoot = append([]byte(nil), splitRoot[:]...)
+	understated.SplitProofHeld, understated.SplitProofConflicting = nil, nil
+	for tree, into := range map[*tlog.Tree]*[][]byte{heldTree: &understated.SplitProofHeld, forkedTree: &understated.SplitProofConflicting} {
+		proof, err := tree.ConsistencyProof(understated.Split)
+		if err != nil {
+			return err
+		}
+		for _, hash := range proof {
+			*into = append(*into, append([]byte(nil), hash[:]...))
+		}
+	}
+	understatedRaw, err := understated.Encode()
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(dir, "evidence-understated-split.cbor"), understatedRaw, 0o644); err != nil {
+		return err
+	}
+	// Legacy twins prove the fork, claims no split. The cap twin is padded
+	// separately because removing the four split keys changes the encoded size.
+	for _, name := range []string{"evidence", "evidence-at-64", "evidence-at-same-size", "evidence-at-the-cap", "policy-not-the-readers"} {
+		raw, err := os.ReadFile(filepath.Join(dir, name+".cbor"))
+		if err != nil {
+			return err
+		}
+		ev, err := forkevidence.Parse(raw)
+		if err != nil {
+			return err
+		}
+		legacy, err := encodeVersionOne(ev)
+		if err != nil {
+			return err
+		}
+		if name == "evidence-at-the-cap" {
+			legacy, err = evidenceOfSize(root, ev, forkevidence.MaxEvidenceBytes, 1)
+		}
+		if err != nil {
+			return err
+		}
+		if err := os.WriteFile(filepath.Join(dir, name+"-v1.cbor"), legacy, 0o644); err != nil {
+			return err
+		}
 	}
 
 	// `says` is what §12 makes it, a semantic hint. These are the phrases
@@ -694,6 +784,10 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 		"bad-unverifiable-conflicting":            evrefusal.Conflicting,
 		"bad-size-mismatch":                       evrefusal.Size,
 	}
+	for _, c := range splitCases {
+		forkCases = append(forkCases, map[string]string{"name": c.name, "says": c.hint})
+		forkCodes[c.name] = c.code
+	}
 	if err := checkCodes("fork", namesOf(forkCases), forkCodes, evrefusal.Known); err != nil {
 		return err
 	}
@@ -701,7 +795,7 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 	manifest := map[string]any{
 		"rules": map[string]map[string]string{
 			"bad-oversize":                            {"section": "11.1", "says": "MAX_EVIDENCE_BYTES"},
-			"bad-open-schema":                         {"section": "11.1", "says": "a closed map of exactly these seven keys"},
+			"bad-open-schema":                         {"section": "11.1", "says": "a closed map of exactly these seven keys at"},
 			"bad-wrong-version":                       {"section": "11.1", "says": "| `version` | uint | `1` or `2` |"},
 			"bad-version-and-unknown-key":             {"section": "11.1", "says": "a key set is only closed relative to a version"},
 			"bad-short-held-root-and-size-above-held": {"section": "11.1", "says": "| `held_root` | bytes (32) |"},
@@ -727,8 +821,9 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 		"codes": forkCodes,
 		// Cold gate run 12: the files that MUST prove a fork, named so a
 		// reader is held to the positives as well as the negatives.
-		"sound": []string{"evidence-at-same-size", "evidence", "policy-not-the-readers", "evidence-at-64", "evidence-at-the-cap"},
-		"comment": "evidence that MUST NOT be acted on, checked against trust.cbor. " +
+		"sound": []string{"evidence-at-same-size", "evidence", "policy-not-the-readers", "evidence-at-64", "evidence-at-the-cap", "evidence-at-same-size-v1", "evidence-v1", "policy-not-the-readers-v1", "evidence-at-64-v1", "evidence-at-the-cap-v1", "evidence-understated-split"},
+		"comment": "Version-1 sound twins prove the fork, claims no split. The understated split is one below the true prefix and is accepted (§11.1). " +
+			"evidence that MUST NOT be acted on, checked against trust.cbor. " +
 			"bad-consistent is a log and its own earlier self -- every signature valid, " +
 			"both heads cosigned, the roots agreeing. bad-other-origin is a real fork of " +
 			"another network, which this anchor has no business accepting. `says` is a " +
@@ -737,6 +832,9 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 			"`policy-not-the-readers.cbor` is not listed here: " +
 			"it carries a policy the reader does not share and MUST still prove the fork, " +
 			"because the field is informational and the reader's own policy decides",
+	}
+	for _, c := range splitCases {
+		manifest["rules"].(map[string]map[string]string)[c.name] = map[string]string{"section": "11.1", "says": c.phrase}
 	}
 	encoded, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {
@@ -803,12 +901,15 @@ func policyWithWitnessURL(root, url string) string {
 // carried policy padded until the encoded file is exactly `target` bytes. The
 // carried policy decides nothing (§11.1), so the padding changes the size and
 // nothing else: the file proves the fork, or is refused for its size alone.
-func evidenceOfSize(root string, sound *forkevidence.Evidence, target int) ([]byte, error) {
+func evidenceOfSize(root string, sound *forkevidence.Evidence, target, version int) ([]byte, error) {
 	pad := 100
 	for range 8 {
 		ev := *sound
 		ev.Policy = policyWithWitnessURL(root, "https://witness.example/"+strings.Repeat("p", pad))
 		raw, err := ev.Encode()
+		if version == 1 {
+			raw, err = encodeVersionOne(&ev)
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -847,4 +948,23 @@ func unmeetablePolicy(root string, ghost ed25519.PrivateKey) string {
 	}
 	vkey := note.CosignerVerifierKey("norn-witness/ghost", ghost.Public().(ed25519.PublicKey))
 	return logLine + "\nwitness ghost " + vkey + "\nquorum ghost\n"
+}
+
+// encodeVersionOne retains the exact seven-key format for readers that have
+// not learned the split claim yet. Production Encode always writes version 2.
+func encodeVersionOne(ev *forkevidence.Evidence) ([]byte, error) {
+	raw, err := ev.Encode()
+	if err != nil {
+		return nil, err
+	}
+	value, err := cbor.DecodeWithin(raw, len(raw))
+	if err != nil {
+		return nil, err
+	}
+	m := value.(map[string]any)
+	m["version"] = uint64(1)
+	for _, key := range []string{"split", "split_root", "split_proof_held", "split_proof_conflicting"} {
+		delete(m, key)
+	}
+	return cbor.Encode(m)
 }

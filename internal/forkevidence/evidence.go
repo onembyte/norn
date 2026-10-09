@@ -66,14 +66,17 @@ func checkpointRefusal(code evrefusal.Code, which string, err error) error {
 // inherited from §4.0, whose cap is §6's entry framing (§11.1).
 const MaxEvidenceBytes = 1 << 16
 
-// hashSize is §11.1's `bytes (32)`: `held_root` and every `proof` hash.
+// hashSize is §11.1's `bytes (32)`: each root and every proof hash.
 const hashSize = 32
 
 // Version is the schema version of an evidence file.
-const Version = 1
+const Version = 2
 
 // Evidence is one proven equivocation.
 type Evidence struct {
+	// Version is 1 for legacy evidence without a split, or 2. Encode always
+	// writes version 2, including when upgrading a parsed version-1 file.
+	Version int
 	// Held is the signed checkpoint the node was holding: the branch it can
 	// prove things about, because it has the entries.
 	Held string
@@ -88,6 +91,13 @@ type Evidence struct {
 	// confirm the node is quoting its own log rather than inventing a root.
 	// Empty when Size is Held's size, where the two signatures say it alone.
 	Proof [][]byte
+	// Split is the common entry prefix proven to both signed heads. Zero
+	// claims no common prefix, with an all-zero SplitRoot and empty proofs.
+	Split     int64
+	SplitRoot []byte
+	// The split proofs bind the common root independently to each branch.
+	// Each is empty at its own head's size (§11.1).
+	SplitProofHeld, SplitProofConflicting [][]byte
 	// Policy is the `tlog-policy` the accuser was verifying under, carried so
 	// a reader can see which witnesses were supposed to prevent this.
 	//
@@ -103,48 +113,85 @@ type Evidence struct {
 
 // Finding is what a reader learns from checking evidence.
 type Finding struct {
+	// Split and SplitRoot are the common prefix the file proves. A legacy
+	// file, or a version-2 file claiming none, leaves both zero.
+	Split     int64
+	SplitRoot [32]byte
 	// Size is the tree size at which the log signed two different roots.
 	Size int64
 	// Held and Claimed are those two roots.
 	Held, Claimed [32]byte
 }
 
-// Build makes evidence from the branch a node holds and a head it cannot
-// reconcile with it.
+// Build makes evidence from both trees a node has verified and their signed
+// heads. The held branch must reach the conflicting head's size; the caller
+// swaps them when the served branch is longer (§11.1).
 //
-// It refuses to produce a file for two *consistent* heads: a node must not be
-// able to accuse a log of forking by handing over its own earlier self.
-// The conflicting head arrives already parsed, because the node that reached
-// this point got it through the verifier: it is signed and cosigned and was
-// refused only for disagreeing. Re-parsing it here would be this package
-// deciding, with no keys, what it is looking at.
-func Build(held *tlog.Tree, heldSigned string, conflicting string,
-	conflictingCP tlog.Checkpoint) (*Evidence, error) {
-	at := conflictingCP.Size
+// It refuses to accuse a log of forking from its own earlier self. Tree keeps
+// hashes rather than entry bytes, so comparing HeadAt finds the common entry
+// prefix without fetching anything again. Once a prefix differs, later entries
+// cannot repair it without a hash collision.
+func Build(held, conflicting *tlog.Tree, heldSigned, conflictingSigned string) (*Evidence, error) {
+	at := conflicting.Size()
 	root, err := held.HeadAt(at)
 	if err != nil {
-		return nil, fmt.Errorf("%w: this node cannot speak for size %d: %v",
-			ErrEvidence, at, err)
+		return nil, fmt.Errorf("%w: this node cannot speak for size %d: %v", ErrEvidence, at, err)
 	}
-	if root == conflictingCP.Root {
-		return nil, fmt.Errorf("%w: these two heads agree at size %d; a log and its "+
-			"own earlier self is not a fork", ErrEvidence, at)
+	if root == conflicting.Head() {
+		return nil, fmt.Errorf("%w: these two heads agree at size %d; a log and its own earlier self is not a fork", ErrEvidence, at)
 	}
-
 	ev := &Evidence{
-		Held: heldSigned, Conflicting: conflicting,
+		Version: Version, Held: heldSigned, Conflicting: conflictingSigned,
 		Size: at, HeldRoot: append([]byte(nil), root[:]...),
+		SplitRoot: make([]byte, hashSize),
 	}
-	if at != held.Size() {
-		proof, err := held.ConsistencyProof(at)
+	ev.Proof, err = treeProof(held, at)
+	if err != nil {
+		return nil, err
+	}
+	for i := int64(1); i <= at; i++ {
+		a, err := held.HeadAt(i)
 		if err != nil {
-			return nil, fmt.Errorf("%w: proving this node's own branch: %v", ErrEvidence, err)
+			return nil, err
 		}
-		for _, hash := range proof {
-			ev.Proof = append(ev.Proof, append([]byte(nil), hash[:]...))
+		b, err := conflicting.HeadAt(i)
+		if err != nil {
+			return nil, err
+		}
+		if a != b {
+			break
+		}
+		ev.Split = i
+		copy(ev.SplitRoot, a[:])
+	}
+	if ev.Split != 0 {
+		ev.SplitProofHeld, err = treeProof(held, ev.Split)
+		if err != nil {
+			return nil, err
+		}
+		ev.SplitProofConflicting, err = treeProof(conflicting, ev.Split)
+		if err != nil {
+			return nil, err
 		}
 	}
 	return ev, nil
+}
+
+// treeProof omits the path at a head's own size, where its signature binds
+// the root directly and §11.1 requires an empty proof.
+func treeProof(tree *tlog.Tree, at int64) ([][]byte, error) {
+	if at == tree.Size() {
+		return nil, nil
+	}
+	proof, err := tree.ConsistencyProof(at)
+	if err != nil {
+		return nil, fmt.Errorf("%w: proving a branch: %v", ErrEvidence, err)
+	}
+	hashes := make([][]byte, 0, len(proof))
+	for _, hash := range proof {
+		hashes = append(hashes, append([]byte(nil), hash[:]...))
+	}
+	return hashes, nil
 }
 
 // Check verifies evidence against a network's anchor and reports what it
@@ -263,7 +310,54 @@ func Check(ev *Evidence, origin string, logVKeys []string, readerPolicy string) 
 		return nil, evidenceErrorf(evrefusal.Consistent,
 			"both checkpoints give the same root at size %d; nothing here is a fork", ev.Size)
 	}
-	return &Finding{Size: ev.Size, Held: heldRoot, Claimed: conflicting.Root}, nil
+	finding := &Finding{Size: ev.Size, Held: heldRoot, Claimed: conflicting.Root}
+	// Step 5 follows the fork conclusion: a consistent file still proves no
+	// fork, whatever split the accuser claims.
+	if ev.Version == 2 {
+		if ev.Split < 0 || ev.Split > ev.Size {
+			return nil, evidenceErrorf(evrefusal.Proof, "split %d is above size %d", ev.Split, ev.Size)
+		}
+		if len(ev.SplitRoot) != hashSize {
+			return nil, evidenceErrorf(evrefusal.Schema, "split_root is %d bytes, want %d", len(ev.SplitRoot), hashSize)
+		}
+		copy(finding.SplitRoot[:], ev.SplitRoot)
+		if ev.Split == 0 {
+			if finding.SplitRoot != ([32]byte{}) || len(ev.SplitProofHeld) != 0 || len(ev.SplitProofConflicting) != 0 {
+				return nil, evidenceErrorf(evrefusal.Proof, "split 0 requires an all-zero root and two empty proofs")
+			}
+		} else {
+			if err := checkSplitProof("held", ev.Split, finding.SplitRoot, ev.SplitProofHeld, held); err != nil {
+				return nil, err
+			}
+			if err := checkSplitProof("conflicting", ev.Split, finding.SplitRoot, ev.SplitProofConflicting, conflicting); err != nil {
+				return nil, err
+			}
+		}
+		finding.Split = ev.Split
+	}
+	return finding, nil
+}
+
+// checkSplitProof binds the common root to one signed head, including the
+// empty-proof rule when the signature alone gives that root.
+func checkSplitProof(which string, split int64, root [32]byte, hashes [][]byte, head tlog.Checkpoint) error {
+	proof := make(upstream.TreeProof, 0, len(hashes))
+	for _, hash := range hashes {
+		if len(hash) != hashSize {
+			return evidenceErrorf(evrefusal.Schema, "a split proof hash is %d bytes, want %d", len(hash), hashSize)
+		}
+		var h upstream.Hash
+		copy(h[:], hash)
+		proof = append(proof, h)
+	}
+	if split == head.Size {
+		if len(proof) != 0 || root != head.Root {
+			return evidenceErrorf(evrefusal.Proof, "the %s split proof at its head's own size requires none and the signed root", which)
+		}
+	} else if err := upstream.CheckTree(proof, head.Size, head.Root, split, root); err != nil {
+		return evidenceErrorf(evrefusal.Proof, "the %s split proof does not chain to its signed head: %v", which, err)
+	}
+	return nil
 }
 
 // verified applies everything §10 asks of a checkpoint before it counts:
@@ -305,15 +399,28 @@ func verified(signed, origin string, logVKeys []string, rules *policy.Policy) (t
 // Encode writes the evidence as deterministic CBOR (§4.0), the encoding the
 // rest of this project's artifacts use.
 func (e *Evidence) Encode() ([]byte, error) {
-	proof := make([]any, 0, len(e.Proof))
-	for _, hash := range e.Proof {
-		proof = append(proof, hash)
+	root := e.SplitRoot
+	// An in-memory accusation with no prefix claims the single all-zero root
+	// encoding; a parsed v1 file also upgrades to v2 with no split claimed.
+	if root == nil && e.Split == 0 {
+		root = make([]byte, hashSize)
 	}
 	return cbor.Encode(map[string]any{
 		"version": uint64(Version), "held": e.Held, "conflicting": e.Conflicting,
 		"size": uint64(e.Size), "held_root": e.HeldRoot,
-		"proof": proof, "policy": e.Policy,
+		"proof": proofItems(e.Proof), "policy": e.Policy,
+		"split": uint64(e.Split), "split_root": root,
+		"split_proof_held":        proofItems(e.SplitProofHeld),
+		"split_proof_conflicting": proofItems(e.SplitProofConflicting),
 	})
+}
+
+func proofItems(hashes [][]byte) []any {
+	items := make([]any, 0, len(hashes))
+	for _, hash := range hashes {
+		items = append(items, hash)
+	}
+	return items
 }
 
 // Parse reads an evidence file.
@@ -352,16 +459,21 @@ func parseWithin(raw []byte, max int) (*Evidence, error) {
 		return nil, evidenceErrorf(evrefusal.Version,
 			"version is %T, want uint", doc["version"])
 	}
-	if version != Version {
+	if version != 1 && version != 2 {
 		return nil, evidenceErrorf(evrefusal.Version,
-			"unsupported version %d; this build understands %d", version, Version)
+			"unsupported version %d; this build understands 1 and 2", version)
 	}
-	// §11.1: "a closed map of exactly these seven keys". This read the seven it
+	// §11.1 closes the key set separately for each version. This read the seven it
 	// wanted and ignored anything else, so the closed-map rule was prose only
 	// (cold gate run 8, D25). Evidence is the artifact strangers exchange; a
 	// field a reader silently drops is a field an accuser can hide something in.
 	allowed := map[string]bool{"version": true, "held": true, "conflicting": true,
 		"size": true, "held_root": true, "proof": true, "policy": true}
+	if version == 2 {
+		for _, key := range []string{"split", "split_root", "split_proof_held", "split_proof_conflicting"} {
+			allowed[key] = true
+		}
+	}
 	for key := range doc {
 		if !allowed[key] {
 			return nil, evidenceErrorf(evrefusal.Schema, "unknown field %q", key)
@@ -370,7 +482,7 @@ func parseWithin(raw []byte, max int) (*Evidence, error) {
 	if len(doc) != len(allowed) {
 		return nil, evidenceErrorf(evrefusal.Schema, "evidence is missing fields")
 	}
-	ev := &Evidence{}
+	ev := &Evidence{Version: int(version)}
 	for key, into := range map[string]*string{
 		"held": &ev.Held, "conflicting": &ev.Conflicting, "policy": &ev.Policy,
 	} {
@@ -415,5 +527,31 @@ func parseWithin(raw []byte, max int) (*Evidence, error) {
 		}
 		ev.Proof = append(ev.Proof, raw)
 	}
+	if version == 2 {
+		split, ok := doc["split"].(uint64)
+		if !ok {
+			return nil, evidenceErrorf(evrefusal.Schema, "split is %T, want uint", doc["split"])
+		}
+		ev.Split = int64(split)
+		root, ok := doc["split_root"].([]byte)
+		if !ok || len(root) != hashSize {
+			return nil, evidenceErrorf(evrefusal.Schema, "split_root is %T (%d bytes), want bytes (32)", doc["split_root"], len(root))
+		}
+		ev.SplitRoot = root
+		for key, into := range map[string]*[][]byte{"split_proof_held": &ev.SplitProofHeld, "split_proof_conflicting": &ev.SplitProofConflicting} {
+			hashes, ok := doc[key].([]any)
+			if !ok {
+				return nil, evidenceErrorf(evrefusal.Schema, "%s is %T, want a list", key, doc[key])
+			}
+			for _, hash := range hashes {
+				raw, ok := hash.([]byte)
+				if !ok || len(raw) != hashSize {
+					return nil, evidenceErrorf(evrefusal.Schema, "a %s hash is %T (%d bytes), want bytes (32)", key, hash, len(raw))
+				}
+				*into = append(*into, raw)
+			}
+		}
+	}
+
 	return ev, nil
 }

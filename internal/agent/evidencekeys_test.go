@@ -116,7 +116,7 @@ func TestPeerEvidenceIsCheckedUnderTheRaisedQuorum(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ev, err := forkevidence.Build(held.Tree, held.SignedCheckpoint, other.SignedCheckpoint, other.Checkpoint)
+	ev, err := forkevidence.Build(held.Tree, other.Tree, held.SignedCheckpoint, other.SignedCheckpoint)
 	if err != nil {
 		t.Fatal(err)
 	}
