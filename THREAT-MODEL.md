@@ -190,6 +190,69 @@ Owner mode is the design intent. Watchdog mode exists so Norn can sit beside an 
 | k-of-N | witness policy | lab: 1-of-1 · homelab: 2-of-3 · org: 3-of-5 |
 | Δclock | tolerance on witness timestamps vs local monotonic clock | 5 min |
 
+### 6.1 Full replication and the scale ceiling
+
+`PLAN.md` targets 10¹–10⁶ entries in closed networks; that is a design target,
+not a tested capacity or a configured log-size ceiling.
+
+Every node replicates the whole log (`internal/mirror.Write`) and replays from
+genesis on each start with a usable mirror (`internal/agent.restoreHead` →
+`verify` → `internal/logclient.Verify`); without a usable mirror its first
+successful fetch does the same. There is no snapshot or compaction path.
+In-process updates can resume the held replay (`internal/logclient.VerifyFrom`);
+that does not survive a process restart.
+
+A typical entry is taken to be 420 bytes. That is an assumption, not a
+measurement of a production log: the replay fixture in `testdata/vectors/log`,
+the only log there is, has a mean entry within a quarter of it, rejected and
+malformed entries included, and a guard keeps it there. `MAX_ENTRY_BYTES` = 65535 (`internal/cbor.MaxEntryBytes`,
+`SPEC.md` §4.0); the serving cap `internal/tlog.MaxBundleEntryBytes` = 65535.
+Entry bundles add 2 bytes per entry (`internal/tlog.EncodeBundle`'s uint16
+framing, `SPEC.md` §6). Hash tiles have height 8, width 256
+(`internal/tlog.TileHeight`, `TileWidth`), and 32-byte hashes (`crypto/sha256.Size`,
+`SPEC.md` §6). `MAX_BUNDLE_BYTES` = 81919 (`internal/proof.MaxBundleBytes`,
+`SPEC.md` §8.1) caps a portable proof bundle, not the replicated log or an entry
+bundle; it is not multiplied by the entry count here.
+
+For E entries, current-head hash payload is
+`H(E) = sha256.Size × Σ floor(E / TileWidth^L)`, starting at L = 0 and stopping
+at zero; current-head payload is `E × (entry_bytes + framing_bytes) + H(E)`.
+
+The first table counts only files needed by the current head. The second
+estimates a mirror that observed every append: `internal/mirror.Write` retains
+earlier partial bundle and tile paths, so disk use can be much larger. It
+assumes every entry has the typical size or the entry cap respectively;
+neither table is a filesystem capacity guarantee.
+
+| Entries | Typical estimate per node (bytes, including hashes) | Entry-cap worst case per node (bytes, including hashes) | Hash tile overhead (bytes) |
+|---|---|---|---|
+| 1000 | 454096 | 65569096 | 32096 |
+| 10000 | 4541248 | 655691248 | 321248 |
+| 100000 | 45412512 | 6556912512 | 3212512 |
+| 1000000 | 454125472 | 65569125472 | 32125472 |
+
+For retained partials, define
+`R(x) = floor(x / w) × w(w+1)/2 + r(r+1)/2`, where `w = TileWidth` and
+`r = x mod w`; substitute `R(E)` for E in entry storage and
+`sha256.Size × Σ R(floor(E / w^L))` for H(E).
+
+| Entries | Typical estimate with all partials per node (bytes, including hashes) | Entry-cap worst case with all partials per node (bytes, including hashes) | Retained hash tile overhead (bytes) |
+|---|---|---|---|
+| 1000 | 57075256 | 8243072596 | 4023104 |
+| 10000 | 582543280 | 84130297480 | 41083520 |
+| 100000 | 5831755424 | 842059422224 | 412296384 |
+| 1000000 | 58352075296 | 8425229508736 | 4127668064 |
+
+N nodes hold N times the per-node payload in either table; these are estimates
+of file-content bytes, excluding checkpoints, filesystem metadata and allocation rounding, proof
+bundles, temporary writes and other caches. Full replication puts storage and
+startup work on the smallest node; a larger network multiplies storage without
+reducing that node's work.
+
+Raspberry Pi replay time is **unmeasured**. There is no replay benchmark in the
+tree; the lab must measure startup replay on the actual Pi, with its log,
+storage and witness policy, before treating the design target as usable capacity.
+
 ## 7. Explicit non-goals (repeated from PLAN.md so this file stands alone)
 
 Availability under A1/A2/A9 · stolen WG private key before revocation · colluding log + witness quorum · security of the `norn.trust` delivery channel · privacy of log contents (device names, enrollment times, key fingerprints are visible to anyone who can read the log) · traffic policy between authorized peers · internet-scale directories.
