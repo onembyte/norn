@@ -376,3 +376,65 @@ func TestTheOverlapRegionIsVectored(t *testing.T) {
 			"first — which is the variant that passed all 622 checks in run 11")
 	}
 }
+
+// D-074 (b). The age of a held checkpoint is the node's estimate of now minus
+// that checkpoint's quorum time (§15), and the estimate is the largest lower
+// bound the node holds: for every quorum time q it has verified at monotonic
+// reading m, q + (now - m). `detect/staleness.json`'s `observed` cases supply
+// (quorum time, learned-at) pairs and the instant `now`, and expect the age
+// and the state that follow. They separate three readings: §8.1's old
+// "monotonic time since this checkpoint was learned", which makes a grown head
+// with an older quorum time look younger than the node knows the world to be;
+// "the newest quorum time wins", which lets a newer instant learned late
+// replace a larger bound and move the estimate backwards; and §15's.
+func TestTheAgeIsTheEstimateOfNowMinusTheQuorumTime(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join(vectorRoot(), "detect", "staleness.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Staleness int64 `json:"staleness"`
+		Hard      int64 `json:"hard"`
+		Cases     []struct {
+			Name     string     `json:"name"`
+			Observed [][2]int64 `json:"observed"`
+			Now      int64      `json:"now"`
+			Held     int64      `json:"held"`
+			Elapsed  int64      `json:"elapsed"`
+			Expect   string     `json:"expect"`
+		} `json:"cases"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	limits := Limits{
+		Staleness: time.Duration(doc.Staleness) * time.Second,
+		Hard:      time.Duration(doc.Hard) * time.Second,
+	}
+	var derived int
+	for _, c := range doc.Cases {
+		if len(c.Observed) == 0 {
+			continue
+		}
+		derived++
+		var clock Clock
+		for _, pair := range c.Observed {
+			clock.Observe(time.Unix(pair[0], 0), time.Duration(pair[1])*time.Second)
+		}
+		age, ok := clock.Age(time.Unix(c.Held, 0), time.Duration(c.Now)*time.Second)
+		if !ok {
+			t.Errorf("%s: no clock after %d observations", c.Name, len(c.Observed))
+			continue
+		}
+		if age != time.Duration(c.Elapsed)*time.Second {
+			t.Errorf("%s: age %s, the suite says %ds", c.Name, age, c.Elapsed)
+		}
+		if got := limits.State(age, true); got != c.Expect {
+			t.Errorf("%s: state %q, the suite says %q", c.Name, got, c.Expect)
+		}
+	}
+	if derived < 3 {
+		t.Errorf("%d cases derive the age from observations; the three readings need "+
+			"a case each", derived)
+	}
+}

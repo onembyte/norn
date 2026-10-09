@@ -1054,6 +1054,27 @@ ignored. Retirement stays a trust-policy change.
 time (a lower bound that never moves backwards) minus the checkpoint's quorum
 time. A Mythos review precedes the merge and states the exact boundaries (`>` or
 `≥` at `S` and `S_hard`) and that clock skew never changes freshness.
+**(b), reviewed (2026-10-09, row H5-f-b).** §15's definition stands, and the
+review found the clock behind it wrong in the same direction §8.1's reading was.
+*The estimate* is the largest lower bound the node holds — for every quorum
+time `q` verified at monotonic `m`, `q + (now − m)` — not "the newest quorum
+time plus monotonic time since": the code kept the newest quorum time, so a head
+cosigned at a newer instant but learned long after an older one replaced a
+larger bound with a smaller one and moved the estimate backwards, and the held
+view looked younger than the node had already proven the world to be
+(`detect/staleness.json` `newer-quorum-time-keeps-the-larger-bound`: 600 s and
+`fresh` under the old clock, 1000 s and `degraded` under §15). *Boundaries:*
+`>` at `S` and at `S_hard`, compared as durations; an age exactly on either is on
+the fresh side, as the table already vectored. *Skew:* `CLOCK_SKEW` changes no
+state (§15 already said so; T5 holds it; §8.1 now says it too). *The bound's
+gap, stated rather than hidden:* monotonic time does not count a suspend, and
+the clock file does not count the time between its last write and the next
+start, so an age is a lower bound and the states err toward `fresh` by at most
+that gap until the next verified checkpoint; a node SHOULD read a monotonic
+source that counts suspended time where the platform has one (row
+6.5l-ix-f-b-ii). Rejected again: wall time in either direction — letting a
+forward wall jump age a view would let a wrong clock drop every peer, the
+outcome A11 forbids.
 **(c)** §7 and §10 are Norn's profile of the reused signed-note specifications:
 lines whose name and key id match no trusted key are ignored; known lines follow
 the witness policy; the signed text and every line MUST be valid UTF-8.

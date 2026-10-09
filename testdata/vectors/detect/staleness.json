@@ -49,9 +49,60 @@
       "expect": "fresh",
       "hard": 700,
       "name": "at-the-hard-boundary"
+    },
+    {
+      "elapsed": 1200,
+      "expect": "degraded",
+      "held": 9000,
+      "name": "later-head-older-quorum-time",
+      "now": 200,
+      "observed": [
+        [
+          10000,
+          0
+        ],
+        [
+          9000,
+          100
+        ]
+      ]
+    },
+    {
+      "elapsed": 1000,
+      "expect": "degraded",
+      "held": 9900,
+      "name": "newer-quorum-time-keeps-the-larger-bound",
+      "now": 1000,
+      "observed": [
+        [
+          9900,
+          0
+        ],
+        [
+          10000,
+          500
+        ]
+      ]
+    },
+    {
+      "elapsed": 100,
+      "expect": "fresh",
+      "held": 10000,
+      "name": "older-quorum-time-does-not-move-the-estimate-back",
+      "now": 100,
+      "observed": [
+        [
+          10000,
+          0
+        ],
+        [
+          9000,
+          100
+        ]
+      ]
     }
   ],
-  "comment": "SPEC 8.1's ladder as a table: `elapsed` is the node's monotonic time since it learned the checkpoint's quorum time, `staleness` is the network's own from params, and `hard` is this node's local S_hard. The rule is `elapsed \u003e staleness`, so the boundary is still fresh. A node with no corroborated instant has no clock and reports `unknown` rather than guessing. A case may carry its own `hard`, overriding the top-level one: zero means S_hard is NOT CONFIGURED, not a limit of zero, so such a node stays `degraded` however old the view gets rather than dropping every peer. The states are tested in SPEC 8.1's order and the first that holds is the answer: `hard_stale` comes BEFORE `fresh`, so a node whose own S_hard is tighter than the network's staleness goes hard-stale at its own limit -- see `hard-below-staleness`, which is the only case separating the two readings of the table",
+  "comment": "SPEC 8.1's ladder as a table: `elapsed` is the held checkpoint's age under SPEC 15 -- the node's estimate of now, the largest lower bound it holds (each verified quorum time plus the monotonic time since it was learned), minus the checkpoint's quorum time; cases with `observed` give the (quorum time, learned-at) pairs and `now` that derive it -- `staleness` is the network's own from params, and `hard` is this node's local S_hard. The rule is `elapsed \u003e staleness`, so the boundary is still fresh. A node with no corroborated instant has no clock and reports `unknown` rather than guessing. A case may carry its own `hard`, overriding the top-level one: zero means S_hard is NOT CONFIGURED, not a limit of zero, so such a node stays `degraded` however old the view gets rather than dropping every peer. The states are tested in SPEC 8.1's order and the first that holds is the answer: `hard_stale` comes BEFORE `fresh`, so a node whose own S_hard is tighter than the network's staleness goes hard-stale at its own limit -- see `hard-below-staleness`, which is the only case separating the two readings of the table",
   "hard": 3600,
   "staleness": 900
 }

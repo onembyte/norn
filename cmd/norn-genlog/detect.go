@@ -139,9 +139,35 @@ func writeDetectCases(root, origin string, key ed25519.PrivateKey, entries [][]b
 				"hard": 700, "expect": "hard_stale"},
 			{"name": "at-the-hard-boundary", "elapsed": 700,
 				"hard": 700, "expect": "fresh"},
+			// D-074 (b). `elapsed` is §15's age: the node's estimate of now
+			// minus the held checkpoint's quorum time, the estimate being the
+			// largest lower bound it holds -- for every quorum time q verified
+			// at monotonic m, q + (now - m). These cases give the observations
+			// and derive `elapsed`; a reader that computes it any other way
+			// gets another number. The first separates §15 from §8.1's old
+			// "monotonic time since this checkpoint was learned" (that reads
+			// 100 and says fresh); the second separates it from "the newest
+			// quorum time wins" (that reads 600 and says fresh: a newer instant
+			// learned late replaced a larger bound and moved the estimate
+			// backwards); the third is the estimate not moving backwards for an
+			// older time, which every reading agrees on and is vectored for
+			// the one that forgets.
+			{"name": "later-head-older-quorum-time", "elapsed": 1200,
+				"observed": [][2]int64{{10000, 0}, {9000, 100}}, "now": 200, "held": 9000,
+				"expect": "degraded"},
+			{"name": "newer-quorum-time-keeps-the-larger-bound", "elapsed": 1000,
+				"observed": [][2]int64{{9900, 0}, {10000, 500}}, "now": 1000, "held": 9900,
+				"expect": "degraded"},
+			{"name": "older-quorum-time-does-not-move-the-estimate-back", "elapsed": 100,
+				"observed": [][2]int64{{10000, 0}, {9000, 100}}, "now": 100, "held": 10000,
+				"expect": "fresh"},
 		},
 		"comment": "SPEC 8.1's ladder as a table: `elapsed` is the " +
-			"node's monotonic time since it learned the checkpoint's quorum time, " +
+			"held checkpoint's age under SPEC 15 -- the node's estimate of now, the " +
+			"largest lower bound it holds (each verified quorum time plus the " +
+			"monotonic time since it was learned), minus the checkpoint's quorum " +
+			"time; cases with `observed` give the (quorum time, learned-at) pairs and " +
+			"`now` that derive it -- " +
 			"`staleness` is the network's own from params, and `hard` is this node's " +
 			"local S_hard. The rule is `elapsed > staleness`, so the boundary is still " +
 			"fresh. A node with no corroborated instant has no clock and reports " +

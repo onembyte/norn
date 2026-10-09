@@ -924,8 +924,15 @@ condition 4:
    device's current key in the §5.3 state, never the key written in the
    bundle's entry, and
 4. the checkpoint's freshness is classified: **`elapsed > params.staleness`**
-   makes it stale. `elapsed` is the node's **monotonic** reading now minus its
-   monotonic reading when it learned this checkpoint's quorum time (§5.3).
+   makes it stale. `elapsed` is the checkpoint's **age** as §15 defines it —
+   the node's estimate of now minus this checkpoint's quorum time (§5.3) — and
+   never the monotonic time since the node learned this checkpoint: the two
+   agree only while the held head carries the newest quorum time the node has
+   seen, and a grown head cosigned by slower witnesses would otherwise look
+   younger than the node already knows the world to be (D-074 (b)). The
+   comparisons here and in the ladder below are `>`, compared as durations, not
+   rounded: an age exactly `S` is fresh, exactly `S_hard` has not crossed it.
+   `CLOCK_SKEW` (§15) changes none of these states.
 
 A stale view does not undo the proof of a device's identity. In particular,
 degraded retains the last verified set and alarms; `hard_stale` makes the
@@ -1996,15 +2003,28 @@ The node's clock for freshness is witness time. For each verified checkpoint,
 §5.3 defines its `quorum_time` as the latest instant at which its verifying
 cosignatures satisfy the policy that accepted it. A `quorum none` policy has no
 quorum time: freshness is `unknown`, not an assertion of recency. On verifying
-a checkpoint with quorum time, the node records that time and the local
-monotonic reading. Its estimate of now is the newest quorum time it has seen
-plus monotonic elapsed time since seeing it; an older time MUST NOT move that
-estimate backwards. The estimate survives a restart: the node writes it to its
-state directory as it advances and seeds the clock from it at startup, as an
-instant observed at monotonic zero (§13.2, D-071). The age of a held checkpoint is this estimate minus that
-checkpoint's quorum time. The **freshness states and their ordered thresholds
-are §8.1**, with `detect/staleness.json` as their table. Wall time MUST NOT
-decide freshness or which devices are proven (§5.3).
+a checkpoint with quorum time `q` at the local monotonic reading `m`, the node
+records the pair. Each pair is a lower bound on witness time now: `q` plus the
+monotonic elapsed time since `m`, since the quorum vouched for `q` no later
+than `m`. The node's
+estimate of now is **the largest of the lower bounds** it holds; a newer quorum
+time does not replace a larger bound, and an older time MUST NOT move that
+estimate backwards (D-074 (b): keeping only the newest quorum time let an
+instant learned late replace a larger bound, and the held view then looked
+younger than the node had already proven the world to be). The estimate
+survives a restart: the node writes it to its state directory as it advances
+and seeds the clock from it at startup, as an instant observed at monotonic
+zero (§13.2, D-071). The **age** of a held checkpoint is this estimate minus
+that checkpoint's quorum time. An age is never negative: the held checkpoint's
+own pair is one of the bounds. The estimate is a bound, not the time: time the
+machine was suspended, and time between the clock file's last write and the
+next start, is not counted, so an age is a lower bound and the states err
+toward `fresh` by at most that gap, until the next verified checkpoint raises
+the estimate; a node SHOULD use a monotonic source that counts suspended time
+where its platform offers one. The **freshness states and their ordered
+thresholds are §8.1**, with `detect/staleness.json` as their table and
+`detect/staleness.json`'s `observed` cases as the derivation of the age. Wall
+time MUST NOT decide freshness or which devices are proven (§5.3).
 
 `CLOCK_SKEW` is an advisory alarm only. On a verified direct log fetch with a
 quorum time, the node compares its wall time with witness time using

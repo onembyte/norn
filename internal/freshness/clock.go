@@ -34,12 +34,17 @@ type Clock struct {
 // Observe records that a quorum vouched for `quorumTime`, learned at the
 // monotonic reading `mono`.
 //
-// An older instant is ignored. A peer may legitimately serve a valid but
-// older checkpoint, and adopting its timestamp would drag the node's estimate
-// of now backwards -- making everything it holds look newer than it is, which
-// is the one direction a freshness check must never fail in.
+// Each observation is a lower bound on witness time now, quorumTime + (now -
+// mono), and the clock keeps the largest (§15, D-074 b). That is not the same
+// as keeping the newest quorum time: a head cosigned at a newer instant but
+// learned long after an older one carries a smaller bound, and taking it
+// dragged the estimate of now backwards -- everything the node held then
+// looked younger than it had already proven the world to be, which is the one
+// direction a freshness check must never fail in. An older instant learned
+// later is ignored for the same reason: a peer may legitimately serve a valid
+// but older checkpoint.
 func (c *Clock) Observe(quorumTime time.Time, mono time.Duration) {
-	if c.seen && !quorumTime.After(c.best) {
+	if c.seen && !quorumTime.Add(-mono).After(c.best.Add(-c.seenAt)) {
 		return
 	}
 	c.best, c.seenAt, c.seen = quorumTime, mono, true
