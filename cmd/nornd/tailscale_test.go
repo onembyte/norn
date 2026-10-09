@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -94,7 +95,7 @@ func (h localAPITransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	go func() { h.handler.ServeHTTP(w, r); writer.Close() }()
 	select {
 	case <-w.ready:
-		return &http.Response{StatusCode: w.status, Header: w.header, Body: reader}, nil
+		return &http.Response{StatusCode: w.status, Status: strconv.Itoa(w.status) + " " + http.StatusText(w.status), Header: w.header, Body: reader}, nil
 	case <-r.Context().Done():
 		reader.Close()
 		return nil, r.Context().Err()
@@ -115,11 +116,14 @@ func (w *localAPIWriter) Write(b []byte) (int, error) { w.WriteHeader(200); retu
 func (w *localAPIWriter) Flush()                      { w.WriteHeader(200) }
 
 type localAPIHandler struct {
-	mu    sync.Mutex
-	keys  []peertable.Key
-	self  peertable.Key
-	bus   chan string
-	reads int
+	mu            sync.Mutex
+	keys          []peertable.Key
+	self          peertable.Key
+	bus           chan string
+	reads         int
+	watchRequests chan struct{}
+	failWatches   int
+	holdWatch     <-chan struct{}
 }
 
 func (h *localAPIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -135,13 +139,37 @@ func (h *localAPIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		json.NewEncoder(w).Encode(map[string]any{"Self": map[string]string{"PublicKey": "nodekey:" + hex.EncodeToString(h.self[:])}, "Peer": peers})
 	case "/localapi/v0/watch-ipn-bus":
+		h.mu.Lock()
+		bus, requests, hold := h.bus, h.watchRequests, h.holdWatch
+		fail := h.failWatches > 0
+		if fail {
+			h.failWatches--
+		}
+		h.mu.Unlock()
+		if requests != nil {
+			requests <- struct{}{}
+		}
+		if hold != nil {
+			select {
+			case <-hold:
+			case <-r.Context().Done():
+				return
+			}
+		}
+		if fail {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
 		w.WriteHeader(200)
 		w.(http.Flusher).Flush()
 		for {
 			select {
 			case <-r.Context().Done():
 				return
-			case message := <-h.bus:
+			case message, ok := <-bus:
+				if !ok {
+					return
+				}
 				if _, err := io.WriteString(w, message+"\n"); err != nil {
 					return
 				}

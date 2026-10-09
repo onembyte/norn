@@ -313,6 +313,18 @@ func providerFor(config Config) (endpoint.Provider, error) {
 	return append(providers, &endpoint.Labels{}), nil
 }
 
+type loopCycle interface {
+	Once() error
+	Freshness() string
+	WatchPeerChanges(context.Context) (<-chan error, error)
+}
+
+// Watch recovery starts at 1 second and doubles to a 5-minute cap. Status
+// remains authoritative while the bus is unavailable, so retries never delay
+// a poll or replace its deadline.
+const watchRetryInitial = time.Second
+const watchRetryMaximum = 5 * time.Minute
+
 // loop reconciles until the context is cancelled.
 //
 // A cycle that fails is logged and the loop continues. A daemon that exited on
@@ -320,39 +332,108 @@ func providerFor(config Config) (endpoint.Provider, error) {
 // might be counting on it to — the agent has already made sure a failure does
 // not disturb the peer table.
 func loop(ctx context.Context, cycle *agent.Agent, interval time.Duration, logger *slog.Logger) error {
-	watchCtx, cancelWatch := context.WithCancel(ctx)
-	defer cancelWatch()
-	changes, err := cycle.WatchPeerChanges(watchCtx)
-	if err != nil {
-		return fmt.Errorf("opening peer-change stream: %w", err)
+	return loopWithRetry(ctx, cycle, interval, logger, time.After)
+}
+
+// retryAfter is the retry clock alone; tests can advance backoff without
+// changing the poll clock or waiting for real seconds.
+func loopWithRetry(ctx context.Context, cycle loopCycle, interval time.Duration, logger *slog.Logger, retryAfter func(time.Duration) <-chan time.Time) error {
+	type watchResult struct {
+		changes <-chan error
+		err     error
 	}
+	var changes <-chan error
+	var opening <-chan watchResult
+	var retry <-chan time.Time
+	var cancelWatch context.CancelFunc
+	defer func() {
+		if cancelWatch != nil {
+			cancelWatch()
+		}
+	}()
+	openWatch := func() {
+		watchCtx, cancel := context.WithCancel(ctx)
+		cancelWatch = cancel
+		result := make(chan watchResult, 1)
+		opening = result
+		// LocalAPI may wait for response headers. Only the watch opener runs
+		// concurrently; status reads and reconciliation remain serial.
+		go func() {
+			ch, err := cycle.WatchPeerChanges(watchCtx)
+			result <- watchResult{ch, err}
+		}()
+	}
+	delay := watchRetryInitial
+	failed := false
+	watchFailed := func(err error) {
+		cancelWatch()
+		changes = nil
+		if !failed {
+			logger.Warn("peer-change stream unavailable; polling continues", "error", err)
+			failed = true
+		}
+		retry = retryAfter(delay)
+		delay = min(2*delay, watchRetryMaximum)
+	}
+	openWatch()
 	cycles, failures := 0, 0
+pollCycles:
 	for {
+		if ctx.Err() != nil {
+			return nil
+		}
 		if err := cycle.Once(); err != nil {
 			failures++
 			logger.Warn("cycle failed; the peer table is unchanged", "error", err)
 		}
 		cycles++
-
-		wait := nextPoll(interval, cycle.Freshness())
-		timer := time.NewTimer(wait)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			logger.Info("nornd stopping", "cycles", cycles, "failed", failures)
-			return nil
-		case err, ok := <-changes:
-			timer.Stop()
-			if ctx.Err() != nil {
+		timer := time.NewTimer(nextPoll(interval, cycle.Freshness()))
+		for {
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				logger.Info("nornd stopping", "cycles", cycles, "failed", failures)
 				return nil
+			case result := <-opening:
+				opening = nil
+				if ctx.Err() != nil {
+					timer.Stop()
+					return nil
+				}
+				if result.err != nil {
+					watchFailed(fmt.Errorf("opening peer-change stream: %w", result.err))
+					continue
+				}
+				changes = result.changes
+				// A nil stream without an error is a poll-only backend, so it
+				// neither schedules retries nor reports watch recovery.
+				if changes != nil && failed {
+					logger.Info("peer-change stream reopened")
+					failed = false
+					delay = watchRetryInitial
+				}
+			case <-retry:
+				retry = nil
+				if ctx.Err() == nil {
+					openWatch()
+				}
+			case err, ok := <-changes:
+				if ctx.Err() != nil {
+					timer.Stop()
+					return nil
+				}
+				if !ok {
+					err = errors.New("peer-change stream closed unexpectedly")
+				}
+				if err != nil {
+					watchFailed(err)
+					continue
+				}
+				timer.Stop()
+				continue pollCycles
+			case <-timer.C:
+				continue pollCycles
 			}
-			if !ok {
-				return errors.New("peer-change stream closed unexpectedly")
-			}
-			if err != nil {
-				return fmt.Errorf("peer-change stream failed: %w", err)
-			}
-		case <-timer.C:
 		}
 	}
 }
