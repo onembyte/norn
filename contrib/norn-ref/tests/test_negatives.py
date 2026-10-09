@@ -20,6 +20,26 @@ class GenesisAborts(unittest.TestCase):
         self.assertEqual(state.roots, {})
         return state
 
+    def _boolean_threshold_aborts(self, case, field):
+        cases = {name: (raw, anchor) for name, raw, anchor in fixture.genesis_aborts()}
+        raw, anchor = cases[case]
+        env = cbor.decode(raw)
+        self.assertIs(env["body"][field], True)
+        env["body"][field] = 1
+        env["sigs"] = []
+        for name in ("root1", "root2"):
+            entry.sign(env, fixture.KEYS[name], "root")
+        good = entry.encode(env)
+        positive = replay.replay(replay.Anchor(fixture.NET, entry.leaf_hash(good)), [good])
+        self.assertEqual((positive.size, positive.rejected), (1, []))
+        self._abort(raw, anchor)
+
+    def test_a_boolean_genesis_root_threshold_aborts(self):
+        self._boolean_threshold_aborts("21-root-thr-bool", "root_thr")
+
+    def test_a_boolean_genesis_signer_threshold_aborts(self):
+        self._boolean_threshold_aborts("22-signer-thr-bool", "signer_thr")
+
     def test_all_six_cases_abort(self):
         for name, raw, anchor in fixture.genesis_aborts():
             with self.subTest(case=name):

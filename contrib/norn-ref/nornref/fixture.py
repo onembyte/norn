@@ -1063,6 +1063,16 @@ def log() -> list[LogItem]:
     b.add(f"{b.index}-bad-params-routes-wrong-type", b.build(
         "params", {"routes": 1}, roots3), "decode")
 
+    # SEC-016: booleans are profile items, but these fields are uints (§5.1).
+    # Every entry has the full root quorum. Coercing true to 1 would put both
+    # thresholds within their sets and accept all three, changing the state.
+    b.add(f"{b.index}-bad-signer_thr-bool", b.build(
+        "signer_thr", {"thr": True}, roots3), "decode")
+    b.add(f"{b.index}-bad-root_thr-bool", b.build(
+        "root_thr", {"thr": True}, roots3), "decode")
+    b.add(f"{b.index}-bad-log_key-overlap-bool", b.build(
+        "log_key", {"pk": KEYS["logkey3"].public, "overlap": True}, roots3), "decode")
+
     return b.items
 
 
@@ -1188,6 +1198,11 @@ def genesis_aborts() -> list[tuple[str, bytes, "replay.Anchor"]]:
     # whose cap was 65 passed. One byte past it, in characters that make it
     # 33 runes -- under the cap for a reader counting those.
     bad_body("20-name-one-past-the-cap", name="é" * 32 + "a")
+
+    # SEC-016: each boolean is the only fault. The two root signatures meet
+    # the quorum even if a reader mistakes true for the uint 1.
+    bad_body("21-root-thr-bool", root_thr=True)
+    bad_body("22-signer-thr-bool", signer_thr=True)
 
     assert good_anchor  # the good anchor is exercised by the log fixture
     return cases

@@ -1,7 +1,7 @@
 """RED first: replay is a pure function (anchor, entries) -> state (SPEC §5)."""
 import unittest
 
-from nornref import entry, fixture, keys, replay
+from nornref import cbor, entry, fixture, keys, replay
 from nornref.state import State
 
 
@@ -62,6 +62,44 @@ class HappyPath(unittest.TestCase):
     def test_params_merged_not_replaced(self):
         self.assertEqual(self.state.params["staleness"], 900)
         self.assertEqual(self.state.params["checkpoint_interval"], 60)
+
+
+class UintFieldsRefuseBooleans(unittest.TestCase):
+    def _refuses_boolean(self, suffix, field):
+        items = fixture.log()
+        index = next(i for i, item in enumerate(items) if item.name.endswith(suffix))
+        raw = [item.raw for item in items[:index]]
+        anchor = anchor_for(raw)
+        before = replay.replay(anchor, raw)
+        env = cbor.decode(items[index].raw)
+        self.assertIs(env["body"][field], True)
+        size = len(before.roots if env["t"] == "root_thr" else before.signers)
+        self.assertGreaterEqual(size, 1)
+
+        # The uint 1 is accepted with the same body and quorum, so the bool
+        # is the only fault and cannot hide behind a range or signature check.
+        env["body"][field] = 1
+        env["sigs"] = []
+        for name in fixture.ROOTS:
+            entry.sign(env, fixture.KEYS[name], "root")
+        positive = replay.replay(anchor, raw + [entry.encode(env)])
+        self.assertEqual(positive.rejected, before.rejected)
+
+        after = replay.replay(anchor, raw + [items[index].raw])
+        self.assertEqual(after.rejected, before.rejected + [{"index": index, "reason": "decode"}])
+        self.assertEqual(after.size, index + 1)
+        expected = before.to_dict()
+        expected.update(size=after.size, rejected=after.rejected)
+        self.assertEqual(after.to_dict(), expected)
+
+    def test_a_boolean_signer_threshold_is_decode_and_changes_nothing(self):
+        self._refuses_boolean("-bad-signer_thr-bool", "thr")
+
+    def test_a_boolean_root_threshold_is_decode_and_changes_nothing(self):
+        self._refuses_boolean("-bad-root_thr-bool", "thr")
+
+    def test_a_boolean_log_key_overlap_is_decode_and_changes_nothing(self):
+        self._refuses_boolean("-bad-log_key-overlap-bool", "overlap")
 
 
 class BadGenesisAborts(unittest.TestCase):

@@ -269,6 +269,8 @@ def write_genesis_aborts(out: pathlib.Path) -> None:
         "14-name-too-long": step6, "15-name-empty": step6,
         "16-params-wrong-type": step6params, "17-params-empty": step6params,
         "20-name-one-past-the-cap": step6,
+        "21-root-thr-bool": step6,
+        "22-signer-thr-bool": step6,
         "18-bootstrap-sigs-wrong-role": step7,
         # The role string and the key SET are two different halves of step 7;
         # `18` varies the first and `19` the second (run 10, D15).

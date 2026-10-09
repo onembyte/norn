@@ -283,8 +283,11 @@ def _h_signer_remove(state: State, env: dict[str, Any], index: int) -> None:
 
 
 def _h_signer_thr(state: State, env: dict[str, Any], index: int) -> None:
-    thr = env["body"].get("thr")
-    if not isinstance(thr, int) or thr < 1 or thr > len(state.signers):
+    try:
+        thr = fields.uint(env["body"].get("thr"), "thr")
+    except fields.FieldError:
+        raise Reject("decode") from None
+    if thr < 1 or thr > len(state.signers):
         raise Reject("bad-thr")
     state.signer_thr = thr
 
@@ -308,17 +311,21 @@ def _h_root_remove(state: State, env: dict[str, Any], index: int) -> None:
 
 
 def _h_root_thr(state: State, env: dict[str, Any], index: int) -> None:
-    thr = env["body"].get("thr")
-    if not isinstance(thr, int) or thr < 1 or thr > len(state.roots):
+    try:
+        thr = fields.uint(env["body"].get("thr"), "thr")
+    except fields.FieldError:
+        raise Reject("decode") from None
+    if thr < 1 or thr > len(state.roots):
         raise Reject("bad-thr")
     state.root_thr = thr
 
 
 def _h_log_key(state: State, env: dict[str, Any], index: int) -> None:
     public = _pk(env["body"], "pk")
-    overlap = env["body"].get("overlap")
-    if not isinstance(overlap, int):
-        raise Reject("decode")
+    try:
+        overlap = fields.uint(env["body"].get("overlap"), "overlap")
+    except fields.FieldError:
+        raise Reject("decode") from None
     state.log_keys.append({"pk": public, "overlap": overlap, "since_index": index})
 
 
@@ -397,11 +404,13 @@ def _apply_genesis(anchor: Anchor, env: dict[str, Any]) -> State:
     if not required <= set(body) or set(body) - required - optional:
         raise Reject("bad-genesis")
     roots, signers = body.get("roots"), body.get("signers")
-    root_thr, signer_thr = body.get("root_thr"), body.get("signer_thr")
     if not isinstance(roots, list) or not isinstance(signers, list):
         raise Reject("bad-genesis")
-    if not isinstance(root_thr, int) or not isinstance(signer_thr, int):
-        raise Reject("bad-genesis")
+    try:
+        root_thr = fields.uint(body.get("root_thr"), "root_thr")
+        signer_thr = fields.uint(body.get("signer_thr"), "signer_thr")
+    except fields.FieldError:
+        raise Reject("bad-genesis") from None
     if any(not isinstance(p, bytes) or len(p) != 32 for p in roots + signers):
         raise Reject("bad-genesis")
     if not 1 <= root_thr <= len(roots) or not 1 <= signer_thr <= len(signers):
