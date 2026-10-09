@@ -18,10 +18,14 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 
 	"github.com/onembyte/norn/internal/durable"
+	"github.com/onembyte/norn/internal/note"
 	"github.com/onembyte/norn/internal/tlog"
 )
 
@@ -61,11 +65,29 @@ func Write(dir string, cp tlog.Checkpoint, signedCheckpoint string, entries [][]
 		return mirrorErrorf("the entries do not hash to the head the checkpoint claims")
 	}
 
+	keep := make(map[string]bool)
+	keepPartials(keep, cp.Size)
+	cleanup := true
 	if current, err := os.ReadFile(filepath.Join(dir, "checkpoint")); err == nil {
 		if bytes.Equal(current, []byte(signedCheckpoint)) {
 			return nil
 		}
+		text, _, err := note.Split(string(current))
+		if err == nil {
+			previous, err := tlog.ParseCheckpoint(text)
+			if err == nil {
+				keepPartials(keep, previous.Size)
+			} else {
+				cleanup = false
+			}
+		} else {
+			cleanup = false
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
 	}
+	// A malformed head's paths cannot be identified safely. Repairing its
+	// checkpoint still works, but leave the old files until a later adoption.
 
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
@@ -93,7 +115,94 @@ func Write(dir string, cp tlog.Checkpoint, signedCheckpoint string, entries [][]
 	}
 	// The checkpoint goes last, so a crash leaves a mirror advertising less
 	// than it holds rather than more -- the same ordering the log itself uses.
-	return write(dir, "checkpoint", []byte(signedCheckpoint))
+	if err := write(dir, "checkpoint", []byte(signedCheckpoint)); err != nil {
+		return err
+	}
+	if !cleanup {
+		return nil
+	}
+	return prunePartials(dir, keep)
+}
+
+// My understanding of c2sp.org/tlog-tiles is that wider partial or full tiles
+// supersede narrower partials, which may be removed. This is from memory, not
+// a quote of its exact wording. Keeping one previous generation delays that
+// removal so a peer that just read our old checkpoint can fetch its exact
+// paths; logclient.checkTiles does not fall back to wider tiles.
+func keepPartials(keep map[string]bool, size int64) {
+	if width := int(size % tlog.TileWidth); width != 0 {
+		keep[tlog.EntryBundlePath(size/tlog.TileWidth, width)] = true
+	}
+	for level := 0; size > 0; level++ {
+		if width := int(size % tlog.TileWidth); width != 0 {
+			keep[tlog.TilePath(level, size/tlog.TileWidth, width)] = true
+		}
+		size /= tlog.TileWidth
+	}
+}
+
+// partialPath accepts only the canonical spelling produced by tlog, including
+// grouped indices and widths 1 through 255. The mirror directory can contain
+// operator files, so a similar-looking name is not enough to authorize removal.
+func partialPath(path string) bool {
+	parts := strings.Split(path, "/")
+	if len(parts) < 4 || parts[0] != "tile" {
+		return false
+	}
+	width, err := strconv.Atoi(parts[len(parts)-1])
+	if err != nil || width < 1 || width >= tlog.TileWidth {
+		return false
+	}
+	last, ok := strings.CutSuffix(parts[len(parts)-2], ".p")
+	if !ok {
+		return false
+	}
+	groups := append([]string(nil), parts[2:len(parts)-2]...)
+	for i := range groups {
+		groups[i] = strings.TrimPrefix(groups[i], "x")
+	}
+	index, err := strconv.ParseInt(strings.Join(groups, "")+last, 10, 64)
+	if err != nil || index < 0 {
+		return false
+	}
+	if parts[1] == "entries" {
+		return path == tlog.EntryBundlePath(index, width)
+	}
+	level, err := strconv.Atoi(parts[1])
+	return err == nil && level >= 0 && path == tlog.TilePath(level, index, width)
+}
+
+// Cleanup follows checkpoint durability, so an interrupted adoption leaves
+// extra files rather than a checkpoint naming missing ones. WalkDir does not
+// follow symlinks, and Root keeps even a raced directory replacement from
+// redirecting a removal outside the configured mirror.
+func prunePartials(dir string, keep map[string]bool) error {
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	return fs.WalkDir(root.FS(), ".", func(path string, d fs.DirEntry, err error) error {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if path != "." && path != "tile" && !strings.HasPrefix(path, "tile/") {
+			if d.IsDir() {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if d.IsDir() || d.Type()&os.ModeSymlink != 0 || !partialPath(path) || keep[path] {
+			return nil
+		}
+		if err := removeFile(root, path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		return nil
+	})
 }
 
 // writeFile is the one writer every file of the mirror goes through --
@@ -102,6 +211,10 @@ func Write(dir string, cp tlog.Checkpoint, signedCheckpoint string, entries [][]
 // restored head could point at a torn bundle, which D-069's restart then
 // reported unusable). Replaceable so a test can watch the order.
 var writeFile = durable.WriteFile
+
+// removeFile is replaceable so a test can make a listed partial disappear
+// immediately before removal, without depending on filesystem timing.
+var removeFile = (*os.Root).Remove
 
 // write puts a file in place if its bytes are not already there. A new head
 // changes one partial bundle, the partial tiles and the checkpoint; the full

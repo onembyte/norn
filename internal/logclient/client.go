@@ -361,13 +361,15 @@ func fetchEntries(f Fetcher, size int64) ([][]byte, error) {
 	return out, nil
 }
 
-// fetchBundle tries the full path first, then the partial one: a bundle is
-// full unless it is the last, and the last carries its width in its path.
+// fetchBundle prefers the checkpoint's exact width. A peer may have published
+// a full bundle since we read its previous checkpoint, while still retaining
+// the partial that checkpoint requires. Trying the full path first would then
+// fetch too many entries and refuse a usable previous head.
 func fetchBundle(f Fetcher, index int64, width int) ([]byte, error) {
-	if raw, err := f.Fetch(tlog.EntryBundlePath(index, tlog.TileWidth)); err == nil {
+	if raw, err := f.Fetch(tlog.EntryBundlePath(index, width)); err == nil {
 		return raw, nil
 	}
-	raw, err := f.Fetch(tlog.EntryBundlePath(index, width))
+	raw, err := f.Fetch(tlog.EntryBundlePath(index, tlog.TileWidth))
 	if err != nil {
 		return nil, refuse(refusal.Unserved, "fetching entry bundle %d: %v", index, err)
 	}

@@ -221,8 +221,9 @@ For E entries, current-head hash payload is
 at zero; current-head payload is `E × (entry_bytes + framing_bytes) + H(E)`.
 
 The first table counts only files needed by the current head. The second
-estimates a mirror that observed every append: `internal/mirror.Write` retains
-earlier partial bundle and tile paths, so disk use can be much larger. It
+estimates mirrors before 6.5m-xii-m that observed every append and retained
+earlier partial bundle and tile paths; a mirror now holds the current head
+plus one previous generation of partials. It
 assumes every entry has the typical size or the entry cap respectively;
 neither table is a filesystem capacity guarantee.
 

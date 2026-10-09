@@ -186,7 +186,7 @@ func TestTheScaleReplicationAndReplayLimitsAreExplicit(t *testing.T) {
 	for _, claim := range []string{
 		"`PLAN.md` targets 10¹–10⁶ entries in closed networks; that is a design target, not a tested capacity or a configured log-size ceiling.",
 		"Every node replicates the whole log (`internal/mirror.Write`) and replays from genesis on each start with a usable mirror (`internal/agent.restoreHead` → `verify` → `internal/logclient.Verify`); without a usable mirror its first successful fetch does the same. There is no snapshot or compaction path. In-process updates can resume the held replay (`internal/logclient.VerifyFrom`); that does not survive a process restart.",
-		"The first table counts only files needed by the current head. The second estimates a mirror that observed every append: `internal/mirror.Write` retains earlier partial bundle and tile paths, so disk use can be much larger. It assumes every entry has the typical size or the entry cap respectively; neither table is a filesystem capacity guarantee.",
+		"The first table counts only files needed by the current head. The second estimates mirrors before 6.5m-xii-m that observed every append and retained earlier partial bundle and tile paths; a mirror now holds the current head plus one previous generation of partials. It assumes every entry has the typical size or the entry cap respectively; neither table is a filesystem capacity guarantee.",
 		"Raspberry Pi replay time is **unmeasured**. There is no replay benchmark in the tree; the lab must measure startup replay on the actual Pi, with its log, storage and witness policy, before treating the design target as usable capacity.",
 	} {
 		requireClaim(t, doc, claim)
