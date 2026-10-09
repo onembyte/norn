@@ -702,7 +702,7 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 		"rules": map[string]map[string]string{
 			"bad-oversize":                            {"section": "11.1", "says": "MAX_EVIDENCE_BYTES"},
 			"bad-open-schema":                         {"section": "11.1", "says": "a closed map of exactly these seven keys"},
-			"bad-wrong-version":                       {"section": "11.1", "says": "| `version` | uint | `1` |"},
+			"bad-wrong-version":                       {"section": "11.1", "says": "| `version` | uint | `1` or `2` |"},
 			"bad-version-and-unknown-key":             {"section": "11.1", "says": "a key set is only closed relative to a version"},
 			"bad-short-held-root-and-size-above-held": {"section": "11.1", "says": "| `held_root` | bytes (32) |"},
 			"bad-short-proof-hash":                    {"section": "11.1", "says": "| `proof` | array of bytes (32 each) |"},

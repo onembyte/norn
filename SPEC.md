@@ -3,7 +3,10 @@
 Written **2026-09-18** (plan part 4). Status: **v1**, frozen 2026-09-20.
 
 Frozen means: a second implementation may be written against this document and
-the vectors beside it, and neither will change under it. Every cross-reference
+the vectors beside it, and neither will change under it. One normative change
+has been made since, dated and decided: §11's fork handling and §11.1's
+evidence version 2 (D-072 (a), 2026-10-09); a version-1 evidence file is still
+read exactly as before. Every cross-reference
 resolves and no open items remain. What
 changed on the way to v1 is in `BUILD-LOG.md`; the decisions behind it are in
 `DECISIONS.md`, numbered and dated.
@@ -1278,11 +1281,41 @@ a code, the code is the contract.
 A node that observes two valid, policy-satisfying checkpoints for the same origin
 that are not consistent MUST:
 
-1. write both checkpoints and the failed proof to `fork/<unix>.evidence`,
-2. keep its stored checkpoint and proven set unchanged,
-3. raise a `FORK` alarm, and
-4. refuse every later checkpoint not consistent with the stored one — forever,
-   until an operator explicitly resets with a new trust file (KEYTRANS rule).
+1. write both checkpoints, the failed proof and the split (§11.1) to
+   `fork/<unix>.evidence`,
+2. consume no further authorization state from either branch: its stored
+   checkpoint stays what it was, and no checkpoint is adopted under this
+   anchor — forever, until an operator explicitly resets with a new trust
+   file (KEYTRANS rule),
+3. keep enforcing, in every cycle, the **frozen set**: the devices proven at
+   the common prefix **and** proven at the head the node itself holds, each
+   with the routes its enrollment granted as of the common prefix. The
+   **common prefix**: the largest size at which both branches have the same
+   root — the last state both agree on, and therefore the last one a node can
+   call authorized once it knows the log signs whatever suits it. Relative to
+   what the node was enforcing, the frozen set may only stay the same or
+   shrink; it MUST never grow: whatever either branch added after the split
+   is removed, and whatever this node's branch revoked after it stays out.
+   `owner` and `watchdog` evict against the frozen set; `observe` reports it.
+   A node that cannot establish the common prefix — the evidence claims none
+   (`split` 0), or the node's own branch does not reach the split or does not
+   have `split_root` there — MUST **fail closed**: its desired set is empty,
+   as past `S_hard` (§13.2). A fork is cryptographic proof that the log and a
+   witness quorum misbehaved; unlike staleness, which is usually an outage,
+   it does not get the benefit of the doubt, and
+4. raise a `FORK` alarm, critical, and repeat it on the degraded cadence
+   (§13.2) until the reset, saying what it keeps enforcing and what it
+   removed. A frozen node doing its job looks exactly like a healthy one
+   otherwise.
+
+A node that receives evidence from a peer (`GOSSIP.md` part 7) and checks it
+per §11.1 is in the same position as the node that wrote it, and does the
+same: it has the split from the file and its own branch from its mirror.
+Before 2026-10-09 rule 3 read "keep its stored checkpoint and proven set
+unchanged": a frozen watchdog then stopped evicting, and a split view's rogue
+— enrolled on the victim's branch after the split, which is what a split view
+is for — stayed connected after the node had proved the split (audit SEC-021;
+D-072 (a)).
 
 ### 11.1 Evidence format (normative)
 
@@ -1292,16 +1325,23 @@ reader who has the network's trust file and nothing else: no running log, no
 connection, and **no reason to trust whoever handed them the file**. That is
 why the format is here rather than in `GOSSIP.md`.
 
-Deterministic CBOR per §4.0, a closed map of exactly these seven keys:
+Deterministic CBOR per §4.0, a closed map of exactly these seven keys at
+version 1, and of exactly eleven keys at version 2 — the four `split` keys
+added. A node writes version 2. A reader MUST accept both: a version-1 file
+proves a fork exactly as it did, and claims no common prefix.
 
 | key | type | meaning |
 |---|---|---|
-| `version` | uint | `1` |
+| `version` | uint | `1` or `2` |
 | `held` | text | the signed checkpoint the accuser was holding — the branch it can speak for, because it has the entries. When the branch the accuser stored is the **shorter** one, the branch it can speak for is the served one, whose entries it has just fetched: that head is `held`, its stored head is `conflicting`, and `size` is the stored size |
 | `conflicting` | text | the signed checkpoint that could not be reconciled with it |
 | `size` | uint | where the two disagree: the **conflicting** head's size |
 | `held_root` | bytes (32) | what the held branch had at `size` |
 | `proof` | array of bytes (32 each) | **RFC 6962 §2.1.2** consistency proof chaining (`size`, `held_root`) to `held`'s own head, in that document's node order — the algorithm is not restated here and a reader implementing their own ordering will reject sound evidence. **Empty when `size` equals `held`'s size**, where the two signatures say it alone |
+| `split` | uint | **version 2.** The common prefix (§11 rule 3): the largest size at which both branches have the same root, as the accuser computed it from the two trees it held — the common entry prefix, since equal entries give equal roots. `split` 0 means no common prefix is claimed, and a reader then fails closed (§11 rule 3). An accuser can understate the split and never overstate it: the proofs below hold at every size up to the true split and at none above it. Understating hurts nobody the fork has not already hurt — a log and quorum able to sign a fork can fork at entry 1 — and is why no maximality proof is carried |
+| `split_root` | bytes (32) | **version 2.** The root both branches had at `split`. All zero when `split` is 0 |
+| `split_proof_held` | array of bytes (32 each) | **version 2.** RFC 6962 §2.1.2 consistency proof chaining (`split`, `split_root`) to `held`'s signed head. Empty when `split` equals `held`'s size, where the signature says it alone, and empty when `split` is 0 |
+| `split_proof_conflicting` | array of bytes (32 each) | **version 2.** The same proof to `conflicting`'s signed head, with the same two empty cases |
 | `policy` | text | the `tlog-policy` the **accuser** was verifying under, so a reader can see which witnesses were meant to prevent this. **Informational.** It MUST parse as `c2sp.org/tlog-policy` — a closed schema with a stated grammar is part of the format — and a reader MUST NOT verify anything under it. The reader uses **its own** policy: the trust file's, or one it has replayed (§9.4). Verifying under the carried field hands the accuser the quorum rule, and an accuser writing `quorum none` then gets two uncosigned checkpoints accepted as proof of equivocation — which, by §11 rule 4, takes the network down until an operator installs a new trust file. This implementation did exactly that until cold-model gate run 7 |
 
 A reader MUST, in this order:
@@ -1318,10 +1358,18 @@ A reader MUST, in this order:
    `size` is `held`'s own size, that `held_root` is the root `held` is signed
    over. `size` 0 never passes this step: no consistency proof starts at an
    empty tree, and every log has the same root there. Without this the reader
-   is taking the accuser's word for the number that matters most, and
+   is taking the accuser's word for the number that matters most,
 4. conclude a fork **only if `held_root` differs from `conflicting`'s root**. If
    they agree, the file proves nothing: a log and its own earlier self is not a
-   fork, and a node MUST NOT publish that as an accusation.
+   fork, and a node MUST NOT publish that as an accusation, and
+5. **version 2 only:** check `split` is not above `size`, and when `split` is
+   not 0, that `split_proof_held` chains (`split`, `split_root`) to `held`'s
+   signed head and `split_proof_conflicting` chains it to `conflicting`'s —
+   each as step 3 does, with the same empty-proof rule at a head's own size.
+   A `split` that is 0 carries an all-zero `split_root` and two empty proofs.
+   A file that fails here is refused as `proof`: it may still describe a real
+   fork, but a node that acted on an unproven split would be taking the
+   accuser's word for which devices to keep.
 
 A reader that refuses at any step MUST NOT conclude a fork. This is worth
 stating separately because §11 rule 4 makes the conclusion **permanent** until
@@ -1340,13 +1388,13 @@ checks:
 |---|---|---|
 | 0 | `oversize` | the file is larger than `MAX_EVIDENCE_BYTES`; a reader accepts **from a stranger**, so the size bound is checked before any parse |
 | 1 | `cbor` | the file is not valid deterministic CBOR (§4.0), or is not a map |
-| 2 | `version` | the map's `version` is not `1` — absent, not a uint, or another number. Checked **before** the key set: a key set is only closed relative to a version, so a reader cannot judge the schema of a version it does not speak, and a file with `version: 2` and a key version 1 lacks is `version` |
-| 3 | `schema` | the map is not the closed set of exactly seven keys, or a value has the wrong type — for example, the `size` field is a boolean rather than a uint — which includes a `held_root` or a `proof` hash that is not **exactly 32 bytes**, as the table above types them. A wrong length is a schema fault, checked here, before any checkpoint is read |
+| 2 | `version` | the map's `version` is not `1` or `2` — absent, not a uint, or another number. Checked **before** the key set: a key set is only closed relative to a version, so a reader cannot judge the schema of a version it does not speak, and a file with `version: 2` and a key version 1 lacks is `version` |
+| 3 | `schema` | the map is not the closed set of exactly seven keys (version 1) or eleven (version 2), or a value has the wrong type — for example, the `size` field is a boolean rather than a uint — which includes a `held_root` or a `proof` hash that is not **exactly 32 bytes**, as the table above types them. A wrong length is a schema fault, checked here, before any checkpoint is read |
 | 4 | `policy` | the carried `policy` is not a well-formed `c2sp.org/tlog-policy`. The field is **informational**, but a closed schema is part of the format |
 | 5 | `held` | the held checkpoint fails any §10 check: note framing, log signature, checkpoint body, origin, cosignature, or quorum |
 | 6 | `conflicting` | the conflicting checkpoint fails any §10 check. The held checkpoint is checked first, so a file wrong in both is refused as `held` |
 | 7 | `size` | `size` is above the held checkpoint's own size, or the conflicting checkpoint's size does not equal `size` |
-| 8 | `proof` | `size` is 0 — no consistency proof starts at an empty tree (RFC 6962 §2.1.2 defines one only for 0 < m < n) and every log has the same root there, so no file can show a disagreement at size 0; or the consistency proof does not chain `held_root` at `size` to the held checkpoint's signed head; or, where `size` equals the held size, `held_root` is not the root the held checkpoint is signed over — there is no proof to check, and this comparison is the only thing binding `held_root` to anything, so a reader that skips it proves a fork from one honest checkpoint and any 32 bytes; or a proof is carried where `size` equals the held size and §11.1 requires none |
+| 8 | `proof` | `size` is 0 — no consistency proof starts at an empty tree (RFC 6962 §2.1.2 defines one only for 0 < m < n) and every log has the same root there, so no file can show a disagreement at size 0; or the consistency proof does not chain `held_root` at `size` to the held checkpoint's signed head; or, where `size` equals the held size, `held_root` is not the root the held checkpoint is signed over — there is no proof to check, and this comparison is the only thing binding `held_root` to anything, so a reader that skips it proves a fork from one honest checkpoint and any 32 bytes; or a proof is carried where `size` equals the held size and §11.1 requires none; or, at version 2, `split` is above `size`, a split proof does not chain `split_root` at `split` to its head, or a split proof is carried where none is required (step 5) |
 | 9 | `consistent` | `held_root` equals `conflicting`'s root at `size`; the file proves nothing, and a node MUST NOT publish it as an accusation |
 
 **`MAX_EVIDENCE_BYTES` is 65536**. Two signed checkpoints, a root and a
@@ -1745,8 +1793,11 @@ minutes by default. With no local `S_hard`, it does not disconnect the node.
 When a configured `S_hard` is exceeded, `hard_stale` makes the enforcer's
 desired set empty: `owner` replaces the table with no peers, `watchdog`
 evicts every peer, and `observe` reports the state without writing. A proven
-fork (§11) freezes the node at its last verified state, reports the fork, and
-refuses further checkpoint adoption or interface changes under that anchor.
+fork (§11) freezes the node's authorization at the common prefix of the two
+branches (§11): it adopts no further checkpoint under that anchor, keeps
+enforcing only the devices proven both there and at its own held head — the
+set shrinks, never grows, and is empty when no common prefix can be
+established — and repeats the fork alarm until a new trust file.
 If `nornd` stops, the WireGuard table keeps its last contents; a watchdog that
 is not running cannot bound an external writer's rogue-key window.
 

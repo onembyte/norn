@@ -1002,6 +1002,21 @@ Verifier-side retirement is recorded for v1.1.
 **(e) `nornd` refuses `owner` and `watchdog` under an effective `quorum none`**
 unless `allow_no_quorum` is set; `observe` always runs; a policy lowered to none
 while running alarms on the degraded cadence until restart.
+**(a), design (2026-10-09, row 021r-a).** *The frozen set is the devices proven
+at the split and at the node's own held head*, not "what was on the interface":
+the second is what the node enforced per its branch, and it is recomputable from
+the mirror after a reboot, which an interface snapshot is not. Routes come from
+the split state's grant. *The evidence carries the split* (`split`, `split_root`,
+a consistency proof to each head; version 2, eleven keys) because a node that
+only receives the file holds one branch and cannot find the split itself; a
+version-1 file still proves the fork and claims no split, so a reader fails
+closed on it. *An accuser can understate the split and never overstate it*: both
+proofs hold at every size up to the true split, so no maximality proof is
+carried — understating is dominated by the fork itself, since whoever can sign
+a fork can fork at entry 1. *The cold verifier* (`contrib/verify-py`, sealed at
+`89b5b99`) refuses version 2 as `version`; when the version-2 vectors land
+(021r-b) `make verify-py` fails on them, which is the finding H14's rule
+anticipates, answered by a new cold run and never by editing the verifier.
 Rows: 6.5m-sec-021r (a), 022r (b), 023r (c), 014r (d), 033r (e).
 
 ## D-074 · Cold gate run 13's eight questions: keys after rotation, one age, the signed-note profile, exact vkey comparison, sequential names, an ASCII key-name grammar, a `genesis` code, an allow-listed CBOR profile (2026-10-09)
