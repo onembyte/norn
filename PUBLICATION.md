@@ -55,7 +55,8 @@ directory that was never created.
 | `make vectors-check` | ✅ | regenerates the vectors from both implementations and diffs them |
 | `make ref-test` | ✅ | the Python reference implementation's own unit tests |
 | `make witness` | ✅ | runs an unmodified `transparency-dev/witness` against a Norn checkpoint |
-| `contrib/verify-py/` | ⬜ | the cold-model *verifier* built from the frozen spec alone — checkpoint 6.5 |
+| `contrib/verify-py/` | ✅ | an independent *verifier*, Python standard library only, built cold by another model family from `SPEC.md` and the vectors alone and kept as written; its `PROVENANCE.md` says how — H14 |
+| `make verify-py` | ✅ | runs that verifier over every vector, its own RFC 8032, RFC 6962 and BIP-350 self-tests first; part of `make ci` |
 | `lab/` | ⬜ | containers, a patched Headscale, NetBird; the whole of Phase 3 |
 | `demo/` | ⬜ | the six recorded attack demos |
 | `make demos` | ⬜ | needs `lab/`; every measured number in this plan comes from it |

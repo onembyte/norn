@@ -1,7 +1,7 @@
 GO      ?= go
 PKGS    := ./...
 
-.PHONY: all test vet fmt fmt-check lint ci vectors vectors-log vectors-check ref-test tidy
+.PHONY: all test vet fmt fmt-check lint ci vectors vectors-log vectors-check ref-test tidy verify-py
 
 all: ci
 
@@ -81,7 +81,20 @@ vectors-check:
 ref-test:
 	cd contrib/norn-ref && .venv/bin/python -m unittest discover -s tests
 
-ci: fmt-check vet test
+# The independent verifier (contrib/verify-py/PROVENANCE.md), run exactly as
+# written: it was built for a sealed layout -- `vectors/` beside
+# `work/verify-py/` -- and writes its outputs beside itself, so it runs on a
+# copy of both in a temporary directory and the tree stays untouched. Plain
+# python3, not the reference's virtualenv: it needs nothing but the standard
+# library, and running it elsewhere would hide that.
+verify-py:
+	@tmp=$$(mktemp -d); mkdir -p $$tmp/work; \
+	cp -R testdata/vectors $$tmp/vectors; cp -R contrib/verify-py $$tmp/work/verify-py; \
+	(cd $$tmp && python3 -B work/verify-py/harness.py > harness.log 2>&1); status=$$?; \
+	if [ $$status -ne 0 ]; then grep -E ' FAIL$$|Error' $$tmp/harness.log | head -40; fi; \
+	tail -1 $$tmp/harness.log; rm -rf $$tmp; exit $$status
+
+ci: fmt-check vet test verify-py
 
 # The pinned `transparency-dev/witness` used by internal/interop. It is built
 # outside this module on purpose: its own go.mod pulls Cloud Spanner, gRPC,
