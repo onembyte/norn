@@ -996,6 +996,30 @@ byte for byte, is a finding answered by a new cold run, not a patch. A Mythos
 review precedes the merge. A Rust implementation is not required.
 Rejected: "as Go's `crypto/ed25519` verifies" (not a rule a second implementer
 can read); leaving §3 as it is (two verifiers can disagree about a state).
+**(c), design (2026-10-09, row 023r-a).** *The predicate.* A key and a signature's
+`R` are accepted only as the canonical RFC 8032 §5.1.3 encoding of a point of
+order exactly `L` — not the identity, no component of order 2, 4 or 8 — `S < L`,
+and the cofactorless equation; under those conditions the cofactored equation
+gives the same answer, because `[S]B − R − [k]A` then lies in the prime-order
+subgroup, where only `O` is killed by 8. *Why order exactly `L` and not merely
+"not small order"* (libsodium's and ed25519-dalek `verify_strict`'s line): a
+point with a small-order component and a prime-order one is where the two
+equations part — the CCTV set's `low_order_component` and `low_order_residue`
+vectors — and a signer who holds such a key can make a signature one library
+accepts and another refuses; an honest key `[s]B` and an honest `R = [r]B` never
+have such a component, so excluding it costs nothing honest and removes every
+formula-dependent case. *The CCTV set* (`C2SP/CCTV` `ed25519/`, 914 vectors,
+commit `50a8ecf2`, 2026-09-25): 913 carry a flag and are rejected, one carries
+none and is accepted; no vector has `S ≥ L`, so Norn's own vectors cover that
+edge. *Libraries:* Go's `crypto/ed25519` is cofactorless and refuses `S ≥ L` and
+non-canonical `R` but accepts small-order and mixed-order keys (the CCTV README's
+"ref10" behaviour), so the Go predicate is implemented explicitly with
+`filippo.io/edwards25519` (canonical = decodes and re-encodes to the same bytes;
+order `L` = `[L]P = O` and `P ≠ O`) and every verification site goes through it;
+the reference uses libsodium's `crypto_core_ed25519_is_valid_point` for `A` and
+`R` and checks `S < L` itself. *The cold verifier* is cofactored and checks none
+of this; the Norn edge vectors (023r-e) will fail under it, the second finding
+of the same kind as 021r-b's, answered by the same new cold run.
 **(d) v1: a `log_key` entry is for planned rotation;** a compromised log key is
 contained by the witness quorum and remedied by a new trust file (R7, A2).
 Verifier-side retirement is recorded for v1.1.

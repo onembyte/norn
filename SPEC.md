@@ -74,6 +74,66 @@ explains does not apply here.
 | Device identity key | Ed25519 | device | proof of possession, `rotate`, self-`revoke` |
 | WireGuard key | X25519 | device | WireGuard handshakes only — **never signs anything** |
 
+Every key above is Ed25519 and every signature in this protocol is verified
+under §3.1's NORN-ED25519-v1; the WireGuard key is X25519 and is never a signing
+key.
+
+### 3.1 NORN-ED25519-v1
+
+Every signature here — a log key over a checkpoint (§6) or a receipt (§7), a
+witness key over a cosignature (§10), a root, signer or device key over an
+entry (§4), a device key over an enrollment request (§16) — is Ed25519
+(RFC 8032), PureEdDSA with no context string and no prehash, verified under one
+predicate, **NORN-ED25519-v1**. RFC 8032 permits two verification equations and
+leaves to the implementation what to do with a non-canonical encoding or a point
+of small order, and libraries differ exactly there. A transparency log is two
+verifiers agreeing about the state, so this document names one answer, and a
+verifier MUST NOT accept what this predicate refuses, whatever its library
+accepts, and MUST NOT refuse what it accepts (D-072 (c), 2026-10-09).
+
+Let `p = 2²⁵⁵ − 19`, `B` the base point, `L = 2²⁵² +
+27742317777372353535851937790883648493` its order, and `O` the identity.
+
+1. **A valid point** is 32 bytes that are the canonical encoding
+   (RFC 8032 §5.1.3) of a point of order exactly `L` on edwards25519: the
+   encoded `y` is below `p`, the sign bit is 0 when `x` is 0, the bytes decode to a point on
+   the curve, and that point is not the identity and has no component of order
+   2, 4 or 8 — `[L]P = O` and `P ≠ O`. An honest key `[s]B` and an honest
+   `R = [r]B` always satisfy this; what it excludes are the encodings on which
+   libraries disagree. A verifier may check it as libsodium's
+   `crypto_core_ed25519_is_valid_point` does, or by decoding, re-encoding and
+   comparing the bytes, then computing `[L]P`.
+2. **A public key** — a root, signer or log key, a witness key, a `device_pk` —
+   MUST be a valid point wherever a key is admitted: a genesis, `root_add`,
+   `signer_add`, `log_key` or `enroll` entry (§5), an enrollment request (§16),
+   and a trust file's `log_key` and `witnesses` (§9). A key that is not is
+   refused as `decode` where the entry or request is decoded, and makes a trust
+   file invalid.
+3. **A signature** `R ‖ S` (64 bytes) verifies under a key `A` over a message
+   `M` only if `R` is a valid point; `S`, read as a little-endian integer,
+   satisfies `S` MUST be less than `L` — below `L`, not merely with its top bits
+   clear, and not reduced by the verifier; and with `k = SHA-512(R ‖ A ‖ M)` read
+   little-endian and reduced mod `L`, `[S]B = R + [k]A`. With `A` and `R` both
+   of order exactly `L`, the cofactored and the cofactorless equations agree —
+   `[8]([S]B − R − [k]A) = O` holds exactly when `[S]B − R − [k]A = O`, because
+   that difference lies in the prime-order subgroup, where only `O` is killed by
+   8 — so a verifier may compute either; the cofactorless one,
+   RFC 8032 §5.1.7's second form, is the definition.
+4. **What it rejects, by name.** The C2SP CCTV Ed25519 set
+   (`testdata/vectors/ed25519-cctv/`, 914 vectors) enumerates the edges.
+   NORN-ED25519-v1 rejects every vector in the C2SP CCTV Ed25519 set that
+   carries a flag — `low_order_A`, `low_order_R`, `non_canonical_A` and
+   `non_canonical_R` (not a valid point); `low_order_component_A` and
+   `low_order_component_R` (a component of order 2, 4 or 8, so not of order
+   exactly `L`: the one class ed25519-dalek's `verify_strict` still accepts, and
+   the one on which the two equations part, which is why it is excluded here);
+   and with them every `low_order_residue` and `reencoded_k` vector, each of
+   which also carries one of those — and accepts the one vector that carries
+   none (number 305). No CCTV vector has `S ≥ L`; Norn's own vectors cover that
+   edge (§12.1).
+5. **Signing** is RFC 8032 §5.1.6, unchanged: a conforming signer produces
+   nothing this predicate refuses.
+
 ## 4. Entries
 
 ### 4.0 Encoding profile (normative — the byte-level contract)
@@ -1597,6 +1657,13 @@ this table drifted out of date the moment one was.
 **What is not vectored.** A suite that looks complete is worse than one that
 admits its holes, so:
 
+- §3.1's NORN-ED25519-v1 is stated and not yet vectored in this suite (D-072
+  (c), 2026-10-09): the C2SP CCTV set that enumerates its rejections is being
+  vendored under `testdata/vectors/ed25519-cctv/`, and Norn's own edge
+  vectors — a small-order root key in `genesis/`, a non-canonical key, `S ≥ L`,
+  a torsion `R` — follow (rows 023r-b and 023r-e). Until they land, both
+  implementations verify under their libraries' rules, which agree on every
+  honest signature and are named in `DECISIONS.md` D-072 (c).
 - Source-neutral checkpoint acquisition cannot be demonstrated by static vectors alone:
   the same `served/` and `detect/` bytes may arrive from a log
   or a proven peer. They pin §10's verification, fork and rollback outcomes;
