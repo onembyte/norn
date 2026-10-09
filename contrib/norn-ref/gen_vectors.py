@@ -369,6 +369,8 @@ def write_trust_rejections(out: pathlib.Path) -> None:
         "43-anchor-unknown-member": anchor_closed,
         "44-log-key-base64-cr": {
             "section": "9.1", "says": "verifier-key data MUST be canonical RFC 4648 base64"},
+        "45-origin-case-changed": origin,
+        "46-log-key-name-case-changed": logname,
     }
     for name_, _ in fixture.trust_rejections():
         if name_ not in trust_rules:

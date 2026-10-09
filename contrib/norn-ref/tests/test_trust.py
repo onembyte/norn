@@ -1,7 +1,8 @@
 """RED first: the trust file and its fingerprint (SPEC §9)."""
+import pathlib
 import unittest
 
-from nornref import cbor, fixture, trust
+from nornref import cbor, fixture, note, trust
 
 
 class Build(unittest.TestCase):
@@ -20,6 +21,42 @@ class Build(unittest.TestCase):
 
     def test_validate_accepts_the_fixture(self):
         trust.validate(self.trust)
+
+    def test_origin_case_is_the_only_fault(self):
+        # Cold gate run 13, D18: one letter of the origin changes case, and the
+        # log key's note name and the policy's `log` line agree with it, so
+        # only the exact derivation of `origin` from `net` can refuse the file.
+        damaged = dict(fixture.trust_rejections()).get("45-origin-case-changed")
+        self.assertIsNotNone(damaged, "the origin-case negative is missing")
+        root = pathlib.Path(__file__).resolve().parents[3] / "testdata" / "vectors"
+        raw = (root / "trust-bad" / "45-origin-case-changed.cbor").read_bytes()
+        self.assertEqual(cbor.decode(raw), damaged)
+        origin, derived = damaged["origin"], self.trust["origin"]
+        self.assertEqual(origin.casefold(), derived.casefold())
+        self.assertEqual(sum(a != b for a, b in zip(origin, derived)), 1)
+        self.assertEqual(note.parse_vkey(damaged["log_key"]).name, origin)
+        self.assertIn(f"log {damaged['log_key']} ", damaged["policy"])
+        with self.assertRaisesRegex(trust.TrustError, "origin does not match net"):
+            trust.validate(damaged)
+        with self.assertRaisesRegex(trust.TrustError, "origin does not match net"):
+            trust.parse(raw)
+
+    def test_log_key_name_case_is_the_only_fault(self):
+        # The other half: `origin` is honest and the log key's note name
+        # differs from it only in one letter's case, the policy agreeing, so
+        # only "its note name MUST equal `origin`" can refuse the file.
+        damaged = dict(fixture.trust_rejections()).get("46-log-key-name-case-changed")
+        self.assertIsNotNone(damaged, "the log-key-name-case negative is missing")
+        root = pathlib.Path(__file__).resolve().parents[3] / "testdata" / "vectors"
+        raw = (root / "trust-bad" / "46-log-key-name-case-changed.cbor").read_bytes()
+        self.assertEqual(cbor.decode(raw), damaged)
+        self.assertEqual(damaged["origin"], self.trust["origin"])
+        name = note.parse_vkey(damaged["log_key"]).name
+        self.assertEqual(name.casefold(), damaged["origin"].casefold())
+        self.assertEqual(sum(a != b for a, b in zip(name, damaged["origin"])), 1)
+        self.assertIn(f"log {damaged['log_key']} ", damaged["policy"])
+        with self.assertRaisesRegex(trust.TrustError, "does not match origin"):
+            trust.validate(damaged)
 
     def test_validate_rejects_damage(self):
         for mutate in [

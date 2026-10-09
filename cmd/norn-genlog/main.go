@@ -391,12 +391,32 @@ func writeServedLarge(root, origin string, net []byte, entries [][]byte,
 	for _, tile := range tiles {
 		listed = append(listed, tileCase{Path: tile.Path(), Width: tile.Width})
 	}
+	type pathCase struct {
+		Kind  string `json:"kind"`
+		Level int    `json:"level"`
+		Index int64  `json:"index"`
+		Width int    `json:"width"`
+		Path  string `json:"path"`
+	}
+	// The served tree cannot reach a four-digit tile index without growing
+	// to 256,000 entries. A path table pins the group boundaries separately.
+	var paths []pathCase
+	for _, index := range []int64{0, 1, 255, 256, 999, 1000, 1001, 255999, 256000, 1234567} {
+		paths = append(paths,
+			pathCase{"hash", 0, index, tlog.TileWidth, tlog.TilePath(0, index, tlog.TileWidth)},
+			pathCase{"hash", 0, index, 44, tlog.TilePath(0, index, 44)},
+			pathCase{"hash", 1, index, 1, tlog.TilePath(1, index, 1)},
+			pathCase{"entries", 0, index, tlog.TileWidth, tlog.EntryBundlePath(index, tlog.TileWidth)})
+	}
 	meta := map[string]any{
 		"size":  size,
 		"tiles": listed,
+		"paths": paths,
 		"comment": "a 300-entry, signed and cosigned served log. It exercises a full " +
 			"level-0 tile, a partial level-0 tile, and the level-1 tile; every listed " +
-			"path and width is implied by the checkpoint",
+			"tile path and width is implied by the checkpoint. The separate paths " +
+			"table checks hash and entry-bundle path functions at group boundaries, " +
+			"including indices beyond this log; entries rows use no hash level",
 	}
 	blob, err := json.MarshalIndent(meta, "", "  ")
 	if err != nil {

@@ -1,5 +1,287 @@
 {
-  "comment": "a 300-entry, signed and cosigned served log. It exercises a full level-0 tile, a partial level-0 tile, and the level-1 tile; every listed path and width is implied by the checkpoint",
+  "comment": "a 300-entry, signed and cosigned served log. It exercises a full level-0 tile, a partial level-0 tile, and the level-1 tile; every listed tile path and width is implied by the checkpoint. The separate paths table checks hash and entry-bundle path functions at group boundaries, including indices beyond this log; entries rows use no hash level",
+  "paths": [
+    {
+      "kind": "hash",
+      "level": 0,
+      "index": 0,
+      "width": 256,
+      "path": "tile/0/000"
+    },
+    {
+      "kind": "hash",
+      "level": 0,
+      "index": 0,
+      "width": 44,
+      "path": "tile/0/000.p/44"
+    },
+    {
+      "kind": "hash",
+      "level": 1,
+      "index": 0,
+      "width": 1,
+      "path": "tile/1/000.p/1"
+    },
+    {
+      "kind": "entries",
+      "level": 0,
+      "index": 0,
+      "width": 256,
+      "path": "tile/entries/000"
+    },
+    {
+      "kind": "hash",
+      "level": 0,
+      "index": 1,
+      "width": 256,
+      "path": "tile/0/001"
+    },
+    {
+      "kind": "hash",
+      "level": 0,
+      "index": 1,
+      "width": 44,
+      "path": "tile/0/001.p/44"
+    },
+    {
+      "kind": "hash",
+      "level": 1,
+      "index": 1,
+      "width": 1,
+      "path": "tile/1/001.p/1"
+    },
+    {
+      "kind": "entries",
+      "level": 0,
+      "index": 1,
+      "width": 256,
+      "path": "tile/entries/001"
+    },
+    {
+      "kind": "hash",
+      "level": 0,
+      "index": 255,
+      "width": 256,
+      "path": "tile/0/255"
+    },
+    {
+      "kind": "hash",
+      "level": 0,
+      "index": 255,
+      "width": 44,
+      "path": "tile/0/255.p/44"
+    },
+    {
+      "kind": "hash",
+      "level": 1,
+      "index": 255,
+      "width": 1,
+      "path": "tile/1/255.p/1"
+    },
+    {
+      "kind": "entries",
+      "level": 0,
+      "index": 255,
+      "width": 256,
+      "path": "tile/entries/255"
+    },
+    {
+      "kind": "hash",
+      "level": 0,
+      "index": 256,
+      "width": 256,
+      "path": "tile/0/256"
+    },
+    {
+      "kind": "hash",
+      "level": 0,
+      "index": 256,
+      "width": 44,
+      "path": "tile/0/256.p/44"
+    },
+    {
+      "kind": "hash",
+      "level": 1,
+      "index": 256,
+      "width": 1,
+      "path": "tile/1/256.p/1"
+    },
+    {
+      "kind": "entries",
+      "level": 0,
+      "index": 256,
+      "width": 256,
+      "path": "tile/entries/256"
+    },
+    {
+      "kind": "hash",
+      "level": 0,
+      "index": 999,
+      "width": 256,
+      "path": "tile/0/999"
+    },
+    {
+      "kind": "hash",
+      "level": 0,
+      "index": 999,
+      "width": 44,
+      "path": "tile/0/999.p/44"
+    },
+    {
+      "kind": "hash",
+      "level": 1,
+      "index": 999,
+      "width": 1,
+      "path": "tile/1/999.p/1"
+    },
+    {
+      "kind": "entries",
+      "level": 0,
+      "index": 999,
+      "width": 256,
+      "path": "tile/entries/999"
+    },
+    {
+      "kind": "hash",
+      "level": 0,
+      "index": 1000,
+      "width": 256,
+      "path": "tile/0/x001/000"
+    },
+    {
+      "kind": "hash",
+      "level": 0,
+      "index": 1000,
+      "width": 44,
+      "path": "tile/0/x001/000.p/44"
+    },
+    {
+      "kind": "hash",
+      "level": 1,
+      "index": 1000,
+      "width": 1,
+      "path": "tile/1/x001/000.p/1"
+    },
+    {
+      "kind": "entries",
+      "level": 0,
+      "index": 1000,
+      "width": 256,
+      "path": "tile/entries/x001/000"
+    },
+    {
+      "kind": "hash",
+      "level": 0,
+      "index": 1001,
+      "width": 256,
+      "path": "tile/0/x001/001"
+    },
+    {
+      "kind": "hash",
+      "level": 0,
+      "index": 1001,
+      "width": 44,
+      "path": "tile/0/x001/001.p/44"
+    },
+    {
+      "kind": "hash",
+      "level": 1,
+      "index": 1001,
+      "width": 1,
+      "path": "tile/1/x001/001.p/1"
+    },
+    {
+      "kind": "entries",
+      "level": 0,
+      "index": 1001,
+      "width": 256,
+      "path": "tile/entries/x001/001"
+    },
+    {
+      "kind": "hash",
+      "level": 0,
+      "index": 255999,
+      "width": 256,
+      "path": "tile/0/x255/999"
+    },
+    {
+      "kind": "hash",
+      "level": 0,
+      "index": 255999,
+      "width": 44,
+      "path": "tile/0/x255/999.p/44"
+    },
+    {
+      "kind": "hash",
+      "level": 1,
+      "index": 255999,
+      "width": 1,
+      "path": "tile/1/x255/999.p/1"
+    },
+    {
+      "kind": "entries",
+      "level": 0,
+      "index": 255999,
+      "width": 256,
+      "path": "tile/entries/x255/999"
+    },
+    {
+      "kind": "hash",
+      "level": 0,
+      "index": 256000,
+      "width": 256,
+      "path": "tile/0/x256/000"
+    },
+    {
+      "kind": "hash",
+      "level": 0,
+      "index": 256000,
+      "width": 44,
+      "path": "tile/0/x256/000.p/44"
+    },
+    {
+      "kind": "hash",
+      "level": 1,
+      "index": 256000,
+      "width": 1,
+      "path": "tile/1/x256/000.p/1"
+    },
+    {
+      "kind": "entries",
+      "level": 0,
+      "index": 256000,
+      "width": 256,
+      "path": "tile/entries/x256/000"
+    },
+    {
+      "kind": "hash",
+      "level": 0,
+      "index": 1234567,
+      "width": 256,
+      "path": "tile/0/x001/x234/567"
+    },
+    {
+      "kind": "hash",
+      "level": 0,
+      "index": 1234567,
+      "width": 44,
+      "path": "tile/0/x001/x234/567.p/44"
+    },
+    {
+      "kind": "hash",
+      "level": 1,
+      "index": 1234567,
+      "width": 1,
+      "path": "tile/1/x001/x234/567.p/1"
+    },
+    {
+      "kind": "entries",
+      "level": 0,
+      "index": 1234567,
+      "width": 256,
+      "path": "tile/entries/x001/x234/567"
+    }
+  ],
   "size": 300,
   "tiles": [
     {

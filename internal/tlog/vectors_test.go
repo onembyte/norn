@@ -21,6 +21,48 @@ import (
 
 func vectorRoot() string { return filepath.Join("..", "..", "testdata", "vectors") }
 
+// A small served log cannot reach index 1000. The path table checks the
+// three-digit groups without shipping hundreds of thousands of entries.
+func TestThePathTableCoversGroupBoundaries(t *testing.T) {
+	var doc struct {
+		Paths []struct {
+			Kind  string `json:"kind"`
+			Level int    `json:"level"`
+			Index int64  `json:"index"`
+			Width int    `json:"width"`
+			Path  string `json:"path"`
+		} `json:"paths"`
+	}
+	if err := json.Unmarshal([]byte(read(t, "served-large", "cases.json")), &doc); err != nil {
+		t.Fatal(err)
+	}
+	indices := []int64{0, 1, 255, 256, 999, 1000, 1001, 255999, 256000, 1234567}
+	if len(doc.Paths) != 4*len(indices) {
+		t.Fatalf("path table has %d rows, want %d", len(doc.Paths), 4*len(indices))
+	}
+	forms := []struct {
+		kind  string
+		level int
+		width int
+	}{{"hash", 0, TileWidth}, {"hash", 0, 44}, {"hash", 1, 1}, {"entries", 0, TileWidth}}
+	for i, index := range indices {
+		for j, form := range forms {
+			row := doc.Paths[4*i+j]
+			if row.Kind != form.kind || row.Level != form.level || row.Index != index || row.Width != form.width {
+				t.Fatalf("path row %d has unexpected inputs: %+v", 4*i+j, row)
+			}
+			got := TilePath(row.Level, row.Index, row.Width)
+			if row.Kind == "entries" {
+				got = EntryBundlePath(row.Index, row.Width)
+			}
+			if got != row.Path {
+				t.Errorf("%s level %d index %d width %d: got %q, table says %q",
+					row.Kind, row.Level, row.Index, row.Width, got, row.Path)
+			}
+		}
+	}
+}
+
 func read(t *testing.T, parts ...string) string {
 	t.Helper()
 	raw, err := os.ReadFile(filepath.Join(append([]string{vectorRoot()}, parts...)...))

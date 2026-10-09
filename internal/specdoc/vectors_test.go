@@ -40,6 +40,36 @@ func vectorRoot(t *testing.T) string {
 	return root
 }
 
+func TestRunThirteenPathAndTrustCaseVectorsAreCited(t *testing.T) {
+	doc := load(t)
+	index, _ := doc.Section("12")
+	coverage, _ := doc.Section("12.1")
+	if !strings.Contains(index.Body, "`paths`") || !strings.Contains(index.Body, "`served-large/`") {
+		t.Error("§12 must name served-large/cases.json's paths table")
+	}
+	for _, path := range []string{"served-large/cases.json", "trust-bad/45-origin-case-changed",
+		"trust-bad/46-log-key-name-case-changed"} {
+		if !strings.Contains(coverage.Body, path) {
+			t.Errorf("§12.1 does not cite %s", path)
+		}
+	}
+	var manifest struct {
+		Rules map[string]struct {
+			Section string `json:"section"`
+			Says    string `json:"says"`
+		} `json:"rules"`
+	}
+	readJSON(t, filepath.Join(vectorRoot(t), "trust-bad", "cases.json"), &manifest)
+	rule := manifest.Rules["45-origin-case-changed"]
+	if rule.Section != "9.1" || rule.Says != "MUST equal `norn/` + lowercase unpadded" {
+		t.Errorf("origin-case negative names rule %+v, want §9.1's origin row", rule)
+	}
+	rule = manifest.Rules["46-log-key-name-case-changed"]
+	if rule.Section != "9.1" || rule.Says != "its note name MUST equal `origin`" {
+		t.Errorf("log-key-name-case negative names rule %+v, want §9.1's note-name rule", rule)
+	}
+}
+
 type manifest struct {
 	Anchor struct {
 		Net         string `json:"net"`

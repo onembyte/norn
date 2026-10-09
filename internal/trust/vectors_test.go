@@ -9,6 +9,91 @@ import (
 	"github.com/onembyte/norn/internal/cbor"
 )
 
+// Cold gate run 13, D18. One letter of the origin changes case, and the log
+// key's note name and the policy's `log` line agree with it, so only the exact
+// derivation of `origin` from `net` can refuse the file: a reader comparing the
+// derived origin case-insensitively accepts it. `checkpoints-bad/22` pins the
+// same rule on the checkpoint side.
+func TestTheTrustOriginCaseIsTheOnlyFault(t *testing.T) {
+	const name = "45-origin-case-changed"
+	doc := trustBad(t, name)
+	origin, _ := doc["origin"].(string)
+	net, _ := doc["net"].([]byte)
+	derived, err := OriginFor(net)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(origin) != len(derived) || !strings.EqualFold(origin, derived) {
+		t.Fatalf("origin %q must differ only in case from %q", origin, derived)
+	}
+	differences := 0
+	for i := range origin {
+		if origin[i] != derived[i] {
+			differences++
+		}
+	}
+	if differences != 1 {
+		t.Fatalf("origin differs in %d letters, want one", differences)
+	}
+	vkey, _ := doc["log_key"].(string)
+	logKey, err := parseKey(vkey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if logKey.Name != origin {
+		t.Errorf("log_key is named %q, not the case's origin %q, so the name rule "+
+			"refuses this file too and a case-insensitive derivation passes", logKey.Name, origin)
+	}
+
+	raw, err := os.ReadFile(filepath.Join("..", "..", "testdata", "vectors",
+		"trust-bad", name+".cbor"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	anchor, err := Parse(raw)
+	if err == nil {
+		err = anchor.Validate()
+	}
+	if err == nil || !strings.Contains(err.Error(), "origin does not derive from net") {
+		t.Errorf("the case-changed origin was not refused by the derivation rule: %v", err)
+	}
+}
+
+// The other half of the same survivor: `origin` is honest and the log key's
+// note name differs from it only in one letter's case, the policy agreeing, so
+// only "its note name MUST equal `origin`" can refuse the file. `11` and `40`
+// differ by more than case, so a reader folding the name comparison passed.
+func TestTheLogKeyNameCaseIsTheOnlyFault(t *testing.T) {
+	const name = "46-log-key-name-case-changed"
+	doc := trustBad(t, name)
+	origin, _ := doc["origin"].(string)
+	net, _ := doc["net"].([]byte)
+	if derived, err := OriginFor(net); err != nil || origin != derived {
+		t.Fatalf("origin %q is not the derived %q (%v), so the derivation rule decides", origin, derived, err)
+	}
+	vkey, _ := doc["log_key"].(string)
+	logKey, err := parseKey(vkey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if logKey.Name == origin || !strings.EqualFold(logKey.Name, origin) {
+		t.Fatalf("log_key is named %q; want %q with one letter's case changed", logKey.Name, origin)
+	}
+
+	raw, err := os.ReadFile(filepath.Join("..", "..", "testdata", "vectors",
+		"trust-bad", name+".cbor"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	anchor, err := Parse(raw)
+	if err == nil {
+		err = anchor.Validate()
+	}
+	if err == nil || !strings.Contains(err.Error(), "not the origin") {
+		t.Errorf("the case-changed log key name was not refused by the name rule: %v", err)
+	}
+}
+
 // --- Cold-model gate run 10, defect D12 ---------------------------------
 //
 // Three §9.1 MUSTs about the log key, each deletable from this implementation
@@ -98,6 +183,8 @@ func TestTheLogKeyNegativesDoNotAlsoBreakTheCorrespondenceRule(t *testing.T) {
 		"11-log-key-name-mismatch",
 		"13-origin-only",
 		"16-log-key-is-a-cosignature-key",
+		"45-origin-case-changed",
+		"46-log-key-name-case-changed",
 		// Run 11, D3: §12.1 claimed this one got the same treatment and it did
 		// not. Its damaged id was left out of the policy, so the correspondence
 		// rule refused the file and `TrustNoKeyIDCheck` -- a loader that takes

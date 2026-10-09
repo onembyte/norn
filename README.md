@@ -9,7 +9,7 @@
 > anything that leaves a WireGuard interface Norn can read and write; Tailscale
 > and Headscale are planned, not supported. Changes nothing in WireGuard.
 
-*Status (2026-10-07): 52 Go packages, 1059 tests, a frozen `SPEC.md`, and a
+*Status (2026-10-07): 52 Go packages, 1063 tests, a frozen `SPEC.md`, and a
 vector suite a second implementer can use without this repository. **14 of 38
 gate lines** in `PLAN.md` are ticked — every gate that needs a running lab, a
 measurement or a second pair of eyes is still open. No Norn has ever guarded a

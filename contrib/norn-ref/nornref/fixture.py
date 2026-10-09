@@ -1476,6 +1476,9 @@ def trust_rejections() -> list[tuple[str, dict[str, Any]]]:
         return doc
 
     base = trust_file()
+    # The derived origin with its first letter upper-cased: `norn/` is five
+    # characters, and base32's first character here is a letter, not a digit.
+    cased = ORIGIN[:5] + ORIGIN[5].upper() + ORIGIN[6:]
     return [
         ("01-unknown-key", dict(base, surprise="unexpected member")),
         ("02-wrong-version", damaged(version=2)),
@@ -1655,6 +1658,25 @@ def trust_rejections() -> list[tuple[str, dict[str, Any]]]:
             log_key=_vkey_with_ignored_cr(log_vkey()),
             policy="".join(line for line in base["policy"].splitlines(keepends=True)
                            if not line.startswith("log ")))),
+        # Cold gate run 13, D18. Isolated the way `13` is: one letter of the
+        # origin changes case, `log_key` is renamed to agree with it, and the
+        # policy carries that renamed key, so the name rule and the
+        # correspondence rule both agree and ONLY "`origin` MUST equal
+        # `norn/` + lowercase unpadded base32(`net`)" can refuse it. A reader
+        # that derives the origin and compares it case-insensitively accepts
+        # this file (run 13's `trust-origin-casefold`).
+        ("45-origin-case-changed", damaged(
+            origin=cased,
+            log_key=note.vkey(cased, KEYS["logkey"].public),
+            policy=_policy_with(log_key=note.vkey(cased, KEYS["logkey"].public)))),
+        # The other half of the same survivor: `origin` is honest and the log
+        # key's note name differs from it only in the case of one letter, the
+        # policy carrying that key too, so ONLY "its note name MUST equal
+        # `origin`" can refuse it. `11` and `40` differ by more than case, so a
+        # reader comparing the name case-insensitively passed both.
+        ("46-log-key-name-case-changed", damaged(
+            log_key=note.vkey(cased, KEYS["logkey"].public),
+            policy=_policy_with(log_key=note.vkey(cased, KEYS["logkey"].public)))),
     ]
 
 
