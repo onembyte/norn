@@ -1,0 +1,22 @@
+# Checks the cold-built verifier in contrib/verify-py fails for a reason that is
+# not a defect in the suite: a normative change made after it was sealed at
+# 89b5b99. `make verify-py` passes only when the harness fails exactly these
+# lines -- a new failure fails it, and so does a line here that starts to pass.
+# Each is a harness line without its trailing " FAIL". The verifier is never
+# edited to clear one; row 6.7-r builds a new one cold from SPEC at a later
+# head, and this file goes when it lands.
+#
+# D-072 (a), 2026-10-09: fork evidence version 2 (SPEC 11.1). The sealed
+# verifier knows version 1 only and refuses every version-2 file as `version`.
+fork/evidence-at-same-size expected="accept" got="version"
+fork/evidence expected="accept" got="version"
+fork/policy-not-the-readers expected="accept" got="version"
+fork/evidence-at-64 expected="accept" got="version"
+fork/evidence-at-the-cap expected="accept" got="version"
+fork/evidence-understated-split expected="accept" got="version"
+fork/bad-split-above-size expected="proof" got="version"
+fork/bad-split-proof-held expected="proof" got="version"
+fork/bad-split-proof-conflicting expected="proof" got="version"
+fork/bad-split-zero-with-a-proof expected="proof" got="version"
+fork/bad-split-root-length expected="schema" got="version"
+fork/bad-twelve-keys expected="schema" got="version"

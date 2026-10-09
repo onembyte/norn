@@ -90,9 +90,18 @@ ref-test:
 verify-py:
 	@tmp=$$(mktemp -d); mkdir -p $$tmp/work; \
 	cp -R testdata/vectors $$tmp/vectors; cp -R contrib/verify-py $$tmp/work/verify-py; \
-	(cd $$tmp && python3 -B work/verify-py/harness.py > harness.log 2>&1); status=$$?; \
-	if [ $$status -ne 0 ]; then grep -E ' FAIL$$|Error' $$tmp/harness.log | head -40; fi; \
-	tail -1 $$tmp/harness.log; rm -rf $$tmp; exit $$status
+	(cd $$tmp && python3 -B work/verify-py/harness.py > harness.log 2>&1); \
+	if ! grep -q ' checks; ' $$tmp/harness.log; then \
+		echo "verify-py: the harness did not finish:"; tail -20 $$tmp/harness.log; rm -rf $$tmp; exit 1; fi; \
+	grep -E ' FAIL$$' $$tmp/harness.log | grep -v ' checks; ' | sed 's/ FAIL$$//' | sort > $$tmp/failed; \
+	grep -v '^#' contrib/verify-py.known-failures | grep -v '^$$' | sort > $$tmp/known; \
+	if ! diff $$tmp/known $$tmp/failed > $$tmp/diff; then \
+		echo "verify-py: failures differ from contrib/verify-py.known-failures"; \
+		echo "  (< recorded but no longer failing, > failing but not recorded)"; \
+		cat $$tmp/diff; tail -1 $$tmp/harness.log; rm -rf $$tmp; exit 1; fi; \
+	tail -1 $$tmp/harness.log; n=$$(wc -l < $$tmp/known | tr -d ' '); \
+	if [ $$n -ne 0 ]; then echo "  all $$n recorded in contrib/verify-py.known-failures (row 6.7-r owes a new cold run)"; fi; \
+	rm -rf $$tmp
 
 ci: fmt-check vet test verify-py
 
