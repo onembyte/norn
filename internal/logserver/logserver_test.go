@@ -83,6 +83,15 @@ func testPolicy(t *testing.T, origin string) string {
 // theLog builds a server over the whole replay fixture: a real log, not a stub.
 func theLog(t *testing.T) (*Server, *httptest.Server, replay.Anchor, string) {
 	t.Helper()
+	server, anchor, origin := seededServer(t)
+	http := httptest.NewServer(server.Handler())
+	t.Cleanup(http.Close)
+	return server, http, anchor, origin
+}
+
+// seededServer uses the fixture without a listener, so write-side tests need no sockets.
+func seededServer(t *testing.T, opts ...Option) (*Server, replay.Anchor, string) {
+	t.Helper()
 	raw, err := os.ReadFile(filepath.Join(vectorRoot(), "log", "manifest.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -127,13 +136,11 @@ func theLog(t *testing.T) (*Server, *httptest.Server, replay.Anchor, string) {
 		}
 	}
 
-	server, err := New(store, dir, origin, logKey(t), anchor)
+	server, err := New(store, dir, origin, logKey(t), anchor, opts...)
 	if err != nil {
 		t.Fatal(err)
 	}
-	http := httptest.NewServer(server.Handler())
-	t.Cleanup(http.Close)
-	return server, http, anchor, origin
+	return server, anchor, origin
 }
 
 // anEnroll builds a submittable entry: a real request signed by a real device

@@ -15,12 +15,16 @@ package logserver
 
 import (
 	"bytes"
+	"container/list"
 	"crypto/ed25519"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
@@ -40,26 +44,58 @@ const AddPath = "/add"
 
 // Server answers submissions and serves the log directory.
 type Server struct {
-	store  *tlogstore.Store
-	dir    string
-	key    ed25519.PrivateKey
-	origin string
-	anchor replay.Anchor
-	now    func() time.Time
+	store      *tlogstore.Store
+	dir        string
+	key        ed25519.PrivateKey
+	origin     string
+	anchor     replay.Anchor
+	now        func() time.Time
+	fold       *replay.Replayer
+	byEntry    map[string]int64
+	byPreimage map[[32]byte]int64
+	storeErr   error
+	rate       float64
+	burst      int
+	buckets    map[string]*list.Element
+	sources    list.List
+	bucketMu   sync.Mutex
+	// apply counts entry applications in tests without changing replay rules.
+	apply func(*replay.Replayer, ...[]byte) *state.State
 
-	// One writer at a time: the store appends to a tree and rewrites files,
-	// and two concurrent submissions would interleave into a corrupt log.
+	// The candidate fold, append and advance share one lock, so a refused
+	// candidate never moves the held fold and concurrent writers cannot
+	// interleave the store's tree and file updates.
 	mu sync.Mutex
 }
 
-// New builds a server over an already-open store.
+// New builds a server over an already-open store. The server must be its only
+// appender: the held fold and duplicate indexes are built once from that log.
 func New(store *tlogstore.Store, dir, origin string, key ed25519.PrivateKey,
-	anchor replay.Anchor) (*Server, error) {
+	anchor replay.Anchor, opts ...Option) (*Server, error) {
 	if len(key) != ed25519.PrivateKeySize {
 		return nil, errors.New("logserver: the log needs its signing key")
 	}
-	return &Server{store: store, dir: dir, key: key, origin: origin,
-		anchor: anchor, now: time.Now}, nil
+	s := &Server{store: store, dir: dir, key: key, origin: origin,
+		anchor: anchor, now: time.Now, apply: (*replay.Replayer).Apply,
+		byEntry: make(map[string]int64), byPreimage: make(map[[32]byte]int64),
+		buckets: make(map[string]*list.Element),
+		rate:    DefaultRate, burst: DefaultBurst}
+	for _, opt := range opts {
+		opt(s)
+	}
+	if s.rate <= 0 || math.IsNaN(s.rate) || math.IsInf(s.rate, 0) || s.burst < 1 {
+		return nil, errors.New("logserver: rate and burst must be positive and finite")
+	}
+	entries, err := s.entries()
+	if err != nil {
+		return nil, err
+	}
+	s.fold = replay.New(anchor)
+	s.apply(s.fold, entries...)
+	for index, raw := range entries {
+		s.remember(raw, int64(index))
+	}
+	return s, nil
 }
 
 // Handler routes submissions to `/add` and everything else to the files a
@@ -76,6 +112,11 @@ func (s *Server) handleAdd(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodPost)
 		http.Error(w, "submit with POST (SPEC §7)", http.StatusMethodNotAllowed)
+		return
+	}
+	if retry := s.limit(r.RemoteAddr); retry > 0 {
+		w.Header().Set("Retry-After", strconv.Itoa(retry))
+		http.Error(w, "submission rate exceeded (SPEC §7)", http.StatusTooManyRequests)
 		return
 	}
 	if ct := r.Header.Get("Content-Type"); ct != ContentType {
@@ -108,11 +149,14 @@ func (s *Server) handleAdd(w http.ResponseWriter, r *http.Request) {
 // add is the decision, separated from the HTTP so that it can be read as the
 // procedure §7 describes.
 func (s *Server) add(raw []byte) (receipt string, status int, err error) {
+	if s.storeErr != nil {
+		return "", http.StatusInternalServerError, s.storeErr
+	}
 	env, err := entry.Decode(raw)
 	if err != nil {
 		return "", http.StatusBadRequest, fmt.Errorf("not a well-formed entry: %w", err)
 	}
-	if string(env.Net) != string(s.anchor.Net) {
+	if !bytes.Equal(env.Net, s.anchor.Net) {
 		return "", http.StatusBadRequest, errors.New("that entry is for another network")
 	}
 
@@ -141,14 +185,13 @@ func (s *Server) add(raw []byte) (receipt string, status int, err error) {
 				"under a different signature list is not a new entry (D-070)", index)
 	}
 
-	// The courtesy check (§6): would our own replay accept this entry?
-	entries, err := s.entries()
-	if err != nil {
-		return "", http.StatusInternalServerError, err
-	}
-	st := replay.Replay(s.anchor, append(entries, raw))
+	// The courtesy check (§6) folds only the candidate. Clone carries the
+	// seen set as well as the state, so a refusal leaks neither into the log.
+	candidate := s.fold.Clone()
+	st := s.apply(candidate, raw)
+	index := s.store.Size()
 	if len(st.Rejected) > 0 {
-		if last := st.Rejected[len(st.Rejected)-1]; last.Index == uint64(len(entries)) {
+		if last := st.Rejected[len(st.Rejected)-1]; last.Index == uint64(index) {
 			return "", http.StatusConflict, fmt.Errorf(
 				"this log's own replay rejects that entry: %s "+
 					"(advisory: §6 says a verifier must not rely on this check)", last.Reason)
@@ -156,8 +199,18 @@ func (s *Server) add(raw []byte) (receipt string, status int, err error) {
 	}
 
 	if _, err := s.store.Append(raw); err != nil {
-		return "", http.StatusInternalServerError, err
+		// Append can persist the authoritative bundle before a derived tile
+		// or checkpoint fails. Advance only if the entry can be read back;
+		// either way, stop writing until reopening repairs the store.
+		if stored, readErr := s.store.Entry(index); readErr == nil && bytes.Equal(stored, raw) {
+			s.fold = candidate
+			s.remember(raw, index)
+		}
+		s.storeErr = fmt.Errorf("logserver: append failed; reopen the store before writing again: %w", err)
+		return "", http.StatusInternalServerError, s.storeErr
 	}
+	s.fold = candidate
+	s.remember(raw, index)
 	text, err := s.receiptFor(raw)
 	return text, http.StatusOK, err
 }
@@ -177,12 +230,7 @@ func (s *Server) receiptFor(raw []byte) (string, error) {
 // (§4.5), and a log that used its own number would be promising something the
 // network never agreed to.
 func (s *Server) deadline() uint64 {
-	mmd := state.DefaultParams()["mmd"].(uint64)
-	if entries, err := s.entries(); err == nil {
-		if value, ok := replay.Replay(s.anchor, entries).Params["mmd"].(uint64); ok {
-			mmd = value
-		}
-	}
+	mmd := s.fold.State().Params["mmd"].(uint64)
 	return uint64(s.now().Unix()) + mmd
 }
 
@@ -202,46 +250,40 @@ func (s *Server) entries() ([][]byte, error) {
 
 // indexOf finds an entry already in the log by its §4.0 entry hash.
 func (s *Server) indexOf(raw []byte) (int64, bool, error) {
-	want := string(entry.EntryHash(raw))
-	entries, err := s.entries()
-	if err != nil {
-		return 0, false, err
-	}
-	for index, existing := range entries {
-		if string(entry.EntryHash(existing)) == want {
-			return int64(index), true, nil
-		}
-	}
-	return 0, false, nil
+	index, found := s.byEntry[string(entry.EntryHash(raw))]
+	return index, found, nil
 }
 
-// preimageIndexOf finds a stored entry with the same signature preimage
-// (§4.2) as env -- the same content under any signature list. A stored entry
-// that does not decode has no preimage and is passed over; indexOf already
-// catches an exact repeat of its bytes.
+// preimageIndexOf finds the first stored entry with the same signed content,
+// regardless of its signature list, including content rejected by replay.
 func (s *Server) preimageIndexOf(env *entry.Envelope) (int64, bool, error) {
-	want, err := entry.Preimage(env)
+	preimage, err := entry.Preimage(env)
 	if err != nil {
 		return 0, false, err
 	}
-	entries, err := s.entries()
+	index, found := s.byPreimage[sha256.Sum256(preimage)]
+	return index, found, nil
+}
+
+// remember builds the duplicate indexes at startup and after an append. The
+// first occurrence wins, so a refusal still names the original log index.
+func (s *Server) remember(raw []byte, index int64) {
+	hash := string(entry.EntryHash(raw))
+	if _, found := s.byEntry[hash]; !found {
+		s.byEntry[hash] = index
+	}
+	env, err := entry.Decode(raw)
 	if err != nil {
-		return 0, false, err
+		return
 	}
-	for index, existing := range entries {
-		stored, err := entry.Decode(existing)
-		if err != nil {
-			continue
-		}
-		have, err := entry.Preimage(stored)
-		if err != nil {
-			continue
-		}
-		if bytes.Equal(have, want) {
-			return int64(index), true, nil
-		}
+	preimage, err := entry.Preimage(env)
+	if err != nil {
+		return
 	}
-	return 0, false, nil
+	sum := sha256.Sum256(preimage)
+	if _, found := s.byPreimage[sum]; !found {
+		s.byPreimage[sum] = index
+	}
 }
 
 // Status is what a `norn-log` operator sees; it exists so the lab can tell a

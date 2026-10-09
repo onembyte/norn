@@ -137,7 +137,8 @@ func run(args []string) error {
 
 	fmt.Fprintf(os.Stderr, "norn-log %s\n  dir    %s\n  size   %d\n  listen %s\n",
 		anchor.Origin, *dir, store.Size(), *listen)
-	fmt.Fprintf(os.Stderr, "  note   rate limiting (§7's 429) is not implemented\n")
+	fmt.Fprintf(os.Stderr, "  rate   %g submissions/s per remote host, burst %d (SPEC §7)\n",
+		logserver.DefaultRate, logserver.DefaultBurst)
 
 	// Refreshing happens in the background, starting at once.
 	//
