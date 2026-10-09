@@ -1554,6 +1554,7 @@ this table drifted out of date the moment one was.
 
 | area | positive | negative |
 |---|---|---|
+| §3.1 NORN-ED25519-v1 | `ed25519-cctv/` vector 305, the one that carries no flag | the other 913 in `ed25519-cctv/`, each with the flag that decides it in that directory's `cases.json` — the C2SP CCTV set, kept byte for byte with its license and provenance. Neither implementation executes them yet: Go is row 023r-c, the reference 023r-d, and Norn's own edges — `S ≥ L` among them, which no CCTV vector has — are 023r-e |
 | §4.0 encoding profile | every entry; controls `profile-base`, `labelcap-base`, `two-sig-base` | `bad-cbor-nonshortest` and `bad-cbor-nonshortest-length` (an integer and a length header: the two halves of the shortest-form rule), `bad-cbor-null`, `bad-cbor-unsorted-keys`, `bad-tag-wrapped-value`, `bad-indefinite-text`, `bad-indefinite-map`, `bad-duplicate-map-key`, `bad-invalid-utf8`, `bad-integer-too-large`. The 23-byte map-key cap has no *entry* case, because §4.3 put the device's claims in the request and a closed-schema check fires first on any other key — it is vectored at the decoder instead, in `entries-hostile/` |
 | §4.3 `enroll` embeds the request | every `enroll` in the log; `enroll-unicode-labels`, `enroll-contractor` | **`bad-no-device-sig`** and **`bad-order-enroll`** (a request signed by a *signer*, not the device it names), **`bad-forged-device-sig`** (a request signature of the right shape and wrong), and `bad-device_id-uppercase`, `bad-device_id-leading-dot`, `bad-pk-length` — faults **inside** the request, inside an entry that is otherwise well formed and properly signed, so an implementation treating `request` as opaque bytes accepts all three |
 | §4.0/§4.3 schemas | `enroll-laptop`, `enroll-unicode-labels` | `bad-kid-format`, `bad-missing-sigs`, `bad-empty-sigs`, `bad-unknown-role`, `bad-unknown-envelope-key`, `bad-unknown-body-key` (a `note`), `bad-rotate-unknown-body-key` and `bad-revoke-unknown-body-key` (each otherwise valid, so the extra key is the only refusal), `bad-device_id-uppercase`, `bad-device_id-leading-dot`, `bad-pk-length`, `bad-sig-length`, `bad-text-too-long`, `bad-unsorted-sigs` |
@@ -1664,11 +1665,12 @@ this table drifted out of date the moment one was.
 **What is not vectored.** A suite that looks complete is worse than one that
 admits its holes, so:
 
-- §3.1's NORN-ED25519-v1 is stated and not yet vectored in this suite (D-072
-  (c), 2026-10-09): the C2SP CCTV set that enumerates its rejections is being
-  vendored under `testdata/vectors/ed25519-cctv/`, and Norn's own edge
-  vectors — a small-order root key in `genesis/`, a non-canonical key, `S ≥ L`,
-  a torsion `R` — follow (rows 023r-b and 023r-e). Until they land, both
+- §3.1's NORN-ED25519-v1 is stated, and the C2SP CCTV set that enumerates
+  its rejections is vendored under `testdata/vectors/ed25519-cctv/` with the
+  outcome each must get (D-072 (c), 2026-10-09), but neither implementation
+  executes that table yet, and Norn's own edge vectors — a small-order root
+  key in `genesis/`, a non-canonical key, `S ≥ L`, a torsion `R` — are still
+  to come (rows 023r-c, 023r-d, 023r-e). Until they land, both
   implementations verify under their libraries' rules, which agree on every
   honest signature and are named in `DECISIONS.md` D-072 (c).
 - Source-neutral checkpoint acquisition cannot be demonstrated by static vectors alone:

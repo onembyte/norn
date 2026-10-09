@@ -33,6 +33,7 @@ PY      ?= contrib/norn-ref/.venv/bin/python
 # Regenerate test vectors from the Python reference implementation (the oracle).
 vectors:
 	PYTHONPATH=contrib/norn-ref $(PY) contrib/norn-ref/gen_vectors.py testdata/vectors
+	python3 -I testdata/vectors/ed25519-cctv/gen_cases.py
 
 # The suite has two provenances (SPEC 12): the entry, state and trust vectors
 # come from the Python reference, and the served log and proof bundles come
@@ -44,7 +45,8 @@ GO_VECTOR_DIRS := served served-large proofs fork checkpoints-bad proofs-bad ser
 # Vectors neither of Norn's implementations produces. `anchors` holds a `.ots`
 # written by python-opentimestamps, and regenerating it would defeat the point
 # of having it: it is in the suite because somebody else's code wrote the bytes.
-FOREIGN_VECTOR_DIRS := anchors
+# `ed25519-cctv` likewise keeps upstream bytes; docclaims guards its derived table.
+FOREIGN_VECTOR_DIRS := anchors ed25519-cctv
 
 # Regenerate the served log and proof bundles from the Go implementation.
 vectors-log:

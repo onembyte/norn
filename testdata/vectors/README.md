@@ -15,7 +15,7 @@ their proof algorithms to RFC 6962 rather than restating them. The preamble
 lists every such dependency. `SPEC.md` tells you what Norn decides; the
 standards it names tell you what it reuses.
 
-## Provenance — three, stated plainly
+## Provenance — four, stated plainly
 
 A vector proves a format, not a fact about the world, and how much it proves
 depends on who wrote the bytes.
@@ -25,6 +25,7 @@ depends on who wrote the bytes.
 | **`contrib/norn-ref`** (the Python reference) | entries, state, trust, enrollment requests | Written from `SPEC.md` by a second implementation; the Go code must match them, not the other way round |
 | **`cmd/norn-genlog`** (this project's Go) | `served/`, `served-large/`, `proofs/`, `fork/`, `checkpoints-bad/` | Producing a tiled log requires a log. Validated against libraries neither implementation wrote: `transparency-dev/formats` parses the checkpoint and `x/mod/sumdb/tlog` checks every inclusion proof |
 | **`python-opentimestamps`** (the OTS reference) | `anchors/` | Norn reads `.ots` files and never writes them, so the suite's copies come from the implementation that owns the format |
+| **C2SP/CCTV** (upstream Ed25519 set) | `ed25519-cctv/` | 914 independent edge vectors, kept byte for byte with their BSD-3-Clause license and digest provenance; Norn derives only the outcome table |
 
 Regenerate the first two with `make vectors` and `make vectors-log`. The third
 is never regenerated — see `contrib/ots-vector/`, and the reason is the point
@@ -34,6 +35,7 @@ of having it.
 
 | Path | What it is |
 |---|---|
+| `ed25519-cctv/` | §3.1's 914 C2SP CCTV Ed25519 vectors: untouched upstream JSON, README and license, with `PROVENANCE.md`; `gen_cases.py` derives `cases.json` for NORN-ED25519-v1 (913 rejects by first deciding flag, vector 305 accepts), not RFC 8032 |
 | `keys.json` | every test key: Ed25519 `{seed, public, kid}` by name, X25519 public keys, and `net` |
 | `entries/` | one valid entry per type, canonical bytes, each with a `.json` mirror carrying its hashes and preimage |
 | `log/` | the 162-entry replay fixture. **Read the order from `manifest.json`**, never by sorting filenames; entries that must be refused carry a `.reason` file. `51-enroll-unicode-labels` is accepted with malformed reserved hints and preserves them in `state.json`. `133-bad-root_add-counts-its-own-key` is the §4.2 case: a `root_add` signed by two of three roots and by the key in its own body, which is `threshold` because signatures resolve against the state BEFORE the entry |

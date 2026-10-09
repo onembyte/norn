@@ -52,7 +52,8 @@ FOREIGN = frozenset({"served", "served-large", "proofs", "fork", "checkpoints-ba
 #: reference implementation of a format neither of Norn's implementations owns.
 #: Regenerating it would defeat its purpose: it is in the suite precisely
 #: because somebody else's code produced the bytes.
-KEEP = frozenset({"README.md", "anchors", "SHA256SUMS"})
+#: `ed25519-cctv` is fetched upstream; only its separate flag table is derived here.
+KEEP = frozenset({"README.md", "anchors", "SHA256SUMS", "ed25519-cctv"})
 
 
 def prune(out: pathlib.Path) -> list[pathlib.Path]:
