@@ -29,6 +29,7 @@ import (
 	"github.com/onembyte/norn/internal/logclient"
 	"github.com/onembyte/norn/internal/mirror"
 	"github.com/onembyte/norn/internal/peertable"
+	"github.com/onembyte/norn/internal/policy"
 	"github.com/onembyte/norn/internal/proven"
 	"github.com/onembyte/norn/internal/reconcile"
 	"github.com/onembyte/norn/internal/replay"
@@ -239,6 +240,10 @@ type Config struct {
 	RoundBudget time.Duration
 	Emit        func(Event)
 
+	// AllowNoQuorum lets `owner` and `watchdog` start on an effective
+	// `quorum none` (§13.2, D-072 (e)).
+	AllowNoQuorum bool
+
 	// FightPolicy is what to do when the same key keeps coming back:
 	// PolicyAlarm (the default) or PolicyQuarantine.
 	FightPolicy string
@@ -398,7 +403,44 @@ func New(cfg Config) (*Agent, error) {
 	agent.restoreHead()
 	agent.loadFreeze()
 	agent.restoreClock()
+	if err := agent.checkQuorum(); err != nil {
+		return nil, err
+	}
 	return agent, nil
+}
+
+// checkQuorum is §13.2's startup rule (D-072 (e)): `owner` and `watchdog` do
+// not start on an effective `quorum none` unless the operator set
+// AllowNoQuorum. Under it no witness corroborates a checkpoint and there is
+// no clock, so the interface would be written on the log operator's word
+// alone. Effective is what the node would verify under -- a policy the roots
+// published, in the head this node restored, replaces the trust file's
+// (§9.4) -- so it runs after the head comes back. `observe` writes nothing and
+// always starts.
+func (a *Agent) checkQuorum() error {
+	if (a.cfg.Mode != reconcile.Owner && a.cfg.Mode != reconcile.Watchdog) || a.cfg.AllowNoQuorum {
+		return nil
+	}
+	var st *state.State
+	if held := a.held(); held != nil {
+		st = held.State
+	}
+	effective := a.anchorUnder(st).Policy
+	parsed, err := policy.Parse(effective)
+	if err != nil {
+		return fmt.Errorf("agent: the witness policy in force does not parse: %w", err)
+	}
+	if parsed.RequiresCosignatures() {
+		return nil
+	}
+	from := "the trust file's policy"
+	if effective != a.cfg.Anchor.Policy {
+		from = "the policy the roots published in the log"
+	}
+	return fmt.Errorf("agent: %s is `quorum none`: no witness corroborates a checkpoint "+
+		"and there is no clock, so in %s mode this node would write the interface on "+
+		"the log operator's word alone. Run in observe mode, or set allow_no_quorum if "+
+		"this network means it (SPEC §13.2)", from, a.cfg.Mode)
 }
 
 // stateDir is where this node keeps what must outlive a reboot: Config.StateDir,

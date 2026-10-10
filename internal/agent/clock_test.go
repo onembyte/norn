@@ -199,8 +199,9 @@ func TestAQuorumNoneNodeWithAClockFileStillEnforces(t *testing.T) {
 	rec := &recorder{}
 	a, err := New(Config{
 		Anchor: doc, Fetcher: logclient.Dir(dir), Device: fake,
+		// §13.2: an owner node runs on `quorum none` only when configured to.
 		Mode: reconcile.Owner, RunDir: t.TempDir(), StateDir: stateDir, Emit: rec.emit,
-		Hard: time.Hour,
+		Hard: time.Hour, AllowNoQuorum: true,
 		Now:  func() time.Time { return time.Unix(fixtureCosignedAt, 0) },
 		Mono: func() time.Duration { return 0 },
 	})
@@ -254,7 +255,8 @@ func TestUnknownFreshnessIsSaidOnACadence(t *testing.T) {
 	fake := peertable.NewFake()
 	a, err := New(Config{
 		Anchor: quorumNoneAnchor(t), Fetcher: logclient.Dir(dir), Device: fake,
-		Mode: reconcile.Owner, RunDir: t.TempDir(), Emit: rec.emit,
+		// §13.2: an owner node runs on `quorum none` only when configured to.
+		Mode: reconcile.Owner, RunDir: t.TempDir(), Emit: rec.emit, AllowNoQuorum: true,
 		Now:  func() time.Time { return time.Unix(fixtureCosignedAt, 0) },
 		Mono: func() time.Duration { return mono },
 	})

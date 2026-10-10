@@ -73,6 +73,8 @@ func run(args []string) error {
 		"bound on one verification of the log (default "+agent.DefaultVerifyBudget.String()+")")
 	gossipPort := fs.Int("gossip-port", DefaultGossipPort,
 		"port for the peer gossip server, on the tunnel address only; 0 turns it off")
+	allowNoQuorum := fs.Bool("allow-no-quorum", false,
+		"let owner and watchdog run on a `quorum none` policy (SPEC §13.2)")
 	once := fs.Bool("once", false, "run one cycle and exit")
 	asJSON := fs.Bool("json", false, "log as JSON instead of text")
 	if err := fs.Parse(args); err != nil {
@@ -103,6 +105,7 @@ func run(args []string) error {
 	config.PeerTimeout = pick(*peerTimeout, config.PeerTimeout)
 	config.RoundBudget = pick(*roundBudget, config.RoundBudget)
 	config.VerifyBudget = pick(*verifyBudget, config.VerifyBudget)
+	config.AllowNoQuorum = config.AllowNoQuorum || *allowNoQuorum
 
 	logger := newLogger(*asJSON)
 	cycle, interval, err := build(config, logger)
@@ -248,7 +251,8 @@ func build(config Config, logger *slog.Logger) (*agent.Agent, time.Duration, err
 	gossipPort := config.GossipPortOrDefault()
 	cycle, err = agent.New(agent.Config{
 		Anchor: anchor, Fetcher: fetcher, Device: device, Provider: provider,
-		Mode: mode, RunDir: config.RunDir, StateDir: config.StateDir, Now: time.Now,
+		Mode: mode, AllowNoQuorum: config.AllowNoQuorum,
+		RunDir: config.RunDir, StateDir: config.StateDir, Now: time.Now,
 		Hard: hard, MaxSkew: maxSkew, RoundBudget: roundBudget, VerifyBudget: verifyBudget,
 		Peers:       func() []string { return cycle.PeerAddresses(gossipPort) },
 		FightPolicy: policy, FightThreshold: threshold, FightWindow: window,

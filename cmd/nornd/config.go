@@ -44,6 +44,11 @@ type Config struct {
 	HardStale string `toml:"hard_stale"`
 	// MaxSkew is Δclock. Absent means freshness.DefaultMaxSkew.
 	MaxSkew string `toml:"max_skew"`
+	// AllowNoQuorum lets owner and watchdog start on an effective
+	// `quorum none` policy (§13.2, D-072 (e)). Absent means they refuse: with
+	// nobody corroborating a checkpoint, writing the interface on the log
+	// operator's word alone is something an operator says, not a default.
+	AllowNoQuorum bool `toml:"allow_no_quorum"`
 	// PeerTimeout, RoundBudget and VerifyBudget are the network budgets
 	// (H2-c): one read from a peer, one round of asking peers, one
 	// verification of the log. Absent means the agent's defaults.
