@@ -97,6 +97,20 @@ func writeDetectCases(root, origin string, key ed25519.PrivateKey, entries [][]b
 		return err
 	}
 
+	// D-074 (g), as amended 2026-10-10: the same log key, origin and witnesses
+	// over a history that does not start from this network's genesis -- the
+	// fixture's entries from index 1 -- and over no entries at all. To a
+	// reader holding the earlier head they are `fork` (the log signed two
+	// histories) and `rollback`; to one holding nothing they are `genesis`,
+	// which served-genesis/ ships over these same two directories.
+	if _, err := serveInto(filepath.Join(dir, "other-genesis"), origin, key,
+		entries[1:forkAt+1], signers); err != nil {
+		return err
+	}
+	if _, err := serveInto(filepath.Join(dir, "empty"), origin, key, nil, signers); err != nil {
+		return err
+	}
+
 	if err := os.WriteFile(filepath.Join(dir, "earlier.checkpoint"),
 		[]byte(honest), 0o644); err != nil {
 		return err
@@ -218,6 +232,14 @@ func writeDetectCases(root, origin string, key ed25519.PrivateKey, entries [][]b
 			{"name": "tampered-bundle-under-a-stored-head", "stored": "current.checkpoint",
 				"serve": "tampered-current", "outcome": "refuse",
 				"says": "do not hash to the advertised head"},
+			// D-074 (g), as amended: `genesis` comes after the comparison with
+			// a held head and never hides what it proves.
+			{"name": "another-genesis-under-a-held-head", "stored": "earlier.checkpoint",
+				"serve": "other-genesis", "outcome": "fork",
+				"says": "another history signed by the same log is equivocation"},
+			{"name": "empty-under-a-held-head", "stored": "earlier.checkpoint",
+				"serve": "empty", "outcome": "refuse",
+				"says": "a log does not shrink"},
 		},
 		// D-061, §10.1: the code each case that is not accepted is refused
 		// with. tampered-bundle-under-a-stored-head is `head`, not `fork`:
@@ -229,6 +251,8 @@ func writeDetectCases(root, origin string, key ed25519.PrivateKey, entries [][]b
 			"shorter-with-no-held-branch":         refusal.Rollback,
 			"fork-on-a-longer-branch":             refusal.Fork,
 			"tampered-bundle-under-a-stored-head": refusal.Head,
+			"another-genesis-under-a-held-head":   refusal.Fork,
+			"empty-under-a-held-head":             refusal.Rollback,
 		},
 		"comment": "pairs, not single artifacts. `stored` is the checkpoint this reader " +
 			"already holds, over the entries in `../served`; `serve` is the log it is " +

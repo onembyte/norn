@@ -49,9 +49,25 @@
       "says": "do not hash to the advertised head",
       "serve": "tampered-current",
       "stored": "current.checkpoint"
+    },
+    {
+      "name": "another-genesis-under-a-held-head",
+      "outcome": "fork",
+      "says": "another history signed by the same log is equivocation",
+      "serve": "other-genesis",
+      "stored": "earlier.checkpoint"
+    },
+    {
+      "name": "empty-under-a-held-head",
+      "outcome": "refuse",
+      "says": "a log does not shrink",
+      "serve": "empty",
+      "stored": "earlier.checkpoint"
     }
   ],
   "codes": {
+    "another-genesis-under-a-held-head": "fork",
+    "empty-under-a-held-head": "rollback",
     "fork-at-the-same-size": "fork",
     "fork-on-a-longer-branch": "fork",
     "fork-on-a-shorter-branch": "fork",

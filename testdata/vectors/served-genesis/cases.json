@@ -1,0 +1,29 @@
+{
+  "cases": [
+    {
+      "name": "another-genesis",
+      "says": "entry 0 is not the anchored genesis",
+      "serve": "../detect/other-genesis"
+    },
+    {
+      "name": "empty",
+      "says": "the log has no entry 0",
+      "serve": "../detect/empty"
+    }
+  ],
+  "codes": {
+    "another-genesis": "genesis",
+    "empty": "genesis"
+  },
+  "comment": "each case serves a directory under ../detect, tiles and all, to a reader that holds no checkpoint and only trust.cbor. Both MUST be refused with the SPEC 10.1 code `codes` names. detect/ serves the same two to a reader holding detect/earlier.checkpoint, which MUST answer `fork` and `rollback`: `genesis` is decided after the comparison with a held head",
+  "rules": {
+    "another-genesis": {
+      "says": "its entry 0 is not the genesis the anchor pins",
+      "section": "10.1"
+    },
+    "empty": {
+      "says": "the served log has no entry 0",
+      "section": "10.1"
+    }
+  }
+}

@@ -665,3 +665,60 @@ func otherGenesisLog(t *testing.T, n int) (string, Anchor) {
 	return dir, Anchor{Anchor: inner, LogKeys: []string{verifierKey(t, key, "norn/test")},
 		Policy: policyOver(t, "norn/test", witnessNames, 2)}
 }
+
+// D-074 (g), as amended 2026-10-10, as shipped vectors. A reader that holds
+// no head is refused `genesis` by a log for another genesis and by an empty
+// one (served-genesis/); a reader that holds the network's earlier head is
+// served the same two logs in detect/ and gets `fork` -- the same log signed
+// two histories -- and `rollback`. The one pair of logs, two reader states:
+// that is the amendment.
+func TestTheGenesisVectorsReachTheirCodes(t *testing.T) {
+	dir := filepath.Join(vectorRoot(), "served-genesis")
+	raw, err := os.ReadFile(filepath.Join(dir, "cases.json"))
+	if err != nil {
+		t.Fatalf("the genesis vectors are missing: %v", err)
+	}
+	var doc struct {
+		Cases []struct{ Name, Serve string } `json:"cases"`
+		Codes map[string]refusal.Code        `json:"codes"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	served := map[string]string{}
+	for _, c := range doc.Cases {
+		served[c.Name] = c.Serve
+		if doc.Codes[c.Name] != refusal.Genesis {
+			t.Errorf("%s: cases.json says %q, want genesis", c.Name, doc.Codes[c.Name])
+		}
+		_, err := Verify(Dir(filepath.Join(dir, c.Serve)), shippedLogAnchor(t))
+		if got, _ := refusal.CodeOf(err); got != refusal.Genesis {
+			t.Errorf("%s, to a reader holding nothing: %q, want genesis: %v", c.Name, got, err)
+		}
+	}
+	for _, name := range []string{"another-genesis", "empty"} {
+		if served[name] == "" {
+			t.Errorf("served-genesis has no %q case", name)
+		}
+	}
+
+	raw, err = os.ReadFile(filepath.Join(vectorRoot(), "detect", "cases.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var detect struct {
+		Cases []struct{ Name, Serve string } `json:"cases"`
+		Codes map[string]refusal.Code        `json:"codes"`
+	}
+	if err := json.Unmarshal(raw, &detect); err != nil {
+		t.Fatal(err)
+	}
+	for name, want := range map[string]refusal.Code{
+		"another-genesis-under-a-held-head": refusal.Fork,
+		"empty-under-a-held-head":           refusal.Rollback,
+	} {
+		if got, ok := detect.Codes[name]; !ok || got != want {
+			t.Errorf("detect/ has %q as %q, want %q", name, got, want)
+		}
+	}
+}

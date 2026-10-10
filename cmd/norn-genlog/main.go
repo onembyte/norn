@@ -225,6 +225,9 @@ func run(root string) error {
 	if err := writeDetectCases(root, origin, key, entries, signed, signers); err != nil {
 		return err
 	}
+	if err := writeServedGenesis(root); err != nil {
+		return err
+	}
 
 	fmt.Printf("served %d entries to %s, %d proof bundles\n", store.Size(), served, len(ids))
 	return nil
