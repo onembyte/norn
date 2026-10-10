@@ -67,3 +67,63 @@ func (a *Agent) frozenSet(held *logclient.Result, split int64, splitRoot [32]byt
 	}
 	return kept, report, ""
 }
+
+// enforceFrozen is §11 rule 3 for a frozen node, every cycle: the frozen
+// set, applied in this node's mode, and never wider than what the interface
+// already holds -- a frozen node removes peers and installs none, so "it MUST
+// never grow" holds whatever the node was enforcing before, including nothing
+// at all, and after a reboot. A head this node enforced without any peer's
+// corroboration is not a branch it can stand behind (D-071 c): the set is
+// empty. It returns how many peers it keeps and, when it fails closed, why.
+func (a *Agent) enforceFrozen() (int, string, error) {
+	own, err := a.ownKey()
+	if err != nil {
+		return 0, "", err
+	}
+	var peers []peertable.Peer
+	var report endpoint.Report
+	var why string
+	if a.last != nil && a.uncorroborated {
+		why = "the head this node holds was enforced without any peer's corroboration (D-071)"
+	} else {
+		peers, report, why = a.frozenSet(a.held(), a.frozenSplit, a.frozenSplitRoot, own)
+	}
+	actual, err := a.cfg.Device.Peers()
+	if err != nil {
+		a.emit(Event{Kind: InterfaceUnavailable, Message: err.Error()})
+		return 0, why, fmt.Errorf("agent: reading the interface: %w", err)
+	}
+	present := make(map[peertable.Key]bool, len(actual))
+	for _, peer := range actual {
+		present[peer.Key] = true
+	}
+	kept := peers[:0]
+	for _, peer := range peers {
+		if present[peer.Key] {
+			kept = append(kept, peer)
+		}
+	}
+	return len(kept), why, a.apply(kept, report)
+}
+
+// frozenIntent is what a node says when it freezes, before the first frozen
+// cycle has run.
+func (a *Agent) frozenIntent() string {
+	if a.frozenSplit <= 0 {
+		return "it has no common prefix of the two branches to stand behind, so it " +
+			"fails closed and drops every peer (§11)."
+	}
+	return fmt.Sprintf("it keeps enforcing only the devices proven both at the common "+
+		"prefix of the two branches (%d entries) and at the head it holds, removing "+
+		"the rest and adding none (§11).", a.frozenSplit)
+}
+
+// frozenEnforcement is what a frozen cycle says it did.
+func (a *Agent) frozenEnforcement(kept int, why string) string {
+	if why != "" {
+		return fmt.Sprintf("It fails closed and drops every peer: %s (§11).", why)
+	}
+	return fmt.Sprintf("It keeps enforcing the %d peers proven both at the common prefix "+
+		"of the two branches (%d entries) and at the head it holds, and adds none.",
+		kept, a.frozenSplit)
+}

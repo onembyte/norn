@@ -104,13 +104,16 @@ func TestAForkFreezesTheNodeAndLeavesEvidence(t *testing.T) {
 	if rec.kinds()[Fork] != 1 {
 		t.Errorf("events = %v, want one %s", rec.kinds(), Fork)
 	}
-	// 2. the stored checkpoint and the peer table are untouched
+	// 2. the stored checkpoint is untouched, and the table holds the frozen
+	// set: what both branches proved at their common prefix and this node's
+	// head still proves -- D-072 (a), §11 rule 3, where it used to be left
+	// exactly as it was
 	if a.last.Checkpoint != held {
 		t.Error("the stored checkpoint moved after a fork")
 	}
-	after, _ := fake.Peers()
-	if len(after) != len(before) {
-		t.Errorf("the peer table changed on a fork: %d -> %d", len(before), len(after))
+	if got := tableKeys(t, fake); !sameKeys(got, wantFrozen(t, a)) {
+		t.Errorf("the peer table after a fork holds %d of %d peers, not the frozen set",
+			len(got), len(before))
 	}
 	// 1. the evidence, and it must convince somebody else
 	files, err := filepath.Glob(filepath.Join(runDir, ForkDir, "*.evidence"))
@@ -331,9 +334,10 @@ func TestAForkedPeerIsAForkNotABrokenNeighbour(t *testing.T) {
 	if len(files) != 1 {
 		t.Errorf("evidence files = %v; a fork learned from a peer is still a fork", files)
 	}
-	after, _ := fake.Peers()
-	if len(after) != len(before) {
-		t.Errorf("the peer table changed on a fork: %d -> %d", len(before), len(after))
+	// A fork learned from a peer leaves the same frozen set (§11 rule 3).
+	if got := tableKeys(t, fake); !sameKeys(got, wantFrozen(t, a)) {
+		t.Errorf("the peer table after a fork holds %d of %d peers, not the frozen set",
+			len(got), len(before))
 	}
 }
 

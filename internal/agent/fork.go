@@ -87,10 +87,13 @@ func (a *Agent) loadFreeze() {
 		// know before carrying it to the witness operators, not a reason to
 		// start enforcing again.
 		a.frozen, a.frozenBy = true, path
-		if _, err := a.checkEvidence(evidence, a.held()); err != nil {
+		finding, err := a.checkEvidence(evidence, a.held())
+		if err != nil {
 			a.frozenNote = fmt.Sprintf("the evidence does not verify under this trust "+
 				"file (%v), so it would not convince anybody else; the freeze stands", err)
+			return // and with no split this node can trust, it fails closed
 		}
+		a.frozenSplit, a.frozenSplitRoot = finding.Split, finding.SplitRoot
 		return
 	}
 }
@@ -149,20 +152,22 @@ func (a *Agent) pollEvidence() {
 				"peer %s served something that is not evidence: %v", addr, err)})
 			continue
 		}
-		if _, err := a.checkEvidence(evidence, a.held()); err != nil {
+		finding, err := a.checkEvidence(evidence, a.held())
+		if err != nil {
 			a.emit(Event{Kind: PeerRefused, Message: fmt.Sprintf(
 				"peer %s served evidence that proves nothing: %v", addr, err)})
 			continue
 		}
-		a.adoptEvidence(addr, raw)
+		a.adoptEvidence(addr, raw, finding)
 		return
 	}
 }
 
 // adoptEvidence freezes on a fork somebody else proved, and keeps a copy so
 // this node can pass it on in turn.
-func (a *Agent) adoptEvidence(from string, raw []byte) {
+func (a *Agent) adoptEvidence(from string, raw []byte, finding *forkevidence.Finding) {
 	a.frozen = true
+	a.frozenSplit, a.frozenSplitRoot = finding.Split, finding.SplitRoot
 	path, err := a.storeEvidence(raw)
 	if err != nil {
 		kept := "and no freeze marker could be kept either"
@@ -182,8 +187,8 @@ func (a *Agent) adoptEvidence(from string, raw []byte) {
 	a.emit(Event{Kind: Fork, Message: fmt.Sprintf(
 		"peer %s proved this network's log signed two histories, and this node "+
 			"checked it against its own trust file. Evidence kept at %s. Nothing "+
-			"further will be accepted until a new trust file (§11); the peer table "+
-			"is unchanged.", from, path)})
+			"further will be accepted until a new trust file (§11); %s", from, path,
+		a.frozenIntent())})
 }
 
 // storeEvidence files evidence, whoever produced it, as §11's
@@ -279,7 +284,7 @@ func (a *Agent) recordFork(fork *logclient.ForkError, held *logclient.Result) {
 	}
 	// A head enforced without a peer's corroboration is not one to hold on
 	// to (D-071 c); Once drops every peer right after this.
-	table := "the peer table is unchanged."
+	table := a.frozenIntent()
 	if a.last != nil && a.uncorroborated {
 		table = "this node enforced the head it holds without any peer's corroboration " +
 			"and has no branch to stand behind, so every peer is dropped (D-071)."
@@ -332,9 +337,11 @@ func (a *Agent) writeEvidence(fork *logclient.ForkError, held *logclient.Result)
 	// Check the node's own work before filing it. Evidence that does not
 	// prove anything is worse than none: it is an accusation somebody will
 	// check and dismiss.
-	if _, err := a.checkEvidence(evidence, held); err != nil {
+	finding, err := a.checkEvidence(evidence, held)
+	if err != nil {
 		return "", fmt.Errorf("this node built evidence that does not prove a fork: %w", err)
 	}
+	a.frozenSplit, a.frozenSplitRoot = finding.Split, finding.SplitRoot
 
 	raw, err := evidence.Encode()
 	if err != nil {

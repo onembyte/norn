@@ -297,6 +297,13 @@ type Agent struct {
 	frozen     bool
 	frozenBy   string
 	frozenNote string
+	// frozenSplit and frozenSplitRoot are the common prefix the evidence
+	// behind the freeze proves (§11.1, version 2): what §11 rule 3 keeps
+	// enforcing is computed from them. Zero means no split is known -- a
+	// marker, version-1 evidence, or evidence that no longer verifies -- and
+	// the node fails closed.
+	frozenSplit     int64
+	frozenSplitRoot [32]byte
 	// evidenceAsked is the monotonic reading of the last evidence round.
 	evidenceAsked    time.Duration
 	evidenceAskedSet bool
@@ -545,11 +552,15 @@ func (a *Agent) Once() error {
 		if a.frozenNote != "" {
 			note = "; " + a.frozenNote
 		}
+		kept, why, err := a.enforceFrozen()
 		a.emit(Event{Kind: Frozen, Message: fmt.Sprintf(
 			"refusing every checkpoint: this node holds proof that its log forked "+
-				"(%s%s). The peer table is left exactly as it is. Only a new trust "+
-				"file clears this (§11).", a.frozenBy, note)})
-		return errors.New("agent: frozen by a proven fork; the interface is untouched")
+				"(%s%s). %s Only a new trust file clears this (§11).",
+			a.frozenBy, note, a.frozenEnforcement(kept, why))})
+		if err != nil {
+			return err
+		}
+		return errors.New("agent: frozen by a proven fork; enforcing the frozen set (§11)")
 	}
 
 	// One budget for the whole verification (H2-c): a log that answers each
@@ -561,6 +572,9 @@ func (a *Agent) Once() error {
 	var fork *logclient.ForkError
 	if errors.As(verifyErr, &fork) {
 		a.recordFork(fork, a.held())
+		if _, _, err := a.enforceFrozen(); err != nil {
+			return err
+		}
 		return verifyErr
 	}
 
@@ -609,20 +623,17 @@ func (a *Agent) Once() error {
 		}
 	}
 	if a.frozen {
-		// A head this node enforced without any peer's corroboration, now
-		// proven to be one of two branches, is not a view it can stand
-		// behind: §11's continuity argument -- hold what you were enforcing
-		// -- needs a head that was enforced *because* it agreed with the
-		// past, and this one was enforced because nobody answered. So the
-		// desired set is emptied, as past S_hard, rather than left as the
-		// log chose it (D-071 c).
-		if a.last != nil && a.uncorroborated {
-			if err := a.apply(nil, endpoint.Report{}); err != nil {
-				return err
-			}
+		// enforceFrozen empties the set for a head this node enforced without
+		// any peer's corroboration (D-071 c): it has no branch to stand
+		// behind. Otherwise it keeps the frozen set (§11 rule 3).
+		uncorroborated := a.last != nil && a.uncorroborated
+		if _, _, err := a.enforceFrozen(); err != nil {
+			return err
+		}
+		if uncorroborated {
 			return errors.New("agent: frozen by a fork proven against an uncorroborated head; every peer is dropped")
 		}
-		return errors.New("agent: frozen by a fork found in a peer checkpoint; the interface is untouched")
+		return errors.New("agent: frozen by a fork found in a peer checkpoint; enforcing the frozen set (§11)")
 	}
 	if verifyErr != nil {
 		a.emit(Event{Kind: VerifyFailed, Message: verifyErr.Error()})
@@ -665,7 +676,10 @@ func (a *Agent) Once() error {
 	// the whole point.
 	a.pollEvidence()
 	if a.frozen {
-		return errors.New("agent: frozen by a fork a peer proved; the interface is untouched")
+		if _, _, err := a.enforceFrozen(); err != nil {
+			return err
+		}
+		return errors.New("agent: frozen by a fork a peer proved; enforcing the frozen set (§11)")
 	}
 
 	if verifyErr == nil && a.uncorroborated && !a.saidUncorroborated {
