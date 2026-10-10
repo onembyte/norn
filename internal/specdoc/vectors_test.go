@@ -2535,7 +2535,7 @@ func TestTheVectorsREADMEStatesD060(t *testing.T) {
 // vectors that make each ordering observable come next (6.5l-vi-b-ii).
 
 // verifierCodes is the vocabulary D-061 asks for, in the order §10.1 must
-// give it: the verifier loop's twelve, then the bundle check's three. It is
+// give it: the verifier loop's thirteen, then the bundle check's three. It is
 // read from `internal/refusal` rather than spelled out again here, so the
 // code has one list and these tests hold the document to it.
 var verifierCodes = func() []string {
@@ -2546,7 +2546,7 @@ var verifierCodes = func() []string {
 	return out
 }()
 
-// The package and the table are one list: the same fifteen codes, in the same
+// The package and the table are one list: the same sixteen codes, in the same
 // order, the loop's table first and the bundle's second. The test above checks
 // the loop's precedence; this one also pins where the bundle's three sit, so a
 // reorder on either side -- a code moved in the package, a row moved in the
@@ -2613,7 +2613,7 @@ func TestTheVerifierHasAClosedListOfRefusalCodes(t *testing.T) {
 
 	// The loop's codes appear in precedence order. `unserved` recurs at every
 	// step that fetches a file, so it is placed by its first use.
-	loop := verifierCodes[:12]
+	loop := verifierCodes[:13]
 	var got []string
 	for _, c := range order {
 		for _, l := range loop {

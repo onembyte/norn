@@ -7,14 +7,14 @@ import (
 )
 
 // The vocabulary is SPEC §10.1's, and the order is the order the verifier
-// checks in: the loop's twelve, then the bundle check's three. The specdoc
+// checks in: the loop's thirteen, then the bundle check's three. The specdoc
 // package compares All against §10.1's table, so this list and the document
 // cannot drift apart.
 
 func TestAllIsTheClosedListInPrecedenceOrder(t *testing.T) {
 	want := []Code{
 		Unserved, Note, LogSignature, Checkpoint, Origin, Cosignature,
-		Quorum, Entries, Head, Fork, Rollback, Tiles,
+		Quorum, Entries, Head, Fork, Rollback, Genesis, Tiles,
 		Bundle, Inclusion, Binding,
 	}
 	got := All()

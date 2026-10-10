@@ -1102,6 +1102,18 @@ is still ignored, not refused (c).
 **(g)** A served log whose entry 0 is not the anchored genesis — or that has no
 entry 0 — is refused with a new `genesis` code by the shared verifier, so the
 node, `norn verify`, the monitor and evidence checking agree. High priority.
+**(g), amended by the owner 2026-10-10** (raised implementing 6.5l-ix-f-g: the
+recommendation placed `genesis` between `head` and `fork`, which would have
+stopped a node that holds an honest head from accusing a different-genesis
+branch signed by the same log — today it does, as `fork`). Genesis validation
+is a trust-domain check, but it MUST NOT suppress fork or rollback detection
+against an already trusted head: a verifier that holds one first decides
+`rollback` or `fork` against it, records the evidence and freezes; only with
+no prior trusted head, or a log that passes that comparison, does a missing or
+unexpected genesis refuse the history as `genesis` (the owner's
+`ERR_GENESIS_MISMATCH`). §10.1: `head`, then `fork`/`rollback`, then `genesis`,
+then `tiles` — `head` stays before `fork`, because the comparison needs a tree
+rebuilt from entries that hash to the signed head.
 **(h)** §4.0 states its CBOR profile as an allow-list: unsigned integers, byte and
 text strings, arrays, maps, `false` and `true`; every other type, simple value
 included, is refused; the existing rules (shortest form, definite lengths,

@@ -572,19 +572,12 @@ func (a *Agent) anchorUnder(st *state.State) logclient.Anchor {
 	}
 }
 
-// verify is logclient.Verify as a node uses it, with one refusal the verifier
-// does not yet make: a log whose entry 0 is not this network's genesis.
-//
-// Replay aborts on such an entry and returns an empty state with `bad-genesis`
-// at index 0, and the verifier returns that as a success -- a correctly
-// signed, cosigned log, replayed to nothing. In owner mode that nothing was
-// installed: six peers to none, no error, no alarm (audit SEC-029). But a log
-// whose first entry is not this network's genesis is not this network's log,
-// and nothing in it is a fact about this network, so a node refuses it as it
-// refuses any log it cannot use. The refusal has no §10.1 code yet: that is
-// run 13's D12, a protocol question (6.5l-ix). The error is plain until then.
+// verify is logclient.Verify as a node uses it. A log whose entry 0 is not
+// this network's genesis used to be refused here and nowhere else (SEC-029);
+// it is the verifier's `genesis` now (D-074 (g)), so the node, `norn verify`
+// and the monitor refuse it alike.
 func verify(f logclient.Fetcher, anchor logclient.Anchor) (*logclient.Result, error) {
-	return checkGenesis(logclient.Verify(f, anchor))
+	return logclient.Verify(f, anchor)
 }
 
 // verifyLog verifies this node's log: from the head it holds when that head
@@ -608,20 +601,7 @@ func (a *Agent) verifyLog(f logclient.Fetcher, anchor logclient.Anchor) (*logcli
 		}
 		return result, err
 	}
-	return checkGenesis(logclient.VerifyFrom(a.last, f, anchor))
-}
-
-// checkGenesis is verify's one refusal the verifier does not make.
-func checkGenesis(result *logclient.Result, err error) (*logclient.Result, error) {
-	if err != nil {
-		return nil, err
-	}
-	if result.Checkpoint.Size > 0 && result.State.Size == 0 {
-		return nil, fmt.Errorf("%w: this log's entry 0 is not this network's genesis "+
-			"(replay aborted with %s); nothing in it is this network's",
-			logclient.ErrLog, replay.ReasonBadGenesis)
-	}
-	return result, nil
+	return logclient.VerifyFrom(a.last, f, anchor)
 }
 
 // replayAnchor is the genesis this node's trust file pins.

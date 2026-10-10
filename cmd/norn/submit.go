@@ -151,6 +151,12 @@ var errNotIncluded = errors.New("not included yet")
 // is the point: inclusion in a log that no longer checks out is not inclusion.
 func findLeaf(f logclient.Fetcher, anchor *trust.Trust, leaf []byte) (index int64, size int64, err error) {
 	result, err := logclient.Verify(f, anchorFor(anchor))
+	if errors.Is(err, logclient.ErrEmptyLog) {
+		// A log that has published nothing has not included this entry yet --
+		// the genesis, when this is the network's first submission -- and the
+		// deadline in its receipt still bounds the wait (D-074 (g)).
+		return 0, 0, errNotIncluded
+	}
 	if err != nil {
 		return 0, 0, err
 	}

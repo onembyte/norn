@@ -15,6 +15,7 @@ import (
 	"github.com/onembyte/norn/internal/note"
 	"github.com/onembyte/norn/internal/refusal"
 	"github.com/onembyte/norn/internal/tlog"
+	"github.com/onembyte/norn/internal/tlogstore"
 )
 
 // --- 6.5l-vi-b-ii-b: the loop names its refusals (D-061) ---------------
@@ -148,6 +149,12 @@ var loopRefusals = []refusalCase{
 		anchor.Stored, anchor.Held = &result.Checkpoint, result.Tree
 		return dir, anchor
 	}},
+	{"entry 0 is not the genesis the anchor pins", refusal.Genesis, func(t *testing.T) (string, Anchor) {
+		return otherGenesisLog(t, 10)
+	}},
+	{"a log with no entries, so no genesis", refusal.Genesis, func(t *testing.T) (string, Anchor) {
+		return cosignedLogOfSize(t, 0, []string{"pi", "vps"}, 2)
+	}},
 	{"a hash tile is not served", refusal.Unserved, func(t *testing.T) (string, Anchor) {
 		dir, anchor := servedLog(t)
 		remove(t, hashTile(t, dir))
@@ -200,6 +207,35 @@ var precedence = []refusalCase{
 			anchor.Stored = &held
 			return dir, anchor
 		}},
+	// D-074 (g), as amended 2026-10-10: a node that holds a head and is served
+	// a history from another genesis, signed by the same log, holds proof of
+	// equivocation, and `genesis` must not hide it. A verifier with nothing to
+	// compare against gets `genesis`; this one gets `fork`, and writes evidence.
+	{"fork before genesis: this node held a head and the branch starts elsewhere", refusal.Fork,
+		func(t *testing.T) (string, Anchor) {
+			honest, honestAnchor := cosignedLogOfSize(t, 10, []string{"pi", "vps"}, 2)
+			held := checkpointIn(t, honest, "checkpoint", honestAnchor)
+			dir, anchor := otherGenesisLog(t, 10)
+			anchor.Stored = &held
+			return dir, anchor
+		}},
+	{"rollback before genesis: this node held a head and the log is now empty", refusal.Rollback,
+		func(t *testing.T) (string, Anchor) {
+			bigger, biggerAnchor := cosignedLogOfSize(t, 10, []string{"pi", "vps"}, 2)
+			held := checkpointIn(t, bigger, "checkpoint", biggerAnchor)
+			dir, anchor := cosignedLogOfSize(t, 0, []string{"pi", "vps"}, 2)
+			anchor.Stored = &held
+			return dir, anchor
+		}},
+	{"genesis before tiles: another genesis, with a corrupt tile", refusal.Genesis,
+		func(t *testing.T) (string, Anchor) {
+			dir, anchor := otherGenesisLog(t, 10)
+			path := hashTile(t, dir)
+			raw := []byte(readFile(t, path))
+			raw[10] ^= 0xff
+			write(t, path, string(raw))
+			return dir, anchor
+		}},
 	{"rollback before tiles: a shorter log with a corrupt tile", refusal.Rollback,
 		func(t *testing.T) (string, Anchor) {
 			bigger, biggerAnchor := cosignedLogOfSize(t, 10, []string{"pi", "vps"}, 2)
@@ -236,9 +272,9 @@ func TestEveryRefusalCarriesItsSection10_1Code(t *testing.T) {
 		})
 		covered[c.want] = true
 	}
-	// Every one of the loop's twelve codes has a case, so a step cannot lose
+	// Every one of the loop's thirteen codes has a case, so a step cannot lose
 	// its code without one of them failing.
-	for _, code := range refusal.All()[:12] {
+	for _, code := range refusal.All()[:13] {
 		if !covered[code] {
 			t.Errorf("no case here reaches §10.1's %q", code)
 		}
@@ -601,4 +637,31 @@ func TestTheDetectOrdersHaveVectors(t *testing.T) {
 		t.Error("no detect/ case is coded `head` while its branch also disagrees with the " +
 			"stored head, so a reader that checks for a fork first passes every case (D5)")
 	}
+}
+
+// otherGenesisLog is the fixture's network served a history that does not
+// start from its genesis: the same log key, origin and witnesses over the
+// fixture's entries from index 1, so entry 0 is a `revoke` or whatever came
+// second -- and replaying it under this anchor aborts with bad-genesis.
+func otherGenesisLog(t *testing.T, n int) (string, Anchor) {
+	t.Helper()
+	inner, entries := loadFixture(t)
+	dir := t.TempDir()
+	key := logKey(t)
+	var signers []cosign.Signer
+	for _, name := range []string{"pi", "vps"} {
+		signers = append(signers, cosign.Signer{Name: "norn-witness/" + name, Key: witnessKey(t, name)})
+	}
+	store, err := tlogstore.Open(dir, "norn/test", key, tlogstore.WithCosigner(
+		tlogstore.CosignerFunc(cosign.Append(signers, cosign.At(cosignedAt)))))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, raw := range entries[1 : n+1] {
+		if _, err := store.Append(raw); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return dir, Anchor{Anchor: inner, LogKeys: []string{verifierKey(t, key, "norn/test")},
+		Policy: policyOver(t, "norn/test", witnessNames, 2)}
 }

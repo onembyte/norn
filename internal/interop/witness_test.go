@@ -143,6 +143,15 @@ func TestAnUnmodifiedWitnessCosignsANornCheckpoint(t *testing.T) {
 		"-checkpoint-interval", "500ms")
 	waitFor(t, logURL+"/checkpoint")
 
+	// The genesis is entry 0, submitted like any other. A log that has not
+	// published it is no network's log yet, and §10.1 refuses it as `genesis`
+	// (D-074 (g)); the log batches its checkpoints, so this also waits through
+	// an empty head, which `submit -wait` must read as not included yet.
+	if out, err := exec.Command(nornBin, "submit", "-trust", filepath.Join(work, "norn.trust"),
+		"-log", logURL, "-wait", filepath.Join(work, "genesis.cbor")).CombinedOutput(); err != nil {
+		t.Fatalf("submitting the genesis: %v\n%s", err, out)
+	}
+
 	// 5. Wait for a cosignature signed by a key this process never held.
 	deadline := time.Now().Add(20 * time.Second)
 	var served string

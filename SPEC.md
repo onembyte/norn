@@ -1318,7 +1318,8 @@ these codes and no other, and the first step whose check fails decides which.
 | 9 | `head` | the tree rebuilt from the served entries does not hash to the signed root |
 | 10 | `fork` | the served branch and this node's branch disagree where both can speak (§10, §11). The checkpoint is not accepted **and** §11 applies: this is the one code that is also an accusation |
 | 10 | `rollback` | the served size is below the stored one and the branches agree where both speak — refused, **not** accused (§11.1). `fork` is decided first, which is why the two share a step |
-| 11 | `tiles` | a served hash tile disagrees with the rebuilt tree |
+| 11 | `genesis` | the served log has no entry 0, or its entry 0 is not the genesis the anchor pins: replaying it alone aborts with `bad-genesis` (§5.1). Nothing in such a log is a fact about this network, and its replay would be the empty state an enforcer installs |
+| 12 | `tiles` | a served hash tile disagrees with the rebuilt tree |
 
 **Why the head comes before the fork.** Step 10 compares the root the served
 branch has at `at`, *recomputed from the served entries*. If those entries do
@@ -1328,6 +1329,16 @@ disagreement there would raise a fork against a log that did not sign two
 histories, only served a broken one. Step 9 rules that out first. The pseudocode
 above lists fetching the entries after the fork block for readability; the
 check that uses them cannot run before they are fetched and found consistent.
+
+**Why the genesis comes after the fork.** To a verifier that holds a head,
+another history signed by the same log under the same origin is equivocation,
+whatever its entry 0 says, and step 10 is where that is proven and accused; a
+`genesis` refusal there would refuse the branch and lose the evidence. So a
+verifier that holds a head first decides `fork` or `rollback` against it, and
+only a log that passes that comparison — or a verifier with nothing to compare,
+a node's first start, `norn verify`, a monitor — reaches step 11. An empty log
+served to a node that holds a head is `rollback`; served to one that does not,
+`genesis` (D-074 (g), as amended 2026-10-10).
 
 **A bundle** (§8.1) is checked with the loop's codes for its checkpoint and
 three of its own, in this order:

@@ -20,7 +20,7 @@ import (
 // Code is one of §10.1's reasons.
 type Code string
 
-// The loop's twelve, in the order `logclient.Verify` checks them.
+// The loop's thirteen, in the order `logclient.Verify` checks them.
 const (
 	Unserved     Code = "unserved"
 	Note         Code = "note"
@@ -33,6 +33,7 @@ const (
 	Head         Code = "head"
 	Fork         Code = "fork"
 	Rollback     Code = "rollback"
+	Genesis      Code = "genesis"
 	Tiles        Code = "tiles"
 )
 
@@ -47,7 +48,7 @@ const (
 
 var all = []Code{
 	Unserved, Note, LogSignature, Checkpoint, Origin, Cosignature,
-	Quorum, Entries, Head, Fork, Rollback, Tiles,
+	Quorum, Entries, Head, Fork, Rollback, Genesis, Tiles,
 	Bundle, Inclusion, Binding,
 }
 

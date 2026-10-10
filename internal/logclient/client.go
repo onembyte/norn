@@ -35,6 +35,12 @@ import (
 // serving entries that do not match the head it advertises.
 var ErrLog = errors.New("log error")
 
+// ErrEmptyLog is the `genesis` refusal of a log with no entries at all: it has
+// not published this network's genesis yet. It is still a refusal -- an empty
+// log enforces nothing -- but a caller waiting for the genesis to be included
+// can tell it from a log whose entry 0 is another network's, which never will.
+var ErrEmptyLog = errors.New("the log has no entries, so no entry 0 to be this network's genesis")
+
 func logErrorf(format string, args ...any) error {
 	return fmt.Errorf("%w: %s", ErrLog, fmt.Sprintf(format, args...))
 }
@@ -295,6 +301,31 @@ func verifyHead(f Fetcher, anchor Anchor) (string, tlog.Checkpoint, []cosign.Cos
 	return string(raw), cp, cosignatures, quorumTime, nil
 }
 
+// checkGenesis is §10.1's `genesis` (D-074 (g)): a log with no entry 0, or
+// whose entry 0 is not the genesis this anchor pins -- replaying it alone
+// aborts with bad-genesis -- is not this network's log, and nothing in it is a
+// fact about this network. Before this was the verifier's, a correctly signed
+// and cosigned log for another genesis verified, replayed to nothing, and an
+// owner node installed the nothing (SEC-029); only the node refused it, so
+// `norn verify` and the monitor said "ok".
+//
+// It runs after the comparison with a held head, never before (D-074 (g) as
+// amended 2026-10-10): to a node that holds a head, another history signed by
+// the same log is equivocation, and the `fork` that proves it -- or the
+// `rollback` an empty log is -- must not be hidden behind this code. A verifier
+// with nothing to compare reaches this step and gets `genesis`.
+func checkGenesis(anchor replay.Anchor, entries [][]byte) error {
+	if len(entries) == 0 {
+		return refusal.Wrap(refusal.Genesis, fmt.Errorf("%w: %w; a log that has not "+
+			"published its genesis enforces nothing", ErrLog, ErrEmptyLog))
+	}
+	if replay.Replay(anchor, entries[:1]).Size == 0 {
+		return refuse(refusal.Genesis, "the log's entry 0 is not this network's genesis "+
+			"(replay aborts with %s); nothing in it is this network's", replay.ReasonBadGenesis)
+	}
+	return nil
+}
+
 // finish is the rest of §10 once the tree is in hand: the head, the stored
 // comparison, the tiles (all of them, or only those not in `unchanged`) and
 // the replay, resumed on `fold`.
@@ -311,6 +342,9 @@ func finish(f Fetcher, anchor Anchor, raw string, cp tlog.Checkpoint, cosignatur
 
 	// §10: a log only grows, and it contains everything it used to contain.
 	if err := checkAgainstStored(anchor.Stored, cp, tree, raw, anchor.Held); err != nil {
+		return nil, err
+	}
+	if err := checkGenesis(anchor.Anchor, entries); err != nil {
 		return nil, err
 	}
 

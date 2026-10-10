@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -11,8 +12,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/onembyte/norn/internal/cosign"
 	"github.com/onembyte/norn/internal/entry"
 	"github.com/onembyte/norn/internal/keyfile"
+	"github.com/onembyte/norn/internal/logclient"
 	"github.com/onembyte/norn/internal/note"
 	"github.com/onembyte/norn/internal/tlogstore"
 	"github.com/onembyte/norn/internal/trust"
@@ -315,4 +318,49 @@ func witnessKeyFile(t *testing.T, name string) string {
 		t.Fatal(err)
 	}
 	return path
+}
+
+// D-074 (g): a log with no entries is refused as `genesis` -- it has not
+// published one -- but to `norn submit -wait` sending that genesis, an empty
+// log is the entry not being included yet, which is what it waits for. A log
+// whose entry 0 is another network's stays an error: that is never going to
+// include anything of this network's.
+func TestWaitingOnAnEmptyLogIsNotIncludedYet(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join(vectors(), "trust.cbor"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	anchor, err := trust.Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var witnesses []cosign.Signer
+	for _, name := range []string{"pi", "vps"} {
+		witnesses = append(witnesses, cosign.Signer{Name: "norn-witness/" + name,
+			Key: fixtureKey(t, "witness-"+name)})
+	}
+	open := func(t *testing.T) (string, *tlogstore.Store) {
+		dir := t.TempDir()
+		store, err := tlogstore.Open(dir, anchor.Origin, fixtureKey(t, "logkey"),
+			tlogstore.WithCosigner(tlogstore.CosignerFunc(cosign.Append(witnesses, cosign.At(time.Now())))))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return dir, store
+	}
+	entries, _ := fixtureLog(t)
+	genesisLeaf := entry.LeafHash(entries[0])
+
+	empty, _ := open(t)
+	if _, _, err := findLeaf(logclient.Dir(empty), anchor, genesisLeaf); !errors.Is(err, errNotIncluded) {
+		t.Errorf("an empty log, waiting for its genesis: %v; want not included yet", err)
+	}
+
+	foreign, store := open(t)
+	if _, err := store.Append(entries[1]); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := findLeaf(logclient.Dir(foreign), anchor, genesisLeaf); err == nil || errors.Is(err, errNotIncluded) {
+		t.Errorf("a log whose entry 0 is not this network's genesis: %v; want a refusal", err)
+	}
 }
