@@ -1,0 +1,6 @@
+{
+  "comment": "the served head with one MORE signature line, from a key nobody here holds under an algorithm SPEC 7 does not use: a 4-byte key id and 66 bytes, 70 in all, neither 68 nor 76. SPEC 7: framing asks every line only for canonical base64 of at least a key id; the length is the matched key's to judge, and a line no trusted key matches is ignored whatever its length (D-074 c). This head MUST be accepted. Serve it in place of served/checkpoint over the same tiles",
+  "payload_bytes": 70,
+  "serve_over": "served",
+  "stranger": "norn-witness/elsewhere"
+}

@@ -697,6 +697,72 @@ func TestACheckpointWithAnUnknownCosignerIsAccepted(t *testing.T) {
 	}
 }
 
+// D-074 (c), corrected 2026-10-10: framing asks every line only for canonical
+// base64 and a key id, and length is the matched key's to judge. A line that
+// matches no trusted key is ignored whatever its length -- it may be a
+// cosignature on an algorithm this document does not use. Every line in
+// `served-extra-witness/` is 76 bytes, so a reader that framed only 68 and 76
+// passed it, and refused every head on a shared log whose witnesses one day
+// used a third algorithm. `served-unknown-algorithm/` is the honest head plus
+// one 70-byte line from a key nobody here holds, and it MUST be accepted.
+
+func TestALineOnAnAlgorithmNobodyHereKnowsIsIgnoredWhateverItsLength(t *testing.T) {
+	dir := filepath.Join(vectors(), "served-unknown-algorithm")
+	raw, err := os.ReadFile(filepath.Join(dir, "cases.json"))
+	if err != nil {
+		t.Fatalf("§7's stranger-line rule is reached by no vector: %v", err)
+	}
+	var doc struct {
+		ServeOver string `json:"serve_over"`
+		Stranger  string `json:"stranger"`
+		Payload   int    `json:"payload_bytes"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	signed, err := os.ReadFile(filepath.Join(dir, "checkpoint"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The case only pins the rule if the stranger's line is neither of the two
+	// lengths this document uses, and the stranger is nobody the policy names.
+	var lengths []int
+	for _, line := range strings.Split(strings.TrimRight(string(signed), "\n"), "\n") {
+		rest, ok := strings.CutPrefix(line, "— ")
+		if !ok {
+			continue
+		}
+		name, blob, _ := strings.Cut(rest, " ")
+		if name != doc.Stranger {
+			continue
+		}
+		payload, err := base64.StdEncoding.DecodeString(blob)
+		if err != nil {
+			t.Fatalf("the line from %s is not base64", doc.Stranger)
+		}
+		lengths = append(lengths, len(payload))
+	}
+	if len(lengths) != 1 || lengths[0] != doc.Payload || doc.Payload == 68 || doc.Payload == 76 {
+		t.Fatalf("lines from %s decode to %v bytes and the case says %d; it needs one "+
+			"line of a length neither algorithm here uses", doc.Stranger, lengths, doc.Payload)
+	}
+	anchor, err := os.ReadFile(filepath.Join(vectors(), "trust.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(anchor), doc.Stranger) {
+		t.Fatalf("%s is in the trust file, so the policy does know it", doc.Stranger)
+	}
+
+	log := servedWithCheckpoint(t, filepath.Join(dir, "checkpoint"))
+	out, err := exec.Command(nornBinary(t), "verify",
+		"-trust", filepath.Join(vectors(), "trust.cbor"), "-log", log).CombinedOutput()
+	if err != nil {
+		t.Fatalf("refused a checkpoint over a %d-byte line from a key nobody here "+
+			"holds; §7 ignores such a line whatever its length:\n%s", doc.Payload, out)
+	}
+}
+
 // --- Cold-model gate run 10, defect D11 ---------------------------------
 //
 // §6 states two rules about a served log: rebuild the tree from the entry

@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 // --- Cold-model gate run 10, defect D13 ---------------------------------
@@ -185,5 +186,33 @@ func TestASignaturePayloadIsExactlyItsAlgorithmsLength(t *testing.T) {
 		t.Error("the first 68 bytes are not a valid signature over the text, so a " +
 			"prefix-reading verifier refuses this note anyway and the exact-length " +
 			"rule is pinned by nothing")
+	}
+}
+
+// D-074 (c). The signed text and every signature line are UTF-8. The line
+// that breaks it here is a stranger's -- one the profile otherwise ignores --
+// so a reader that matched lines to keys before it checked the encoding would
+// skip it and accept the note; §7 refuses it as framing, before any key.
+func TestASignatureNameThatIsNotUTF8IsAVector(t *testing.T) {
+	signed := badCheckpoint(t, "-signature-name-not-utf8")
+	if _, _, err := Split(signed); err == nil {
+		t.Fatal("a note with a signature line that is not UTF-8 split")
+	}
+	// It is the one fault: one line is not UTF-8, and without it the note
+	// splits.
+	var bad []int
+	lines := strings.SplitAfter(signed, "\n")
+	for i, line := range lines {
+		if !utf8.ValidString(line) {
+			bad = append(bad, i)
+		}
+	}
+	if len(bad) != 1 || !strings.HasPrefix(lines[bad[0]], SigPrefix) {
+		t.Fatalf("lines %v are not UTF-8; the case needs exactly one, a signature line", bad)
+	}
+	without := strings.Join(append(lines[:bad[0]:bad[0]], lines[bad[0]+1:]...), "")
+	if _, _, err := Split(without); err != nil {
+		t.Fatalf("without the non-UTF-8 line the note still does not split, so the "+
+			"encoding is not the only fault: %v", err)
 	}
 }

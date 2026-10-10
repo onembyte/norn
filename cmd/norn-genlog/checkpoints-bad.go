@@ -5,6 +5,7 @@ package main
 import (
 	"crypto/ed25519"
 	"crypto/sha256"
+	"crypto/sha512"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/hex"
@@ -696,6 +697,19 @@ func buildBadCheckpoints(root, origin string, key ed25519.PrivateKey,
 	out = append(out, badCheckpoint{"31-cosignature-S-plus-L",
 		"a listed witness's honest cosignature with S + L: everything but the scalar encoding is valid", raised})
 
+	// D-074 (c): the note is UTF-8, every signature line included. The line
+	// that breaks it is a stranger's, which the profile otherwise ignores
+	// whatever its length, so a reader that matched lines to keys before it
+	// checked the encoding would skip it and accept the head. §7 refuses it as
+	// framing, before any key is looked for.
+	sum := sha512.Sum512([]byte(allThree))
+	notUTF8 := allThree + note.SignatureLine("norn-witness/stranger\xff", append(sum[:], sum[:12]...)) + "\n"
+	out = append(out, badCheckpoint{"32-signature-name-not-utf8",
+		"a stranger's 76-byte line appended to a head every listed witness cosigned, " +
+			"its name ending in the byte 0xff: the line names no trusted key and would " +
+			"be ignored, but the note is not UTF-8",
+		notUTF8})
+
 	return out, nil
 }
 
@@ -756,6 +770,8 @@ func writeBadCheckpoints(root, origin string, key ed25519.PrivateKey,
 	// §10's every-line rule all reached a gate unstated.
 	rules := map[string]map[string]string{
 		"31-cosignature-S-plus-L": {"section": "10", "says": "must verify"},
+		"32-signature-name-not-utf8": {"section": "7",
+			"says": "The signed text and every signature line MUST be valid UTF-8"},
 		// 6.5l-vi-b-ii-d: these two cited a rule a later step states. 01 has
 		// no signature line, so §7's framing refuses it before any signature
 		// is looked for; 03 is signed under another origin's name, so the
@@ -804,6 +820,7 @@ func writeBadCheckpoints(root, origin string, key ed25519.PrivateKey,
 	// `note` and not `log-signature`, 03 is `log-signature` and not `origin`.
 	codes := map[string]refusal.Code{
 		"31-cosignature-S-plus-L":                     refusal.Cosignature,
+		"32-signature-name-not-utf8":                  refusal.Note,
 		"01-unsigned":                                 refusal.Note,
 		"02-wrong-log-key":                            refusal.LogSignature,
 		"03-wrong-origin":                             refusal.LogSignature,

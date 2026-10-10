@@ -219,6 +219,9 @@ func run(root string) error {
 	if err := writeNameCollisionHead(root, signed, signers); err != nil {
 		return err
 	}
+	if err := writeUnknownAlgorithmHead(root, signed); err != nil {
+		return err
+	}
 	if err := writeTwiceCosignedHead(root, signed, signers); err != nil {
 		return err
 	}
