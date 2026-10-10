@@ -210,6 +210,9 @@ func run(root string) error {
 	if err := writeRotatedHead(root, origin, signed, st, signers); err != nil {
 		return err
 	}
+	if err := writeRotatedBundle(root); err != nil {
+		return err
+	}
 	if err := writeExtraWitnessHead(root, signed, signers); err != nil {
 		return err
 	}

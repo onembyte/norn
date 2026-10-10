@@ -58,3 +58,46 @@ func TestABundleUnderARotatedKeyIsCheckedUnderTheKeysTheReaderTrusts(t *testing.
 		t.Errorf("a reader that trusts the published key refused the bundle: %v", err)
 	}
 }
+
+// The same, as a shipped vector: proofs-rotated/ carries the bundle and the
+// key it is signed with, and says both answers.
+func TestTheRotatedBundleHasBothAnswers(t *testing.T) {
+	root := filepath.Join("..", "..", "testdata", "vectors", "proofs-rotated")
+	var c struct {
+		Bundle   string `json:"bundle"`
+		SignedBy string `json:"signed_by"`
+		Fresh    string `json:"fresh"`
+		Informed string `json:"informed"`
+	}
+	raw, err := os.ReadFile(filepath.Join(root, "cases.json"))
+	if err != nil {
+		t.Fatalf("the rotated-bundle vector is missing: %v", err)
+	}
+	if err := json.Unmarshal(raw, &c); err != nil {
+		t.Fatal(err)
+	}
+	if c.Fresh != string(refusal.LogSignature) || c.Informed != "accept" {
+		t.Fatalf("cases.json says fresh %q, informed %q; want log-signature and accept", c.Fresh, c.Informed)
+	}
+	blob, err := os.ReadFile(filepath.Join(root, c.Bundle))
+	if err != nil {
+		t.Fatal(err)
+	}
+	bundle, err := Decode(blob)
+	if err != nil {
+		t.Fatal(err)
+	}
+	published, err := hex.DecodeString(c.SignedBy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fresh := shippedAnchor(t)
+	if code, _ := refusal.CodeOf(bundle.Check(fresh)); code != refusal.LogSignature {
+		t.Errorf("a reader holding only trust.cbor: %q, want log-signature", code)
+	}
+	informed := fresh
+	informed.LogKeys = append(append([]string(nil), fresh.LogKeys...), note.VerifierKey(fresh.Origin, published))
+	if err := bundle.Check(informed); err != nil {
+		t.Errorf("a reader that trusts the published key refused the bundle: %v", err)
+	}
+}
