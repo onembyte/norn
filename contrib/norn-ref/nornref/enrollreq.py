@@ -142,6 +142,11 @@ def _validate(req: Any, signed: bool) -> None:
         ts = fields.uint(req["ts"], "ts")
         fields.device_id(req["device_id"])
         fields.public_key(req["device_pk"], "device_pk")
+        # Admission precedes proof of possession: replay must report decode,
+        # not no-device-sig, for a key §3.1 refuses. wg_pk is X25519, so the
+        # Ed25519 point predicate does not apply to it.
+        if not keys.valid_point(req["device_pk"]):
+            raise RequestError("device_pk must be a valid Ed25519 point")
         fields.public_key(req["wg_pk"], "wg_pk")
         fields.labels(req.get("labels"))
         if "expires" in req and fields.uint(req["expires"], "expires") <= ts:

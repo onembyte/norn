@@ -11,7 +11,7 @@ import base64
 import hashlib
 from typing import Any
 
-from . import cbor, note
+from . import cbor, keys, note
 
 VERSION = 1
 
@@ -102,6 +102,11 @@ def validate(doc: dict[str, Any]) -> None:
         log_key = note.parse_vkey(doc["log_key"])
     except note.NoteError as exc:
         raise TrustError(f"log_key: {exc}") from exc
+    # A trust file admits keys, not just verifier-key syntax. Keep the §3.1
+    # check here: parse_vkey also reads policy entries, whose witness keys
+    # are not among the admission points that item 2 names.
+    if not keys.valid_point(log_key.public):
+        raise TrustError("log_key must be a valid Ed25519 point")
     # The note name binds the key to this network: a checkpoint signed by a key
     # named for another origin must not verify here (SPEC §9.1).
     if log_key.name != doc["origin"]:
@@ -128,6 +133,10 @@ def validate(doc: dict[str, Any]) -> None:
                     "not a note key")
         except note.NoteError as exc:
             raise TrustError(f"witness {witness['name']}: {exc}") from exc
+        # A witness must use the same order-L predicate as the log; otherwise
+        # two verifiers could disagree about the cosignature it contributes.
+        if not keys.valid_point(witness_key.public):
+            raise TrustError(f"witness {witness['name']}: key must be a valid Ed25519 point")
         if not 1 <= len(witness["name"].encode()) <= 64:
             # Bounded like the network name. Neither implementation capped this
             # and no file in the suite was long enough to tell (run 8, D22).

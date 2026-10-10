@@ -172,6 +172,17 @@ def _pk(body: dict[str, Any], key: str) -> bytes:
         raise Reject("decode") from None
 
 
+def _key(body: dict[str, Any], key: str) -> bytes:
+    """Read an admitted Ed25519 key, after the governance quorum (§5.2)."""
+    public = _pk(body, key)
+    # Length alone admits small-order and mixed-order keys on which Ed25519
+    # libraries disagree. Only §3.1 item 2's admission points use this check;
+    # WireGuard keys are X25519 and a rotate's incoming key is not listed.
+    if not keys.valid_point(public):
+        raise Reject("decode")
+    return public
+
+
 # -- handlers -------------------------------------------------------------
 
 def _h_enroll(state: State, env: dict[str, Any], index: int) -> None:
@@ -257,7 +268,7 @@ def _h_revoke(state: State, env: dict[str, Any], index: int) -> None:
 
 
 def _h_signer_add(state: State, env: dict[str, Any], index: int) -> None:
-    public = _pk(env["body"], "pk")
+    public = _key(env["body"], "pk")
     kid = keys.kid(public)
     if kid in state.signers or kid in state.roots:
         raise Reject("dup-key")
@@ -293,7 +304,7 @@ def _h_signer_thr(state: State, env: dict[str, Any], index: int) -> None:
 
 
 def _h_root_add(state: State, env: dict[str, Any], index: int) -> None:
-    public = _pk(env["body"], "pk")
+    public = _key(env["body"], "pk")
     kid = keys.kid(public)
     if kid in state.roots or kid in state.signers:
         raise Reject("dup-key")
@@ -321,7 +332,7 @@ def _h_root_thr(state: State, env: dict[str, Any], index: int) -> None:
 
 
 def _h_log_key(state: State, env: dict[str, Any], index: int) -> None:
-    public = _pk(env["body"], "pk")
+    public = _key(env["body"], "pk")
     try:
         overlap = fields.uint(env["body"].get("overlap"), "overlap")
     except fields.FieldError:
@@ -411,7 +422,9 @@ def _apply_genesis(anchor: Anchor, env: dict[str, Any]) -> State:
         signer_thr = fields.uint(body.get("signer_thr"), "signer_thr")
     except fields.FieldError:
         raise Reject("bad-genesis") from None
-    if any(not isinstance(p, bytes) or len(p) != 32 for p in roots + signers):
+    # Every entry-0 failure aborts as bad-genesis, including a key that §3.1
+    # does not admit. A quorum of honest roots cannot make such a key usable.
+    if any(not keys.valid_point(p) for p in roots + signers):
         raise Reject("bad-genesis")
     if not 1 <= root_thr <= len(roots) or not 1 <= signer_thr <= len(signers):
         raise Reject("bad-genesis")

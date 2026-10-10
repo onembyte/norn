@@ -9,10 +9,12 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass
 
+from nacl.bindings import crypto_core_ed25519_is_valid_point
 from nacl.signing import SigningKey, VerifyKey
 from nacl.exceptions import BadSignatureError
 
 SEED_PREFIX = b"norn/testvector/v1\n"
+L = 2**252 + 27742317777372353535851937790883648493
 
 
 def kid(public: bytes) -> str:
@@ -45,9 +47,29 @@ class Ed25519:
         return SigningKey(self.seed).sign(message).signature
 
 
+def valid_point(b: bytes) -> bool:
+    """SPEC §3.1 item 1: a canonical encoding of a point of order exactly L."""
+    # Libsodium checks canonical encoding, the curve, small order and main
+    # subgroup membership. A mixed-order point is not a valid key even when
+    # its prime-order component is honest: the two verification equations
+    # disagree there, and no honest key [s]B or R = [r]B has such a component.
+    return isinstance(b, bytes) and len(b) == 32 and crypto_core_ed25519_is_valid_point(b)
+
+
 def verify(public: bytes, message: bytes, signature: bytes) -> bool:
-    """Ed25519 verification; False rather than an exception on any failure."""
+    """NORN-ED25519-v1 verification; False rather than an exception on failure."""
     if len(public) != 32 or len(signature) != 64:
+        return False
+    # Both A and R must be valid points, whatever the library's signature
+    # verifier accepts. With both of order L, the cofactored and cofactorless
+    # equations agree, so every conforming verifier gives the same answer.
+    if not valid_point(public):
+        return False
+    if not valid_point(signature[:32]):
+        return False
+    # S must be below L, not reduced and not merely with its top bits clear.
+    # Reducing it would admit S + L and give one signature multiple encodings.
+    if int.from_bytes(signature[32:], "little") >= L:
         return False
     try:
         VerifyKey(public).verify(message, signature)
