@@ -21,9 +21,10 @@ func identityKeyAndSignature(t *testing.T) ([]byte, []byte) {
 	return key, sig
 }
 
-// A request's signature is checked with NORN-ED25519-v1, so a device_pk of
-// the identity consents to nothing -- which is what replay's no-device-sig
-// rests on.
+// A device_pk of the identity consents to nothing. Since 023r-c-iii the
+// request is refused before its signature is read -- the identity is not a
+// valid point (§3.1 item 2) -- so this no longer tells NORN-ED25519-v1 from
+// crypto/ed25519 here; depgraph's guard holds the verifier at this site.
 func TestARequestSignedByTheIdentityKeyDoesNotVerify(t *testing.T) {
 	key, sig := identityKeyAndSignature(t)
 	r := &Request{

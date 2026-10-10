@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/hex"
 
+	"github.com/onembyte/norn/internal/ed25519v1"
 	"github.com/onembyte/norn/internal/entry"
 	"github.com/onembyte/norn/internal/state"
 )
@@ -111,7 +112,8 @@ func (r *replayer) applyGenesis(st *state.State, raw []byte) error {
 	return nil
 }
 
-// keyList reads a genesis key array, rejecting duplicates and wrong lengths.
+// keyList reads a genesis key array, rejecting duplicates, wrong lengths and
+// keys that are not valid points (§3.1 item 2).
 func keyList(body map[string]any, field string) (map[string]string, error) {
 	raw, ok := body[field].([]any)
 	if !ok || len(raw) == 0 {
@@ -120,7 +122,7 @@ func keyList(body map[string]any, field string) (map[string]string, error) {
 	out := make(map[string]string, len(raw))
 	for _, item := range raw {
 		public, ok := item.([]byte)
-		if !ok || len(public) != entry.KeyLen {
+		if !ok || len(public) != entry.KeyLen || !ed25519v1.ValidPoint(public) {
 			return nil, rejectWith(ReasonBadGenesis)
 		}
 		kid := entry.Kid(public)

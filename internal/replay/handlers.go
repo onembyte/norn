@@ -224,7 +224,7 @@ func hRevoke(r *replayer, st *state.State, env *entry.Envelope, index uint64) er
 }
 
 func addKey(st *state.State, into map[string]string, body map[string]any) error {
-	pk, err := fieldBytes(body, "pk", entry.KeyLen)
+	pk, err := fieldKey(body, "pk")
 	if err != nil {
 		return err
 	}
@@ -321,7 +321,7 @@ func hRootThr(_ *replayer, st *state.State, env *entry.Envelope, _ uint64) error
 }
 
 func hLogKey(_ *replayer, st *state.State, env *entry.Envelope, index uint64) error {
-	pk, err := fieldBytes(env.Body, "pk", entry.KeyLen)
+	pk, err := fieldKey(env.Body, "pk")
 	if err != nil {
 		return err
 	}

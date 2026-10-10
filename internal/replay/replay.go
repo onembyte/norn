@@ -289,6 +289,19 @@ func fieldBytes(body map[string]any, key string, n int) ([]byte, error) {
 	return raw, nil
 }
 
+// fieldKey reads an Ed25519 key a governance entry admits: 32 bytes and a
+// valid point (§3.1 item 2), else `decode`.
+func fieldKey(body map[string]any, key string) ([]byte, error) {
+	public, err := fieldBytes(body, key, entry.KeyLen)
+	if err != nil {
+		return nil, err
+	}
+	if !ed25519v1.ValidPoint(public) {
+		return nil, rejectWith(ReasonDecode)
+	}
+	return public, nil
+}
+
 func fieldUint(body map[string]any, key string) (uint64, error) {
 	v, ok := body[key].(uint64)
 	if !ok {

@@ -283,6 +283,11 @@ func (r *Request) validate(withSig bool) error {
 	if len(r.DevicePK) != fields.KeyLen || len(r.WGPK) != fields.KeyLen {
 		return errorf("device_pk and wg_pk must be %d bytes", fields.KeyLen)
 	}
+	// §3.1 item 2: the device's signing key is admitted only as a valid
+	// point. wg_pk is an X25519 key, which §3.1 does not govern.
+	if !ed25519v1.ValidPoint(r.DevicePK) {
+		return errorf("device_pk is not a valid point (SPEC §3.1)")
+	}
 	if len(r.Labels) > fields.MaxLabels {
 		return errorf("labels must be a map of at most %d entries", fields.MaxLabels)
 	}
