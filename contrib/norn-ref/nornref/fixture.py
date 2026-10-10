@@ -2249,7 +2249,6 @@ def enroll_requests() -> list[tuple[str, dict[str, Any]]]:
         ("req-labels-at-the-cap", _request(
             "pi-cam", "pi-cam", "pi-cam", 60,
             labels={f"k{i:02d}": "v" for i in range(32)})),
-        # The other end, `labels: {}`, is D-072 b and waits on its answer.
     ]
 
 
@@ -2308,6 +2307,7 @@ def request_negatives() -> list[tuple[str, str, str]]:
         ("short-sig", mutate(resign=False, sig=good["sig"][:63]), "the `sig` field is not 64 bytes"),
         ("bool-expires", mutate(expires=True), "a CBOR bool where a uint is required"),
         ("expires-at-ts", _expires_at_ts(), "expires must be after ts"),
+        ("empty-labels", mutate(labels={}), "present labels must carry at least one pair"),
         ("too-many-labels", mutate(labels={f"k{i}": "v" for i in range(33)}), "over 32 labels"),
         # Run 13, D17: label keys are 1-23 bytes, and only the top was vectored.
         ("empty-label-key", _empty_label_key(), "a label key of zero bytes, under §4.0's 1-23"),

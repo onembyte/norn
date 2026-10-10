@@ -1356,7 +1356,7 @@ func TestEveryNegativeDeclaresTheSectionThatStatesItsRule(t *testing.T) {
 	// a `rules` map, and can never leave it.
 	for _, dir := range []string{
 		"checkpoints-bad", "proofs-bad", "served-bad", "fork",
-		"entries-hostile", "policies", "genesis", "trust-bad", "receipt-bad",
+		"entries-hostile", "policies", "genesis", "trust-bad", "receipt-bad", "requests-bad",
 	} {
 		t.Run(dir, func(t *testing.T) {
 			var manifest struct {

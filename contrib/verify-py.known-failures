@@ -25,3 +25,8 @@ fork/bad-twelve-keys expected="schema" got="version"
 # a case table the sealed harness does not know, so its own coverage check lists
 # one table fewer than the suite holds. Every new case table changes this line.
 coverage/case-tables expected=["anchors/cases.json","checkpoints-bad/cases.json","detect/cases.json","ed25519-cctv/cases.json","entries-hostile/cases.json","fork/cases.json","genesis-good/cases.json","genesis/cases.json","policies/cases.json","proofs-bad/cases.json","proofs/cases.json","proven/cases.json","receipt-bad/cases.json","requests-bad/cases.json","requests/cases.json","served-bad/cases.json","served-extra-witness/cases.json","served-large/cases.json","served-name-collision/cases.json","served-rotated/cases.json","served-superseded/cases.json","served-twice-cosigned/cases.json","trust-bad/cases.json","trust-good/cases.json"] got=["anchors/cases.json","checkpoints-bad/cases.json","detect/cases.json","entries-hostile/cases.json","fork/cases.json","genesis-good/cases.json","genesis/cases.json","policies/cases.json","proofs-bad/cases.json","proofs/cases.json","proven/cases.json","receipt-bad/cases.json","requests-bad/cases.json","requests/cases.json","served-bad/cases.json","served-extra-witness/cases.json","served-large/cases.json","served-name-collision/cases.json","served-rotated/cases.json","served-superseded/cases.json","served-twice-cosigned/cases.json","trust-bad/cases.json","trust-good/cases.json"]
+#
+# D-072 (b), 2026-10-09: a present empty `labels` map is a schema fault (SPEC 4.0,
+# 16.1). The sealed verifier decodes `labels: {}` and, its signature covering the
+# map, accepts the request.
+requests-bad/empty-labels expected="refuse" got="accept"

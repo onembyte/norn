@@ -109,6 +109,7 @@ class Structure(unittest.TestCase):
             "boolean expires": lambda r: r.update(expires=True),
             "expires at ts": lambda r: r.update(expires=r["ts"]),
             "expires before ts": lambda r: r.update(expires=r["ts"] - 1),
+            "empty labels": lambda r: r.update(labels={}),
             "too many labels": lambda r: r.update(labels={f"k{i}": "v" for i in range(33)}),
             "oversize label": lambda r: r.update(labels={"ip": "x" * 257}),
             "non-string label": lambda r: r.update(labels={"ip": 1}),
@@ -223,6 +224,15 @@ class ShippedMapKeyCap(unittest.TestCase):
 
 class ShippedLabelBounds(unittest.TestCase):
     """Run 13, D17: `labels` and their keys, at the boundary rather than far past it."""
+
+    def test_present_empty_labels_are_refused_before_signature_verification(self):
+        text = (VECTOR_ROOT / "requests-bad" / "empty-labels.txt").read_text().strip()
+        request = cbor.decode(bech32m.decode(text)[1])
+        self.assertEqual(request["labels"], {})
+        self.assertTrue(enrollreq.verify(request),
+                        "the negative must be signed over the present empty map")
+        with self.assertRaisesRegex(enrollreq.RequestError, "labels must be a map of 1-32 entries"):
+            enrollreq.decode_text(text)
 
     def test_thirty_two_labels_are_accepted(self):
         text = (VECTOR_ROOT / "requests" / "req-labels-at-the-cap.txt").read_text().strip()

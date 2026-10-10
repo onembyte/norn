@@ -47,7 +47,7 @@ func DeviceID(value any) (string, error) {
 	return id, nil
 }
 
-// Labels checks the optional map of §4.0: at most 32 entries, values at most
+// Labels checks the optional map of §4.0: 1-32 entries when present, values at most
 // 256 bytes. Key length is capped at 23 bytes by the codec itself. A nil value
 // means the field was absent, which is allowed, and yields a nil map.
 func Labels(value any) (map[string]string, error) {
@@ -55,8 +55,8 @@ func Labels(value any) (map[string]string, error) {
 		return nil, nil
 	}
 	raw, ok := value.(map[string]any)
-	if !ok || len(raw) > MaxLabels {
-		return nil, fmt.Errorf("labels must be a map of at most %d entries", MaxLabels)
+	if !ok || len(raw) == 0 || len(raw) > MaxLabels {
+		return nil, fmt.Errorf("labels must be a map of 1-%d entries", MaxLabels)
 	}
 	out := make(map[string]string, len(raw))
 	for key, v := range raw {

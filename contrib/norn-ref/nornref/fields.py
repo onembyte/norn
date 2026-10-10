@@ -40,15 +40,15 @@ def device_id(value: Any) -> str:
 
 
 def labels(value: Any) -> dict[str, str] | None:
-    """§4.0: optional map, at most 32 entries, values at most 256 bytes.
+    """§4.0: optional map, 1-32 entries when present, values at most 256 bytes.
 
     Key length is capped at 23 bytes by the codec itself, so only the count and
     the values need checking here.
     """
     if value is None:
         return None
-    if not isinstance(value, dict) or len(value) > MAX_LABELS:
-        raise FieldError("labels must be a map of at most 32 entries")
+    if not isinstance(value, dict) or not value or len(value) > MAX_LABELS:
+        raise FieldError("labels must be a map of 1-32 entries")
     for key, text in value.items():
         if not isinstance(text, str):
             raise FieldError(f"label {key!r} is not a string")

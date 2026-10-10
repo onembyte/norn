@@ -71,6 +71,7 @@ func signatureCoversItsOwnBytes(t *testing.T, name string) bool {
 func TestARuleNegativeIsRefusedByItsOwnRule(t *testing.T) {
 	// Each of these names a rule; each must be the *only* thing wrong.
 	for _, c := range []struct{ name, rule string }{
+		{"empty-labels", "labels must be a map of 1-32 entries"},
 		{"expires-at-ts", "expires must be after ts"},
 		{"oversize-label-key", "map key must be 1-23 bytes"},
 	} {

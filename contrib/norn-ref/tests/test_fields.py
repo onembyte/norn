@@ -49,6 +49,7 @@ class Labels(unittest.TestCase):
 
     def test_rejected(self):
         cases = [
+            ({}, "present but empty"),
             ({f"k{i}": "v" for i in range(33)}, "33 labels"),
             ({"ip": "x" * 257}, "value over 256 bytes"),
             ({"ip": "é" * 129}, "258 bytes in UTF-8, though 129 characters"),

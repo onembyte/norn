@@ -62,6 +62,7 @@ func TestLabels(t *testing.T) {
 		value any
 		why   string
 	}{
+		{map[string]any{}, "present but empty"},
 		{tooMany, "33 labels"},
 		{map[string]any{"ip": strings.Repeat("x", MaxLabelValue+1)}, "value over 256 bytes"},
 		{map[string]any{"ip": strings.Repeat("é", 129)}, "258 bytes in UTF-8, though 129 runes"},
