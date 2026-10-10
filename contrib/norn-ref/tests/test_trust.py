@@ -58,6 +58,29 @@ class Build(unittest.TestCase):
         with self.assertRaisesRegex(trust.TrustError, "does not match origin"):
             trust.validate(damaged)
 
+    def test_a_policy_key_under_another_name_is_the_only_fault(self):
+        # D-074 (d): "the same keys" is the same verifier key -- name,
+        # algorithm and public key -- compared as canonical text. The policy
+        # carries pi's own public key under another key name; the witness entry
+        # is honest. A reader comparing parsed public keys accepts the file.
+        damaged = dict(fixture.trust_rejections()).get("48-policy-witness-key-renamed")
+        self.assertIsNotNone(damaged, "the renamed-policy-key negative is missing")
+        root = pathlib.Path(__file__).resolve().parents[3] / "testdata" / "vectors"
+        raw = (root / "trust-bad" / "48-policy-witness-key-renamed.cbor").read_bytes()
+        self.assertEqual(cbor.decode(raw), damaged)
+        self.assertEqual(damaged["witnesses"], self.trust["witnesses"])
+        listed = self.trust["witnesses"][0]
+        renamed = [line.split()[2] for line in damaged["policy"].split("\n")
+                   if line.split()[:2] == ["witness", listed["name"]]]
+        self.assertEqual(len(renamed), 1)
+        a, b = note.parse_vkey(listed["key"]), note.parse_vkey(renamed[0])
+        self.assertEqual(a.public, b.public)
+        self.assertNotEqual(a.name, b.name)
+        with self.assertRaisesRegex(trust.TrustError, "another in the policy"):
+            trust.validate(damaged)
+        repaired = dict(damaged, policy=damaged["policy"].replace(renamed[0], listed["key"]))
+        trust.validate(repaired)
+
     def test_validate_rejects_damage(self):
         for mutate in [
             lambda t: t.update(version=2),

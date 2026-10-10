@@ -1734,6 +1734,15 @@ def trust_rejections() -> list[tuple[str, dict[str, Any]]]:
         ("46-log-key-name-case-changed", damaged(
             log_key=note.vkey(cased, KEYS["logkey"].public),
             policy=_policy_with(log_key=note.vkey(cased, KEYS["logkey"].public)))),
+        # D-074 (d): the policy carries pi's own public key under another key
+        # name -- a valid verifier key, its id recomputed -- and the witness
+        # entry is honest. Compared as parsed public keys the two halves agree;
+        # compared as verifier keys, which §9.1 says and §10's matching needs,
+        # they name different keys, and only correspondence refuses the file.
+        ("48-policy-witness-key-renamed", damaged(
+            policy=_policy_with(witness_key=("pi", note.vkey(
+                "norn-witness/pi-alt", note.parse_vkey(base["witnesses"][0]["key"]).public,
+                note.ALG_COSIGNATURE))))),
     ]
 
 

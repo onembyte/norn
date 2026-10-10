@@ -379,6 +379,9 @@ def write_trust_rejections(out: pathlib.Path) -> None:
         "45-origin-case-changed": origin,
         "46-log-key-name-case-changed": logname,
         "47-witness-noncanonical-point": {"section": "3.1", "says": "the sign bit is 0 when `x` is 0"},
+        # D-074 (d): the comparison, not merely the correspondence.
+        "48-policy-witness-key-renamed": {
+            "section": "9.1", "says": "compared as canonical text"},
     }
     for name_, _ in fixture.trust_rejections():
         if name_ not in trust_rules:
