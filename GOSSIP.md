@@ -261,14 +261,31 @@ routes so the log serves *different content per client IP*.
 Each scenario is a script under `lab/tests/` that exits 0 on PASS and prints the
 measured latency. `make lab-test` runs all of them.
 
-## 9. Metrics (**planned**: `nornd` will expose Prometheus on the tunnel address)
+## 9. Metrics
 
-None of these exist yet: the node publishes `/run/norn/proven.json`
-(`SPEC.md` §13.3) and no metrics at all. The list is the shape the exporter
-should take, kept here so the names are argued about before the exporter is
-written rather than after.
+`nornd` serves `GET /metrics` as Prometheus text exposition, version 0.0.4,
+on the gossip listener: the WireGuard interface's own address and the gossip
+port, nowhere else. `HEAD` returns the same headers without a body; writes
+are refused. With `gossip_port = 0` there is no listener and no `/metrics`.
+These are local observations for an operator, not proofs a peer trusts.
 
-`norn_checkpoint_size`, `norn_checkpoint_age_seconds`, `norn_state{fresh|degraded|hard_stale|fork}`,
-`norn_gossip_peers_polled_total`, `norn_gossip_adopted_from{log|peer}`,
-`norn_fork_evidence_total`, `norn_replay_rejected_total`, `norn_clock_skew_seconds`,
-`norn_reconcile_seconds` (histogram), `norn_evicted_peers_total`, `norn_unproven_peers`.
+| Family | Type | Labels | Observation |
+|---|---|---|---|
+| `norn_checkpoint_size` | gauge | none | Size of the checkpoint this node holds, including a restored head. |
+| `norn_checkpoint_age_seconds` | gauge | none | §15's witness-clock age from the last freshness calculation, the same number used for the state. |
+| `norn_state` | gauge | `state` | `fresh`, `degraded`, `hard_stale` or `fork`; exactly one is 1 when the state is known, the others are 0. An unknown freshness state emits no state samples. |
+| `norn_gossip_peers_polled_total` | counter | none | Checkpoint and evidence polls actually attempted; peers a round's budget did not reach do not count. |
+| `norn_gossip_adopted_from` | counter | `source` | `log` or `peer`, for each verified checkpoint accepted, including an unchanged head. |
+| `norn_fork_evidence_total` | counter | none | Fork proofs established locally or checked from a peer; repeated frozen cycles and restored markers do not count. |
+| `norn_replay_rejected_total` | counter | none | Rejected entry indices first learned in accepted checkpoints; replaying a held prefix does not count them again. |
+| `norn_clock_skew_seconds` | gauge | none | Signed skew from the existing direct-log clock check; positive means this machine's wall clock is ahead. |
+| `norn_reconcile_seconds` | histogram | `le` on buckets | Time spent applying reconciliation, including failed attempts; finite buckets at 0.0001, 0.001, 0.01, 0.05, 0.1, 0.5, 1 and 10 seconds, plus `+Inf`, sum and count. |
+| `norn_evicted_peers_total` | counter | none | Peers removed by a successful watchdog eviction or owner replacement; failed writes do not count. |
+| `norn_unproven_peers` | gauge | none | Unproven peers in the last table read for reconciliation, before any eviction. |
+
+Every family has `HELP` and `TYPE` declarations. Counters and the histogram
+start at zero in each process. A scrape reads a copy of the completed cycle's
+observations and performs no verification or interface I/O. A checkpoint size,
+age, skew or unproven-peer count that has not been observed is `NaN`, rather
+than an invented zero. Age and state use no second clock; skew retains the
+last direct-log measurement when the log is unreachable.

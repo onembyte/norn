@@ -17,9 +17,11 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math"
 	"math/rand"
 	"net/netip"
 	"path/filepath"
+	"sync/atomic"
 	"time"
 
 	"github.com/onembyte/norn/internal/endpoint"
@@ -27,6 +29,7 @@ import (
 	"github.com/onembyte/norn/internal/freshness"
 	"github.com/onembyte/norn/internal/gossip"
 	"github.com/onembyte/norn/internal/logclient"
+	"github.com/onembyte/norn/internal/metrics"
 	"github.com/onembyte/norn/internal/mirror"
 	"github.com/onembyte/norn/internal/peertable"
 	"github.com/onembyte/norn/internal/policy"
@@ -265,8 +268,13 @@ type Config struct {
 
 // Agent runs the cycle and remembers the last state that verified.
 type Agent struct {
-	cfg  Config
-	last *logclient.Result
+	// Observations are written by the serial cycle and published as a copy.
+	// Counting never changes what is accepted, refused, installed or alarmed on.
+	metricsWork          metrics.Snapshot
+	metricsPublished     atomic.Pointer[metrics.Snapshot]
+	metricsReplayThrough int64
+	cfg                  Config
+	last                 *logclient.Result
 	// restored is the head this node held when it last stopped, read back
 	// from its own mirror and verified again under the anchor at start
 	// (D-069). It is only ever compared against -- §10's stored checkpoint
@@ -417,6 +425,8 @@ func New(cfg Config) (*Agent, error) {
 	if err := agent.checkQuorum(); err != nil {
 		return nil, err
 	}
+	agent.metricsWork = metrics.Snapshot{CheckpointSize: math.NaN(), CheckpointAge: math.NaN(), ClockSkew: math.NaN(), UnprovenPeers: math.NaN()}
+	agent.publishMetrics()
 	return agent, nil
 }
 
@@ -615,6 +625,8 @@ func (a *Agent) replayAnchor() replay.Anchor {
 // whatever was safe: an error here means "this cycle learned nothing", never
 // "the peer table has been abandoned".
 func (a *Agent) Once() error {
+	defer a.publishMetrics()
+	source := "log"
 	anchor := a.anchorFor(a.held())
 	// §11 duty 4: a node that has proved its log forked accepts nothing
 	// further. Not the forked log, and not the original either -- it has
@@ -680,6 +692,7 @@ func (a *Agent) Once() error {
 					"took size %d from peer %s, which corroborates this node's first "+
 						"head and extends it", fromPeer.Checkpoint.Size, peer)})
 				result = fromPeer
+				source = "peer"
 			}
 		}
 	}
@@ -693,6 +706,7 @@ func (a *Agent) Once() error {
 				"took size %d from peer %s, which is signed by the same keys: %s",
 				fromPeer.Checkpoint.Size, peer, whyPeer(verifyErr))})
 			result, verifyErr = fromPeer, nil
+			source = "peer"
 		}
 	}
 	if a.frozen {
@@ -727,6 +741,7 @@ func (a *Agent) Once() error {
 			a.checkpointAsked, a.checkpointAskedSet = mono, true
 		}
 		a.last, a.restored = result, nil
+		a.countAdoption(result, source)
 	}
 
 	// Witness time advances only on a checkpoint that actually verified; a
@@ -742,6 +757,11 @@ func (a *Agent) Once() error {
 	}
 	a.saveClock()
 	fresh := a.freshness(result)
+	a.metricsWork.State = fresh.State
+	a.metricsWork.CheckpointAge = math.NaN()
+	if fresh.Age != nil {
+		a.metricsWork.CheckpointAge = fresh.Age.Seconds()
+	}
 	a.reportFreshness(fresh)
 	a.reportQuorum()
 
@@ -865,6 +885,9 @@ func (a *Agent) reconcile(result *logclient.Result, fresh proven.Freshness) erro
 // what it did. An empty set is how both hard-stale and an uncorroborated
 // fork drop every peer (§13.2).
 func (a *Agent) apply(desired []peertable.Peer, report endpoint.Report) error {
+	// This clock measures work, never freshness, and its counts decide nothing.
+	started := time.Now()
+	defer func() { a.metricsWork.Reconcile.Observe(time.Since(started).Seconds()) }()
 	for _, id := range report.Unproven {
 		a.emit(Event{Kind: ProviderClaim,
 			Message: fmt.Sprintf("the endpoint provider has hints for %q, which the log does not prove", id)})
@@ -907,6 +930,12 @@ func (a *Agent) apply(desired []peertable.Peer, report endpoint.Report) error {
 	if plan.Invalid {
 		return fmt.Errorf("agent: %q is not a mode", a.cfg.Mode)
 	}
+	a.metricsWork.UnprovenPeers = 0
+	for _, alarm := range plan.Alarms {
+		if alarm.Kind == reconcile.UnprovenPeer {
+			a.metricsWork.UnprovenPeers++
+		}
+	}
 	for i := range plan.Alarms {
 		alarm := plan.Alarms[i]
 		if alarm.Kind == reconcile.EvictedPeer {
@@ -923,6 +952,15 @@ func (a *Agent) apply(desired []peertable.Peer, report endpoint.Report) error {
 		if alarm.Kind == reconcile.EvictedPeer {
 			a.emit(Event{Kind: alarm.Kind, Peer: &alarm,
 				Message: fmt.Sprintf("%s %s", alarm.Kind, alarm.Key.Short())})
+		}
+	}
+	// A failed write never reaches this count. Owner replacements evict too,
+	// although their successful removals do not have watchdog eviction alarms.
+	if plan.Replace != nil || len(plan.Remove) > 0 {
+		for _, alarm := range plan.Alarms {
+			if alarm.Kind == reconcile.UnprovenPeer {
+				a.metricsWork.EvictedPeers++
+			}
 		}
 	}
 	a.noteEvictions(plan)
@@ -1161,6 +1199,8 @@ func (a *Agent) askPeers(anchor logclient.Anchor, held *logclient.Result) (*logc
 			a.roundCut("checkpoint", i, len(chosen))
 			break
 		}
+		// Count only a poll the budget actually reached; the count decides nothing.
+		a.metricsWork.PeersPolled++
 		result, err := verify(gossip.Within(ctx, gossip.Peer(addr)), anchor)
 		if err != nil {
 			// A second *history* is not a broken neighbour. §11 does not care
@@ -1207,6 +1247,11 @@ func (a *Agent) checkClock(quorumTime time.Time, params map[string]any) {
 	limits.MaxSkew = a.cfg.MaxSkew
 
 	skew, ok := a.clock.Skew(quorumTime, a.cfg.Mono(), a.cfg.Now())
+	// Keep the same measurement even when it is too small to alarm on.
+	// Observing it changes no decision.
+	if ok {
+		a.metricsWork.ClockSkew = skew.Seconds()
+	}
 	if !ok || !limits.SkewIsSignificant(skew) {
 		return
 	}

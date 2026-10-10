@@ -142,6 +142,8 @@ func (a *Agent) pollEvidence() {
 			a.roundCut("evidence", i, len(chosen))
 			break
 		}
+		// This observation counts an attempted poll and changes no decision.
+		a.metricsWork.PeersPolled++
 		raw, err := gossip.Within(ctx, gossip.Peer(addr)).Fetch("evidence")
 		if err != nil {
 			continue // almost every peer, almost always
@@ -166,6 +168,9 @@ func (a *Agent) pollEvidence() {
 // adoptEvidence freezes on a fork somebody else proved, and keeps a copy so
 // this node can pass it on in turn.
 func (a *Agent) adoptEvidence(from string, raw []byte, finding *forkevidence.Finding) {
+	// Count the proven fork, not later frozen cycles or restored markers.
+	// The observation changes neither the freeze nor the alarm.
+	a.metricsWork.ForkEvidence++
 	a.frozen = true
 	a.frozenSplit, a.frozenSplitRoot = finding.Split, finding.SplitRoot
 	path, err := a.storeEvidence(raw)
@@ -263,6 +268,9 @@ const maxEvidenceProbe = 1 << 10
 // first head is being corroborated and nothing is held yet -- that first
 // head (D-071 c).
 func (a *Agent) recordFork(fork *logclient.ForkError, held *logclient.Result) {
+	// Count the proven fork, not later frozen cycles or restored markers.
+	// The observation changes neither the freeze nor the alarm.
+	a.metricsWork.ForkEvidence++
 	a.frozen = true
 
 	path, err := a.writeEvidence(fork, held)

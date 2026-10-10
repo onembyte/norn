@@ -276,12 +276,12 @@ func build(config Config, logger *slog.Logger) (*agent.Agent, time.Duration, err
 	// start because peers cannot reach us would trade the second for the
 	// first.
 	if gossipPort > 0 {
-		addr, err := gossip.TunnelAddress(config.Interface, gossipPort)
+		addr, err := tunnelAddress(config.Interface, gossipPort)
 		if err != nil {
 			logger.Warn("not gossiping", "reason", err)
 		} else {
 			mirrorDir, evidenceDir := gossipDirs(config)
-			serveGossip(logger, addr, mirrorDir, evidenceDir)
+			serveGossip(logger, addr, mirrorDir, evidenceDir, cycle)
 		}
 	}
 
@@ -544,8 +544,8 @@ func pick(values ...string) string {
 }
 
 // serveGossip runs the peer endpoints in the background.
-func serveGossip(logger *slog.Logger, addr, mirror, evidence string) {
-	listener, err := net.Listen("tcp", addr)
+func serveGossip(logger *slog.Logger, addr, mirror, evidence string, cycle *agent.Agent) {
+	listener, err := listenGossip("tcp", addr)
 	if err != nil {
 		// The usual cause is a tunnel that is not up yet, which is a state
 		// worth naming rather than a reason to refuse to run.
@@ -555,11 +555,16 @@ func serveGossip(logger *slog.Logger, addr, mirror, evidence string) {
 	logger.Info("gossiping", "addr", addr, "mirror", mirror, "evidence", evidence)
 	go func() {
 		server := &http.Server{
-			Handler:           gossip.Handler(mirror, evidence),
+			Handler:           gossipHandler(mirror, evidence, cycle),
 			ReadHeaderTimeout: 10 * time.Second,
 		}
-		if err := server.Serve(listener); err != nil {
+		if err := serveGossipHTTP(server, listener); err != nil {
 			logger.Warn("gossip server stopped", "reason", err)
 		}
 	}()
 }
+
+// These seams let listener wiring be checked without binding a tunnel socket.
+var tunnelAddress = gossip.TunnelAddress
+var listenGossip = net.Listen
+var serveGossipHTTP = func(server *http.Server, listener net.Listener) error { return server.Serve(listener) }

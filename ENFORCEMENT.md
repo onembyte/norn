@@ -122,9 +122,9 @@ every T_poll, and immediately on proven-set change:
   after a verified cycle, publish /run/norn/proven.json and its proof bundles
 ```
 
-Idempotent; safe to run twice. Reconcile latency measurement remains in the
-Phase 3 plan (§10); the current node does not publish a `reconcile.json` file
-or the `norn_reconcile_seconds` histogram.
+Idempotent; safe to run twice. `norn_reconcile_seconds` (`GOSSIP.md` §9) times each apply of a plan to the interface,
+failed writes included. That is not the reconcile latency the Phase 3 plan
+measures (§10), time-to-eviction, and the node does not publish a `reconcile.json` file.
 
 Swap attack check (A1): the control plane installs the attacker's key with the
 legit device's allowed-ips and removes the legit key. Owner mode: desired still

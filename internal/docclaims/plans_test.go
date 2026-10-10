@@ -231,16 +231,27 @@ func TestTheNodeMetricsAndReconcileFileClaimsMatchTheCode(t *testing.T) {
 		})
 	}
 	reconcile := claimSpan(t, "ENFORCEMENT.md", "Idempotent;", "Swap attack check")
-	for _, name := range []string{"reconcile.json", "norn_reconcile_seconds"} {
-		t.Run(name, func(t *testing.T) {
-			for _, dir := range []string{"cmd/nornd", "internal"} {
-				if productionHasLiteral(t, dir, name) {
-					t.Errorf("%s now exists in %s; update the negative claim", name, dir)
-				}
+	t.Run("reconcile.json", func(t *testing.T) {
+		for _, dir := range []string{"cmd/nornd", "internal"} {
+			if productionHasLiteral(t, dir, "reconcile.json") {
+				t.Errorf("reconcile.json now exists in %s; update the negative claim", dir)
 			}
-			requireClaim(t, reconcile, "does not publish a `reconcile.json` file or the `norn_reconcile_seconds` histogram")
-		})
-	}
+		}
+		requireClaim(t, reconcile, "the node does not publish a `reconcile.json` file")
+	})
+	// 6.5m-vi-b shipped the histogram, so this half of the claim turned
+	// positive: the sentence must now say what it times, and the code must
+	// still have it.
+	t.Run("norn_reconcile_seconds", func(t *testing.T) {
+		exists := false
+		for _, dir := range []string{"cmd/nornd", "internal"} {
+			exists = exists || productionHasLiteral(t, dir, "norn_reconcile_seconds")
+		}
+		if !exists {
+			t.Error("ENFORCEMENT.md says norn_reconcile_seconds exists and no production code has it")
+		}
+		requireClaim(t, reconcile, "`norn_reconcile_seconds` (`GOSSIP.md` §9) times each apply of a plan to the interface")
+	})
 }
 
 func TestTheREADMERetainsItsDeploymentStatus(t *testing.T) {
