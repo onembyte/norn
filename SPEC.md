@@ -18,7 +18,9 @@ implementation needs is in this document and the vectors beside it, and a
 companion that disagrees is the companion that is wrong.
 
 Norn reuses these specifications verbatim; where they conflict with this document,
-they win:
+they win, with one exception. §7 and §10 are Norn's profile of `c2sp.org/signed-note`, `tlog-checkpoint` and `tlog-cosignature`, and govern where they are stricter:
+every line from a trusted key verifies, that key fixes the line's exact length,
+the base64 is canonical, and the note is UTF-8 (D-074 c). The specifications:
 
 - `c2sp.org/tlog-tiles` — log storage and read API
 - `c2sp.org/tlog-checkpoint` — signed tree heads
@@ -766,18 +768,27 @@ spec's rules produce.
     `"cosignature/v1\n" ‖ "time " ‖ <timestamp as decimal, no leading zeroes> ‖ "\n" ‖ <note text>`
     — two newline-terminated header lines, then the whole note text through
     its final newline, with no signature lines.
-- The note framing accepts a decoded payload of **exactly** 68 or 76 bytes,
-  never "at least": a verifier that reads the first 68 bytes and ignores what
-  follows accepts unboundedly many byte-distinct forms of one checkpoint,
-  every one of which verifies. Two nodes gossiping that head then disagree
-  about its bytes, and everything keyed on them — a cache, a de-duplication
-  set, §6's OpenTimestamps digest over the body — is keyed on something an
-  attacker chooses. Any other decoded length is malformed note framing. The decoded payload is **exactly** that length for the matched key, never a
-  prefix or the other algorithm's supported length. Once
-  a line's name and key id match a trusted key, verification also checks the
-  length for that key's algorithm: a 76-byte payload under the log's `0x01`
-  key is a `log-signature` failure, not a `note` framing failure, and MUST be
-  refused even if another line from that key verifies (`checkpoints-bad/24-log-key-other-algorithm-length`, D14c, §10.1). The same holds for a listed witness: a 68-byte payload under its name and cosignature key id is a `cosignature` failure, not a line to skip (`checkpoints-bad/28-witness-key-other-algorithm-length`).
+- **Framing is every line's; length is the matched key's.** The note framing
+  asks of every signature line only what needs no key: the prefix, a name,
+  and canonical padded base64 that decodes to at least the 4-byte `key_id`.
+  What follows the key id is judged by the trusted key whose name and key id
+  the line matches. A line that matches no trusted key is ignored whatever its length:
+  it may be a cosignature on an algorithm this document does not use, and
+  refusing it would stop a Norn reader accepting the checkpoints every other
+  reader of a shared log accepts (§10, D-074 c).
+- The decoded payload is **exactly** that length for the matched key, never a
+  prefix or the other algorithm's supported length, and never "at least": a
+  verifier that reads the first 68 bytes and ignores what follows accepts
+  unboundedly many byte-distinct forms of one checkpoint, every one of which
+  verifies. Two nodes gossiping that head then disagree about its bytes, and
+  everything keyed on them — a cache, a de-duplication set, §6's
+  OpenTimestamps digest over the body — is keyed on something an attacker
+  chooses. A wrong length under a matched key is a failure of that key's
+  check, not of the framing: one byte appended to the log's 68
+  (`checkpoints-bad/20-signature-payload-too-long`) and a 76-byte payload
+  under the log's `0x01` key are both `log-signature` failures, not `note`
+  framing failures, and MUST be refused even if another line from that key verifies (`checkpoints-bad/24-log-key-other-algorithm-length`, D14c, §10.1). The same holds for a listed witness: a 68-byte payload under its name and cosignature key id is a `cosignature` failure, not a line to skip (`checkpoints-bad/28-witness-key-other-algorithm-length`).
+- The signed text and every signature line MUST be valid UTF-8. A note that is not is malformed note framing, refused as `note` before any key is looked for: a reader that decodes the text before it verifies must see the bytes this one does (D-074 c).
 - A note carries **at least one signature line**. A block with none is a
   malformed note rather than an unsigned one, and §10.1 refuses it as `note` —
   the framing — before any signature is looked for: there is nothing to verify
@@ -1250,6 +1261,8 @@ loop every T_g or on demand:
   # canonical signed-note implementation does not impose this; Norn does.
   # A 76-byte payload under the log's `0x01` key fails here as
   # `log-signature`, even though that length is a valid frame for a cosignature.
+  # Any length but 68 under the log's key fails here too: the framing takes
+  # every length from a 4-byte key id up, and the matched key judges it.
   verify log signature (torchwood VerifyCheckpoint)     # norn.trust.log_key
                                                         # and norn.trust.policy:
                                                         # a checkpoint must be
@@ -1324,8 +1337,8 @@ these codes and no other, and the first step whose check fails decides which.
 | step | code | the refusal |
 |---|---|---|
 | 1 | `unserved` | the checkpoint is not served. The same code for any file a later step needs and cannot fetch — an entry bundle (step 8), a hash tile (step 11) — reported at that step |
-| 2 | `note` | the checkpoint is not a well-formed signed note (§7): no blank separator line, a signature line that does not frame, a payload that is not padded base64 of **exactly** 68 or 76 bytes, an unterminated block, an extra blank line after the last signature line, or **no signature line at all**. Framing comes first because there is nothing to verify until the lines are found |
-| 3 | `log-signature` | no line whose name and key id match a trusted log key (§9.4) verifies, or any line that matches does not. The matching key's algorithm fixes the signature length too: a 76-byte payload under the log's `0x01` key fails here, even beside a valid line from that key (`checkpoints-bad/24-log-key-other-algorithm-length`, D14c). **The signature decides before the origin**: a checkpoint signed by a key this anchor does not trust is refused as `log-signature`, whatever origin it names |
+| 2 | `note` | the checkpoint is not a well-formed signed note (§7): no blank separator line, a signature line that does not frame, a payload that is not canonical padded base64 of at least a 4-byte key id, text or a line that is not UTF-8, an unterminated block, an extra blank line after the last signature line, or **no signature line at all**. Framing comes first because there is nothing to verify until the lines are found |
+| 3 | `log-signature` | no line whose name and key id match a trusted log key (§9.4) verifies, or any line that matches does not. The matching key's algorithm fixes the signature length too: a 76-byte payload under the log's `0x01` key fails here, even beside a valid line from that key (`checkpoints-bad/24-log-key-other-algorithm-length`, D14c), and so does any other length but 68 (`checkpoints-bad/20-signature-payload-too-long`). **The signature decides before the origin**: a checkpoint signed by a key this anchor does not trust is refused as `log-signature`, whatever origin it names |
 | 4 | `checkpoint` | the signed text is not a `tlog-checkpoint` body (§6): not exactly three lines, a size that is not canonical decimal, a root that is not 32 bytes of standard padded base64 |
 | 5 | `origin` | the body's origin line is not **equal** to `norn.trust.origin` — not a prefix of it, not a case variant of it |
 | 6 | `cosignature` | a cosignature line whose name **and** key id match a listed witness does not verify — including one whose payload is not a cosignature's 76 bytes (`checkpoints-bad/28-witness-key-other-algorithm-length`) |

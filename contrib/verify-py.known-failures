@@ -43,3 +43,8 @@ genesis/24-root-noncanonical/00-genesis.cbor expected="bad-genesis" got="accept"
 genesis/24-root-noncanonical/state.json expected="byte-identical" got="different"
 requests-bad/torsion-R-signature expected="refuse" got="accept"
 trust-bad/47-witness-noncanonical-point.cbor expected="trust" got="accept"
+#
+# D-074 (c), 2026-10-10, row 6.5l-ix-f-c-i: the matched key judges a line's
+# length, not the framing. The sealed verifier frames 68 or 76 bytes only, so
+# it refuses the log's own line plus one byte as `note`, now `log-signature`.
+checkpoints-bad/20-signature-payload-too-long expected="log-signature" got="note"

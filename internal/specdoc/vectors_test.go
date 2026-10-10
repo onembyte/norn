@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	cborpkg "github.com/onembyte/norn/internal/cbor"
 	entrypkg "github.com/onembyte/norn/internal/entry"
@@ -1217,6 +1218,9 @@ func TestTheSignatureBlindSetIsComputedNotAsserted(t *testing.T) {
 	// in, which would have been a wrong answer arrived at by a computation
 	// rather than by a stale list -- no better.
 	blindly := func(text string) (body string, who []string) {
+		if !utf8.ValidString(text) {
+			return "", nil
+		}
 		body, block, found := strings.Cut(text, "\n\n")
 		if !found || !strings.HasSuffix(block, "\n") {
 			return "", nil
@@ -1229,20 +1233,20 @@ func TestTheSignatureBlindSetIsComputedNotAsserted(t *testing.T) {
 			if !ok {
 				return "", nil // unparseable framing: refused without any signature
 			}
-			// The payload's encoding and general length need no key, so a
-			// blind reader still enforces them: §7 makes the base64 standard
-			// and padded and the decoded payload exactly 68 or 76 bytes, and
-			// `18`, `19` and `20` break one of those each; D14a's nonzero
-			// pad-bit cases are also malformed framing. Leaving either group
-			// out of the model would put cases no conforming reader accepts
-			// in this set.
+			// The payload's encoding and its key id need no key, so a blind
+			// reader still enforces them: §7 makes the base64 standard and
+			// padded and the decoded payload at least a 4-byte key id, and
+			// `18` and `19` break one of those each; D14a's nonzero pad-bit
+			// cases are also malformed framing. `20`'s length is the log
+			// key's to judge, below (D-074 c). Leaving either group out of
+			// the model would put cases no conforming reader accepts in this
+			// set.
 			name, blob, ok := strings.Cut(rest, " ")
 			if !ok {
 				return "", nil
 			}
 			raw, err := base64.StdEncoding.Strict().DecodeString(blob)
-			if err != nil || base64.StdEncoding.EncodeToString(raw) != blob ||
-				(len(raw) != 68 && len(raw) != 76) {
+			if err != nil || base64.StdEncoding.EncodeToString(raw) != blob || len(raw) < 4 {
 				return "", nil
 			}
 			if name == logKey.Name && string(raw[:4]) == string(logKey.ID()) && len(raw) != 68 {
@@ -1594,10 +1598,13 @@ func TestTheThreeSeparableFramingRulesAreVectored(t *testing.T) {
 		Rules map[string]struct{ Section, Says string }
 	}
 	readJSON(t, filepath.Join(vectorRoot(t), "checkpoints-bad", "cases.json"), &manifest)
-	for _, suffix := range []string{
-		"-signature-name-with-space",
-		"-signature-unpadded-base64",
-		"-signature-payload-too-long",
+	// The payload length was the third framing rule until D-074 (c) gave it
+	// to the matched key: framing takes every length from a key id up, and
+	// the log's key refuses its own line one byte long, as §10's step.
+	for suffix, section := range map[string]string{
+		"-signature-name-with-space":  "7",
+		"-signature-unpadded-base64":  "7",
+		"-signature-payload-too-long": "10",
 	} {
 		var found string
 		for _, name := range manifest.Cases {
@@ -1610,8 +1617,8 @@ func TestTheThreeSeparableFramingRulesAreVectored(t *testing.T) {
 				"reachable by nothing", suffix)
 			continue
 		}
-		if rule := manifest.Rules[found]; rule.Section != "7" {
-			t.Errorf("%s names §%s; the note framing is §7's", found, rule.Section)
+		if rule := manifest.Rules[found]; rule.Section != section {
+			t.Errorf("%s names §%s; its rule is §%s's", found, rule.Section, section)
 		}
 	}
 }

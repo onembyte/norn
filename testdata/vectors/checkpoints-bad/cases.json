@@ -52,7 +52,7 @@
     "17-root-wrong-length": "checkpoint",
     "18-signature-name-with-space": "note",
     "19-signature-unpadded-base64": "note",
-    "20-signature-payload-too-long": "note",
+    "20-signature-payload-too-long": "log-signature",
     "21-origin-with-a-suffix": "origin",
     "22-origin-case-changed": "origin",
     "23-extra-final-newline": "note",
@@ -86,7 +86,7 @@
     "17-root-wrong-length": "the root line decodes to 33 bytes whose first 32 are the honest root: a reader that takes the first 32 and reads on matches the rebuilt tree and accepts it, so §6's length is the only rule that can refuse it",
     "18-signature-name-with-space": "a signature line whose name carries a space: split at the first space the payload is not base64, split at the last it is a signature from a name nobody lists, which §10 ignores rather than refuses",
     "19-signature-unpadded-base64": "the last signature line's payload is unpadded base64: the same bytes to a raw-base64 reader, and not §7's encoding",
-    "20-signature-payload-too-long": "one byte appended to the log's 68-byte payload: a verifier that reads the first 68 and stops verifies it, so this head has unboundedly many byte-distinct forms that are all valid",
+    "20-signature-payload-too-long": "one byte appended to the log's 68-byte payload: a verifier that reads the first 68 and stops verifies it, so this head has unboundedly many byte-distinct forms that are all valid. The framing takes it, as it would a stranger's line of any length; the log's key refuses it (D-074 c)",
     "21-origin-with-a-suffix": "the origin line is this network's origin plus one base32 character, signed and cosigned exactly as correctly as the real head: a reader matching on a prefix accepts it",
     "22-origin-case-changed": "the same origin with one character in the other case: a reader folding case accepts it, and §2's origin is lowercase base32 by construction",
     "23-extra-final-newline": "the final signature line ends in one LF and an extra LF adds a forbidden blank line",
@@ -177,8 +177,8 @@
       "section": "7"
     },
     "20-signature-payload-too-long": {
-      "says": "The decoded payload is **exactly** that length",
-      "section": "7"
+      "says": "Any length but 68 under the log's key fails here too",
+      "section": "10"
     },
     "21-origin-with-a-suffix": {
       "says": "cp.origin == norn.trust.origin",

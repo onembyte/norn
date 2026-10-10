@@ -550,7 +550,8 @@ func buildBadCheckpoints(root, origin string, key ed25519.PrivateKey,
 	out = append(out, badCheckpoint{"20-signature-payload-too-long",
 		"one byte appended to the log's 68-byte payload: a verifier that reads the " +
 			"first 68 and stops verifies it, so this head has unboundedly many " +
-			"byte-distinct forms that are all valid",
+			"byte-distinct forms that are all valid. The framing takes it, as it " +
+			"would a stranger's line of any length; the log's key refuses it (D-074 c)",
 		rewriteLastSignature(logSignatureLast(allThree, origin), appendByte)})
 
 	// Cold gate run 11, D7. §10's `require cp.origin == norn.trust.origin` was
@@ -788,7 +789,7 @@ func writeBadCheckpoints(root, origin string, key ed25519.PrivateKey,
 		"27-root-nonzero-pad-bits":                    {"section": "6", "says": "unused pad bits MUST be zero"},
 		"18-signature-name-with-space":                {"section": "7", "says": "contains no space"},
 		"19-signature-unpadded-base64":                {"section": "7", "says": "standard base64 **with padding**"},
-		"20-signature-payload-too-long":               {"section": "7", "says": "The decoded payload is **exactly** that length"},
+		"20-signature-payload-too-long":               {"section": "10", "says": "Any length but 68 under the log's key fails here too"},
 		"16-two-log-signatures":                       {"section": "10", "says": "Every signature line whose name and key id match"},
 	}
 	for name := range reasons {
@@ -822,7 +823,7 @@ func writeBadCheckpoints(root, origin string, key ed25519.PrivateKey,
 		"17-root-wrong-length":                        refusal.Checkpoint,
 		"18-signature-name-with-space":                refusal.Note,
 		"19-signature-unpadded-base64":                refusal.Note,
-		"20-signature-payload-too-long":               refusal.Note,
+		"20-signature-payload-too-long":               refusal.LogSignature,
 		"21-origin-with-a-suffix":                     refusal.Origin,
 		"22-origin-case-changed":                      refusal.Origin,
 		"23-extra-final-newline":                      refusal.Note,

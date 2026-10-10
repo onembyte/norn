@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -58,20 +59,18 @@ func badCheckpoint(t *testing.T, suffix string) string {
 
 func logVerifier(t *testing.T) Verifier {
 	t.Helper()
-	raw, err := os.ReadFile(filepath.Join(vectorRoot(), "keys.json"))
+	// The shipped trust file's `log_key`, read as text: the trust package
+	// imports this one. This read `log_vkey` from keys.json, which never had
+	// it, and skipped -- so the half of each test after it never ran.
+	raw, err := os.ReadFile(filepath.Join(vectorRoot(), "trust.toml"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	var keys struct {
-		LogKey string `json:"log_vkey"`
+	match := regexp.MustCompile(`(?m)^log_key\s*=\s*"([^"]+)"$`).FindSubmatch(raw)
+	if match == nil {
+		t.Fatal("trust.toml carries no `log_key` line")
 	}
-	if err := json.Unmarshal(raw, &keys); err != nil {
-		t.Fatal(err)
-	}
-	if keys.LogKey == "" {
-		t.Skip("keys.json carries no log verifier key under `log_vkey`")
-	}
-	v, err := ParseVerifierKey(keys.LogKey)
+	v, err := ParseVerifierKey(string(match[1]))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -152,10 +151,16 @@ func TestASignaturePayloadIsPaddedBase64(t *testing.T) {
 
 // D13, V206. The decoded payload is **exactly** 68 bytes for algorithm 0x01.
 // Append one and a prefix-reading verifier still verifies — so the same head
-// has unboundedly many byte-distinct forms, every one of them valid.
+// has unboundedly many byte-distinct forms, every one of them valid. The
+// framing takes the line, as it would a stranger's of any length; the log's
+// own key is what refuses it (D-074 c, corrected 2026-10-10).
 func TestASignaturePayloadIsExactlyItsAlgorithmsLength(t *testing.T) {
 	signed := badCheckpoint(t, "-signature-payload-too-long")
-	if _, _, err := Split(signed); err == nil {
+	if _, _, err := Split(signed); err != nil {
+		t.Fatalf("the framing judged a length that is the matched key's to judge: %v", err)
+	}
+	logKey := logVerifier(t)
+	if _, err := Verify(signed, []string{VerifierKey(logKey.Name, logKey.Public)}); err == nil {
 		t.Fatal("accepted a signature payload longer than its algorithm's length")
 	}
 

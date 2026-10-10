@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/onembyte/norn/internal/ed25519v1"
 )
@@ -150,6 +151,11 @@ func (s Signature) IsCosignature() bool { return len(s.Sig) == 8+ed25519.Signatu
 
 // Split separates a signed note into its text and its signature lines.
 func Split(signed string) (string, []Signature, error) {
+	// The text and every signature line are UTF-8 (§7, D-074 c): a reader
+	// that decodes before it verifies must see the same bytes this one does.
+	if !utf8.ValidString(signed) {
+		return "", nil, noteErrorf("the note is not UTF-8")
+	}
 	text, block, found := strings.Cut(signed, "\n\n")
 	if !found {
 		return "", nil, noteErrorf("note has no signature block")
@@ -180,12 +186,14 @@ func Split(signed string) (string, []Signature, error) {
 		if err != nil || base64.StdEncoding.EncodeToString(raw) != blob {
 			return "", nil, noteErrorf("signature is not base64")
 		}
-		// A note signature is 4 + 64. A cosignature is 4 + 8 + 64: the
-		// extra eight are the timestamp (`c2sp.org/tlog-cosignature`). Both
-		// appear on a cosigned checkpoint, and a parser that knew only the
-		// first would refuse every checkpoint a witness had touched.
-		if len(raw) != 4+ed25519.SignatureSize && len(raw) != 4+8+ed25519.SignatureSize {
-			return "", nil, noteErrorf("signature must be a 4-byte key id plus 64 or 72 bytes")
+		// Framing asks only for the key id. The rest is the matched key's to
+		// judge -- 64 bytes for a note key, 8 + 64 for a cosigner -- and a
+		// line no trusted key matches is ignored whatever its length, as
+		// `c2sp.org/signed-note` says. Refusing every length but 68 and 76
+		// here refused checkpoints carrying a cosignature on an algorithm
+		// nobody here knows (D-074 c, corrected 2026-10-10).
+		if len(raw) < 4 {
+			return "", nil, noteErrorf("signature must start with a 4-byte key id")
 		}
 		sigs = append(sigs, Signature{Name: name, KeyID: raw[:4], Sig: raw[4:]})
 	}

@@ -1088,6 +1088,16 @@ outcome A11 forbids.
 **(c)** §7 and §10 are Norn's profile of the reused signed-note specifications:
 lines whose name and key id match no trusted key are ignored; known lines follow
 the witness policy; the signed text and every line MUST be valid UTF-8.
+**(c), premise corrected and confirmed by the owner 2026-10-10** (raised
+implementing 6.5l-ix-f-c). The recommendation said the Go verifiers already
+ignore a stranger's line of any length. They did not: `note.Split`, which
+every checkpoint, receipt and cosignature reader calls before matching a line
+to a key, refused any payload that was not 68 or 76 bytes, trusted or not.
+The owner chose to apply (c) fully: framing asks of every line only canonical
+padded base64 and a 4-byte key id; the matched key judges the length; a line
+that matches no trusted key is ignored whatever its length. The log's own line
+with one byte appended (`checkpoints-bad/20-signature-payload-too-long`) stays
+refused, and moves from `note` to `log-signature`.
 **(d)** "The same keys" means the same verifier key compared as canonical text —
 name, algorithm and public key — for `witness` against `witnesses` and `log`
 against `log_key`.
