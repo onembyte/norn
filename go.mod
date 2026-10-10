@@ -9,6 +9,7 @@ require golang.org/x/mod v0.41.0
 require github.com/transparency-dev/formats v0.1.1
 
 require (
+	filippo.io/edwards25519 v1.2.0
 	github.com/BurntSushi/toml v1.6.0
 	golang.org/x/crypto v0.52.0
 	golang.zx2c4.com/wireguard/wgctrl v0.0.0-20241231184526-a9ab2273dd10
