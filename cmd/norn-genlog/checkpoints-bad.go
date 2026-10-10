@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -125,6 +126,32 @@ func rewriteLastSignature(signed string, f func(string) string) string {
 		}
 	}
 	return strings.Join(lines, "\n") + "\n"
+}
+
+// raiseCosignatureScalar changes only S of a listed witness's honest line.
+// Adding L preserves its scalar residue but violates §3.1's one encoding rule.
+func raiseCosignatureScalar(signed string) (string, error) {
+	var mutationErr error
+	out := rewriteLastSignature(signed, func(line string) string {
+		name, blob, ok := strings.Cut(strings.TrimPrefix(line, note.SigPrefix), " ")
+		payload, err := base64.StdEncoding.DecodeString(blob)
+		if !ok || err != nil || len(payload) != 76 || !strings.HasPrefix(name, "norn-witness/") {
+			mutationErr = fmt.Errorf("expected a witness cosignature, got %q", name)
+			return line
+		}
+		l, err := hex.DecodeString("edd3f55c1a631258d69cf7a2def9de1400000000000000000000000000000010")
+		if err != nil {
+			mutationErr = err
+			return line
+		}
+		carry := uint16(0)
+		for i := 0; i < 32; i++ {
+			sum := uint16(payload[44+i]) + uint16(l[i]) + carry
+			payload[44+i], carry = byte(sum), sum>>8
+		}
+		return note.SigPrefix + name + " " + base64.StdEncoding.EncodeToString(payload)
+	})
+	return out, mutationErr
 }
 
 // logSignatureLast moves the log's own signature line to the end of the block,
@@ -661,6 +688,13 @@ func buildBadCheckpoints(root, origin string, key ed25519.PrivateKey,
 		"two cosignature lines, both naming witnesses the policy lists, one of which does not verify: " +
 			"the quorum is met only by a verifier that does not check them", forgedCosig})
 
+	raised, err := raiseCosignatureScalar(signed)
+	if err != nil {
+		return nil, err
+	}
+	out = append(out, badCheckpoint{"31-cosignature-S-plus-L",
+		"a listed witness's honest cosignature with S + L: everything but the scalar encoding is valid", raised})
+
 	return out, nil
 }
 
@@ -707,6 +741,7 @@ func writeBadCheckpoints(root, origin string, key ed25519.PrivateKey,
 		// by `TestTheSignatureBlindSetIsComputedNotAsserted`; this list is
 		// checked against that computation rather than trusted.
 		"16-two-log-signatures",
+		"31-cosignature-S-plus-L",
 	}
 	for _, want := range blind {
 		if _, ok := reasons[want]; !ok {
@@ -719,6 +754,7 @@ func writeBadCheckpoints(root, origin string, key ed25519.PrivateKey,
 	// which is how §7's terminating newline, §6's canonical size line and
 	// §10's every-line rule all reached a gate unstated.
 	rules := map[string]map[string]string{
+		"31-cosignature-S-plus-L": {"section": "10", "says": "must verify"},
 		// 6.5l-vi-b-ii-d: these two cited a rule a later step states. 01 has
 		// no signature line, so §7's framing refuses it before any signature
 		// is looked for; 03 is signed under another origin's name, so the
@@ -766,6 +802,7 @@ func writeBadCheckpoints(root, origin string, key ed25519.PrivateKey,
 	// order refuses every file here too, and the suite cannot tell: 01 is
 	// `note` and not `log-signature`, 03 is `log-signature` and not `origin`.
 	codes := map[string]refusal.Code{
+		"31-cosignature-S-plus-L":                     refusal.Cosignature,
 		"01-unsigned":                                 refusal.Note,
 		"02-wrong-log-key":                            refusal.LogSignature,
 		"03-wrong-origin":                             refusal.LogSignature,

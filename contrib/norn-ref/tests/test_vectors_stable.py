@@ -14,6 +14,8 @@ class Deterministic(unittest.TestCase):
             gen_vectors.write_keys(out)
             gen_vectors.write_entries(out)
             gen_vectors.write_log(out)
+            gen_vectors.write_empty_log(out)
+            gen_vectors.write_admission_log(out)
             gen_vectors.write_genesis_aborts(out)
             gen_vectors.write_trust_rejections(out)
             gen_vectors.write_trust(out)
@@ -39,7 +41,8 @@ class Deterministic(unittest.TestCase):
         self.assertIn("keys.json", files)
         self.assertIn("state.json", files)
         for name in ("trust.cbor", "trust.toml", "trust.fingerprint", "receipt.note",
-                     "genesis/cases.json", "trust-bad/cases.json"):
+                     "genesis/cases.json", "trust-bad/cases.json",
+                     "log-empty/state.json", "log-admission/state.json", "log-admission/manifest.json"):
             self.assertIn(name, files)
 
         counts = {

@@ -29,7 +29,8 @@
     "27-root-nonzero-pad-bits",
     "29-root-unpadded",
     "30-noncanonical-size-under-untrusted-signer",
-    "08-forged-cosignature"
+    "08-forged-cosignature",
+    "31-cosignature-S-plus-L"
   ],
   "codes": {
     "01-unsigned": "note",
@@ -61,7 +62,8 @@
     "27-root-nonzero-pad-bits": "checkpoint",
     "28-witness-key-other-algorithm-length": "cosignature",
     "29-root-unpadded": "checkpoint",
-    "30-noncanonical-size-under-untrusted-signer": "log-signature"
+    "30-noncanonical-size-under-untrusted-signer": "log-signature",
+    "31-cosignature-S-plus-L": "cosignature"
   },
   "comment": "each file is served in place of served/checkpoint, over the honest tiles, under trust.cbor; every one MUST be refused, with the SPEC §10.1 code `codes` names for it. `signature_blind_accepts` lists the ones whose only defect is a signature that does not verify: a reader that never calls Ed25519 accepts exactly those, and nothing else here",
   "reasons": {
@@ -94,7 +96,8 @@
     "27-root-nonzero-pad-bits": "the root line has nonzero unused base64 pad bits but decodes to the same signed tree root",
     "28-witness-key-other-algorithm-length": "a 68-byte payload under a listed witness's name and cosignature key ID is a cosignature failure, even beside its valid line",
     "29-root-unpadded": "the root line drops its padding: a lenient decoder reads the same 32 bytes, and §6 requires the padded form",
-    "30-noncanonical-size-under-untrusted-signer": "a leading-zero size, signed by a key the anchor does not pin: the signature step comes first"
+    "30-noncanonical-size-under-untrusted-signer": "a leading-zero size, signed by a key the anchor does not pin: the signature step comes first",
+    "31-cosignature-S-plus-L": "a listed witness's honest cosignature with S + L: everything but the scalar encoding is valid"
   },
   "rules": {
     "01-unsigned": {
@@ -216,6 +219,10 @@
     "30-noncanonical-size-under-untrusted-signer": {
       "says": "norn.trust.log_key",
       "section": "10"
+    },
+    "31-cosignature-S-plus-L": {
+      "says": "must verify",
+      "section": "10"
     }
   },
   "signature_blind_accepts": [
@@ -223,6 +230,7 @@
     "08-forged-cosignature",
     "11-forged-cosignature-with-quorum",
     "12-second-line-from-one-witness",
-    "16-two-log-signatures"
+    "16-two-log-signatures",
+    "31-cosignature-S-plus-L"
   ]
 }

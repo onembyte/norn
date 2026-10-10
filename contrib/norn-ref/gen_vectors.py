@@ -35,7 +35,7 @@ OWNED = frozenset({
     "keys.json", "entries", "log", "genesis", "state.json",
     "trust.cbor", "trust.toml", "trust.fingerprint", "trust-bad", "trust-good",
     "receipt.note", "receipt.json", "receipt-bad", "requests", "requests-bad", "policies",
-    "entries-hostile", "proven", "log-empty", "genesis-good",
+    "entries-hostile", "proven", "log-empty", "log-admission", "genesis-good",
 })
 
 #: Produced by `make vectors-log` from the Go implementation, because building
@@ -272,6 +272,8 @@ def write_genesis_aborts(out: pathlib.Path) -> None:
         "20-name-one-past-the-cap": step6,
         "21-root-thr-bool": step6,
         "22-signer-thr-bool": step6,
+        "23-root-order-eight": {"section": "3.1", "says": "of a point of order exactly `L`"},
+        "24-root-noncanonical": {"section": "3.1", "says": "the sign bit is 0 when `x` is 0"},
         "18-bootstrap-sigs-wrong-role": step7,
         # The role string and the key SET are two different halves of step 7;
         # `18` varies the first and `19` the second (run 10, D15).
@@ -374,6 +376,7 @@ def write_trust_rejections(out: pathlib.Path) -> None:
             "section": "9.1", "says": "verifier-key data MUST be canonical RFC 4648 base64"},
         "45-origin-case-changed": origin,
         "46-log-key-name-case-changed": logname,
+        "47-witness-noncanonical-point": {"section": "3.1", "says": "the sign bit is 0 when `x` is 0"},
     }
     for name_, _ in fixture.trust_rejections():
         if name_ not in trust_rules:
@@ -406,6 +409,23 @@ def write_empty_log(out: pathlib.Path) -> None:
                    "`bad-genesis` abort, because there is nothing to reject",
     }) + "\n")
     write(out / "log-empty" / "state.json", state.to_json() + "\n")
+
+
+def write_admission_log(out: pathlib.Path) -> None:
+    """Use the same manifest/state contract as log-empty for key admission."""
+    items = fixture.admission_log()
+    raw = [item.raw for item in items]
+    anchor = replay.Anchor(fixture.NET, entry.leaf_hash(raw[0]))
+    for item in items:
+        write(out / "log-admission" / f"{item.name}.cbor", item.raw)
+        if item.reason:
+            write(out / "log-admission" / f"{item.name}.reason", item.reason + "\n")
+    write(out / "log-admission" / "manifest.json", canonjson.dumps({
+        "anchor": {"net": anchor.net, "genesis_hash": anchor.genesis_hash},
+        "entries": [{"index": i, "name": item.name, "reason": item.reason or ""}
+                    for i, item in enumerate(items)],
+    }) + "\n")
+    write(out / "log-admission" / "state.json", replay.replay(anchor, raw).to_json() + "\n")
 
 
 def write_trust_acceptances(out: pathlib.Path) -> None:
@@ -765,6 +785,9 @@ def write_requests(out: pathlib.Path) -> None:
                     "signature": _signature_state(name, text)})
     write(out / "requests-bad" / "cases.json", canonjson.dumps({
         "rules": {
+            "small-order-device-pk": {"section": "3.1", "says": "MUST be a valid point wherever a key is admitted"},
+            "torsion-R-signature": {"section": "3.1", "says": "only if `R` is a valid point"},
+            "S-plus-L-signature": {"section": "3.1", "says": "S` MUST be less than `L`"},
             "bool-expires": {"says": "requested expiry, unix seconds; MUST be > `ts`", "section": "16.1"},
             "corrupt-character": {"says": "the six-character checksum", "section": "16.2"},
             "empty-label-key": {"says": "every **map key** is a text string of 1–23 bytes", "section": "4.0"},
@@ -901,6 +924,7 @@ def main(argv: list[str]) -> int:
     write_trust_rejections(out)
     write_trust_acceptances(out)
     write_empty_log(out)
+    write_admission_log(out)
     write_trust(out)
     write_policies(out)
     write_requests(out)

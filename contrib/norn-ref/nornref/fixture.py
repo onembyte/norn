@@ -6,12 +6,20 @@ writing files.
 
 from __future__ import annotations
 
+import hashlib
+
 from typing import Any
+
+from nacl.bindings import crypto_core_ed25519_add, crypto_scalarmult_ed25519_base_noclamp
 
 from . import entry, keys, note, trust
 
 NET = bytes.fromhex("6e6f726e2d746573746e65742d303031")  # "norn-testnet-001"
 T0 = 1_760_000_000
+
+# §3.1 edges use public test material, never a second derivation of the keys.
+ORDER_EIGHT = bytes.fromhex("26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05")
+NONCANONICAL_POINT = bytes.fromhex("0100000000000000000000000000000000000000000000000000000000000080")
 
 ROOTS = ["root1", "root2", "root3"]
 SIGNERS = ["signer1", "signer2"]
@@ -1204,8 +1212,35 @@ def genesis_aborts() -> list[tuple[str, bytes, "replay.Anchor"]]:
     bad_body("21-root-thr-bool", root_thr=True)
     bad_body("22-signer-thr-bool", signer_thr=True)
 
+    # Keep the two honest signatories in roots. Appending the edge key leaves
+    # their quorum intact, so only §3.1's point rule can abort these geneses.
+    for name, public in (("23-root-order-eight", ORDER_EIGHT),
+                         ("24-root-noncanonical", NONCANONICAL_POINT)):
+        bad_body(name, roots=[KEYS[n].public for n in ROOTS] + [public])
+
     assert good_anchor  # the good anchor is exercised by the log fixture
     return cases
+
+
+def admission_log() -> list[LogItem]:
+    """An isolated log for §3.1 key admission, not the served fixture.
+
+    A refused admission must leave the keys unchanged. An honest signer beside
+    the three refusals makes rejecting every entry an observable wrong answer.
+    """
+    mixed = crypto_core_ed25519_add(KEYS["signer3"].public, ORDER_EIGHT)
+    builder = _Builder()
+    builder.add("00-genesis", genesis())
+    for kind in ("signer_add", "root_add", "log_key"):
+        body = {"pk": mixed}
+        if kind == "log_key":
+            body["overlap"] = 60
+        builder.add(f"{builder.index:02d}-{kind}-mixed-order",
+                    builder.build(kind, body, [("root1", "root"), ("root2", "root")]),
+                    "decode")
+    builder.add("04-signer_add-honest", builder.build(
+        "signer_add", {"pk": KEYS["signer3"].public}, [("root1", "root"), ("root2", "root")]))
+    return builder.items
 
 
 def genesis_accepts() -> list[tuple[str, bytes, "replay.Anchor"]]:
@@ -1494,7 +1529,14 @@ def trust_rejections() -> list[tuple[str, dict[str, Any]]]:
     # The derived origin with its first letter upper-cased: `norn/` is five
     # characters, and base32's first character here is a letter, not a digit.
     cased = ORIGIN[:5] + ORIGIN[5].upper() + ORIGIN[6:]
+    noncanonical_witness = note.vkey("norn-witness/pi", NONCANONICAL_POINT, note.ALG_COSIGNATURE)
     return [
+        # The key ID and policy name the very same damaged point, so only
+        # §3.1 refuses it, not correspondence or verifier-key framing.
+        ("47-witness-noncanonical-point", damaged(
+            witnesses=[dict(base["witnesses"][0], key=noncanonical_witness)]
+            + [dict(w) for w in base["witnesses"][1:]],
+            policy=_policy_with(witness_key=("pi", noncanonical_witness)))),
         ("01-unknown-key", dict(base, surprise="unexpected member")),
         ("02-wrong-version", damaged(version=2)),
         ("03-short-net", damaged(net=b"\x00" * 8)),
@@ -2294,7 +2336,28 @@ def request_negatives() -> list[tuple[str, str, str]]:
     forged = dict(good)
     forged["sig"] = KEYS["nas"].sign(enrollreq.preimage(good))
 
+    # RFC 8032 signing, except that R carries an order-8 component. The
+    # challenge covers that R, not the honest one: this signature satisfies
+    # the cofactored equation and fails the cofactorless one by exactly -T.
+    torsion = dict(good)
+    key = KEYS["pi-cam"]
+    expanded = bytearray(hashlib.sha512(key.seed).digest())
+    expanded[0] &= 248
+    expanded[31] = (expanded[31] & 63) | 64
+    a = int.from_bytes(expanded[:32], "little")
+    message = enrollreq.preimage(torsion)
+    r = int.from_bytes(hashlib.sha512(bytes(expanded[32:]) + message).digest(), "little") % keys.L
+    honest_R = crypto_scalarmult_ed25519_base_noclamp(r.to_bytes(32, "little"))
+    mixed_R = crypto_core_ed25519_add(honest_R, ORDER_EIGHT)
+    k = int.from_bytes(hashlib.sha512(mixed_R + key.public + message).digest(), "little") % keys.L
+    torsion["sig"] = mixed_R + ((r + k * a) % keys.L).to_bytes(32, "little")
+    raised = dict(good)
+    raised["sig"] = good["sig"][:32] + (int.from_bytes(good["sig"][32:], "little") + keys.L).to_bytes(32, "little")
+
     cases = [
+        ("small-order-device-pk", mutate(device_pk=ORDER_EIGHT), "device_pk is not a valid point; its signature cannot verify under NORN-ED25519-v1"),
+        ("torsion-R-signature", text(torsion), "signature R has an order-8 component; the cofactored equation holds"),
+        ("S-plus-L-signature", text(raised), "signature scalar S + L is not below L"),
         ("unknown-key", mutate(extra=1), "closed schema: an unknown key"),
         ("missing-sig", mutate(resign=False, sig=_ABSENT), "unsigned"),
         ("wrong-version", mutate(v=2), "v is not 1"),

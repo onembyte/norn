@@ -30,3 +30,16 @@ coverage/case-tables expected=["anchors/cases.json","checkpoints-bad/cases.json"
 # 16.1). The sealed verifier decodes `labels: {}` and, its signature covering the
 # map, accepts the request.
 requests-bad/empty-labels expected="refuse" got="accept"
+#
+# D-072 (c), 2026-10-10, row 023r-e: Norn's own NORN-ED25519-v1 edges. The sealed
+# verifier is cofactored and checks no key, so it admits a small-order and a
+# non-canonical genesis root, a cofactored-only torsion R and a non-canonical
+# witness key; it does not replay the new log-admission/ directory, so its
+# protocol-artifact coverage check lists those files as unvisited.
+coverage/protocol-artifacts expected=[] got=["log-admission/00-genesis.cbor","log-admission/01-signer_add-mixed-order.cbor","log-admission/01-signer_add-mixed-order.reason","log-admission/02-root_add-mixed-order.cbor","log-admission/02-root_add-mixed-order.reason","log-admission/03-log_key-mixed-order.cbor","log-admission/03-log_key-mixed-order.reason","log-admission/04-signer_add-honest.cbor"]
+genesis/23-root-order-eight/00-genesis.cbor expected="bad-genesis" got="accept"
+genesis/23-root-order-eight/state.json expected="byte-identical" got="different"
+genesis/24-root-noncanonical/00-genesis.cbor expected="bad-genesis" got="accept"
+genesis/24-root-noncanonical/state.json expected="byte-identical" got="different"
+requests-bad/torsion-R-signature expected="refuse" got="accept"
+trust-bad/47-witness-noncanonical-point.cbor expected="trust" got="accept"
