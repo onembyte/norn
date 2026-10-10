@@ -18,6 +18,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"syscall"
 	"time"
 
@@ -249,10 +250,16 @@ func build(config Config, logger *slog.Logger) (*agent.Agent, time.Duration, err
 	// never end up on it.
 	var cycle *agent.Agent
 	gossipPort := config.GossipPortOrDefault()
+	// §15's monotonic time since: a clock that counts a suspend where the
+	// platform has one (mono.go).
+	mono, err := newMono()
+	if err != nil {
+		return nil, 0, fmt.Errorf("reading %s: %w", clockFor(runtime.GOOS).name, err)
+	}
 	cycle, err = agent.New(agent.Config{
 		Anchor: anchor, Fetcher: fetcher, Device: device, Provider: provider,
 		Mode: mode, AllowNoQuorum: config.AllowNoQuorum,
-		RunDir: config.RunDir, StateDir: config.StateDir, Now: time.Now,
+		RunDir: config.RunDir, StateDir: config.StateDir, Now: time.Now, Mono: mono,
 		Hard: hard, MaxSkew: maxSkew, RoundBudget: roundBudget, VerifyBudget: verifyBudget,
 		Peers:       func() []string { return cycle.PeerAddresses(gossipPort) },
 		FightPolicy: policy, FightThreshold: threshold, FightWindow: window,
