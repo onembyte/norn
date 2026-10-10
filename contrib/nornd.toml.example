@@ -1,0 +1,62 @@
+# Install this file as /etc/norn/nornd.toml for contrib/systemd/nornd.service.
+# The interface must already exist, and the trust anchor must be readable by
+# the unit's unprivileged user. Keys come from the log, never from this file.
+
+# A node watches one WireGuard interface; replace this with the site's name.
+interface = "wg0"
+# wgctrl is the default; tailscale also covers Headscale, in observe mode only.
+# backend = "wgctrl"
+# This is tailscaled's default Linux socket, unused by the wgctrl backend.
+# tailscale_socket = "/var/run/tailscale/tailscaled.sock"
+# Observe is load-bearing: a missing setting must never start enforcement (D-005).
+mode = "observe"
+# The default 200 ms poll bounds how long an unrecognised peer goes unnoticed.
+# poll = "200ms"
+# Without a trust anchor a node proves nothing; install the site's anchor here.
+trust = "/etc/norn/norn.trust"
+# Empty uses the anchor's log_urls rather than choosing a different log here.
+# log = ""
+# proven.json is a runtime publication in the unit's RuntimeDirectory.
+run_dir = "/run/norn"
+# The held head and fork evidence must outlive a reboot (D-069), unlike /run.
+state_dir = "/var/lib/norn"
+
+# The default is never: only an operator may ask Norn to drop every peer itself.
+# hard_stale = "0"
+# The default five-minute clock allowance bounds disagreement with witness time.
+# max_skew = "5m"
+# The default false refuses enforcement on the log operator's word alone (D-072).
+# allow_no_quorum = false
+# The default five seconds bounds one read from a silent peer.
+# peer_timeout = "5s"
+# The default five seconds bounds the entire round of asking peers.
+# round_budget = "5s"
+# The default minute bounds one verification of the log.
+# verify_budget = "1m"
+# The default 8100 listens on the tunnel address; -gossip-port 0 turns it off.
+# gossip_port = 8100
+# Empty reads no JSON hints file; log labels remain available as endpoint hints.
+# hints_file = ""
+
+# The default alarm keeps the network up; quarantine is a deliberate break-glass choice.
+# fight_policy = "alarm"
+# The default three returns of the same key in the window constitute a fight.
+# fight_threshold = 3
+# The default minute bounds the window in which those returns are counted.
+# fight_window = "60s"
+# Linux's default below takes the link down only for quarantine; elsewhere there
+# is no assumed command. Keeping it unset and the policy at alarm is load-bearing:
+# an operator must choose a break-glass action and be able to read what it runs.
+# quarantine_command = ["ip", "link", "set", "{iface}", "down"]
+
+# One optional reachability block for a device the log proves; it contains no key.
+# Static hints default to none and are needed only when log labels are insufficient.
+# [[peer]]
+# The device_id must name the enrolled device; there is no default identity.
+# device_id = "example-device"
+# Empty by default; these documentation prefixes illustrate routes, not key authority.
+# allowed_ips = ["192.0.2.14/32", "2001:db8::14/128"]
+# Empty by default; this documentation endpoint illustrates where the device is found.
+# endpoint = "198.51.100.14:51820"
+# The default zero sends no persistent keepalive; enable it only when a NAT needs one.
+# keepalive = 0

@@ -1,0 +1,39 @@
+[Unit]
+Description=Norn WireGuard observer
+After=network-online.target
+Wants=network-online.target
+# Restart=always stops at systemd's default start limit; a watcher that gave up
+# after a crash loop would leave the interface unwatched, so the limit is lifted.
+StartLimitIntervalSec=0
+
+[Service]
+# The config selects observe; enforcing is something an operator asks for in writing.
+ExecStart=/usr/local/bin/nornd -config /etc/norn/nornd.toml
+# A crash must not leave the interface unwatched until somebody notices.
+Restart=always
+# Two seconds avoids a busy restart loop while keeping an outage short.
+RestartSec=2s
+# A transient unprivileged user needs no account provisioning; systemd keeps
+# the state directory accessible across UID changes and owns the runtime directory.
+DynamicUser=yes
+# Reading a WireGuard device over netlink needs CAP_NET_ADMIN even in observe.
+AmbientCapabilities=CAP_NET_ADMIN
+# Writing that device needs the same capability; no other capability is needed.
+CapabilityBoundingSet=CAP_NET_ADMIN
+# Executing a helper must not grant privileges the daemon did not start with.
+NoNewPrivileges=yes
+# Only systemd's managed state and runtime directories need to be writable.
+ProtectSystem=strict
+# Watching an interface needs nothing from an operator's home directory.
+ProtectHome=yes
+# Temporary files must not share a namespace with other services.
+PrivateTmp=yes
+# proven.json is a runtime publication, so it belongs under /run/norn.
+RuntimeDirectory=norn
+# The held head and fork evidence must outlive a reboot; /run cannot keep them.
+StateDirectory=norn
+# The daemon reads its trust anchor and config, but must not rewrite either.
+ReadOnlyPaths=/etc/norn
+
+[Install]
+WantedBy=multi-user.target
