@@ -127,6 +127,15 @@ incident that produced it. Read that section before the first firing.
       the `SPEC.md` §12/§12.1 rows their vectors need, nothing normative
       (`~/norn-lanes/RULES.md` rules 1 and 5): the integrator applies the
       sources, regenerates here, and `vectors-check` proves the result.
+    - **Decided SPEC text travels in the brief (owner's reminder,
+      2026-10-10: "use codex sessions to optimize your usage whenever you
+      can").** A row whose decision is taken is delegated even when it changes
+      normative text: the loop writes the exact sentences into the brief as a
+      `SPEC TEXT` block, the lane inserts them byte for byte (RULES.md rule 1's
+      exception) and builds the code, tests and vectors around them, and the
+      integrator checks the inserted text is verbatim. Writing a decision, a
+      DECISION block or text not yet decided stays here. 6.5l-ix-f-c and -f-d
+      were built here before this; f-e, f-f and f-h, and 6.5m-xii-s, are lanes.
     - **Order by model (owner's instruction, 2026-10-07):** a firing on
       Mythos takes the first 🧠 row and lets finished lanes wait; a firing on
       Opus integrates finished lanes and takes untagged rows, and stops with a
