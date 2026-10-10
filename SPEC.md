@@ -803,17 +803,21 @@ spec's rules produce.
 
 ### Checking a receipt
 
-Given a signed receipt, the anchored log key and origin, the submitted entry's
-leaf hash when checking an immediate submission response, and an optional
+Given a signed receipt, the log keys the verifier trusts for the anchored
+origin (§9.4: the trust file's, plus every `log_key` of a state it has
+accepted) and that origin, the submitted entry's leaf hash when checking an
+immediate submission response, and an optional
 trusted checking time, a reader MUST check in this order. The first failed
 step decides the refusal code; codes are closed, so no other receipt refusal
 code is valid:
 
 1. Split the signed note. Malformed framing, including an absent final line
    feed, an extra blank line, or no signature line, is `note`.
-2. The note MUST verify under the anchored log key. A missing key, an unmatched
-   key, a bad signature, or a signature payload of the wrong length for that
-   key is `log-signature`.
+2. The note MUST verify under a log key the verifier trusts: the signature
+   line's key name and key id select the key — no key is tried against a line
+   that does not name it — and lines naming no trusted key are ignored. No line
+   selecting a trusted key, a bad signature, or a signature payload of the
+   wrong length for the selected key is `log-signature`.
 3. Require exactly four signed-text lines. The first line MUST be
    `norn/receipt/v1`; otherwise refuse as `receipt`.
 4. The origin line MUST equal the anchored origin; otherwise `origin`.
@@ -859,6 +863,15 @@ ties them together. The bundle is self-contained, so it can be checked by
 someone holding only `norn.trust` — which is what makes it useful in an alarm,
 an audit trail, or a bug report.
 
+Holding `norn.trust` means holding the log key it names. After the roots rotate
+the key in the log (§9.4), a bundle made after a rotation is checkable by a
+reader that has replayed the log through the rotation, or holds a trust file
+issued since; one holding only an older `norn.trust` sees `log-signature`,
+which is the truth — that reader does not yet trust the key the bundle is
+signed with. Receipts (§7) are checked the same way. Retiring a log key is a
+trust-file change, not something a reader infers from the log (D-072 (d),
+D-074 (a)).
+
 ### 8.1 Bundle format (normative)
 
 Deterministic CBOR per §4.0, a closed map of exactly these six keys. A bundle
@@ -875,7 +888,10 @@ why there is no domain prefix here — there is nothing for one to separate.
 | `checkpoint` | text | the signed checkpoint note, verbatim |
 
 Checking a bundle: **verify its checkpoint per §10** — this network's origin,
-this network's log key, and a satisfied witness quorum — then confirm
+a log signature and a satisfied witness quorum,
+under the log keys the verifier trusts (§9.4: the trust file's, plus every
+`log_key` of a state it has accepted) and the policy of that state, the
+signature line's key name and key id selecting the key — then confirm
 `SHA-256(0x00 ‖ entry)` and `proof` reach that checkpoint's root at `index` for
 that size, then confirm that **`device` is the `device_id` the `entry` names**
 — for an `enroll`, the id inside the embedded request; for the other device

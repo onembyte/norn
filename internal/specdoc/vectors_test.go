@@ -2887,7 +2887,7 @@ func TestEveryServedAndBundleNegativeCitesTheRuleOfItsCode(t *testing.T) {
 		},
 		"proofs-bad": {
 			"bundle":        {"a closed map of exactly these six keys", "`v` | uint | `1`", "larger than this MUST be refused on length"},
-			"log-signature": {"this network's log key"},
+			"log-signature": {"under the log keys the verifier trusts"},
 			"origin":        {"this network's origin"},
 			"quorum":        {"a satisfied witness quorum"},
 			"inclusion":     {"reach that checkpoint's root at `index`"},
@@ -2895,7 +2895,7 @@ func TestEveryServedAndBundleNegativeCitesTheRuleOfItsCode(t *testing.T) {
 		},
 		"receipt-bad": {
 			"note":          {"a second `0x0A` after the final signature creates a forbidden blank line"},
-			"log-signature": {"The note MUST verify under the anchored log key"},
+			"log-signature": {"The note MUST verify under a log key the verifier trusts"},
 			"receipt":       {"The first line MUST be"},
 			"origin":        {"The origin line MUST equal the anchored origin"},
 			"leaf-hash":     {"The leaf hash MUST be standard base64 and decode to exactly 32 bytes", "unused pad bits in the leaf hash MUST be zero"},

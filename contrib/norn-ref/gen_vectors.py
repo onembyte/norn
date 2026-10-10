@@ -509,9 +509,10 @@ def write_trust(out: pathlib.Path) -> None:
              "a second `0x0A` after the final signature creates a forbidden blank line",
              malformed=True)
 
-    # Same receipt text, signed by a key other than the one in trust.cbor.
+    # Same receipt text, signed by a key other than the one in trust.cbor: a
+    # reader holding only that file trusts no other key (§7, §9.4).
     add_case("untrusted-log-key.note", good_text, "log-signature",
-             "The note MUST verify under the anchored log key", signer="logkey2")
+             "The note MUST verify under a log key the verifier trusts", signer="logkey2")
 
     body_lines = good_text.splitlines()
     changed = body_lines.copy()
@@ -584,7 +585,7 @@ def write_trust(out: pathlib.Path) -> None:
 
     foreign_leaf = base64.b64encode(hashlib.sha256(b"a different entry").digest()).decode("ascii")
     add_case("order-log-signature-before-receipt.note", two_faults(l0="norn/receipt/v2"),
-             "log-signature", "The note MUST verify under the anchored log key", signer="logkey2")
+             "log-signature", "The note MUST verify under a log key the verifier trusts", signer="logkey2")
     add_case("order-receipt-before-origin.note",
              two_faults(l0="norn/receipt/v2", l1="norn/elsewhere"), "receipt",
              "The first line MUST be")

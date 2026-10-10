@@ -260,9 +260,9 @@ func writeBadProofs(root, origin string, key ed25519.PrivateKey, entries [][]byt
 		"no-quorum-tampered-proof":  {"section": "8.1", "says": "a satisfied witness quorum"},
 		"wrong-origin":              {"section": "8.1", "says": "this network's origin"},
 		"wrong-entry":               {"section": "8.1", "says": "reach that checkpoint's root at `index`"},
-		"foreign-checkpoint":        {"section": "8.1", "says": "this network's log key"},
+		"foreign-checkpoint":        {"section": "8.1", "says": "under the log keys the verifier trusts"},
 		"tampered-proof":            {"section": "8.1", "says": "reach that checkpoint's root at `index`"},
-		"wrong-log-key":             {"section": "8.1", "says": "this network's log key"},
+		"wrong-log-key":             {"section": "8.1", "says": "under the log keys the verifier trusts"},
 	}
 
 	// D-061: the §10.1 code each is refused with, in the bundle table's
