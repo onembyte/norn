@@ -23,6 +23,7 @@ import (
 
 var (
 	nornBinOnce sync.Once
+	nornBinDir  string
 	nornBinPath string
 	nornBinErr  string
 )
@@ -30,7 +31,7 @@ var (
 func nornBinary(t *testing.T) string {
 	t.Helper()
 	nornBinOnce.Do(func() {
-		bin := filepath.Join(os.TempDir(), fmt.Sprintf("norn-cli-test-%d", os.Getpid()))
+		bin := filepath.Join(nornBinDir, "norn")
 		build := exec.Command("go", "build", "-o", bin, ".")
 		if out, err := build.CombinedOutput(); err != nil {
 			nornBinErr = fmt.Sprintf("building norn: %v\n%s", err, out)
