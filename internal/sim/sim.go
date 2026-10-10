@@ -84,8 +84,10 @@ func New(dir string, anchor *trust.Trust, source logclient.Fetcher, identities [
 		n := &Node{ID: id.ID, Device: peertable.NewFake(), Log: &Fetcher{Source: source}, Wall: wall,
 			Dir: filepath.Join(dir, fmt.Sprintf("node%d", i+1)), Gossip: true}
 		n.Device.OwnPublicKey, n.Device.MaskPrefixes = id.Key, true
+		// Devices enrolled after the mesh starts can carry their route hints
+		// in signed labels; the original nodes keep their static addresses.
 		a, err := agent.New(agent.Config{
-			Anchor: anchor, Fetcher: n.Log, Device: n.Device, Provider: hints,
+			Anchor: anchor, Fetcher: n.Log, Device: n.Device, Provider: endpoint.First{hints, &endpoint.Labels{}},
 			Mode: reconcile.Owner, RunDir: n.Dir,
 			Now: func() time.Time { return n.Wall }, Mono: func() time.Duration { return n.Mono },
 			Peers: func() []string {

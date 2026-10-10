@@ -181,7 +181,7 @@ watchdog window for *new* rogue IPs to zero, but is **blind to the swap attack**
 | host reboots | the stored head and any fork freeze are read back from `state_dir` (default `/var/lib/norn`, never `/run`, which a reboot clears — D-069); the restored head is compared against, not enforced, until a checkpoint verifies; `nornd` warns at start if `state_dir` is unwritable or on a tmpfs | same | same |
 | checkpoint stale > S (`degraded`) | keep last proven set; alarm | same | alarm |
 | stale > S_hard (opt-in) | `ReplacePeers` with empty set — fail closed | evict all | — |
-| fork detected | freeze at last proven set; alarm; refuse new state | same | alarm |
+| fork detected | shrink to peers proven at the common prefix and at the held head; never grow; fail closed if the prefix cannot be established; keep enforcing, alarm and refuse new state until a new trust file (`SPEC.md` §11, §13.2) | same | report the frozen set and alarm, without writing |
 | trust file missing/invalid | refuse to start | refuse to start | refuse to start |
 
 ## 9. Interface between verifier and enforcer (→ `SPEC.md` §13.3)

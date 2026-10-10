@@ -59,7 +59,7 @@ Capabilities: withhold entries, stop signing, present different histories to dif
 
 | Goal | Norn |
 |---|---|
-| Split view | **Detected** unless ≥ k witnesses collude (G2). Non-repudiable proof: two cosigned checkpoints of the same size with different roots, or a failed consistency proof. |
+| Split view | **Prevented** by the quorum below A9's collusion bound (G2); above it, **detected** by gossip. A proven fork freezes authorization: keep only peers proven at the common prefix and at the held head, evict post-split enrollments, add none; fail closed if the prefix cannot be established (`SPEC.md` §11, §13.2). The two cosigned checkpoints and their proofs are non-repudiable evidence. |
 | Append invalid entries to grant access | **Harmless**: verifiers ignore entries that fail signer-state validation at replay (G3). A past valid entry re-appended under a different signature list is the same entry and is refused as a duplicate (D-070; audit SEC-001, 2026-10-07). |
 | Withhold / freeze | **Detected** via staleness (G4). DoS only. |
 | Rewrite history | **Detected**: consistency proof fails against any earlier checkpoint held by any node or witness. |
@@ -125,7 +125,7 @@ Two k-of-N quorums share at least 2k−N witnesses, so the number that must coll
 |---|---|
 | fewer than max(0, 2k−N) witnesses colluding with the log | No split view under the quorum alone; correctness holds. |
 | ≥ k witnesses refuse to cosign (liveness) | Log cannot advance under the node's policy → nodes hold the last good checkpoint and alarm (G4). DoS. A 3-of-3 policy makes the bound k at the cost of exactly this: any one witness down stalls cosigning. |
-| max(0, 2k−N) or more witnesses collude with the log — with 2k ≤ N, that is none | A split view is possible: the quorum alone proves nothing about a fork, and detection rests on gossip between nodes every `T_g` (T1). `norn init` warns when 2k ≤ N. Mitigation as for CT and Sigsum: witnesses in independent trust domains (Pi, VPS, a friend, public witness network). |
+| max(0, 2k−N) or more witnesses collude with the log — with 2k ≤ N, that is none | A split view is possible: the quorum alone proves nothing about a fork, and detection rests on gossip between nodes every `T_g` (T1). Once proven, the fork shrinks enforcement to peers proven at both the common prefix and the node's held head, never grows it, and fails closed if that prefix cannot be established (`SPEC.md` §11, §13.2). Legitimate post-split enrollments also lose access until recovery; the colluding log and witnesses can force a disconnection (D-072 (a)). `norn init` warns when 2k ≤ N. Mitigation as for CT and Sigsum: witnesses in independent trust domains (Pi, VPS, a friend, public witness network). |
 
 ### A10 — Attacker at bootstrap
 Capabilities: controls the channel that provisions a new node.

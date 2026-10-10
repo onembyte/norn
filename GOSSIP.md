@@ -226,9 +226,19 @@ can withhold but not deceive; unproven peers are not polled.
 ## 7. Fork evidence
 
 `fork/<unix>.evidence` = both cosigned checkpoints + the failing consistency proof
-(or the equal-size/different-root pair), plus the policy text. Anyone with
-`norn.trust` can re-verify it offline: `norn verify-evidence <file>`. This is the
-artifact that goes to the witness operators, the log operator's boss, or a blog post.
+(or the equal-size/different-root pair), the common prefix and its proofs to
+both heads, plus the policy text (`SPEC.md` §11.1). Anyone with `norn.trust`
+can re-verify it offline: `norn verify-evidence <file>`. This is the artifact
+that goes to the witness operators, the log operator's boss, or a blog post.
+
+A node that verifies the evidence freezes just as the detector does: it keeps
+only peers proven at the common prefix and at its own held head, removes the
+rest, and adds none. A device enrolled after the split on the victim's branch
+therefore loses access; a pre-split device revoked at that head stays out. If
+the node cannot establish the prefix from its own branch, it drops every peer
+and says why in its frozen alarm. It consumes no new authorization state and
+keeps enforcing and alarming until a new trust file (`SPEC.md` §11 and §13.2).
+Version-1 evidence claims no prefix and therefore makes the node fail closed.
 
 ## 8. Split-view and freshness test design (Phase 4 gate)
 
@@ -238,8 +248,8 @@ routes so the log serves *different content per client IP*.
 
 | # | Scenario | Setup | Expected within |
 |---|---|---|---|
-| **T1** | Split view, colluding witnesses | log serves branch A (size N, entry E_a) to node1 and branch B (size N, entry E_b) to node2; all 3 witnesses cosign both | both nodes write evidence, freeze, alarm ≤ 2·T_g; monitor receives evidence ≤ 3·T_g; proven set unchanged on both |
-| **T1b** | Evidence propagation | as T1 but node3 sees only branch A | node3 freezes via peer evidence ≤ 3·T_g |
+| **T1** | Split view, colluding witnesses | log serves branch A (size N, enrolling a device after the split) to node1 and branch B (size N, different final entry) to node2; all 3 witnesses cosign both | both nodes write evidence, freeze, alarm ≤ 2·T_g; node1 evicts the post-split device within that bound; peers proven at both the prefix and the held head stay, none are added; monitor receives evidence ≤ 3·T_g (`SPEC.md` §11, §13.2) |
+| **T1b** | Evidence propagation | as T1 but node3 sees only branch A, including its post-split device | node3 freezes via peer evidence and evicts that device ≤ 3·T_g after the detector proves the fork; pre-split peers still proven at its held head stay, none are added |
 | **T2** | Log freeze | log stops serving; node1 already has size N+1 | node2, node3 adopt N+1 via gossip ≤ 2·T_g; nobody goes `degraded` |
 | **T3** | Honest witnesses, lying log | log tries branch B to node2; witnesses cosigned A already | witnesses refuse B; node2 never adopts B; node2 stays on A (from peers), no alarm except `LOG_MISBEHAVIOUR` from the receipt check |
 | **T4** | Replay | chaos replays a cosigned checkpoint of size N−5 | rejected; no state change; `REPLAY` counter increments |

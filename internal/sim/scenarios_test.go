@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"net/netip"
 	"os"
 	"path/filepath"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/onembyte/norn/internal/agent"
 	"github.com/onembyte/norn/internal/cosign"
+	"github.com/onembyte/norn/internal/enrollreq"
 	"github.com/onembyte/norn/internal/entry"
 	"github.com/onembyte/norn/internal/forkevidence"
 	"github.com/onembyte/norn/internal/freshness"
@@ -59,9 +61,7 @@ func TestT1BothNodesProveTheSplitViewAndFreeze(t *testing.T) {
 					}
 					latencies[node.ID] = m.Elapsed - start
 				}
-				if !reflect.DeepEqual(before[i], held(t, node)) {
-					t.Fatalf("%s changed its held state on the fork", node.ID)
-				}
+				wantFrozenTable(t, node, before[i], beforeSplitPeers(before[i].Peers))
 			}
 		}
 	}
@@ -81,7 +81,7 @@ func TestT1BothNodesProveTheSplitViewAndFreeze(t *testing.T) {
 		if ev.Held != before[i].Checkpoint {
 			t.Fatalf("%s did not accuse from its own held branch", node.ID)
 		}
-		t.Logf("T1 %s evidence, freeze and FORK latency: %s simulated (bound %s); FROZEN_BY_FORK by %s", node.ID, latency, 2*tg, m.Elapsed-start)
+		t.Logf("T1 %s evidence, freeze, table shrink and FORK latency: %s simulated (bound %s); FROZEN_BY_FORK by %s", node.ID, latency, 2*tg, m.Elapsed-start)
 	}
 
 	// The existing monitor.Watcher collects evidence from the real gossip
@@ -114,11 +114,22 @@ func TestT1BothNodesProveTheSplitViewAndFreeze(t *testing.T) {
 		if !received || m.Elapsed-start > 3*tg {
 			t.Fatalf("monitor did not receive %s's evidence within 3*T_g: %+v", node.ID, alerts)
 		}
-		if !node.Agent.Frozen() || !reflect.DeepEqual(before[i], held(t, node)) {
-			t.Fatalf("%s resumed after a consistent extension", node.ID)
-		}
+		wantFrozenTable(t, node, before[i], beforeSplitPeers(before[i].Peers))
 	}
 	t.Logf("T1 monitor evidence receipt latency: %s simulated (bound %s)", m.Elapsed-start, 3*tg)
+
+	// Even a peer proven at the prefix must not be reinstalled after the
+	// interface loses it. This distinguishes never growing from merely
+	// refusing the new branch's authorization state.
+	for _, node := range m.Nodes[:2] {
+		if err := node.Device.Replace(nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	forkCycle(t, m, tg, 0, 1)
+	for i, node := range m.Nodes[:2] {
+		wantFrozenTable(t, node, before[i], nil)
+	}
 }
 
 func TestT1bANodeSeeingOnlyBranchAFreezesFromPeerEvidence(t *testing.T) {
@@ -165,13 +176,17 @@ func TestT1bANodeSeeingOnlyBranchAFreezesFromPeerEvidence(t *testing.T) {
 		t.Fatal("node3 did not persist the evidence it received")
 	}
 	checkSplitEvidence(t, a, b, nodeEvidence(t, node3))
-	if !reflect.DeepEqual(before, held(t, node3)) {
-		t.Fatal("node3 changed its proven set, checkpoint or peer table on peer evidence")
-	}
-	t.Logf("T1b node3 evidence, freeze and FORK latency: %s simulated (bound %s)", latency, 3*tg)
+	wantPeers := beforeSplitPeers(before.Peers)
+	wantFrozenTable(t, node3, before, wantPeers)
+	t.Logf("T1b node3 evidence, freeze, table shrink and FORK latency: %s simulated (bound %s)", latency, 3*tg)
 
 	// A healthy extension on A, and time beyond the freshness threshold,
-	// cannot undo §11's permanent freeze or trigger further enforcement.
+	// cannot undo §11's permanent freeze. A pre-split peer removed from
+	// the interface meanwhile must not be installed again either.
+	wantPeers = wantPeers[1:]
+	if err := node3.Device.Replace(wantPeers); err != nil {
+		t.Fatal(err)
+	}
 	a.params(t, map[string]any{"staleness": uint64(120)})
 	forkCycle(t, m, tg, 2)
 	if !hasEvent(m.Events[mark:], node3.ID, agent.Frozen, "refusing every checkpoint") {
@@ -179,13 +194,73 @@ func TestT1bANodeSeeingOnlyBranchAFreezesFromPeerEvidence(t *testing.T) {
 	}
 	t.Logf("T1b node3 FROZEN_BY_FORK latency: %s simulated", m.Elapsed-start)
 	forkCycle(t, m, staleness+tg, 2)
-	if !node3.Agent.Frozen() || !reflect.DeepEqual(before, held(t, node3)) || !bytes.Equal(sourceEvidence, nodeEvidence(t, node3)) {
-		t.Fatal("node3 resumed or changed state after freezing on peer evidence")
+	wantFrozenTable(t, node3, before, wantPeers)
+	if !bytes.Equal(sourceEvidence, nodeEvidence(t, node3)) {
+		t.Fatal("node3 changed its evidence after freezing")
 	}
 }
 
-// splitView first corroborates a common prefix, so §11's unchanged-table
-// contract applies rather than D-071's uncorroborated-first-head drop. The
+func TestT1cANodeWhoseBranchDoesNotReachTheSplitFailsClosed(t *testing.T) {
+	t.Log("Simulated time proves code ordering and bounds; it does not replace the lab's wall-clock measurements.")
+	a, b := newFixture(t), newFixture(t)
+	m := a.mesh(t)
+	goodCycle(t, m, 0)
+	goodCycle(t, m, 0)
+	node1, node3 := m.Nodes[0], m.Nodes[2]
+	before := held(t, node3)
+	if len(before.Peers) != 2 {
+		t.Fatal("the bystander must enforce peers before learning of the fork")
+	}
+	node3.Log.Source = logclient.Dir(a.snapshot(t))
+	// Both signed branches share a real entry beyond node3's held head.
+	// The evidence is valid, but node3 cannot establish that prefix locally.
+	a.params(t, map[string]any{"staleness": uint64(120)})
+	b.params(t, map[string]any{"staleness": uint64(120)})
+	split := a.store.Checkpoint().Size
+	a.enrollAfterSplit(t)
+	b.params(t, map[string]any{"staleness": uint64(121)})
+	node1.Gossip = false
+	goodCycle(t, m, time.Second, 0)
+	node1.Log.Source = logclient.Dir(b.dir)
+	forkCycle(t, m, 0, 0)
+	raw := nodeEvidence(t, node1)
+	ev := checkSplitEvidence(t, a, b, raw)
+	if int64(ev.Split) != split || split <= view(t, node3).Checkpoint.Size {
+		t.Fatal("the evidence does not claim a split beyond the bystander's held head")
+	}
+	delete(m.handlers, "http://10.77.0.2:8099")
+	// The detector's checkpoint is unavailable while its evidence remains
+	// reachable. Otherwise checkpoint gossip first advances the bystander
+	// to A, where it can establish the split before it reads the evidence.
+	detector := m.handlers["http://10.77.0.1:8099"]
+	m.handlers["http://10.77.0.1:8099"] = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/checkpoint") {
+			http.Error(w, "checkpoint unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		detector.ServeHTTP(w, r)
+	})
+	mark := len(m.Events)
+	forkCycle(t, m, tg, 2)
+	wantFrozenTable(t, node3, before, nil)
+	if !hasEvent(m.Events[mark:], node3.ID, agent.Fork, "peer http://10.77.0.1:8099 proved") ||
+		!bytes.Equal(raw, nodeEvidence(t, node3)) {
+		t.Fatal("the bystander did not freeze on the detector's verified evidence")
+	}
+	forkCycle(t, m, tg, 2)
+	why := fmt.Sprintf("fails closed and drops every peer: this node's branch does not reach the split at %d entries", split)
+	if !hasEvent(m.Events[mark:], node3.ID, agent.Frozen, why) {
+		t.Fatal("the FROZEN alarm did not explain that this node's branch cannot reach the split")
+	}
+	// Deliver a head reaching the split after the freeze. Neither it nor
+	// the previously proven peers may be installed under this anchor.
+	node3.Log.Source = logclient.Dir(a.dir)
+	forkCycle(t, m, staleness+tg, 2)
+	wantFrozenTable(t, node3, before, nil)
+}
+
+// splitView first corroborates a common prefix, so §11's frozen set
+// applies rather than D-071's uncorroborated-first-head drop. The
 // split is delivered between gossip rounds, and each node verifies its own
 // log's complete tree before the next exchange exposes the disagreement.
 func splitView(t *testing.T) (*fixture, *fixture, *Mesh) {
@@ -201,7 +276,12 @@ func splitView(t *testing.T) (*fixture, *fixture, *Mesh) {
 	m := a.mesh(t)
 	goodCycle(t, m, 0)
 	goodCycle(t, m, 0)
-	a.params(t, map[string]any{"staleness": uint64(60)})
+	for _, node := range m.Nodes {
+		if peers := held(t, node).Peers; len(peers) != 2 || holdsPeer(peers, afterSplitKey()) {
+			t.Fatalf("%s did not start with just its two pre-split peers", node.ID)
+		}
+	}
+	a.enrollAfterSplit(t)
 	b.params(t, map[string]any{"staleness": uint64(61)})
 	acp, bcp := a.store.Checkpoint(), b.store.Checkpoint()
 	if acp.Size != prefix.Size+1 || bcp.Size != acp.Size || acp.Root == bcp.Root {
@@ -242,9 +322,67 @@ func splitView(t *testing.T) (*fixture, *fixture, *Mesh) {
 		if got := view(t, node).Checkpoint; got.Size != want.Size || got.Root != hex.EncodeToString(want.Root[:]) {
 			t.Fatalf("%s did not adopt its assigned branch: %+v", node.ID, got)
 		}
+		peers := held(t, node).Peers
+		if i != 1 {
+			if len(peers) != 3 || !holdsPeer(peers, afterSplitKey()) {
+				t.Fatalf("%s did not install the device enrolled after the split on A", node.ID)
+			}
+		} else if len(peers) != 2 || holdsPeer(peers, afterSplitKey()) {
+			t.Fatal("branch B installed a device enrolled only on A")
+		}
 		node.Gossip = true
 	}
 	return a, b, m
+}
+
+// beforeSplitPeers names the expected survivors independently of frozenSet:
+// this scenario adds exactly one device after its corroborated prefix.
+func beforeSplitPeers(peers []peertable.Peer) []peertable.Peer {
+	var kept []peertable.Peer
+	for _, peer := range peers {
+		if peer.Key != afterSplitKey() {
+			kept = append(kept, peer)
+		}
+	}
+	return kept
+}
+
+func wantFrozenTable(t *testing.T, node *Node, before heldState, want []peertable.Peer) {
+	t.Helper()
+	got := held(t, node)
+	if !node.Agent.Frozen() {
+		t.Fatalf("%s is not frozen", node.ID)
+	}
+	if len(got.Peers) != len(want) || (len(want) > 0 && !reflect.DeepEqual(got.Peers, want)) {
+		t.Fatalf("%s frozen peer table has %d peers, want %d: post-split peer present=%v",
+			node.ID, len(got.Peers), len(want), holdsPeer(got.Peers, afterSplitKey()))
+	}
+	// Enforcement may write a smaller table; authorization state stays held.
+	got.Peers, got.Writes = before.Peers, before.Writes
+	if !reflect.DeepEqual(before, got) {
+		t.Fatalf("%s changed its held checkpoint or published view on the fork", node.ID)
+	}
+}
+
+func afterSplitKey() peertable.Key { return peertable.Key{42} }
+
+func (f *fixture) enrollAfterSplit(t *testing.T) {
+	t.Helper()
+	identity := ed25519.NewKeyFromSeed(bytes.Repeat([]byte{42}, ed25519.SeedSize))
+	wg := afterSplitKey()
+	req, err := enrollreq.New(f.doc.Net, "after-split", identity.Public().(ed25519.PublicKey), wg[:],
+		cosignedAt, map[string]string{"ip": "10.77.0.4/32"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := enrollreq.Sign(req, identity); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := enrollreq.Encode(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.append(t, "enroll", map[string]any{"request": raw}, "signer", "signer1", "signer2")
 }
 
 func forkCycle(t *testing.T, m *Mesh, delta time.Duration, indices ...int) {
