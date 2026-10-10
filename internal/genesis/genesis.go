@@ -24,6 +24,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/onembyte/norn/internal/ed25519v1"
 	"github.com/onembyte/norn/internal/entry"
 	"github.com/onembyte/norn/internal/note"
 	"github.com/onembyte/norn/internal/replay"
@@ -247,8 +248,24 @@ func (c Ceremony) check() error {
 				"role only (§4.3)", entry.Kid(root))
 		}
 	}
+	// §3.1 item 2: every key the genesis and the trust file admit is a valid
+	// point. Replay and trust.Validate refuse one too, but only after the
+	// ceremony has signed it; here the refusal can say which key.
+	for _, set := range []struct {
+		role string
+		keys []ed25519.PublicKey
+	}{{"root", c.Roots}, {"signer", c.Signers}} {
+		for _, key := range set.keys {
+			if !ed25519v1.ValidPoint(key) {
+				return ceremonyErrorf("%s %s is not a valid point (SPEC §3.1)", set.role, entry.Kid(key))
+			}
+		}
+	}
 	if len(c.LogKey) != ed25519.PublicKeySize {
 		return ceremonyErrorf("the log key is required, and must be an Ed25519 public key")
+	}
+	if !ed25519v1.ValidPoint(c.LogKey) {
+		return ceremonyErrorf("the log key is not a valid point (SPEC §3.1)")
 	}
 	if len(c.LogURLs) == 0 {
 		return ceremonyErrorf("at least one log URL is required (§9.1)")
@@ -268,6 +285,9 @@ func (c Ceremony) check() error {
 		seen[w.Name] = true
 		if len(w.Key) != ed25519.PublicKeySize {
 			return ceremonyErrorf("witness %s needs an Ed25519 public key", w.Name)
+		}
+		if !ed25519v1.ValidPoint(w.Key) {
+			return ceremonyErrorf("witness %s's key is not a valid point (SPEC §3.1)", w.Name)
 		}
 	}
 	if c.PolicyQuorum > uint64(len(c.Witnesses)) {

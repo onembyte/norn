@@ -16,6 +16,7 @@ import (
 	"strings"
 
 	"github.com/onembyte/norn/internal/cbor"
+	"github.com/onembyte/norn/internal/ed25519v1"
 	"github.com/onembyte/norn/internal/note"
 	"github.com/onembyte/norn/internal/policy"
 )
@@ -227,6 +228,10 @@ func (t *Trust) Validate() error {
 	if err != nil {
 		return trustErrorf("log_key: %v", err)
 	}
+	// §3.1 item 2: a key is admitted only as a valid point.
+	if !ed25519v1.ValidPoint(logKey.Public) {
+		return trustErrorf("log_key is not a valid point (SPEC §3.1)")
+	}
 	// The log signs notes; a witness signs cosignatures. They are different
 	// algorithms with different key ids (c2sp.org/tlog-cosignature), and a
 	// file that mixed them up would name keys nobody can use.
@@ -270,6 +275,9 @@ func (t *Trust) Validate() error {
 		witnessKey, err := parseKey(w.Key)
 		if err != nil {
 			return trustErrorf("witness %s: %v", w.Name, err)
+		}
+		if !ed25519v1.ValidPoint(witnessKey.Public) {
+			return trustErrorf("witness %s's key is not a valid point (SPEC §3.1)", w.Name)
 		}
 		if !witnessKey.IsCosigner() {
 			return trustErrorf("witness %s publishes a note key; a witness key is a "+
