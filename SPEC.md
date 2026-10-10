@@ -1856,9 +1856,19 @@ installed as given. The endpoint and keepalive are the provider's in both.
 
 ### 13.2 Failure semantics
 
-A missing or invalid trust file prevents startup in every mode. If no
-checkpoint has verified since startup, a failed verification leaves the
-interface untouched. After one has verified, an unavailable or invalid log
+A missing or invalid trust file prevents startup in every mode. An effective
+policy of `quorum none` — the trust file's, or one the roots published in the
+log (§9.4) that the node restored — prevents startup in `owner` and `watchdog`
+unless the node is configured with `allow_no_quorum`; `observe` always starts.
+Under such a policy nobody corroborates a checkpoint and there is no clock
+(§5.3), so a node that writes its interface on it does so on the log
+operator's word alone, and the setting is how an operator says that is what
+they meant (D-072 (e)). A policy lowered to `quorum none` while the node runs
+does not stop it: it keeps enforcing, and an `owner` or `watchdog` node not so
+configured repeats an alarm on the degraded cadence until it restarts, when the
+rule above applies. If no checkpoint has verified since startup, a failed
+verification leaves the interface untouched. After one has verified, an
+unavailable or invalid log
 leaves the last verified set in force and raises an alarm; ordinary
 reconciliation still evicts intruders in `owner` and `watchdog`. A log that
 has not advanced leaves the set in force; its age may trigger a freshness

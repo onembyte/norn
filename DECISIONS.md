@@ -1041,6 +1041,16 @@ a fork can fork at entry 1. *The cold verifier* (`contrib/verify-py`, sealed at
 `89b5b99`) refuses version 2 as `version`; when the version-2 vectors land
 (021r-b) `make verify-py` fails on them, which is the finding H14's rule
 anticipates, answered by a new cold run and never by editing the verifier.
+**(e), design (2026-10-10, row 033r-a).** *Effective* is the policy the node
+would verify under: a published policy it restored (§9.4) replaces the trust
+file's, so a network whose roots raised a `quorum none` trust file's policy in
+the log starts, and one whose roots lowered theirs to none does not. *The
+running alarm is for the nodes a restart would stop* — `owner` and `watchdog`
+without `allow_no_quorum` — and says so, so the refusal it predicts is not a
+surprise; a node configured with the setting said in advance that this is what
+it means, and `observe` never stops. *It keeps enforcing meanwhile*: the roots
+lowering the bar is a governance act in the log, visible to every monitor, not
+evidence that any peer stopped being proven.
 Rows: 6.5m-sec-021r (a), 022r (b), 023r (c), 014r (d), 033r (e).
 
 ## D-074 · Cold gate run 13's eight questions: keys after rotation, one age, the signed-note profile, exact vkey comparison, sequential names, an ASCII key-name grammar, a `genesis` code, an allow-listed CBOR profile (2026-10-09)
