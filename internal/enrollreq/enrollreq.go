@@ -19,6 +19,7 @@ import (
 
 	"github.com/onembyte/norn/internal/bech32m"
 	"github.com/onembyte/norn/internal/cbor"
+	"github.com/onembyte/norn/internal/ed25519v1"
 	"github.com/onembyte/norn/internal/fields"
 )
 
@@ -187,7 +188,7 @@ func Verify(r *Request) bool {
 	if err != nil {
 		return false
 	}
-	return ed25519.Verify(r.DevicePK, preimage, r.Sig)
+	return ed25519v1.Verify(r.DevicePK, preimage, r.Sig)
 }
 
 // Check validates, pins the network when net is non-nil, and verifies the

@@ -28,6 +28,7 @@ import (
 	"net"
 	"os"
 
+	"github.com/onembyte/norn/internal/ed25519v1"
 	"github.com/onembyte/norn/internal/sshwire"
 )
 
@@ -199,7 +200,7 @@ func (s *Signer) Sign(_ io.Reader, message []byte, opts crypto.SignerOpts) ([]by
 		return nil, fmt.Errorf("sshagent: signature is %d bytes, want %d",
 			len(signature), ed25519.SignatureSize)
 	}
-	if !ed25519.Verify(s.public, message, signature) {
+	if !ed25519v1.Verify(s.public, message, signature) {
 		return nil, errors.New("sshagent: the agent returned a signature that does not verify")
 	}
 	return signature, nil

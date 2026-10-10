@@ -9,11 +9,11 @@ package replay
 
 import (
 	"bytes"
-	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 
+	"github.com/onembyte/norn/internal/ed25519v1"
 	"github.com/onembyte/norn/internal/entry"
 	"github.com/onembyte/norn/internal/state"
 )
@@ -64,7 +64,7 @@ func reasonOf(err error) (string, bool) {
 type verifier func(public, message, signature []byte) bool
 
 func realVerify(public, message, signature []byte) bool {
-	return ed25519.Verify(public, message, signature)
+	return ed25519v1.Verify(public, message, signature)
 }
 
 // Replay applies entries under an anchor. It never returns an error: an entry

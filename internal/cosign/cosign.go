@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/onembyte/norn/internal/ed25519v1"
 	"github.com/onembyte/norn/internal/note"
 	"github.com/onembyte/norn/internal/refusal"
 )
@@ -96,7 +97,7 @@ func Verify(signed string, witnessKeys []string) ([]Cosignature, error) {
 					cosignErrorf("%s's line is %d bytes, not a cosignature", v.Name, len(sig.KeyID)+len(sig.Sig)))
 			}
 			at := time.Unix(int64(binary.BigEndian.Uint64(sig.Sig[:8])), 0)
-			if !ed25519.Verify(v.Public, Message(at, body), sig.Sig[8:]) {
+			if !ed25519v1.Verify(v.Public, Message(at, body), sig.Sig[8:]) {
 				return nil, refusal.Wrap(refusal.Cosignature,
 					cosignErrorf("%s signed a cosignature that does not verify", v.Name))
 			}

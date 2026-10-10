@@ -16,6 +16,8 @@ import (
 	"fmt"
 	"strings"
 	"unicode"
+
+	"github.com/onembyte/norn/internal/ed25519v1"
 )
 
 // AlgEd25519 is the note signature algorithm byte.
@@ -224,7 +226,7 @@ func Verify(signed string, vkeys []string) (string, error) {
 			if len(sig.Sig) != ed25519.SignatureSize {
 				return "", noteErrorf("a signature line naming %s has the wrong length", v.Name)
 			}
-			if !ed25519.Verify(v.Public, []byte(text), sig.Sig) {
+			if !ed25519v1.Verify(v.Public, []byte(text), sig.Sig) {
 				return "", noteErrorf("a signature line naming %s does not verify", v.Name)
 			}
 			verified = true

@@ -18,6 +18,7 @@ import (
 	"sort"
 
 	"github.com/onembyte/norn/internal/cbor"
+	"github.com/onembyte/norn/internal/ed25519v1"
 )
 
 // Version is the only envelope version this package speaks.
@@ -205,5 +206,5 @@ func Verify(e *Envelope, sig Signature, public []byte) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return ed25519.Verify(public, pre, sig.Sig), nil
+	return ed25519v1.Verify(public, pre, sig.Sig), nil
 }
