@@ -61,6 +61,13 @@ const (
 	// network that asked for no witnesses is never mistaken for one whose
 	// witnesses quietly went (SEC-033).
 	FreshnessUnknown = "FRESHNESS_UNKNOWN"
+	// NoQuorum: the policy in force asks for no witness, and this node
+	// enforces without having been configured for that (§13.2, D-072 (e)):
+	// the roots lowered the quorum while it ran. It keeps enforcing -- a
+	// governance act in the log is not evidence that a peer stopped being
+	// proven -- and says so on the degraded cadence, because its next start
+	// will refuse unless allow_no_quorum is set.
+	NoQuorum = "NO_QUORUM"
 	// HardStale: the view aged past S_hard, so the enforcer drops every peer.
 	// This is a deliberate outage: past that age this node would rather be
 	// disconnected than enforce a view nobody has vouched for since.
@@ -324,6 +331,10 @@ type Agent struct {
 	// alarm cadence.
 	staleState string
 	staleSince time.Duration
+	// noQuorumSaid and noQuorumSince are the same cadence for NO_QUORUM: said
+	// once on entering the condition, again every DegradedAlarmEvery.
+	noQuorumSaid  bool
+	noQuorumSince time.Duration
 }
 
 // New checks what must be true before a node starts at all.
@@ -421,26 +432,66 @@ func (a *Agent) checkQuorum() error {
 	if (a.cfg.Mode != reconcile.Owner && a.cfg.Mode != reconcile.Watchdog) || a.cfg.AllowNoQuorum {
 		return nil
 	}
-	var st *state.State
-	if held := a.held(); held != nil {
-		st = held.State
-	}
-	effective := a.anchorUnder(st).Policy
-	parsed, err := policy.Parse(effective)
+	from, none, err := a.quorumNoneInForce(a.held())
 	if err != nil {
 		return fmt.Errorf("agent: the witness policy in force does not parse: %w", err)
 	}
-	if parsed.RequiresCosignatures() {
+	if !none {
 		return nil
-	}
-	from := "the trust file's policy"
-	if effective != a.cfg.Anchor.Policy {
-		from = "the policy the roots published in the log"
 	}
 	return fmt.Errorf("agent: %s is `quorum none`: no witness corroborates a checkpoint "+
 		"and there is no clock, so in %s mode this node would write the interface on "+
 		"the log operator's word alone. Run in observe mode, or set allow_no_quorum if "+
 		"this network means it (SPEC §13.2)", from, a.cfg.Mode)
+}
+
+// quorumNoneInForce reports whether the policy this node verifies under --
+// the trust file's, or one the roots published that the held head carries
+// (§9.4) -- asks for no witness at all, and which of the two it is.
+func (a *Agent) quorumNoneInForce(held *logclient.Result) (from string, none bool, err error) {
+	var st *state.State
+	if held != nil {
+		st = held.State
+	}
+	effective := a.anchorUnder(st).Policy
+	parsed, err := policy.Parse(effective)
+	if err != nil {
+		return "", false, err
+	}
+	from = "the trust file's policy"
+	if effective != a.cfg.Anchor.Policy {
+		from = "the policy the roots published in the log"
+	}
+	return from, !parsed.RequiresCosignatures(), nil
+}
+
+// reportQuorum is the running half of §13.2's rule (D-072 (e)): the roots can
+// lower the quorum to none under a running node (§9.4), and an owner or
+// watchdog node not configured for it goes on enforcing -- a governance act
+// in the log is not evidence that a peer stopped being proven -- and says so
+// on the degraded cadence, because its next start will refuse. A node
+// configured with allow_no_quorum said in advance that this is what it means,
+// and an observer never stops, so neither hears it. Raising the quorum again
+// ends the alarm, and the next lowering is announced at once.
+func (a *Agent) reportQuorum() {
+	if (a.cfg.Mode != reconcile.Owner && a.cfg.Mode != reconcile.Watchdog) || a.cfg.AllowNoQuorum {
+		return
+	}
+	from, none, err := a.quorumNoneInForce(a.held())
+	if err != nil || !none {
+		a.noQuorumSaid = false
+		return
+	}
+	mono := a.cfg.Mono()
+	if a.noQuorumSaid && mono-a.noQuorumSince < a.cfg.DegradedAlarmEvery {
+		return
+	}
+	a.noQuorumSaid, a.noQuorumSince = true, mono
+	a.emit(Event{Kind: NoQuorum, Message: fmt.Sprintf(
+		"%s is `quorum none`: no witness corroborates a checkpoint and there is no "+
+			"clock, so this %s node is enforcing on the log operator's word alone. It "+
+			"keeps enforcing; its next start will refuse unless allow_no_quorum is set "+
+			"(SPEC §13.2)", from, a.cfg.Mode)})
 }
 
 // stateDir is where this node keeps what must outlive a reboot: Config.StateDir,
@@ -712,6 +763,7 @@ func (a *Agent) Once() error {
 	a.saveClock()
 	fresh := a.freshness(result)
 	a.reportFreshness(fresh)
+	a.reportQuorum()
 
 	// Ask whether anybody has proved a fork this node has not seen (T1b).
 	// This runs whatever the log is doing -- see pollEvidence for why that is

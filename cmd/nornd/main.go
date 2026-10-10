@@ -470,6 +470,7 @@ var eventLevels = map[string]slog.Level{
 	agent.Fork:                    slog.LevelError,
 	agent.Frozen:                  slog.LevelError,
 	agent.HardStale:               slog.LevelError,
+	agent.NoQuorum:                slog.LevelError,
 	agent.Quarantined:             slog.LevelError,
 	agent.QuarantineFailed:        slog.LevelError,
 	agent.Degraded:                slog.LevelWarn,

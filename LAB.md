@@ -74,6 +74,7 @@ log tiles + checkpoint · each witness's latest cosignature · each node's
 | node heartbeat missing > 5 min | warning | nornd down = window becomes ∞ in watchdog |
 | `UNPROVEN_PEER` / `EVICTED_PEER` / `CONTROL_PLANE_FIGHT` from a node | **critical** | A1 in progress |
 | `CLOCK_SKEW` | warning | |
+| `NO_QUORUM` from a node | **critical** | the roots lowered the quorum to `none` under a running `owner` or `watchdog` not configured for it; it keeps enforcing, and its next start refuses (`SPEC.md` §13.2) |
 | anchor lag > `max_lag` | info | advisory by design |
 
 ### Outputs
