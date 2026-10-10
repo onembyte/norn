@@ -343,7 +343,7 @@ func shippedAnchor(t *testing.T) Anchor {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return Anchor{Origin: doc.Origin, LogKey: doc.LogKey, Policy: doc.Policy}
+	return Anchor{Origin: doc.Origin, LogKeys: []string{doc.LogKey}, Policy: doc.Policy}
 }
 
 func TestABundleNeedsTheSameCheckpointChecksAsEvidence(t *testing.T) {

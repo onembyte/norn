@@ -35,14 +35,17 @@ func NewInbox() *Inbox { return &Inbox{held: map[string]*receipt.Receipt{}} }
 // Add takes a receipt a submitter forwarded.
 //
 // Anybody can forward one, so anybody could forward a forgery: it is checked
-// against this network's log key and origin at the door. A receipt that is not
+// at the door against this network's origin and the log keys the monitor
+// trusts -- the trust file's, plus `learned`, the keys a state it verified
+// published (§7, §9.4, D-074 (a)). A receipt that is not
 // this log's word is not evidence of anything, and keeping it would mean the
 // monitor could be made to accuse an honest operator by anyone who can reach
 // it.
-func (i *Inbox) Add(signed string, anchor *trust.Trust) error {
+func (i *Inbox) Add(signed string, anchor *trust.Trust, learned []string) error {
 	// No leaf to bind against -- the monitor is not the submitter -- and no
 	// deadline judgement here: that is Check's, against witness time.
-	parsed, err := receipt.Check(signed, []string{anchor.LogKey}, anchor.Origin, nil,
+	keys := append([]string{anchor.LogKey}, learned...)
+	parsed, err := receipt.Check(signed, keys, anchor.Origin, nil,
 		time.Time{})
 	if err != nil {
 		return err

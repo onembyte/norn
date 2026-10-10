@@ -68,7 +68,11 @@ func submitCmd(args []string) error {
 	}
 
 	leaf := entry.LeafHash(raw)
-	got, err := receipt.Check(signed, []string{anchor.LogKey}, anchor.Origin, leaf, time.Now())
+	fetcher, err := logclient.Open(base)
+	if err != nil {
+		return err
+	}
+	got, err := receipt.Check(signed, receiptKeys(fetcher, anchor), anchor.Origin, leaf, time.Now())
 	if err != nil {
 		return fmt.Errorf("the log answered, but its receipt is not usable: %w", err)
 	}
@@ -115,6 +119,21 @@ func submissionError(status int, body string) error {
 	default:
 		return fmt.Errorf("the log answered %d: %s", status, trimmed)
 	}
+}
+
+// receiptKeys is §7's "log keys the verifier trusts" for a submitter: the
+// trust file's, plus every key a state this submitter can verify has published
+// (§9.4, D-074 (a)). A log that does not verify -- empty before its genesis,
+// unreachable, or past a rotation this trust file has not caught up with --
+// leaves the trust file's key alone, which is what a reader holding only
+// `norn.trust` trusts; a receipt under another key is then `log-signature`,
+// which is the truth.
+func receiptKeys(f logclient.Fetcher, anchor *trust.Trust) []string {
+	keys := []string{anchor.LogKey}
+	if result, err := logclient.Verify(f, anchorFor(anchor)); err == nil {
+		keys = append(keys, logclient.KeysFrom(anchor.Origin, result.State)...)
+	}
+	return keys
 }
 
 // waitForInclusion polls until the leaf is in a verified checkpoint, or the

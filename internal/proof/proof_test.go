@@ -152,6 +152,6 @@ func vkeyFor(origin string, key ed25519.PrivateKey) []string {
 func testAnchor(t *testing.T, origin string, key ed25519.PrivateKey) Anchor {
 	t.Helper()
 	keys := vkeyFor(origin, key)
-	return Anchor{Origin: origin, LogKey: keys[0],
+	return Anchor{Origin: origin, LogKeys: keys[:1],
 		Policy: "log " + keys[0] + "\nquorum none\n"}
 }

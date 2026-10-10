@@ -17,6 +17,7 @@ import (
 	"github.com/onembyte/norn/internal/keyfile"
 	"github.com/onembyte/norn/internal/logclient"
 	"github.com/onembyte/norn/internal/note"
+	"github.com/onembyte/norn/internal/receipt"
 	"github.com/onembyte/norn/internal/tlogstore"
 	"github.com/onembyte/norn/internal/trust"
 )
@@ -362,5 +363,42 @@ func TestWaitingOnAnEmptyLogIsNotIncludedYet(t *testing.T) {
 	}
 	if _, _, err := findLeaf(logclient.Dir(foreign), anchor, genesisLeaf); err == nil || errors.Is(err, errNotIncluded) {
 		t.Errorf("a log whose entry 0 is not this network's genesis: %v; want a refusal", err)
+	}
+}
+
+// §7, D-074 (a): the receipt `norn submit` checks is checked under the log
+// keys it trusts -- the trust file's, plus what a log it can verify has
+// published -- so a receipt the log signs with a rotated key is usable. A log
+// that does not verify, empty or unreachable, leaves the trust file's key
+// alone, which is what a reader holding only `norn.trust` trusts.
+func TestReceiptKeysAreTheTrustFilesPlusWhatAVerifiedLogPublished(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join(vectors(), "trust.cbor"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	anchor, err := trust.Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	note, err := os.ReadFile(filepath.Join(vectors(), "receipt-bad", "untrusted-log-key.note"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	signed := string(note)
+
+	informed := receiptKeys(logclient.Dir(filepath.Join(vectors(), "served")), anchor)
+	if len(informed) < 2 || informed[0] != anchor.LogKey {
+		t.Fatalf("keys from the verified fixture log: %v", informed)
+	}
+	if _, err := receipt.Check(signed, informed, anchor.Origin, nil, time.Time{}); err != nil {
+		t.Errorf("a receipt under a key the verified log published was refused: %v", err)
+	}
+
+	fresh := receiptKeys(logclient.Dir(t.TempDir()), anchor)
+	if len(fresh) != 1 || fresh[0] != anchor.LogKey {
+		t.Fatalf("keys when the log does not verify: %v, want the trust file's alone", fresh)
+	}
+	if _, err := receipt.Check(signed, fresh, anchor.Origin, nil, time.Time{}); err == nil {
+		t.Error("a receipt under another key was accepted with only the trust file's key")
 	}
 }

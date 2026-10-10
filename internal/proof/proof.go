@@ -180,7 +180,11 @@ const MaxBundleBytes = cbor.MaxEntryBytes + 16384
 // whether a checkpoint counts.
 type Anchor struct {
 	Origin string
-	LogKey string
+	// LogKeys is every log key the reader trusts for Origin (§8.1, D-074 (a)):
+	// the trust file's, plus each `log_key` of a state it has accepted. A
+	// signature line's key name and key id select among them.
+	LogKeys []string
+	// Policy is the witness policy of that state.
 	Policy string
 }
 
@@ -202,7 +206,11 @@ type Anchor struct {
 // step that made it: the checkpoint, with the loop's codes from `note` to
 // `quorum`; then `inclusion`; then `binding`.
 func (b *Bundle) Check(anchor Anchor) error {
-	cp, err := tlog.Verify(b.Checkpoint, []string{anchor.LogKey})
+	if len(anchor.LogKeys) == 0 {
+		return proofErrorf("the anchor carries no log key; there is nothing to check the " +
+			"checkpoint's signature against")
+	}
+	cp, err := tlog.Verify(b.Checkpoint, anchor.LogKeys)
 	if err != nil {
 		return refusal.Carry(err, proofErrorf("checkpoint: %v", err))
 	}

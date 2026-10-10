@@ -108,7 +108,7 @@ func TestT3HonestWitnessesKeepTheLyingLogOnItsHeldBranch(t *testing.T) {
 			t.Fatal(err)
 		}
 		inbox := monitor.NewInbox()
-		if err := inbox.Add(signed, a.doc); err != nil {
+		if err := inbox.Add(signed, a.doc, nil); err != nil {
 			t.Fatal(err)
 		}
 		start := m.Elapsed

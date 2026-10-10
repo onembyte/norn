@@ -214,7 +214,7 @@ func TestEveryDeviceGetsACheckableBundle(t *testing.T) {
 		// quorum too, not just the log's signature (§8.1, 6.5h-iii). This
 		// assertion passed the log key alone while its own comment claimed
 		// otherwise.
-		if err := bundle.Check(proof.Anchor{Origin: doc.Origin, LogKey: doc.LogKey,
+		if err := bundle.Check(proof.Anchor{Origin: doc.Origin, LogKeys: []string{doc.LogKey},
 			Policy: doc.Policy}); err != nil {
 			t.Errorf("%s: the bundle does not check out: %v", device.DeviceID, err)
 		}

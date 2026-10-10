@@ -77,7 +77,7 @@ func TestAnIncludedReceiptIsResolved(t *testing.T) {
 	leaf := tlog.LeafHash(result.Served[10])
 
 	inbox := NewInbox()
-	if err := inbox.Add(aReceipt(t, leaf[:], fixtureCosigned-60), anchorOf(t)); err != nil {
+	if err := inbox.Add(aReceipt(t, leaf[:], fixtureCosigned-60), anchorOf(t), nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -103,7 +103,7 @@ func TestAMissedDeadlineIsNonRepudiable(t *testing.T) {
 
 	inbox := NewInbox()
 	// The deadline is before the witnesses cosigned the head the monitor holds.
-	if err := inbox.Add(aReceipt(t, absent[:], fixtureCosigned-3600), anchorOf(t)); err != nil {
+	if err := inbox.Add(aReceipt(t, absent[:], fixtureCosigned-3600), anchorOf(t), nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -136,7 +136,7 @@ func TestADeadlineWitnessTimeHasNotReachedIsSilent(t *testing.T) {
 	copy(absent[:], "not yet due......................")
 
 	inbox := NewInbox()
-	if err := inbox.Add(aReceipt(t, absent[:], fixtureCosigned+3600), anchorOf(t)); err != nil {
+	if err := inbox.Add(aReceipt(t, absent[:], fixtureCosigned+3600), anchorOf(t), nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -156,7 +156,7 @@ func TestWithoutWitnessTimeNoDeadlineHasPassed(t *testing.T) {
 	copy(absent[:], "the witnesses are all offline...")
 
 	inbox := NewInbox()
-	if err := inbox.Add(aReceipt(t, absent[:], fixtureCosigned-3600), anchorOf(t)); err != nil {
+	if err := inbox.Add(aReceipt(t, absent[:], fixtureCosigned-3600), anchorOf(t), nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -178,7 +178,7 @@ func TestAForgedReceiptIsRefusedAtTheDoor(t *testing.T) {
 	}
 
 	inbox := NewInbox()
-	if err := inbox.Add(forged, doc); err == nil {
+	if err := inbox.Add(forged, doc, nil); err == nil {
 		t.Fatal("a receipt this network's log never signed was accepted as evidence")
 	}
 	if inbox.Pending() != 0 {
@@ -195,7 +195,7 @@ func TestAReceiptForAnotherOriginIsRefused(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := NewInbox().Add(signed, doc); err == nil {
+	if err := NewInbox().Add(signed, doc, nil); err == nil {
 		t.Fatal("a receipt for another network was accepted")
 	}
 }
@@ -211,4 +211,28 @@ func itoa(v int64) string {
 		v /= 10
 	}
 	return string(digits)
+}
+
+// §7, D-074 (a): a receipt verifies under the log keys the monitor trusts --
+// the trust file's, plus those a state it has verified published. The shipped
+// receipt signed by logkey2 (receipt-bad/untrusted-log-key.note, refused by a
+// reader holding only trust.cbor) is admitted by a monitor that has learned
+// the key, and still refused by one that has not.
+func TestAReceiptUnderAKeyTheLogPublishedIsAdmitted(t *testing.T) {
+	doc := anchorOf(t)
+	raw, err := os.ReadFile(filepath.Join(vectors(), "receipt-bad", "untrusted-log-key.note"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	signed := string(raw)
+	if err := NewInbox().Add(signed, doc, nil); err == nil {
+		t.Fatal("a monitor that knows only trust.cbor admitted a receipt under another key")
+	}
+	learned := logclient.KeysFrom(doc.Origin, verifiedLog(t).State)
+	if len(learned) == 0 {
+		t.Fatal("the fixture's log published no key; the test shows nothing")
+	}
+	if err := NewInbox().Add(signed, doc, learned); err != nil {
+		t.Errorf("a monitor that learned the published keys refused the receipt: %v", err)
+	}
 }

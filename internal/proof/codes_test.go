@@ -61,7 +61,7 @@ func newWitnessed(t *testing.T) *witnessed {
 	}
 	logKey := vkeyFor(origin, key)[0]
 	public := witness().Public().(ed25519.PublicKey)
-	w.anchor = Anchor{Origin: origin, LogKey: logKey, Policy: "log " + logKey + "\n" +
+	w.anchor = Anchor{Origin: origin, LogKeys: []string{logKey}, Policy: "log " + logKey + "\n" +
 		"witness " + witnessName + " " + note.CosignerVerifierKey(witnessName, public) + "\n" +
 		"quorum " + witnessName + "\n"}
 	return w
@@ -277,11 +277,11 @@ func TestEveryDecodeRefusalIsABundleRefusal(t *testing.T) {
 // bundle: still ErrProof, and no code.
 func TestABundleAnchorFaultCarriesNoCode(t *testing.T) {
 	for name, spoil := range map[string]func(a *Anchor){
-		"a log key that does not parse": func(a *Anchor) { a.LogKey = "not a key" },
+		"a log key that does not parse": func(a *Anchor) { a.LogKeys = []string{"not a key"} },
 		"a policy that does not parse":  func(a *Anchor) { a.Policy = "quorum\n" },
 		"a witness given a note key": func(a *Anchor) {
 			public := witness().Public().(ed25519.PublicKey)
-			a.Policy = "log " + a.LogKey + "\nwitness " + witnessName + " " +
+			a.Policy = "log " + a.LogKeys[0] + "\nwitness " + witnessName + " " +
 				note.VerifierKey(witnessName, public) + "\nquorum " + witnessName + "\n"
 		},
 	} {
