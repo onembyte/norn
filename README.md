@@ -10,7 +10,7 @@
 > and Headscale get observe mode only, not yet run against a real tailscaled.
 > Changes nothing in WireGuard.
 
-*Status (2026-10-07): 56 Go packages, 1236 tests, a frozen `SPEC.md`, and a
+*Status (2026-10-07): 56 Go packages, 1239 tests, a frozen `SPEC.md`, and a
 vector suite a second implementer can use without this repository. **14 of 38
 gate lines** in `PLAN.md` are ticked — every gate that needs a running lab, a
 measurement or a second pair of eyes is still open. No Norn has ever guarded a
@@ -128,6 +128,7 @@ been reviewed by anyone who has run two of these in anger; that gate is open.
 
 | File | What |
 |---|---|
+| `TRY-NORN.md` | build, offline verification, simulation and the first observe node |
 | `PLAN.md` | phases, gates, fixed decisions |
 | `PRIOR-ART.md` | why this doesn't exist yet |
 | `KEYTRANS-MAPPING.md` | every Norn concept against IETF Key Transparency: equivalent, partial or none, and what that decides |

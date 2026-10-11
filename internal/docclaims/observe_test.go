@@ -23,9 +23,13 @@ type observeBlock struct {
 
 // A marker belongs immediately before its fence, allowing blank lines. Keep
 // every marker so a second one cannot silently replace the first.
-func observeBlocks(t *testing.T) []observeBlock {
+func observeBlocks(t *testing.T, names ...string) []observeBlock {
 	t.Helper()
-	lines := strings.Split(deploymentText(t, "OBSERVE.md"), "\n")
+	name := "OBSERVE.md"
+	if len(names) != 0 {
+		name = names[0]
+	}
+	lines := strings.Split(deploymentText(t, name), "\n")
 	var blocks []observeBlock
 	for i := 0; i < len(lines); i++ {
 		line := strings.TrimSpace(lines[i])
@@ -43,7 +47,7 @@ func observeBlocks(t *testing.T) []observeBlock {
 		switch lang {
 		case "sh", "shell", "bash", "zsh", "console":
 		default:
-			t.Fatalf("OBSERVE.md:%d: command fence needs a shell language, got %q", i+1, lang)
+			t.Fatalf("%s:%d: command fence needs a shell language, got %q", name, i+1, lang)
 		}
 		block := observeBlock{line: i + 1}
 		for j := i - 1; j >= 0; j-- {
@@ -60,13 +64,13 @@ func observeBlocks(t *testing.T) []observeBlock {
 		for i++; i < len(lines) && strings.TrimSpace(lines[i]) != fence; i++ {
 		}
 		if i == len(lines) {
-			t.Fatalf("OBSERVE.md:%d: unclosed shell fence", block.line)
+			t.Fatalf("%s:%d: unclosed shell fence", name, block.line)
 		}
 		block.command = strings.Join(lines[start:i], "\n")
 		blocks = append(blocks, block)
 	}
 	if len(blocks) == 0 {
-		t.Fatal("OBSERVE.md has no shell commands")
+		t.Fatalf("%s has no shell commands", name)
 	}
 	return blocks
 }
@@ -95,14 +99,7 @@ func TestTheObserveTestCommandsRunOffline(t *testing.T) {
 		}
 		ran++
 		t.Run(strconv.Itoa(block.line), func(t *testing.T) {
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer cancel()
-			cmd := exec.CommandContext(ctx, "/bin/sh", "-eu", "-c", block.command)
-			cmd.Dir = dir
-			out, err := cmd.CombinedOutput()
-			if err != nil {
-				t.Fatalf("OBSERVE.md:%d: command failed: %v\n%s\n%s", block.line, err, block.command, out)
-			}
+			out := observeCommand(t, "OBSERVE.md", block, dir, 30*time.Second)
 			if len(strings.TrimSpace(string(out))) == 0 {
 				t.Errorf("OBSERVE.md:%d: verification printed nothing", block.line)
 			}
@@ -178,4 +175,18 @@ func TestTheObserveAlarmsExplainEveryDeclaredKind(t *testing.T) {
 			t.Errorf("OBSERVE.md alarms must name the suspend gap: missing %q", gap)
 		}
 	}
+}
+
+// Both guides execute their shell text through the same offline runner.
+func observeCommand(t *testing.T, name string, block observeBlock, dir string, timeout time.Duration) []byte {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "/bin/sh", "-eu", "-c", block.command)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("%s:%d: command failed: %v\n%s\n%s", name, block.line, err, block.command, out)
+	}
+	return out
 }
