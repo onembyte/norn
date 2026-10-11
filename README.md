@@ -10,7 +10,7 @@
 > and Headscale get observe mode only, not yet run against a real tailscaled.
 > Changes nothing in WireGuard.
 
-*Status (2026-10-07): 56 Go packages, 1223 tests, a frozen `SPEC.md`, and a
+*Status (2026-10-07): 56 Go packages, 1227 tests, a frozen `SPEC.md`, and a
 vector suite a second implementer can use without this repository. **14 of 38
 gate lines** in `PLAN.md` are ticked — every gate that needs a running lab, a
 measurement or a second pair of eyes is still open. No Norn has ever guarded a
@@ -138,6 +138,7 @@ been reviewed by anyone who has run two of these in anger; that gate is open.
 | `LEDGER-OPTIONS.md` | do we need a blockchain? (scored; answer: 32 bytes of one, optionally) |
 | `SPEC.md` | entries, replay, log layout, receipts, proofs, trust file — frozen at v1 |
 | `ENFORCEMENT.md` | observe / owner / watchdog modes; integration matrix |
+| `OBSERVE.md` | watch your WireGuard mesh for a week; install, alarms and removal |
 | `GOSSIP.md` | witnesses, freshness, peer gossip, split-view tests |
 | `ENROLLMENT.md` | keys, ceremony, QR enrollment, recovery runbooks |
 | `LAB.md` | lab topology, attack demos, monitor |
