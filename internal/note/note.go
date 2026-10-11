@@ -15,7 +15,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"unicode"
 	"unicode/utf8"
 
 	"github.com/onembyte/norn/internal/ed25519v1"
@@ -106,8 +105,8 @@ func ParseVerifierKey(text string) (Verifier, error) {
 	if len(parts) != 3 || parts[0] == "" || parts[1] == "" || parts[2] == "" {
 		return Verifier{}, noteErrorf("verifier key must be name+keyid+keydata")
 	}
-	if strings.IndexFunc(parts[0], unicode.IsSpace) >= 0 {
-		return Verifier{}, noteErrorf("verifier key name contains whitespace")
+	if !validKeyName(parts[0]) {
+		return Verifier{}, noteErrorf("verifier key name %q is not one or more ASCII bytes 0x21-0x7E without '+'", parts[0])
 	}
 	raw, err := base64.StdEncoding.Strict().DecodeString(parts[2])
 	if err != nil || base64.StdEncoding.EncodeToString(raw) != parts[2] {
@@ -123,6 +122,23 @@ func ParseVerifierKey(text string) (Verifier, error) {
 		return Verifier{}, noteErrorf("key id does not match the name, key and algorithm")
 	}
 	return v, nil
+}
+
+// validKeyName is §7's key-name grammar (D-074 f): one or more ASCII bytes
+// from 0x21 to 0x7E, '+' excluded. It was unicode.IsSpace, and the Unicode
+// tables behind that and Python's str.isspace disagree on U+001C-U+001F, so
+// a trust file loaded in one implementation and not the other. A grammar has
+// no table to disagree about; every name Norn issues is already inside it.
+func validKeyName(name string) bool {
+	if name == "" {
+		return false
+	}
+	for i := 0; i < len(name); i++ {
+		if c := name[i]; c < 0x21 || c > 0x7e || c == '+' {
+			return false
+		}
+	}
+	return true
 }
 
 // Sign returns the signed note: text, a blank line, one signature line.

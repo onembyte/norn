@@ -63,8 +63,12 @@ def parse_vkey(text: str) -> Verifier:
     if len(parts) != 3 or not all(parts):
         raise NoteError("verifier key must be name+keyid+keydata")
     name, keyhash, keydata = parts
-    if any(char.isspace() for char in name):
-        raise NoteError("verifier key name contains whitespace")
+    # SPEC 7's key-name grammar (D-074 f). It was str.isspace, whose table
+    # counts U+001C-U+001F as space where Go's does not, so one trust file
+    # loaded in one implementation and not the other.
+    if not name or any(not 0x21 <= ord(char) <= 0x7E or char == "+" for char in name):
+        raise NoteError(f"verifier key name {name!r} is not one or more ASCII "
+                        "bytes 0x21-0x7E without '+'")
     try:
         raw = base64.b64decode(keydata, validate=True)
     except (ValueError, base64.binascii.Error) as exc:

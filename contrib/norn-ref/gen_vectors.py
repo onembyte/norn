@@ -716,7 +716,7 @@ def write_policies(out: pathlib.Path) -> None:
     policy_rules["bad-witness-vkey-algorithm"] = {
         "section": "9.1", "says": "a `witness` vkey MUST use algorithm `0x04`"}
     policy_rules["bad-vkey-name-space"] = {
-        "section": "9.1", "says": "contain neither `+` nor a Unicode space"}
+        "section": "9.1", "says": "Key names follow §7's ASCII grammar"}
     policy_rules["two-log-lines"] = {"section": "9.1", "says": "**more than one is allowed**"}
     policy_rules["bad-empty-group"] = {
         "section": "9.1", "says": "`group` a name, a threshold and one or more members"}

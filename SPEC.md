@@ -816,8 +816,18 @@ spec's rules produce.
   the cosignature line, and until v1 this list described only the note
   signature and called itself sufficient. A reader who believed it parsed every
   witness line as malformed and could not verify the served checkpoint.
-- A verifier key string is `<name>+<key_id as 8 hex digits>+<base64(alg ‖ pk)>`.
-  Split it on `+` **at most twice**: standard base64 contains `+`. The
+- A verifier key string is `<name>+<key_id as 8 lowercase hex digits>+<base64(alg ‖ pk)>`.
+  Split it on `+` **at most twice**: standard base64 contains `+`. The key id
+  is lowercase: `BEA4A666` is not `bea4a666` spelled another way, it is a
+  malformed key. **A key name is one or more ASCII bytes from `0x21` to `0x7E`, `+` excluded** —
+  no space, no control character, nothing outside ASCII (D-074 f). It is a
+  grammar rather than a whitespace predicate because the Unicode tables two
+  implementations consult disagree — one counts U+001C–U+001F as space, the
+  other does not — and a name one accepts and the other refuses splits them on
+  the same trust file. Every name Norn issues, an origin or `norn-witness/…`,
+  is already inside it. The grammar is a verifier key's; a signature line's
+  name is only matched against verifier keys, so a stranger's line under any
+  other name is still ignored, as above. The
   verifier-key data MUST be canonical RFC 4648 base64: `alg ‖ pk` is 33 bytes,
   and 33 bytes encode to 44 base64 characters without padding or unused pad
   bits. Decoding and re-encoding MUST reproduce the exact data text; a carriage
@@ -1094,7 +1104,7 @@ group   <name> all|any|<k> <name>...
 quorum  <name>
 ```
 
-Every `<vkey>` MUST be parsed as a C2SP verifier key. Its declared key ID MUST equal the recomputed ID for its key name, algorithm byte and 32-byte Ed25519 public key. A `log` vkey MUST use algorithm `0x01`; a `witness` vkey MUST use algorithm `0x04`. Key names MUST be non-empty and contain neither `+` nor a Unicode space. The verifier-key data MUST be canonical RFC 4648 base64 (D-062), with its exact text reproduced by standard re-encoding. The 33-byte data has no unused pad bits; embedded carriage returns and line feeds are invalid.
+Every `<vkey>` MUST be parsed as a C2SP verifier key. Its declared key ID MUST equal the recomputed ID for its key name, algorithm byte and 32-byte Ed25519 public key. A `log` vkey MUST use algorithm `0x01`; a `witness` vkey MUST use algorithm `0x04`. Key names follow §7's ASCII grammar — one or more bytes `0x21`–`0x7E`, `+` excluded — and the key ID is lowercase hex (D-074 f). The verifier-key data MUST be canonical RFC 4648 base64 (D-062), with its exact text reproduced by standard re-encoding. The 33-byte data has no unused pad bits; embedded carriage returns and line feeds are invalid.
 
 Both policy URLs are **optional in the grammar and present in every Norn
 policy** — omitting them parses, and a second implementation that stops

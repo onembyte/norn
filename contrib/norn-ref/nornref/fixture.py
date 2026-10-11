@@ -1425,7 +1425,7 @@ def policy_grammar() -> list[tuple[str, str, bool, str]]:
         ("bad-vkey-name-space",
          f"log {note.vkey(ORIGIN + ' bad', KEYS['logkey'].public)} {LOG_URLS[0]}\n"
          f"{pi}\nquorum pi\n", False,
-         "a verifier key name contains no Unicode spaces"),
+         "a verifier key name is ASCII 0x21-0x7E without '+', so no space"),
         # The other half of the same row: the grammar permits more than one
         # `log` line. A trust file cannot carry two (each must be `log_key`,
         # and the key rule refuses a repeat), but a `policy` entry has no such

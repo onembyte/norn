@@ -18,7 +18,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"unicode"
 
 	"github.com/onembyte/norn/internal/note"
 )
@@ -211,9 +210,6 @@ func parsePolicyVKey(text string, wantAlg byte) (note.Verifier, error) {
 	v, err := note.ParseVerifierKey(text)
 	if err != nil {
 		return note.Verifier{}, err
-	}
-	if strings.IndexFunc(v.Name, unicode.IsSpace) >= 0 {
-		return note.Verifier{}, fmt.Errorf("verifier key name contains whitespace")
 	}
 	if v.Alg != wantAlg {
 		return note.Verifier{}, fmt.Errorf("verifier key uses algorithm 0x%02x, want 0x%02x", v.Alg, wantAlg)
