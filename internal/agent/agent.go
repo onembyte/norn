@@ -17,6 +17,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io/fs"
 	"math"
 	"math/rand"
 	"net/netip"
@@ -317,6 +318,9 @@ type Agent struct {
 	frozen     bool
 	frozenBy   string
 	frozenNote string
+	// writeEvidenceFile lets tests exercise the evidence write failure path.
+	// Nil keeps the durable write used by the node.
+	writeEvidenceFile func(string, []byte, fs.FileMode) error
 	// frozenSplit and frozenSplitRoot are the common prefix the evidence
 	// behind the freeze proves (§11.1, version 2): what §11 rule 3 keeps
 	// enforcing is computed from them. Zero means no split is known -- a

@@ -242,7 +242,11 @@ func (a *Agent) fileInForkDir(ext string, raw []byte) (string, error) {
 		existing, err := os.ReadFile(path)
 		switch {
 		case errors.Is(err, fs.ErrNotExist):
-			if err := durable.WriteFile(path, raw, 0o644); err != nil {
+			write := durable.WriteFile
+			if ext == ".evidence" && a.writeEvidenceFile != nil {
+				write = a.writeEvidenceFile
+			}
+			if err := write(path, raw, 0o644); err != nil {
 				return "", err
 			}
 			return path, nil

@@ -4,6 +4,7 @@ import (
 	"crypto/ed25519"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -636,12 +637,10 @@ func forkMessages(rec *recorder) string {
 }
 
 // SEC-005 (a), the remainder: a node that proved a fork but could not file
-// evidence froze in memory only, and a restart unfroze it. Here the evidence
-// cannot be built for a reason a real deployment produces: the node followed
-// a log-key rotation (D-020), so its held head is signed by a key the trust
-// file does not name, and its own self-check under that trust file refuses
-// the evidence it just built (SEC-005 b, fixed later). The freeze must not
-// depend on the file.
+// evidence froze in memory only, and a restart unfroze it. The node follows
+// a log-key rotation (D-020), which once prevented evidence from being built
+// (SEC-005 b, fixed later). Now the evidence write is made to fail instead:
+// the freeze must not depend on the file.
 func TestAFreezeSurvivesARestartEvenWhenEvidenceCannotBeBuilt(t *testing.T) {
 	dir, store, entries := writableLog(t)
 	stateDir := t.TempDir()
@@ -655,13 +654,16 @@ func TestAFreezeSurvivesARestartEvenWhenEvidenceCannotBeBuilt(t *testing.T) {
 		t.Fatalf("the node did not follow the rotation, so nothing here is tested: %v", err)
 	}
 
+	a.writeEvidenceFile = func(string, []byte, fs.FileMode) error {
+		return errors.New("evidence write failed in this test")
+	}
 	a.cfg.Fetcher = logclient.Dir(forkedLog(t, entries, 40))
 	var fork *logclient.ForkError
 	if err := a.Once(); !errors.As(err, &fork) {
 		t.Fatalf("the forked branch was not detected: %v", err)
 	}
-	if files, _ := filepath.Glob(filepath.Join(stateDir, ForkDir, "*.evidence")); len(files) != 0 {
-		t.Skipf("evidence was built after all (%v); this test's premise is SEC-005 (b)", files)
+	if files, err := filepath.Glob(filepath.Join(stateDir, ForkDir, "*.evidence")); err != nil || len(files) != 0 {
+		t.Fatalf("evidence files = %v (%v), want none after the failed write", files, err)
 	}
 	if !strings.Contains(forkMessages(rec), "could not be written") {
 		t.Fatalf("the FORK event should say the evidence could not be written: %s", forkMessages(rec))
