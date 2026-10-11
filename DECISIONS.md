@@ -1161,3 +1161,57 @@ deadline. The two vectors are shipped; the second cold build predates the rule
 and fails them, a recorded debt to the next cold build.
 Rows: 6.7-r-f-d.
 
+
+## D-077 · Cold run 14's five findings that change what a reader accepts or refuses: the grant grammar, compare-and-swap entries, a cosignature's timestamp, the signed-note grammar, the log/witness key invariant (2026-10-11)
+The owner's answers of 2026-10-11 to the DECISION 6.5l-xi-b wrote (`BUILD-LOG.md`,
+"DECISION TAKEN — 6.5l-xi-b"): **1-A, 2-A, 3-B′, 4-A, 5-D, 6-A**, parts 3 and 6
+settled after discussion (global rule 14a).
+**(1)** §4.0: a grant part is `<address>/<length>` and nothing else — the address
+a dotted quad of four decimal octets without leading zeros or an IPv6 address
+as RFC 4291 §2.2 writes it (one to four hex digits per group, at most one `::`,
+a dotted quad allowed in the last 32 bits), no zone; the length a decimal
+without a leading zero, at most 32 or 128. A bare address, a netmask, a
+hostmask, a zone or any other byte makes the whole label no grant. The grant
+is the masked prefix in canonical text (dotted quad; RFC 5952, lowercase).
+Go's `netip.ParsePrefix` accepts exactly this set; the reference gains a check.
+**(2)** "Trimmed" removes U+0020 only, at either end of a part.
+**(3)** Every state-changing entry is an authenticated compare-and-swap on the
+object it modifies. The body carries `prev`, the index of the last accepted
+entry that changed that object — a device record for `enroll`, `rotate` and
+`revoke` (absent only for a `device_id` never seen); the signer set with its
+threshold; the root set with its threshold; `params`; `policy`; `log_key`; 0
+for what the genesis defines — and the entry is refused `stale-state` when
+`prev` is not the object's current version, after decode, lookup and the
+signature checks. Rationale: the signature binds the target of a transition,
+not its source, so a signed entry the log withheld could land after later
+legitimate ones — a `wg_pk` rotation under a stable `device_pk` reverting to
+a stale key, a removed signer or a retired log key reinstated, a re-enrolled
+id revoked, a revoked id re-admitted. `dup-entry` catches only identical bytes
+and the current-key check only a changed device key. A rotate whose incoming
+`device_pk` equals the current one stays accepted: one valid device signature
+per distinct key in {current, incoming} (D-032). An index was chosen over a
+record hash: monotonic, a pointer to the exact event, and it binds the whole
+record because any change to any field is itself an entry that bumps it. No
+rule against a rotate that changes nothing (proposed, withdrawn). `after`
+stays for now, redundant.
+**(4)** §7: a cosignature's timestamp is at most 2⁶³−1, the bound on every
+decimal line in the cosigned message; a listed witness's line above it fails
+that witness's check, `cosignature`, by rule and before the cast.
+**(5)** §7 conforms to C2SP's signed-note grammar whole: the note is valid UTF-8
+and contains no ASCII control character other than LF anywhere; a signature
+line's key name is non-empty and contains no `+` and no Unicode white-space
+character, the set enumerated in `SPEC.md` (U+0085, U+00A0, U+1680,
+U+2000–U+200A, U+2028, U+2029, U+202F, U+205F, U+3000) so no table is
+consulted; a note that fails any of this does not frame, `note`; only a
+well-formed line whose name and key id match no trusted key is ignored. The
+recommendation was a byte rule (non-empty, no U+0020); the owner chose
+alignment with `x/mod/sumdb/note`.
+**(6)** At every accepted state transition the set of active log signing public
+keys and the set of active witness public keys are disjoint, compared on the
+validated public-key bytes, never on names, ids or text. Enforced wherever
+either side enters or changes: the trust file (`log_key` against `witnesses`;
+invalid), a `policy` entry (the state's log key against the incoming witness
+keys; `dup-key`, widened to a key entering a role whose set must be disjoint
+from another), a `log_key` entry (the incoming key against the current
+witnesses; `dup-key`).
+Rows: 6.5l-xi-c-iv (1, 2, 4, 5); 6.5l-xii (3, 6), then a third cold build.
