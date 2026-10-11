@@ -3388,6 +3388,81 @@ One question in two parts, found by 023r-c-iii-a and put here by the Mythos revi
 
 **Rows:** 023r-g applies the answers to §3.1 item 2, §5.2's `rotate` and `policy` rows, both implementations and `log-admission/`, and carries the review's two prose nits; 023r ticks after it and 6.7-r. The owner can also answer "B to both", in which case 023r-g is prose only.
 
+## DECISION — 6.5l-xi-b: five findings of cold run 14 that change what a reader accepts or refuses (written 2026-10-11; to be D-077)
+
+Five of run 14's fifteen findings (`SPEC-DEFECTS-14.md`, triaged against Go and the reference at 6.5l-xi-a; the other ten are prose and vectors, rows 6.5l-xi-c-i to -iii) are places where two conforming readers accept or refuse differently on input a network can see — one of them, H1, on the project's own two implementations today — or where every reader does one thing and `SPEC.md` says another. Each part gives what the words say, what was measured, the options with their cost, and a recommendation; the owner answers with a letter per part, six letters. Row 6.5l-xi-c-iv applies the answers. One cost recurs and is stated once: the second cold build (`contrib/verify-py`, sealed at `6ef1a16`) predates all of this, so each vector it fails goes on `contrib/verify-py.known-failures`, owed to the next cold build, as D-076's two did; which ones it fails is known when the lane runs `make verify-py`.
+
+### (1) H1: what §4.0's "parsed as an IPv4 or IPv6 prefix" accepts
+
+**What is true.** §4.0: the grant is "the label split on commas, each part trimmed and parsed as an IPv4 or IPv6 prefix, masked to its prefix, duplicates removed, sorted as text", and a label that "does not parse as a whole is no grant". No grammar says what parses. Go's `proven.Grant` asks `netip.ParsePrefix`; the reference's `State.grant` asks `ipaddress.ip_network(part, strict=False)`. Measured on 31 labels, they disagree on seven: `10.9.1.5` (the reference reads a bare address as a `/32`, Go refuses it), `10.9.1.0/024` (a leading zero in the length), `10.9.1.0/255.255.255.0` and `10.9.1.0/0.0.0.255` (a netmask and a hostmask), `fe80::1%eth0/64` (a zone, dropped by the reference), and the two trim bytes of part (2). They agree on everything else: a mapped prefix, `010.9.1.0/24`, `/33` and `/129` refused by both; uppercase, uncompressed and embedded-IPv4 IPv6 canonical in both. So one signed `enroll` with `ip = "10.9.1.5"` gives a Go node no allowed-ips and a Python node a `/32` — the definition of H.
+
+| Option | What it means | Cost |
+|---|---|---|
+| **A — the strict grammar, written out (recommended)** | A part is `<address>/<length>` and nothing else: the address a dotted quad of four decimal octets, each 0–255 with no leading zero, or an IPv6 address as RFC 4291 §2.2 writes it — hexadecimal groups of one to four digits, at most one `::`, a dotted quad allowed in the last 32 bits — with no zone; the length a decimal with no leading zero, at most 32 or 128. A bare address, a netmask, a hostmask, a zone or any other byte makes the whole label no grant. The grant is the masked prefix rendered canonically: the dotted quad, or RFC 5952 text for IPv6, lowercase. | Go: none — `netip.ParsePrefix` accepts exactly this set, confirmed on the 31 probes — a comment and tests. The reference: a check before `ip_network` (one `/`, a length matching `0|[1-9][0-9]*`, no `%`, the address through `ip_address`), some twenty lines. Vectors: `proven/` gains a device per probe form, the seven divergent ones first. |
+| B — the loose grammar | A bare address is a host prefix, a netmask or hostmask is a length, a zone is dropped. | Go needs a parser `netip` does not have, and a signer who wrote `10.9.1.5` meant something no reader can know. Rejected. |
+| C — leave as written | — | Two implementations in the suite's own two languages give one device two grants. Rejected. |
+
+**Recommendation: A.** Code: the reference, one function; vectors.
+
+### (2) H1: what "trimmed" removes
+
+**What is true.** The same sentence says "each part trimmed" and no more. Go's `strings.TrimSpace` removes Unicode `White_Space`; Python's `str.strip()` removes what `str.isspace` says, which also takes U+001C–U+001F — the table disagreement §7 recorded for key names (D-074 f). Measured: `\x1c10.9.1.0/24` is a grant in the reference and none in Go; U+00A0, U+3000 and U+0085 are trimmed by both; a tab, CR, VT by both. The vectors pin only the ASCII space (run 14's C23).
+
+| Option | What it means | Cost |
+|---|---|---|
+| **A — U+0020 only (recommended)** | A part may begin and end with any number of U+0020 bytes, and nothing else is trimmed: WireGuard writes `10.9.1.0/24, fd00::/64`, and that is what the suite's labels look like. A grammar in bytes, as a key name's is. | Both implementations change one call (`strings.Trim(part, " ")`, `part.strip(" ")`); a tab before a prefix becomes no grant, which no shipped label has. Vectors: a tab, a U+001C and a U+00A0 before a prefix, each no grant. |
+| B — ASCII whitespace, 0x09–0x0D and 0x20 | The same, plus tab, LF, VT, FF and CR. | The same one call each; the difference from A is five control bytes no allowed-ips list carries. |
+| C — Unicode whitespace, by the name of a table | — | The two tables disagree, as §7 found. Rejected. |
+
+**Recommendation: A.** Code: one call each; three vectors.
+
+### (3) M1: a `rotate` whose `device_pk` is the key the device already holds
+
+**What is true.** §5.2's `device` row: on `rotate` the signing key is "the device's current `device_pk` from the state, and the incoming `device_pk` the body carries, when it carries one. The incoming key is by construction not in the state before the entry, which is the whole point of §5.1's proof of possession". When the incoming key *is* the current key, one signature by it satisfies both checks: Go's `hRotate`, the reference's `_h_rotate` and run 14's base all accept the entry, which then changes `wg_pk` and nothing else — the entry a body without `device_pk` would be. The sentence is false in that corner, and a reader who believes it refuses the entry (`no-device-sig`, or a rule of its own), while the three readers here accept it.
+
+| Option | What it means | Cost |
+|---|---|---|
+| **A — accept, and say so (recommended)** | §5.2: the incoming key is normally not in the state; when it is the device's own current key, the one signature serves as both, and the entry is a `wg_pk` rotation. The signature the rule actually needs — by the key being installed — is present either way. | Code: none. One vector: `log/` gains a `rotate` carrying the current `device_pk`, accepted, and the state shows the new `wg_pk` under the old key. |
+| B — refuse | "A `rotate`'s `device_pk` MUST differ from the current key", `decode`. | Both implementations gain a check, §5.2 a reason for a difference nothing depends on, and a client that re-sends its own key to rotate `wg_pk` is refused. Rejected. |
+
+**Recommendation: A.** Code: none; one vector.
+
+### (4) M4: does 2⁶³−1 reach a cosignature's timestamp?
+
+**What is true.** §7: a cosignature's timestamp "is an unsigned 64-bit big-endian count of seconds since the Unix epoch", signed as `"time " ‖ <timestamp as decimal>` in the cosigned message. D-076 bounded "every decimal line a note carries" at 2⁶³−1; the `time` line is in the cosigned message, not in the note, and the bytes it renders are a binary field. Go casts those eight bytes to `int64` and renders `time %d`, so a witness's line at 2⁶³ fails the signature check and is `cosignature` — the answer D-076's "one bound" wants, reached by a cast rather than a rule, exactly as the receipt deadline was before 6.7-r-f-d. Run 14's base accepts any uint64 and derives `T` from it. A listed witness that emits such a timestamp splits nodes between accepting and refusing the head.
+
+| Option | What it means | Cost |
+|---|---|---|
+| **A — the bound names it (recommended)** | §7: a cosignature's timestamp is at most 2⁶³−1 — the same bound as every decimal line, because it is one in the cosigned message; a listed witness's line with a larger one fails that witness's check, `cosignature`, before the signature is verified. | Go: one comparison before the cast, same code by rule. One vector: `checkpoints-bad/34-cosignature-timestamp-above-2-63`, one listed witness re-cosigning the honest head at 2⁶³ (a listed witness's bad line refuses the head whatever the quorum, D-074 b). Possibly one known-failure line. |
+| B — any uint64, stated | A reader MUST accept any timestamp and derive `T` from it. | Go renders the timestamp unsigned and compares a `T` past the year 292 billion with 64-bit signed clocks; every reader on signed time casts. Rejected. |
+
+**Recommendation: A.** Code: Go, one line; one vector.
+
+### (5) M5: what frames a signature line's name
+
+**What is true.** §7: a signature line is the prefix, "the key name, one space, then base64"; "A key name contains no space, so the line splits at its first space"; and the D-074 (f) grammar, 0x21–0x7E without `+`, "is a verifier key's; a signature line's name is only matched against verifier keys, so a stranger's line under any other name is still ignored". Whether the empty string is "a name", and whether "space" is U+0020 or any whitespace, the words leave open, and three readers answer three ways. Measured: Go's `note.Split` cuts at the first U+0020 and asks nothing of what precedes it — `—  <b64>` (no name), `— a\tb <b64>` and `— a\x00b <b64>` each frame as a stranger's line and are ignored; run 14's base refuses the empty name as `note` and accepts the tab; `golang.org/x/mod/sumdb/note`, the reader every C2SP witness runs, refuses both as a malformed note (its name is non-empty, valid UTF-8, free of Unicode space and of `+`). Any peer relaying a head (§15) can append such a line to an honest checkpoint and split the nodes that read it.
+
+| Option | What it means | Cost |
+|---|---|---|
+| **A — one or more bytes, none U+0020 (recommended)** | §7: a signature line's name is one or more bytes other than U+0020 and LF; the line splits at its first U+0020; a line with no name does not frame, `note`. A byte grammar, as D-074 (f) chose, and the base's reading. A tab is a name byte: the line frames and, naming nobody, is ignored. | Go: one check in `Split`. Two vectors: `checkpoints-bad/35-signature-empty-name` (`note`) and a positive served case, the honest head plus a stranger's line whose name holds a tab, accepted. |
+| B — upstream's rule, in bytes | Non-empty, no `+`, no byte 0x09–0x0D or 0x20, else `note`: the nearest byte-stated form of what a C2SP witness refuses, so every head Norn accepts is one a witness could have cosigned. | The same one check and the tab case becomes a negative. Upstream's rule is Unicode (`unicode.IsSpace`), so alignment is not exact either way: U+00A0 in a name is a name byte here and malformed there. |
+| C — Go today | Anything up to the first U+0020, the empty name included. | "A name" that is nothing; the base refuses it. Rejected. |
+
+**Recommendation: A.** Code: Go, one check; two vectors.
+
+### (6) M6: a trust file whose witness holds the log's own key, with no `log` line
+
+**What is true.** §9.1's `keys` row: a verifier key "appears once in a policy, on whatever line", compared "by their parsed underlying public key", and "this applies across `log` and `witness` lines"; `log` lines are "not required". So with a `log` line present, a witness carrying the log's public key under 0x04 is refused as a duplicate (`policies/bad-witness-vkey-algorithm` is refused by this rule, as run 14's L4 (a) found). Without one, nothing compares `log_key` with the witnesses: Go's `trust.Parse` compares a `log` line with `log_key` and nothing else, the reference's `trust.parse` the same, and both start on a trust file whose witness is the log itself; so does the base. A node provisioned from it counts the log's own cosignature toward the quorum — a quorum of one that is the log alone.
+
+| Option | What it means | Cost |
+|---|---|---|
+| **A — `log_key` takes part (recommended)** | §9.1's `policy` row: `log_key`'s public key takes part in the policy's duplicate-key rule whether or not a `log` line names it; a witness whose public key is the log's is refused. | Go: one comparison in the witness loop; the reference: the same. One vector: `trust-bad/51-witness-key-is-log-key`. |
+| B — permitted, stated | "Two different verifiers" means the log may be its own witness. | A quorum the log meets alone. Rejected. |
+
+**Recommendation: A.** Code: one comparison each; one vector.
+
+**Rows:** 6.5l-xi-c-iv applies the six answers, split into lanes with the decided text verbatim (the grammar, parts 1–2, is one lane; parts 3–6 another). Each answer "A" is the recommendation; the owner can answer any letter per part.
+
 ## DECISION TAKEN — 6.7-r-f-b: three readings of the second cold build that change what a reader returns (written and answered 2026-10-11 "1-A 2-A 3-A", recorded as D-076)
 
 Three of the seven readings `contrib/verify-py/NOTES.md` records (triaged at 6.7-r-f-a; the other four were prose, fixed at 6.7-r-f-c) are places where two conforming readers return different things on input a network can see, or where every reader does the same thing and `SPEC.md` does not say so. None changes what a node installs or evicts; each changes a refusal code or whether a file is read at all, which is what a second implementer compares. Each part gives what the code does today, a recommendation and its cost; the owner answers with a letter per part. Row 6.7-r-f-d applies the answers. One cost recurs and is stated once: the second cold build was sealed at `6ef1a16`, before any of this, so a vector it fails goes back on a known-failures list owed to the next cold build — the mechanism 6.7-r deleted when the list emptied, one or two lines long again.
