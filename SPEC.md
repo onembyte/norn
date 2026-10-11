@@ -228,8 +228,8 @@ Derived values:
 repeated `kid`. Signing does not change the preimage, so signatures can be added by
 different parties in any order and the result is still canonical.
 
-`v`, `t`, `net`, `ts`, `body` and `sigs` are all **mandatory**; only `after` is
-optional. Omitting any mandatory key is `decode`.
+`v`, `t`, `net`, `ts`, `body` and `sigs` are all **mandatory**; `after` and `prev`
+are the only optional keys (§4.4). Omitting any mandatory key is `decode`.
 
 **Bodies are closed schemas too**, exactly like the envelope: §4.3's table lists
 every key each type may carry, and a body with an unknown key — or missing a
@@ -341,6 +341,7 @@ An entry is the deterministic CBOR encoding of:
   "net":  <bytes16 net_id>,
   "ts":   <uint unix seconds>,    # signer's clock; advisory
   "after":<uint>,                 # OPTIONAL — log size the signer observed (§4.4)
+  "prev": <uint>,                 # OPTIONAL — version of the object this entry changes (§4.4)
   "body": { ... },                # per type
   "sigs": [ {"kid": <hex16>, "role": <"root"|"signer"|"device">, "sig": <bytes64>}, ... ]
 }
@@ -351,8 +352,8 @@ their encoded form**, i.e. of the CBOR text-string item including its header, no
 of the key string itself. Since every Norn map key is 1–23 bytes (§4.0) its header
 is a single byte `0x60 + length`, so this is equivalent to "shorter key first,
 then bytewise" — but it is **not** equivalent to sorting the bare key strings,
-which would order an entry `after, body, net, sigs, t, ts, v` instead of the
-correct `t, v, ts, net, body, sigs, after`. Canonical JSON (§14) does sort bare
+which would order an entry `after, body, net, prev, sigs, t, ts, v` instead of the
+correct `t, v, ts, net, body, prev, sigs, after`. Canonical JSON (§14) does sort bare
 strings; the two orders are independent and MUST NOT be conflated.
 
 Keys are **strictly increasing**, and that is the whole of it: two equal keys are not a
@@ -386,7 +387,7 @@ verified against the key the `kid` resolves to in the state *before* this entry.
 |---|---|---|
 | `genesis` | `name` (string), `roots` ([pk]), `root_thr` (uint), `signers` ([pk]), `signer_thr` (uint), `params` (§4.5, **OPTIONAL** — absent means the §4.5 defaults) | ≥ `root_thr` of `roots` |
 | `enroll` | `request` (bytes — a §16 enrollment request, verbatim) | ≥ `signer_thr` signers. The device's consent is the **embedded request**, not a signature on this envelope (§4.3). The request's `ts` is **not** constrained against the entry's, in either direction: a device is headless, its clock is advisory (§4.1), and a request may sit in a queue or arrive from a device whose clock runs ahead. A verifier that compares the two rejects entries this document accepts |
-| `rotate` | `device_id`, `wg_pk` (new), `device_pk` (new, OPTIONAL) | the *current* device key; **and the incoming `device_pk` too when the body carries one** (proof of possession, D-032); plus ≥ `signer_thr` signers if `params.rotate_needs_signer` |
+| `rotate` | `device_id`, `wg_pk` (new), `device_pk` (new, OPTIONAL) | the *current* device key; **and the incoming `device_pk` too when the body carries one** (proof of possession, D-032) — one valid signature for each *distinct* key among the two, so an incoming key that is the current key needs its one signature and no other (D-077); plus ≥ `signer_thr` signers if `params.rotate_needs_signer` |
 | `revoke` | `device_id`, `reason` (string, **OPTIONAL** — absent is equivalent to `""`) | ≥ `signer_thr` signers, **or** the device itself, **or** ≥ `root_thr` roots |
 | `signer_add` | `pk` | ≥ `root_thr` roots |
 | `signer_remove` | `kid` | ≥ `root_thr` roots |
@@ -432,13 +433,57 @@ The request's `ts` is **not** constrained against the entry's. They are two
 clocks in two places, both advisory (§4.1), and a rule relating them would fail
 on skew rather than on misbehaviour.
 
-### 4.4 `after` — ordering guard
+### 4.4 `after` and `prev` — ordering guards
 
-If present, the entry is valid only at log index ≥ `after`. A signer sets it to the
+**`after`.** If present, the entry is valid only at log index ≥ `after`. A signer sets it to the
 log size it observed when signing. It stops a log operator from inserting a signed
 entry *earlier* than the signer intended (e.g. moving a `revoke` before a later
 `enroll` of the same id). Inserting it *later* is delay, which receipts (§7) and
-staleness (part 6) catch. RECOMMENDED for every entry.
+staleness (part 6) catch — and which `prev` below turns into a refusal when the
+delay outlives the state the entry was signed against. RECOMMENDED for every entry.
+
+**`prev` — the version guard (D-077).** Every entry that changes state is an
+authenticated compare-and-swap on the **object** it changes. The objects, the
+entries that change each, and where the state records each one's version (§5.3):
+
+| object | changed by | version |
+|---|---|---|
+| a device record, one per `device_id` | `enroll`, `rotate`, `revoke` | the record's `version`: the index of the last accepted entry naming that `device_id` |
+| the signer set with its threshold | `signer_add`, `signer_remove`, `signer_thr` | `versions.signers` |
+| the root set with its threshold | `root_add`, `root_remove`, `root_thr` | `versions.roots` |
+| `params` | `params` | `versions.params` |
+| the witness policy | `policy` | `versions.policy` |
+| the log keys | `log_key` | `versions.log_key` |
+
+A version is the index of the last accepted entry that changed the object; the
+genesis sets every member of `versions` to 0 and creates no device record.
+`prev` carries the version the submitter authorised the change against, and
+replay refuses the entry as `stale-state` (§5.1, §5.2) unless `prev` is exactly
+the object's current version: **present and equal** where the object exists,
+**absent** where it does not — which is only an `enroll` of a `device_id` that
+no accepted entry has ever named. `note` changes nothing and carries no `prev`;
+a `note` with one is `decode`, and a `genesis` with one is `bad-genesis`.
+
+Why: a signature binds the transition's target and nothing about its source. An
+entry the log received and withheld stays valid, and without `prev` it lands
+whenever the log chooses — after later legitimate changes to the same object.
+A withheld `wg_pk` rotation then lands under a stable `device_pk` and sets the
+device back to a stale key; a signed `signer_add` whose first copy was withheld
+reinstates a key the roots have since removed; a `log_key` entry reinstates a
+superseded log key; a signer-authorised `revoke` lands after the id was
+re-enrolled and revokes the new device; an `enroll` lands after a second
+revocation and re-admits it. `dup-entry` (§5.1 step 1) catches only identical
+bytes, and the current-key check only a device whose identity key changed.
+With `prev`, a withheld entry is stale the moment anything else changes its
+object, and the submitter re-signs against the version it can see. An index is
+the version rather than a hash of the record: it is monotonic, it names the
+exact event, and it binds the whole record, because any change to any field of
+the record is itself an entry that advances it.
+
+`after` and `prev` are different guards: `after` places the entry no earlier
+than a point in the whole log, `prev` demands one object's exact version.
+`prev` is what stops a stale authorisation; `after` remains for ordering across
+objects.
 
 ### 4.5 `params`
 
@@ -476,8 +521,13 @@ the pair taken from the verifier's trust file (§9):
 |---|---|---|
 | `net` | 16 bytes | `norn.trust.net` |
 | `genesis_hash` | 32 bytes | `norn.trust.genesis_hash` |
+| `log_key` | text | `norn.trust.log_key` |
+| `policy` | text | `norn.trust.policy` |
 
-Nothing else is trusted a priori. In particular `state.net` is copied from the
+The last two are read by one rule only — the log/witness key invariant at a
+`policy` or `log_key` entry (§5.1, D-077 (6)), which needs the log's initial key
+and the witnesses in force before any `policy` entry — and are not copied into
+the state. Nothing else is trusted a priori. In particular `state.net` is copied from the
 **anchor**, not from the genesis entry, so a log that fails to produce a genesis
 still yields a state identified with the right network.
 
@@ -506,7 +556,7 @@ Replay of an **empty** list of entries yields the zero state of §5.3 with
 2. Decode per §4.0 and check the envelope per §4.1. Any failure → **abort** (`bad-genesis`).
 3. `t` MUST be `genesis`, and `net` MUST equal `anchor.net` → else **abort** (`bad-genesis`).
 4. `leaf_hash` MUST equal `anchor.genesis_hash` → else **abort** (`bad-genesis`).
-5. `after`, if present, MUST be 0 → else **abort** (`bad-genesis`).
+5. `after`, if present, MUST be 0, and `prev` MUST be absent → else **abort** (`bad-genesis`).
 6. Body checks: `roots` and `signers` are non-empty arrays of distinct 32-byte
    keys, disjoint from each other; `1 ≤ root_thr ≤ len(roots)`;
    `1 ≤ signer_thr ≤ len(signers)`; `params`, if present, is **non-empty**, has only §4.5
@@ -537,7 +587,7 @@ unusable has nothing to verify later entries against.
    before any later rule can judge it.
 2. Decode per §4.0 → on failure reject (`decode`).
 3. Envelope check per §4.1: exactly the permitted keys, **every member of the
-   type §4.1 gives it** (`t` text, `ts` and `after` uint, `body` a map), `v` = 1,
+   type §4.1 gives it** (`t` text, `ts`, `after` and `prev` uint, `body` a map), `v` = 1,
    `net` = `anchor.net`, well-formed `sigs` → on failure reject (`decode`). The
    types are this step's, not a later one's: a numeric `t` is `decode`, not
    `unknown-type`, and a non-map `body` is `decode` even on an under-signed
@@ -559,17 +609,23 @@ checks live inside step 8, after that rule's own body validation.
 
 | `t` | checks, in order | effect |
 |---|---|---|
-| `enroll` | body closed and `request` present · the request decodes under §16.1 and its `net` equals the entry's (`decode`) · the request's signature verifies under its **own** `device_pk` (`no-device-sig`) · valid `signer` count ≥ `signer_thr` (`threshold`) · `device_id` not currently `active` (`dup-id`) · `wg_pk` not in `active_wg` (`dup-wg`) | add the device `active`, with the `device_id`, `device_pk`, `wg_pk`, `labels` and `expires` **from the request** |
-| `rotate` | body well-formed and closed, its `device_pk` when present a valid point (§3.1) (`decode`) · `device_id` known (`unknown-device`) · currently `active` (`not-active`) · valid `device` signature by the device's **current** `device_pk` (`no-device-sig`) · if `params.rotate_needs_signer`, signer count ≥ `signer_thr` (`threshold`) · new `wg_pk` not active **for another device** (`dup-wg`) · if the body carries `device_pk`, a valid `device` signature by **that** key as well (`no-device-sig`) | replace `wg_pk`, and `device_pk` if the body carries one |
-| `revoke` | body well-formed and closed (`decode`) · `device_id` known (`unknown-device`) · currently `active` (`not-active`) · authorised by signers, roots **or** the device itself (`threshold`) | `status` = `revoked`, drop from `active_wg` |
-| `signer_add`, `root_add` | body well-formed and closed (`decode`) · `kid(pk)` not already a root or signer (`dup-key`) | add to that role |
-| `signer_remove` | body well-formed and closed (`decode`) · `kid` is a signer (`unknown-key`) | remove. **No quorum invariant** — removing a compromised signer key MUST always be possible, including the last one (D-028). A network left with fewer signers than `signer_thr` cannot enrol until roots add one; that is recoverable, an unremovable stolen key is not. |
-| `root_remove` | body well-formed and closed (`decode`) · `kid` is a root (`unknown-key`) · removing it leaves ≥ `root_thr` roots and ≥ 1 root (`root-invariant`) | remove |
-| `signer_thr`, `root_thr` | body well-formed and closed (`decode`) · `1 ≤ thr ≤ len(set)` (`bad-thr`) | set the threshold |
-| `log_key` | body well-formed and closed (`decode`) · `pk` 32 bytes, `overlap` a uint (`decode`) | **append** `{pk, overlap, since_index}` to `log_keys` |
-| `policy` | body well-formed and closed (`decode`) · `text` ≤ 4096 bytes (`decode`) · `text` MUST parse as `c2sp.org/tlog-policy`, every verifier key it carries a valid point (§3.1) (`decode`) | replace `policy` |
-| `params` | body well-formed and closed (`decode`) · non-empty, only §4.5 keys, each of the right type (`decode`) | **merge** into `params` |
-| `note` | body well-formed and closed (`decode`) · `text` ≤ 4096 bytes (`decode`) | none |
+| `enroll` | body closed and `request` present · the request decodes under §16.1 and its `net` equals the entry's (`decode`) · the request's signature verifies under its **own** `device_pk` (`no-device-sig`) · valid `signer` count ≥ `signer_thr` (`threshold`) · `prev` is the `device_id`'s record `version`, or absent when no accepted entry has ever named the id (`stale-state`) · `device_id` not currently `active` (`dup-id`) · `wg_pk` not in `active_wg` (`dup-wg`) | add the device `active`, with the `device_id`, `device_pk`, `wg_pk`, `labels` and `expires` **from the request**, its `version` this index |
+| `rotate` | body well-formed and closed, its `device_pk` when present a valid point (§3.1) (`decode`) · `device_id` known (`unknown-device`) · currently `active` (`not-active`) · valid `device` signature by the device's **current** `device_pk` (`no-device-sig`) · if `params.rotate_needs_signer`, signer count ≥ `signer_thr` (`threshold`) · if the body carries `device_pk`, a valid `device` signature by **that** key as well — the same signature when it is the current key (`no-device-sig`) · `prev` is the record's `version` (`stale-state`) · new `wg_pk` not active **for another device** (`dup-wg`) | replace `wg_pk`, and `device_pk` if the body carries one; `version` becomes this index |
+| `revoke` | body well-formed and closed (`decode`) · `device_id` known (`unknown-device`) · currently `active` (`not-active`) · authorised by signers, roots **or** the device itself (`threshold`) · `prev` is the record's `version` (`stale-state`) | `status` = `revoked`, drop from `active_wg`; `version` becomes this index |
+| `signer_add`, `root_add` | body well-formed and closed (`decode`) · `prev` is `versions.signers` or `versions.roots` (`stale-state`) · `kid(pk)` not already a root or signer (`dup-key`) | add to that role; that version becomes this index |
+| `signer_remove` | body well-formed and closed (`decode`) · `prev` is `versions.signers` (`stale-state`) · `kid` is a signer (`unknown-key`) | remove; `versions.signers` becomes this index. **No quorum invariant** — removing a compromised signer key MUST always be possible, including the last one (D-028). A network left with fewer signers than `signer_thr` cannot enrol until roots add one; that is recoverable, an unremovable stolen key is not. |
+| `root_remove` | body well-formed and closed (`decode`) · `prev` is `versions.roots` (`stale-state`) · `kid` is a root (`unknown-key`) · removing it leaves ≥ `root_thr` roots and ≥ 1 root (`root-invariant`) | remove; `versions.roots` becomes this index |
+| `signer_thr`, `root_thr` | body well-formed and closed (`decode`) · `prev` is `versions.signers` or `versions.roots` (`stale-state`) · `1 ≤ thr ≤ len(set)` (`bad-thr`) | set the threshold; that version becomes this index |
+| `log_key` | body well-formed and closed (`decode`) · `pk` 32 bytes, `overlap` a uint (`decode`) · `prev` is `versions.log_key` (`stale-state`) · `pk` is not the public key of any witness the policy in force names — `policy` when it is non-empty, else `anchor.policy` — compared as public-key bytes (`dup-key`, §9.1's invariant) | **append** `{pk, overlap, since_index}` to `log_keys`; `versions.log_key` becomes this index |
+| `policy` | body well-formed and closed (`decode`) · `text` ≤ 4096 bytes (`decode`) · `text` MUST parse as `c2sp.org/tlog-policy`, every verifier key it carries a valid point (§3.1) (`decode`) · `prev` is `versions.policy` (`stale-state`) · no witness the text names has the public key of an active log key — `anchor.log_key` or any `pk` in `log_keys` — compared as public-key bytes (`dup-key`, §9.1's invariant) | replace `policy`; `versions.policy` becomes this index |
+| `params` | body well-formed and closed (`decode`) · non-empty, only §4.5 keys, each of the right type (`decode`) · `prev` is `versions.params` (`stale-state`) | **merge** into `params`; `versions.params` becomes this index |
+| `note` | body well-formed and closed (`decode`) · `text` ≤ 4096 bytes (`decode`) · `prev` absent (`decode`) | none |
+
+Every accepted entry that changes state sets the version of the object it
+changed to its own index (§4.4), and `prev` is checked after the entry's
+signatures and before the checks on the set it joins, so `stale-state` names an
+entry that would otherwise have been applied: the withheld entry §4.4 describes,
+not a malformed or unauthorised one.
 
 A rejected entry is appended to `state.rejected` as `{index, reason}` and
 changes nothing else. `size` becomes `index + 1` whether the entry was accepted
@@ -597,10 +653,11 @@ time** (§5.3), not at replay, so the state itself stays clock-independent.
 | `dup-wg` | a `wg_pk` that is already active. For `enroll` that means active for **any** device — a `device_id` may be reused after revocation, but a live key may not. For `rotate` it means active for **another** device: re-presenting the device's own key is how an identity key rotates alone (D-032). |
 | `unknown-device` | `rotate`/`revoke` names a `device_id` never enrolled |
 | `not-active` | `rotate`/`revoke` on a device that is already `revoked` |
-| `dup-key` | `signer_add`/`root_add` of a `pk` whose `kid` already exists in either role |
+| `dup-key` | `signer_add`/`root_add` of a `pk` whose `kid` already exists in either role; a `policy` naming as a witness a key that is an active log key; a `log_key` whose `pk` an active witness holds (§9.1's invariant, D-077 (6)) — a key entering a role whose set must stay disjoint from another |
 | `unknown-key` | `signer_remove`/`root_remove` of a `kid` not in that role |
 | `root-invariant` | `root_remove` would leave `< root_thr` roots or `< 1` root. **Removals only** — a `root_thr`/`signer_thr` value outside `1 … len(set)` is `bad-thr`, because the *value* is wrong rather than the resulting set (D11). |
 | `bad-thr` | a `signer_thr`/`root_thr` value of 0, or one exceeding the size of the set it applies to. This is a **replay** decision, not a schema one: the value is a well-formed uint, so it is never `decode`. |
+| `stale-state` | `prev` is not the current version of the object the entry changes (§4.4): absent where the object exists, present where none does, or another index. The entry was authorised against a state that is no longer current and is refused whole; the submitter re-signs against the version it can see. Checked after the entry's signatures (§5.1), so it names an entry that would otherwise have been applied |
 
 Signature counting, precisely: a signature `{kid, role, sig}` is *valid* iff
 `kid` names a key this entry may be signed by **in that role**, and Ed25519
@@ -611,10 +668,12 @@ key is whatever the state **before this entry** holds in that role. For
 - on `enroll`, the `device_pk` inside the **embedded request** (§4.3) — an
   `enroll` body carries no other key;
 - on `rotate`, the device's **current** `device_pk` from the state, **and** the
-  incoming `device_pk` the body carries, when it carries one. The incoming key
-  is by construction not in the state before the entry, which is the whole
-  point of §5.1's proof of possession: a signature by it is valid, and D-032
-  requires it;
+  incoming `device_pk` the body carries, when it carries one — one valid
+  signature for each *distinct* key among the two. An incoming key that is the
+  current key is one key: its one signature serves as both, and the entry is a
+  `wg_pk` rotation (D-077 (3)). An incoming key that differs is not in the state
+  before the entry, which is the whole point of §5.1's proof of possession: a
+  signature by it is valid, and D-032 requires it;
 - otherwise, the device's `device_pk` from the state.
 
 Invalid signatures are ignored, not fatal; only the count of valid ones per
@@ -640,6 +699,7 @@ when the entry that produced it omitted the corresponding optional field.
 | `log_keys` | array of `{overlap, pk, since_index}` | one per `log_key` entry, in log order. `since_index` is the **index of that `log_key` entry** — not a log size. A node may use the key once it has replayed that far (§9.4). The trust file's initial log key is **not** listed: it is not in the log. |
 | `devices` | map `device_id` → device | see below |
 | `active_wg` | map `wg_pk` → `device_id` | exactly the `wg_pk` of every `active` device |
+| `versions` | map of five uints: `signers`, `roots`, `params`, `policy`, `log_key` | each the index of the last accepted entry that changed that object (§4.4); all 0 after genesis, and 0 if replay aborted |
 | `rejected` | array of `{index, reason}` | in index order |
 
 A device record:
@@ -650,6 +710,7 @@ A device record:
 | `wg_pk` | 32 bytes | current WireGuard key |
 | `status` | `"active"` \| `"revoked"` | |
 | `since_index` | uint | index of the entry that last changed `status` (§5.1) |
+| `version` | uint | index of the last accepted entry naming this `device_id` — its `enroll`, `rotate` or `revoke` — the value a `prev` must match (§4.4) |
 | `labels` | map string → string | `{}` when the enrolment carried none |
 | `expires` | uint | `0` when the enrolment carried none, meaning no expiry |
 
@@ -1085,7 +1146,7 @@ below exists for humans.
 | `genesis_hash` | 32 bytes | the **leaf hash** `SHA-256(0x00 ‖ entry0)` (§4.0), not the entry hash |
 | `log_key` | text | signed-note verifier key for the log (algorithm `0x01`); MUST parse as one, MUST NOT be a cosignature key, and its note name MUST equal `origin` |
 | `log_urls` | array of text, ≥ 1 | where to fetch checkpoint and tiles. **Each URL is non-empty**: an array holding `""` satisfies "≥ 1" and names nowhere. Norn does not parse URL syntax here; the values are passed to the application that fetches the log |
-| `witnesses` | array of `{name, key, url?}`, **≥ 1** | `url`, when present, is text; empty text is allowed. It is not URI-validated. `key` is a **cosignature** verifier key — `c2sp.org/tlog-cosignature` algorithm `0x04`, not a note key's `0x01` — and MUST parse as one; **a witness `name` is 1–64 bytes** and unique within the file — bounded like the network `name` above, and for the same reason: it is a label an operator reads. A verifier key **declares** its own id, so a reader MUST **recompute** `SHA-256(name ‖ 0x0A ‖ alg ‖ pk)[0:4]` and refuse the file when the declared id differs: an id taken on trust binds nothing, and everything below rests on it binding. The algorithm is part of the key id, so the same public key published under the two algorithms is **two different verifiers**: a file naming a witness with a note key names a key no witness will ever sign with. A file with no witnesses MUST be rejected: with nothing to cosign, the policy's quorum can never be met, so the anchor could never accept a checkpoint. |
+| `witnesses` | array of `{name, key, url?}`, **≥ 1** | `url`, when present, is text; empty text is allowed. It is not URI-validated. `key` is a **cosignature** verifier key — `c2sp.org/tlog-cosignature` algorithm `0x04`, not a note key's `0x01` — and MUST parse as one; **a witness `name` is 1–64 bytes** and unique within the file — bounded like the network `name` above, and for the same reason: it is a label an operator reads. A verifier key **declares** its own id, so a reader MUST **recompute** `SHA-256(name ‖ 0x0A ‖ alg ‖ pk)[0:4]` and refuse the file when the declared id differs: an id taken on trust binds nothing, and everything below rests on it binding. The algorithm is part of the key id, so the same public key published under the two algorithms is **two different verifiers**: a file naming a witness with a note key names a key no witness will ever sign with. And no witness `key`'s public key equals `log_key`'s (D-077 (6)): active log keys and active witness keys are disjoint at every state, so that the log can never be its own witness and a quorum is never met by the log alone; the comparison is on the validated public-key bytes, never on names, ids or text, it runs again at every `policy` and `log_key` entry (§5.1), and a trust file that fails it is invalid. A file with no witnesses MUST be rejected: with nothing to cosign, the policy's quorum can never be met, so the anchor could never accept a checkpoint. |
 | `policy` | text | verbatim `c2sp.org/tlog-policy`; MUST parse, and MUST name **exactly** the witnesses `witnesses` lists, with the same keys. **The same key** means the same verifier key — name, algorithm and public key — compared as canonical text, so a policy that names a listed witness's public key under another key name names a different key, and the file is refused (`trust-bad/48-policy-witness-key-renamed`, D-074 d): §10 matches a cosignature line by name **and** key id, so a node that took the policy's key would match none of that witness's real cosignatures. This is not the grammar's `keys` row below, which compares parsed public keys so that one key cannot count twice under two names: that row is about duplicates inside a policy, this one about whether the file's two halves describe one verifier. The two are not redundant: `witnesses` is where a node learns a witness's name and address, `policy` is where it learns whether that witness counts — so a file where they differ configures a quorum over parties the node cannot reach, or lists parties nothing requires, and either way the operator believes they set something they did not. A `log` line, if the policy carries one, is subject to the same argument: **it MUST be `norn.trust.log_key`**, and a `log` line is compared the same way, as verifier-key text. A file whose two halves name different logs is the same operator error, and the only one of the two a verifier ever uses is `log_key`. The correspondence is on the **set** of names: a witness listed twice is refused by the uniqueness rule above, not by this one, and an implementation that strikes each name off as it matches conflates the two — it then refuses a duplicate here and passes the suite without the uniqueness rule at all. Optional policy URLs have application-specific meaning under C2SP: Norn does not validate their URI syntax or require them to equal `log_urls` or `witnesses[].url` |
 | `anchor` | `{type, max_lag, mode}`, OPTIONAL | It is a closed map. All three members are required **when `anchor` is present**, and no other member is permitted. `max_lag` is **uint seconds**. The two text members are not symmetric: **an unknown `type` is ignored**, not refused — anchoring is advisory (D-009), so a reader that cannot check `"roughtime"` simply does not check it and the rest of the file stands — while **`mode` MUST be `"advisory"`**, because guessing what an unrecognised enforcement mode means is how a node enforces something nobody asked for. A reader that refuses an unknown `type`, or accepts an unknown `mode`, is wrong in opposite directions |
 
