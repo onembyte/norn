@@ -489,7 +489,9 @@ envelope schema afterwards answers `after` where this document says `decode`),
 `log/101-bad-precedence-after-before-threshold` (step 6 before step 7),
 `log/102-bad-precedence-threshold-before-dup-id` and
 `log/103-bad-precedence-threshold-before-dup-wg` (step 7 before step 8). An
-ordering with no such vector is an ordering a second implementation may reverse.
+ordering with no such vector is still normative, merely untested: an
+implementation MUST follow it, and the suite cannot yet tell one that does not
+(cold gate run 13, D4).
 
 Replay of an **empty** list of entries yields the zero state of §5.3 with
 `size` 0 and `rejected` empty: there is nothing to reject.
@@ -1207,7 +1209,11 @@ quorum (§4.3), never the log's own signature.
 
 **A checkpoint MUST be signed by `norn.trust.log_key`, or by a `pk` in
 `log_keys` of a state this node has already accepted.** A node that has
-accepted nothing has only the trust file's key.
+accepted nothing has only the trust file's key. A learned key is the verifier key `<origin>+<id>+base64(0x01 ‖ pk)`:
+named the origin, as the trust file's log key is (§2), with its id computed
+from that name. A line signed by the same `pk` under any other name names no
+trusted key and is ignored (§7), so a reader that matches learned keys by
+public key alone accepts heads this document refuses (cold gate run 13, D11).
 
 That ordering is the whole of the security argument, and it is why rotation is
 not circular: reaching a state that names a key requires having already
@@ -1673,7 +1679,7 @@ this table drifted out of date the moment one was.
 | §5.3 state, incl. D-028 and `expires` | `state.json`, `enroll-contractor` | `signer_remove-below-threshold` accepted, then `signer_add-recover` |
 | §5.3 a witness counts at its **newest** verifying line | `served-twice-cosigned/`: one witness answers twice and both lines verify, so the head is valid and only the tie-break decides. `cases.json` records the instant it must come out at, and the one an oldest-line reader would get instead | `checkpoints-bad/12-second-line-from-one-witness` cannot pin this — its second line does not verify, so §10's per-line rule refuses the checkpoint first |
 | §5.3 the derivation of `T` | `served/checkpoint`, whose three witnesses cosign seven seconds apart, so the **newest** and the **oldest** are both separated from the answer; `proofs/cases.json` records the value `T` must come out as | — |
-| §5.3 policy for the checkpoint's `T` | `served/checkpoint` is accepted under `trust.cbor`'s 2-of-3 policy, so `proofs/cases.json` records `checkpoint_quorum_time` 1760003607. The same checkpoint replays a 3-of-3 policy; `replayed_policy_quorum_time` 1760003600 pins the different, retroactive reading | — |
+| §5.3 policy for the checkpoint's `T` | `served/checkpoint` is accepted under `trust.cbor`'s 2-of-3 policy, so `proofs/cases.json` records `checkpoint_quorum_time` 1760003607. The same checkpoint replays a 3-of-3 policy; `replayed_policy_quorum_time` 1760003600 pins the different, retroactive reading. It also separates the median from the k-th newest: `replayed_policy_quorum_time` is computed under a three-of-three policy, where the k-th newest is the oldest cosignature and the median is not, so a median reader gets 1760003607 and fails (cold gate run 13, D19) | — |
 | §4.0 the grant, §4.5 `routes` | `proven/cases.json`'s `grants`: `router`'s label `10.9.1.5/24, fd00::5/64` becomes `10.9.1.0/24, fd00::/64` (masked, sorted as text), `nas` has none, and `badgrant`'s `10.9.2.0/24, nope` is no grant at all — a reader that keeps the part that parsed differs by a prefix a node would install. `log/156-params-routes-granted` names the default | `log/157-bad-params-routes-unknown-value` (`"open"`) and `log/158-bad-params-routes-wrong-type` (`1`): the value set is closed and the type is text, each `decode` |
 | §5.3 evaluation time | `proven/cases.json`: the admitted set at four values of `T` — no clock, before, **exactly at**, and after the one deadline the fixture carries. `state.json` is clock-independent by design, so this is the only vector that exercises expiry | the `at-the-deadline` case, where `expires == T` and the device is **out** |
 | §7 receipt, codes and check order | `receipt.note` | **16 `receipt-bad/` cases** cover all eight closed codes: `note` (extra final newline), `log-signature` (untrusted signer), `receipt` (wrong header), `origin`, `leaf-hash` (invalid data and non-zero pad bits), `deadline` (`leading-zero.note`), `entry`, and `expired` (checked at the deadline). Body and signer negatives are re-signed; the framing case cannot be, and expiry is a time-dependent check over the otherwise valid receipt. The leading-zero case closes cold gate run 11, D4: §6 fixed a checkpoint's size spelling while §7 left this deadline implicit, so `ReceiptDeadlineLax` passed all 622 checks. **The order** is held pair by pair (cold gate run 13, D4): until then every case failed one step, so a reader that swapped two adjacent steps passed. Each `order-` case fails steps *n* and *n*+1 and is refused for *n* — `order-log-signature-before-receipt` (signed by another key, wrong header), `order-receipt-before-origin`, `order-origin-before-leaf-hash`, `order-leaf-hash-before-deadline`, `order-deadline-before-entry` and `order-entry-before-expired` (another entry's hash, checked at the deadline) |
@@ -1691,7 +1697,7 @@ this table drifted out of date the moment one was.
 | §9.1 four rules that another rule used to decide | `trust.cbor` | `26-name-too-long` and `27-name-empty` (both ends of the 1–64 byte bound; `14` covers absent), `28-empty-log-urls` (present and empty, which is a different path from absent), `07-no-witnesses` — whose policy is `quorum none` and names no witnesses either, so only the explicit witness minimum can refuse it — and `08-duplicate-witness-name`, which lists all three witnesses *and* a byte-identical second `pi`, so names and keys correspond exactly and only uniqueness is broken |
 | §9.1's three MUSTs about the **log key and origin** | `trust.cbor` | `11-log-key-name-mismatch` (the note name is not `origin`), `13-origin-only` (`origin` is the derived value plus one character, so a prefix check accepts it), and `16-log-key-is-a-cosignature-key`. Each carries its damaged key in its **policy** as well, so the `log`-line correspondence rule agrees and only the named rule can refuse it |
 | §9.1 D10's three isolated rules | `trust.cbor` | `13-origin-only` is the derived origin plus one character; `42-witness-key-mismatch` keeps every witness name aligned and changes only the key; `43-anchor-unknown-member` carries the three required members and one unknown. Each otherwise valid file is refused only by the named rule |
-| §14 canonical JSON | every `.json`; `enroll-astral-labels`, whose `escapes` label carries every row of §14.2's tables into `state.json` — including U+2028 and U+2029, which §14.2 writes verbatim and a default JSON library escapes (cold gate run 12, D19) — and `enroll-unicode-labels` | — |
+| §14 canonical JSON | `state.json` and the `.json` mirrors of entry vectors, the files §14 governs — the suite's `cases.json` manifests, `detect/staleness.json` and `proofs/right-edge.json` are pretty-printed and are not §14 canonical, so read them with any JSON parser; `enroll-astral-labels`, whose `escapes` label carries every row of §14.2's tables into `state.json` — including U+2028 and U+2029, which §14.2 writes verbatim and a default JSON library escapes (cold gate run 12, D19) — and `enroll-unicode-labels` | — |
 | §10 a bad cosignature is refused, not merely uncounted | `served/checkpoint` | `checkpoints-bad/11-forged-cosignature-with-quorum`: three named witnesses, two verifying, so the quorum is met without the third and §10 refuses it anyway. `08` cannot tell the two readings apart, because one valid line falls short either way |
 | §10 the rule is per **line**, not per witness | `served/checkpoint`, one line per witness | `checkpoints-bad/12-second-line-from-one-witness`: all three verify and `friend` carries a second, newer line that does not. A reader taking each witness's newest *verifying* line sees a full quorum. `11` cannot stand in — there the bad line's witness has no good line, so declining to count it still leaves a quorum of two |
 | §11.1 the proof is empty at the held size | `fork/evidence-at-same-size`: held is `served/checkpoint`; the conflicting head has the same size and a different root, signed by the log key and cosigned by all three witnesses. `held_root` equals held's signed root and the proof is empty. It MUST prove a fork; every previous same-size file was negative (cold gate run 13, D14) | `fork/bad-proof-at-same-size`: a consistency proof where the two signatures say it alone |
@@ -1816,10 +1822,6 @@ admits its holes, so:
   root its entries do not produce — and nothing here distinguishes a reader
   that honours such a proof from one that ignores it. Reaching it needs a
   served log that carries a proof, which `tlog-tiles` does not serve.
-- **The median, as distinct from the k-th newest.** With three witnesses and a
-  threshold of two they are the same timestamp, so no reading of the fixture
-  tells them apart. Separating them needs a fourth witness, which this network
-  does not have.
 - **§16.1's 32-byte `device_pk`, independently.** `requests-bad/short-device-pk`
   is refused by that rule, and a verifier that skipped it would fail anyway: a
   31-byte key verifies nothing. No construction separates the two, so the rule
