@@ -2488,6 +2488,7 @@ def hostile_inputs() -> list[tuple[str, bytes, str]]:
     # schema above them to intervene first.
     bare = [
         ("bare-null", b"\xf6", "simple value"),
+        ("bare-simple", b"\xf0", "simple value"),
         ("bare-undefined", b"\xf7", "simple value"),
         ("bare-float", b"\xf9\x3c\x00", "float"),
         ("bare-negative-integer", b"\x20", "major type"),

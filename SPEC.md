@@ -147,12 +147,23 @@ The canonical *state* is JSON, not CBOR, and is governed by §14 instead; it is
 keyed by `device_id` and by 32-byte WireGuard keys, neither of which would fit
 the map-key cap below:
 
+**The profile is an allow-list** (D-074 h). A Norn CBOR item is an unsigned
+integer (major type 0), a byte string (2), a text string (3), an array (4), a
+map (5), or one of the two simple values `false` (20) and `true` (21) of major
+type 7 — and **nothing else**. Every other item is refused by the decoder,
+before any schema looks at it: negative integers (major type 1), tags (6),
+floats (major type 7 with a 2-, 4- or 8-byte argument), `null` (22),
+`undefined` (23), every other simple value (0–19, and 32–255 in the two-byte
+form), and any indefinite length. The rows below restate this type by type and
+add what each permitted item must also satisfy.
+
 | Rule | Requirement |
 |---|---|
 | Integers | major type 0 only; shortest form; ≤ 2⁶³−1. **No negative integers.** |
 | Floats, tags, `undefined`, indefinite-length items | **forbidden** (see the note on over-determination below) |
 | `null` | **forbidden** — an OPTIONAL field is *absent*, never `null` |
 | Booleans | valid CBOR items; schemas MUST reject them outside `params.rotate_needs_signer` |
+| Simple values | only `false` (20) and `true` (21); **every other simple value is forbidden**, whichever form encodes it (`entries-hostile/bare-simple`, `fork/bad-simple-size`) |
 | Byte strings | definite length; fixed sizes where stated (`net` 16, `pk` 32, `sig` 64) |
 | Text strings | definite length; valid UTF-8; every **map key** is a text string of 1–23 bytes |
 | Maps | definite length; keys **strictly increasing** in §4.1's order — the same comparison is what forbids a duplicate key; unknown keys → reject |
@@ -1574,7 +1585,7 @@ naming that rule is how the generators and the placement guards check it.
 | `checkpoints-bad/<NN-case>.checkpoint` | 31 checkpoints, including `31-cosignature-S-plus-L` (`cosignature`), that MUST be refused, each served in place of `served/checkpoint` over the honest tiles. `cases.json` lists them, and its `signature_blind_accepts` names the ones a verifier that never calls Ed25519 accepts — six of the thirty-one. That set is **computed** from the shipped files, not asserted |
 | `entries-hostile/<name>.cbor` | input that is not an entry and never could be, for §4.0's three resource limits — the entry size, the nesting depth and the map-key cap. `cases.json` says what each refusal must be about, and marks the cases that sit exactly **at** a limit and MUST be accepted |
 | `proven/cases.json` | the devices admitted at four evaluation times (§5.3), including the boundary where `expires` equals `T`; and under `grants`, every active device's §4.0 grant, which the evaluation time does not change |
-| `fork/` | `evidence.cbor` and the `conflicting.checkpoint` it is about (§11.1), plus four more sound files including `evidence-at-same-size.cbor` (the served held head and a different root at the same size, both signed and cosigned, with an empty proof). `cases.json` names all five under `sound` and codes all twenty-two refusals, including `bad-policy-unparseable-and-foreign-held` (`policy`, before `held`) |
+| `fork/` | `evidence.cbor` and the `conflicting.checkpoint` it is about (§11.1), plus ten more sound files including `evidence-at-same-size.cbor` (the served held head and a different root at the same size, both signed and cosigned, with an empty proof). `cases.json` names all eleven under `sound` and codes all thirty refusals, including `bad-simple-size` (`cbor`, a simple value outside §4.0's allow-list) and `bad-policy-unparseable-and-foreign-held` (`policy`, before `held`) |
 | `anchors/` | OpenTimestamps proofs written by `python-opentimestamps`: `checkpoint-<size>.ots`, `sample.ots` over an arbitrary digest, and a calendar's reply. **`cases.json` states each proof's digest in hex and names the bytes that produce it** — for the checkpoint proof, `served/checkpoint` through the newline that terminates the blank separator line, which is the §6 range and *not* the three-line body. Without it a reader has to parse the OpenTimestamps container, a format this document does not describe, before it can tell which of three byte ranges was stamped |
 | `proofs-bad/<name>.bundle` | thirteen bundles that MUST be refused (§8.1), including `one-past-the-cap.bundle`: exactly 81920 bytes, otherwise sound, refused as `bundle`. `cases.json` gives the log key, code and rule for each refusal |
 | `detect/` | the stored-checkpoint sequences §10 needs, each branch with its own tiles, plus `staleness.json` for §8.1's condition 4 |
@@ -1617,8 +1628,9 @@ this table drifted out of date the moment one was.
 | §4.1 `v` MUST be 1 | every entry | `bad-version-two`. No entry carried any other value, so a reader that never looked at `v` reproduced the manifest |
 | §5.1 `rotate` on a revoked device | `rotate-nas` | `bad-rotate-revoked`: `laptop` is known and revoked, so it is `not-active` and not `unknown-device`. The only other `not-active` vector is a `revoke` |
 | §5.1 `dup-key` is across **both** roles | `signer_add-recover` | `bad-root_add-existing-signer`: adding a current signer as a root. Every other dup-key vector re-added a key into the role it was already in |
-| §4.0 the profile's banned items, at the decoder | the three `at-the-…-limit` cases | `bare-null`, `bare-undefined`, `bare-float`, `bare-negative-integer`, `bare-tag`, `bare-indefinite-text`, `bare-nontext-map-key` and `bare-invalid-utf8` — each a whole input with no schema above it, so the profile is the only thing that can refuse, and each refused for **its own** rule. The in-entry negatives cannot pin these: a lenient decoder hands the envelope check a malformed field and the reason is `decode` either way |
+| §4.0 the profile's banned items, at the decoder | the three `at-the-…-limit` cases | `bare-null`, `bare-undefined`, `bare-float`, `bare-simple`, `bare-negative-integer`, `bare-tag`, `bare-indefinite-text`, `bare-nontext-map-key` and `bare-invalid-utf8` — each a whole input with no schema above it, so the profile is the only thing that can refuse, and each refused for **its own** rule. The in-entry negatives cannot pin these: a lenient decoder hands the envelope check a malformed field and the reason is `decode` either way |
 | §4.0 booleans are profile items; field types are schema | `fork/bad-bool-size.cbor` decodes as valid CBOR with `size: true` | `schema`: §11.1 requires `size` to be uint, so the decoded boolean is refused by the evidence schema |
+| §4.0 simple values outside the allow-list | `fork/bad-bool-size.cbor` has `size: true`, a valid profile item refused as `schema` | `entries-hostile/bare-simple` is simple value 16 alone, refused only by the decoder; `fork/bad-simple-size.cbor` changes only `size` from `true` to simple value 16 and is refused as `cbor`, before the schema |
 | §4.0 free text has no lower bound | `note-empty-text`, `revoke-empty-reason` and `revoke-no-reason` — all **accepted**. `text` is bounded above only, `reason` is 0–256, and §4.3 marks it OPTIONAL | a reader that requires one byte rejects entries this document accepts, which only a positive can show |
 | §4.0 label-value byte cap | `req-label-at-cap`: one signed label value of exactly 256 UTF-8 bytes (128 `é`) | `oversize-label`: a validly signed 257-byte value (128 `é` plus `x`, 129 code points), refused by the byte cap; a character-counting reader accepts it |
 | §4.0 resource limits | — | `entries-hostile/oversize-entry` (a header promising 65536 bytes, refused on length before anything is allocated) and `entries-hostile/deep-nesting` (200 nested arrays, deterministic throughout, so only the depth rule can refuse it) |

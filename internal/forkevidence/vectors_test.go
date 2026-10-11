@@ -1,7 +1,9 @@
 package forkevidence
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -201,5 +203,58 @@ func TestEveryEvidenceSchemaRuleHasItsCase(t *testing.T) {
 				t.Errorf("%s was accepted; §11.1 says it must not be", want)
 			}
 		})
+	}
+}
+
+// Unlike a boolean, simple value 16 must be refused before the evidence schema.
+// Repairing just that item recovers the boolean negative or the sound fork.
+func TestSimpleForkSizeIsRefusedOnlyByTheProfile(t *testing.T) {
+	root := filepath.Join("..", "..", "testdata", "vectors")
+	read := func(name string) []byte {
+		t.Helper()
+		raw, err := os.ReadFile(filepath.Join(root, "fork", name+".cbor"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return raw
+	}
+	raw := read("bad-simple-size")
+	if _, err := cborpkg.DecodeWithin(raw, MaxEvidenceBytes); !errors.Is(err, cborpkg.ErrProfile) {
+		t.Fatalf("simple 16 must fail in the decoder: %v", err)
+	}
+	_, err := Parse(raw)
+	if got, _ := evrefusal.CodeOf(err); got != evrefusal.CBOR || !strings.Contains(err.Error(), "simple value 16") {
+		t.Fatalf("want cbor for simple value 16, got %q: %v", got, err)
+	}
+	item := []byte{0x64, 's', 'i', 'z', 'e', 0xf0}
+	if bytes.Count(raw, item) != 1 {
+		t.Fatal("size must contain simple value 16 exactly once")
+	}
+	boolean := bytes.Replace(raw, item, []byte{0x64, 's', 'i', 'z', 'e', 0xf5}, 1)
+	if !bytes.Equal(boolean, read("bad-bool-size")) {
+		t.Fatal("replacing only simple 16 with true must recover bad-bool-size")
+	}
+	_, err = Parse(boolean)
+	if got, _ := evrefusal.CodeOf(err); got != evrefusal.Schema {
+		t.Fatalf("true must reach the schema: %q, %v", got, err)
+	}
+	sound := read("evidence-v1")
+	value, err := cborpkg.DecodeWithin(sound, MaxEvidenceBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := value.(map[string]any)
+	doc["size"] = true
+	wantBoolean, err := cborpkg.Encode(doc)
+	if err != nil || !bytes.Equal(boolean, wantBoolean) {
+		t.Fatalf("only size may differ from the sound evidence: %v", err)
+	}
+	ev, err := Parse(sound)
+	if err != nil {
+		t.Fatal(err)
+	}
+	anchor := shippedAnchor(t, root)
+	if _, err := Check(ev, anchor.Origin, []string{anchor.LogKey}, anchor.Policy); err != nil {
+		t.Fatalf("the unpatched evidence must prove its fork: %v", err)
 	}
 }

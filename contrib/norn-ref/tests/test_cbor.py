@@ -1,5 +1,6 @@
 """RED first: deterministic CBOR for the Norn subset (SPEC §4.0/§4.1)."""
 from pathlib import Path
+import json
 import unittest
 from nornref import cbor
 
@@ -52,6 +53,13 @@ class DecodeStrict(unittest.TestCase):
             with self.subTest(bad=bad):
                 with self.assertRaises(cbor.ProfileError):
                     cbor.decode(h(bad))
+
+    def test_two_byte_simple_values_are_named_as_simple_values(self):
+        for n in (16, 20, 21, 32, 255):
+            with self.subTest(n=n):
+                with self.assertRaisesRegex(cbor.ProfileError,
+                                            rf"^simple value outside profile: {n}$"):
+                    cbor.decode(bytes([0xf8, n]))
 
     def test_rejects_trailing_bytes(self):
         with self.assertRaises(cbor.ProfileError):
@@ -117,3 +125,46 @@ class HostileInputVectors(unittest.TestCase):
                     cbor.decode(raw)
                 self.assertIn(says, str(caught.exception),
                               f"{name} was refused for the wrong rule")
+
+
+class AllowListVectors(unittest.TestCase):
+    ROOT = Path(__file__).resolve().parents[3] / "testdata" / "vectors"
+
+    def test_bare_simple_value_is_refused_only_by_the_profile(self):
+        raw = (self.ROOT / "entries-hostile" / "bare-simple.cbor").read_bytes()
+        self.assertEqual(raw, b"\xf0")
+        with self.assertRaisesRegex(cbor.ProfileError, "^simple value outside profile: 16$"):
+            cbor.decode(raw)
+        self.assertIs(cbor.decode(b"\xf5"), True)
+
+    def test_simple_fork_size_is_refused_before_the_schema(self):
+        root = self.ROOT / "fork"
+        manifest = json.loads((root / "cases.json").read_text())
+        self.assertEqual(manifest["codes"].get("bad-simple-size"), "cbor")
+        raw = (root / "bad-simple-size.cbor").read_bytes()
+        with self.assertRaisesRegex(cbor.ProfileError, "^simple value outside profile: 16$"):
+            cbor.decode(raw)
+        item = b"\x64size\xf0"
+        self.assertEqual(raw.count(item), 1)
+        boolean = raw.replace(item, b"\x64size\xf5", 1)
+        self.assertEqual(boolean, (root / "bad-bool-size.cbor").read_bytes())
+        self.assertEqual(manifest["codes"]["bad-bool-size"], "schema")
+        decoded = cbor.decode(boolean)
+        self.assertIs(decoded["size"], True)
+        self.assertIsNot(type(decoded["size"]), int)
+        sound = cbor.decode((root / "evidence-v1.cbor").read_bytes())
+        decoded["size"] = sound["size"]
+        self.assertEqual(decoded, sound)
+
+    def test_every_named_profile_ban_has_a_shipped_refusal(self):
+        root = self.ROOT / "entries-hostile"
+        manifest = json.loads((root / "cases.json").read_text())
+        cases = {case["name"]: case for case in manifest["cases"]}
+        for name in ("bare-negative-integer", "bare-tag", "bare-float", "bare-null",
+                     "bare-undefined", "bare-indefinite-text", "bare-simple"):
+            with self.subTest(name=name):
+                self.assertIn(name, cases)
+                self.assertNotIn("accepted", cases[name])
+                with self.assertRaises(cbor.ProfileError) as caught:
+                    cbor.decode((root / f"{name}.cbor").read_bytes())
+                self.assertIn(cases[name]["says"], str(caught.exception))

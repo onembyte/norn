@@ -860,6 +860,7 @@ def write_requests(out: pathlib.Path) -> None:
         else:
             hostile.append({"name": name, "says": says})
     hostile_rules = {
+        "bare-simple": {"section": "4.0", "says": "**every other simple value is forbidden**"},
         "bare-null": {"section": "4.0", "says": "an OPTIONAL field is *absent*, never `null`"},
         "bare-undefined": {"section": "4.0", "says": "Floats, tags, `undefined`, indefinite-length items"},
         "bare-float": {"section": "4.0", "says": "Floats, tags, `undefined`, indefinite-length items"},

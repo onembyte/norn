@@ -97,6 +97,9 @@ class _Decoder:
         # floats by name, so the refusal names them rather than reporting
         # the same 'simple value' a null does.
         if major == 7:
+            if extra == 24:
+                (n,) = self.take(1)
+                raise ProfileError(f"simple value outside profile: {n}")
             raise ProfileError("floats are outside the profile")
         size = 1 << (extra - 24)
         n = int.from_bytes(self.take(size), "big")

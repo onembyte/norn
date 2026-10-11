@@ -3,6 +3,7 @@ package cbor
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -208,12 +209,20 @@ func TestEveryForbiddenProfileItemHasADecoderCase(t *testing.T) {
 	for _, want := range []string{
 		"bare-null", "bare-undefined", "bare-float", "bare-negative-integer",
 		"bare-tag", "bare-indefinite-text", "bare-nontext-map-key",
-		"bare-invalid-utf8",
+		"bare-invalid-utf8", "bare-simple",
 	} {
 		if !have[want] {
 			t.Errorf("§4.0 bans this and `entries-hostile/%s` does not ship, so the "+
 				"rule is reachable only through an entry -- where a later rule "+
 				"refuses it first and the reason code is the same either way", want)
+		}
+		raw, err := os.ReadFile(filepath.Join(dir, want+".cbor"))
+		if err != nil {
+			t.Error(err)
+			continue
+		}
+		if _, err := Decode(raw); !errors.Is(err, ErrProfile) {
+			t.Errorf("%s: want profile refusal, got %v", want, err)
 		}
 	}
 }
@@ -318,5 +327,24 @@ func TestEqualKeysAreRefusedByTheOrderingComparisonItself(t *testing.T) {
 		t.Errorf("a duplicate key is refused as %q and an out-of-order key as %q; two "+
 			"messages are two rules, and a reader can implement one and miss the other",
 			duplicate, unsorted)
+	}
+}
+
+// A bare item has no schema, signature or field constraint to hide a missing
+// profile ban. D-074 (h) makes this simple value an explicit forbidden item.
+func TestBareSimpleValueIsRefusedOnlyByTheProfile(t *testing.T) {
+	dir := filepath.Join("..", "..", "testdata", "vectors", "entries-hostile")
+	raw, err := os.ReadFile(filepath.Join(dir, "bare-simple.cbor"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(raw, []byte{0xf0}) {
+		t.Fatalf("bare-simple is %x, want the simple value 16 alone", raw)
+	}
+	if _, err := Decode(raw); !errors.Is(err, ErrProfile) || !strings.Contains(err.Error(), "simple value 16") {
+		t.Fatalf("want simple value 16 profile refusal, got %v", err)
+	}
+	if value, err := Decode([]byte{0xf5}); err != nil || value != true {
+		t.Fatalf("true is a permitted profile item: %v, %v", value, err)
 	}
 }

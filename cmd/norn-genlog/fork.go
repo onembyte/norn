@@ -640,6 +640,19 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 		return err
 	}
 
+	// D-074 (h). Change only the boolean size to simple value 16. A boolean
+	// reaches the schema, but this item is outside the profile and must fail
+	// first, as cbor. The strict encoder cannot produce it, so patch the head.
+	boolSizeItem := []byte{0x64, 's', 'i', 'z', 'e', 0xf5}
+	simpleSizeItem := []byte{0x64, 's', 'i', 'z', 'e', 0xf0}
+	if bytes.Count(rawBoolSize, boolSizeItem) != 1 {
+		return fmt.Errorf("the boolean evidence does not encode size true exactly once")
+	}
+	if err := os.WriteFile(filepath.Join(dir, "bad-simple-size.cbor"),
+		bytes.Replace(rawBoolSize, boolSizeItem, simpleSizeItem, 1), 0o644); err != nil {
+		return err
+	}
+
 	// The split claim is authenticated separately from the fork. Starting
 	// each negative from sound evidence keeps every earlier reader step intact.
 	splitRaw, err := evidence.Encode()
@@ -747,6 +760,7 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 		{"name": "bad-one-past-the-cap", "says": "MAX_EVIDENCE_BYTES"},
 		{"name": "bad-size-above-held", "says": "can only speak for what it holds"},
 		{"name": "bad-bool-size", "says": "size is bool, want uint"},
+		{"name": "bad-simple-size", "says": "simple value 16"},
 		{"name": "bad-policy-says-quorum-none", "says": "no quorum cosigned it"},
 		{"name": "bad-policy-unparseable", "says": "not a `tlog-policy`"},
 		{"name": "bad-policy-unparseable-and-foreign-held", "says": "not a `tlog-policy`"},
@@ -774,6 +788,7 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 		"bad-one-past-the-cap":                    evrefusal.Oversize,
 		"bad-size-above-held":                     evrefusal.Size,
 		"bad-bool-size":                           evrefusal.Schema,
+		"bad-simple-size":                         evrefusal.CBOR,
 		"bad-policy-says-quorum-none":             evrefusal.Held,
 		"bad-policy-unparseable":                  evrefusal.Policy,
 		"bad-policy-unparseable-and-foreign-held": evrefusal.Policy,
@@ -807,6 +822,7 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 			"bad-one-past-the-cap":                    {"section": "11.1", "says": "MAX_EVIDENCE_BYTES"},
 			"bad-size-above-held":                     {"section": "11.1", "says": "not above `held`'s own size"},
 			"bad-bool-size":                           {"section": "11.1", "says": "the `size` field is a boolean rather than a uint"},
+			"bad-simple-size":                         {"section": "4.0", "says": "**every other simple value is forbidden**"},
 			"bad-policy-says-quorum-none":             {"section": "11.1", "says": "never the one in the file"},
 			"bad-policy-unparseable":                  {"section": "11.1", "says": "MUST parse as `c2sp.org/tlog-policy`"},
 			"bad-policy-unparseable-and-foreign-held": {"section": "11.1", "says": "MUST parse as `c2sp.org/tlog-policy`"},

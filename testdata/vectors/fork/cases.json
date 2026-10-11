@@ -53,6 +53,10 @@
       "says": "size is bool, want uint"
     },
     {
+      "name": "bad-simple-size",
+      "says": "simple value 16"
+    },
+    {
       "name": "bad-policy-says-quorum-none",
       "says": "no quorum cosigned it"
     },
@@ -134,6 +138,7 @@
     "bad-proof-at-same-size": "proof",
     "bad-short-held-root-and-size-above-held": "schema",
     "bad-short-proof-hash": "schema",
+    "bad-simple-size": "cbor",
     "bad-size-above-held": "size",
     "bad-size-mismatch": "size",
     "bad-size-zero": "proof",
@@ -213,6 +218,10 @@
     "bad-short-proof-hash": {
       "says": "| `proof` | array of bytes (32 each) |",
       "section": "11.1"
+    },
+    "bad-simple-size": {
+      "says": "**every other simple value is forbidden**",
+      "section": "4.0"
     },
     "bad-size-above-held": {
       "says": "not above `held`'s own size",

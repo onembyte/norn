@@ -2981,3 +2981,16 @@ func TestEveryBadCheckpointCitesTheRuleOfItsCode(t *testing.T) {
 		}
 	}
 }
+
+func TestTheCBORProfileIsAnAllowList(t *testing.T) {
+	section, ok := load(t).Section("4.0")
+	if !ok {
+		t.Fatal("§4.0 is missing")
+	}
+	flat := strings.Join(strings.Fields(strings.ReplaceAll(section.Body, "*", "")), " ")
+	for _, phrase := range []string{"The profile is an allow-list", "every other simple value is forbidden"} {
+		if !strings.Contains(flat, phrase) {
+			t.Errorf("§4.0 omits %q", phrase)
+		}
+	}
+}

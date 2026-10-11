@@ -48,3 +48,8 @@ trust-bad/47-witness-noncanonical-point.cbor expected="trust" got="accept"
 # length, not the framing. The sealed verifier frames 68 or 76 bytes only, so
 # it refuses the log's own line plus one byte as `note`, now `log-signature`.
 checkpoints-bad/20-signature-payload-too-long expected="log-signature" got="note"
+#
+# D-074 (h), 2026-10-10, row 6.5l-ix-f-h: the sealed harness carries an
+# expectation for each bare case it was built against and none for the new
+# `bare-simple`; its decoder refuses the item ("float/simple item").
+entries-hostile/bare-simple expected="UNKNOWN CASE" got="float/simple item"
