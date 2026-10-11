@@ -1322,6 +1322,14 @@ def policy_grammar() -> list[tuple[str, str, bool, str]]:
         ("bad-quorum-forward-reference",
          f"{log}\n{pi}\nquorum home\ngroup home any pi\n", False,
          "the quorum names a previously-defined witness or group"),
+        ("directive-after-quorum",
+         f"{log}\n{pi}\ngroup home any pi\nquorum home\n{vps}\n"
+         "group unused all vps\n", True,
+         "lines may follow quorum; the unused witness and group do not change its meaning"),
+        ("bad-redefinition-after-use",
+         f"{log}\n{pi}\n{vps}\ngroup home any pi\nquorum home\n"
+         "group home any vps\n", False,
+         "a name is defined once, even after an earlier quorum line used it"),
         ("bad-witness-name-none",
          f"{log}\nwitness none {witness_vkey('pi')}\nquorum none\n", False,
          "`none` is predefined and cannot be defined as a witness or group"),
@@ -1491,6 +1499,15 @@ def policy_evaluations() -> dict[str, list[dict[str, Any]]]:
     suite took a policy and a set of cosigners and asked for a verdict.
     """
     return {
+        "directive-after-quorum": [
+            {"cosigners": [], "satisfied": False, "why": "nobody cosigned"},
+            {"cosigners": ["pi"], "satisfied": True,
+             "why": "the quorum names home, defined earlier as any of pi"},
+            {"cosigners": ["vps"], "satisfied": False,
+             "why": "the trailing witness is not a member of the quorum"},
+            {"cosigners": ["pi", "vps"], "satisfied": True,
+             "why": "pi satisfies the original group; the trailing witness counts for nothing"},
+        ],
         "minimal": [
             {"cosigners": ["pi"], "satisfied": True, "why": "the quorum names pi"},
             {"cosigners": [], "satisfied": False, "why": "nobody cosigned"},

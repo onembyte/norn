@@ -671,6 +671,10 @@ def write_policies(out: pathlib.Path) -> None:
         "section": "9.1", "says": "previously-defined witnesses or groups"}
     policy_rules["bad-quorum-forward-reference"] = {
         "section": "9.1", "says": "a previously-defined witness, a previously-defined group"}
+    policy_rules["directive-after-quorum"] = {
+        "section": "9.1", "says": "lines may appear in **any order**"}
+    policy_rules["bad-redefinition-after-use"] = {
+        "section": "9.1", "says": "nothing defined later changes an earlier line"}
     policy_rules["quorum-none-empty"] = {
         "section": "9.1", "says": "the predefined `none` quorum"}
     policy_rules["reserved-words-as-names"] = {

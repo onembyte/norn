@@ -136,6 +136,11 @@ incident that produced it. Read that section before the first firing.
       integrator checks the inserted text is verbatim. Writing a decision, a
       DECISION block or text not yet decided stays here. 6.5l-ix-f-c and -f-d
       were built here before this; f-e, f-f and f-h, and 6.5m-xii-s, are lanes.
+    - **A lane's clone is deleted once its integration is pushed** (owner,
+      2026-10-10), its report and patch kept in `out/<lane>`: the clones
+      filled a disk that sits near full. A lane refused at start by the Codex
+      usage limit did no work; it is noted in `launches.log` and relaunched
+      with `lane.sh` after the reset.
     - **Order by model (owner's instruction, 2026-10-07):** a firing on
       Mythos takes the first 🧠 row and lets finished lanes wait; a firing on
       Opus integrates finished lanes and takes untagged rows, and stops with a
