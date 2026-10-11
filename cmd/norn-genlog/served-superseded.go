@@ -53,12 +53,17 @@ func writeSupersededHead(root, origin, signed string, key ed25519.PrivateKey,
 	meta := map[string]any{
 		"serve_over":  "served",
 		"cosigned_by": []string{signers[0].Name, signers[1].Name},
+		// Cold gate run 13, D16: the informed refusal's code. Without it a reader
+		// that replaced the trust key with the learned one refused this head for
+		// log-signature instead of quorum, and passed.
+		"fresh":    "accept",
+		"informed": "quorum",
 		"comment": "the served head cosigned by two of the three witnesses. A reader " +
-			"holding only trust.cbor requires two and MUST accept it; a reader that has " +
-			"replayed this log has seen its roots raise the quorum to three and MUST " +
-			"refuse it (SPEC 9.4). Serve it in place of served/checkpoint over the same " +
-			"tiles. Two correct answers again, and here the informed reader is the " +
-			"stricter one",
+			"holding only trust.cbor (`fresh`) requires two and MUST accept it; a reader " +
+			"that has replayed this log (`informed`) has seen its roots raise the quorum " +
+			"to three and MUST refuse it as quorum (SPEC 9.4, 10.1). Serve it in place " +
+			"of served/checkpoint over the same tiles. Two correct answers again, and " +
+			"here the informed reader is the stricter one",
 	}
 	blob, err := json.MarshalIndent(meta, "", "  ")
 	if err != nil {

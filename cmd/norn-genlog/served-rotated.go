@@ -66,12 +66,23 @@ func writeRotatedHead(root, origin, signed string, st *state.State,
 		"signed_by":   st.LogKeys[0].Pk,
 		"since_index": st.LogKeys[0].SinceIndex,
 		"overlap":     st.LogKeys[0].Overlap,
+		// Cold gate run 13, D16: the answers, stated rather than described, and
+		// the third one §12.1 claimed and nothing asked -- a reader that has
+		// replayed the rotation still reads the head the log is serving, because
+		// the anchor key is kept alongside (§9.4). A reader that replaced it
+		// with the learned key passed every case until this field.
+		"fresh":                 "log-signature",
+		"informed":              "accept",
+		"informed_reads_served": "accept",
 		"comment": "the served head, signed by the first log key this log's roots " +
 			"published (SPEC 9.4). Serve it in place of served/checkpoint over the same " +
-			"tiles. A reader holding only trust.cbor MUST refuse it: it has never seen " +
-			"the rotation. A reader that has replayed this log MUST accept it. The two " +
-			"answers are both correct, and which applies depends on what the reader has " +
-			"done rather than on anything in the file",
+			"tiles. A reader holding only trust.cbor (`fresh`) MUST refuse it as " +
+			"log-signature: it has never seen the rotation. A reader that has replayed " +
+			"this log (`informed`) MUST accept it -- and MUST still accept " +
+			"served/checkpoint itself (`informed_reads_served`), because the anchor key " +
+			"is kept alongside the learned one, never replaced. The answers are all " +
+			"correct, and which applies depends on what the reader has done rather " +
+			"than on anything in the file",
 	}
 	blob, err := json.MarshalIndent(meta, "", "  ")
 	if err != nil {
