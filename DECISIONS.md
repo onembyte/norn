@@ -1143,3 +1143,21 @@ where it enters. Both implementations check; `log-admission/` gains a
 device-signed `rotate` and a root-signed `policy`, each with a mixed-order key.
 Rows: 6.5m-sec-023r-g.
 
+## D-076 · The second cold build's three readings: §11.1's order, a policy's final line, a bound on decimal lines (2026-10-11)
+The owner's answers of 2026-10-11 to the DECISION 6.7-r-f-b wrote (`BUILD-LOG.md`,
+"DECISION TAKEN — 6.7-r-f-b"): **1-A, 2-A, 3-A.**
+**(1)** §11.1 checks every proof a file carries — the version-2 split proofs
+included — before it compares the roots: the code table's order (step 8
+`proof`, then step 9 `consistent`) is the order, and the procedure's steps 4
+and 5 swap to match. A file whose roots agree and whose split proof is bad is
+`proof`.
+**(2)** §9.1: every line of a policy, a comment line included, ends in ASCII
+line feed; a document whose last byte is not a line feed is an error whatever
+its last line holds.
+**(3)** Every decimal integer line in a note — a checkpoint's size (§6), a
+receipt's deadline (§7) — is at most 2⁶³−1, §4.0's bound on every integer; a
+larger one is malformed, `checkpoint` for a size and `deadline` for a
+deadline. The two vectors are shipped; the second cold build predates the rule
+and fails them, a recorded debt to the next cold build.
+Rows: 6.7-r-f-d.
+
