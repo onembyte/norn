@@ -1,4 +1,5 @@
 """RED first: the trust file and its fingerprint (SPEC §9)."""
+import copy
 import pathlib
 import unittest
 
@@ -80,6 +81,35 @@ class Build(unittest.TestCase):
             trust.validate(damaged)
         repaired = dict(damaged, policy=damaged["policy"].replace(renamed[0], listed["key"]))
         trust.validate(repaired)
+
+    def test_key_id_and_key_name_vectors_are_their_only_fault(self):
+        # D-074 (f): a key id is lowercase hex and a key name is one or more
+        # ASCII bytes 0x21-0x7E without '+'. Each case breaks one of those on
+        # pi's key, in the witnesses and the policy alike, and putting the
+        # honest key back in both places repairs the file.
+        root = pathlib.Path(__file__).resolve().parents[3] / "testdata" / "vectors"
+        cases = dict(fixture.trust_rejections())
+        listed = self.trust["witnesses"][0]["key"]
+        faults = {
+            "49-witness-key-id-uppercase": lambda name, kid: kid != kid.lower(),
+            "50-witness-key-name-not-ascii": lambda name, kid: any(ord(c) > 0x7E for c in name),
+        }
+        for case, fault in faults.items():
+            with self.subTest(case=case):
+                damaged = cases.get(case)
+                self.assertIsNotNone(damaged, f"{case} is missing")
+                raw = (root / "trust-bad" / f"{case}.cbor").read_bytes()
+                self.assertEqual(cbor.decode(raw), damaged)
+                key = damaged["witnesses"][0]["key"]
+                name, kid, _ = key.split("+", 2)
+                self.assertTrue(fault(name, kid), f"{key!r} does not carry the fault")
+                self.assertIn(f"witness pi {key} ", damaged["policy"])
+                with self.assertRaises(trust.TrustError):
+                    trust.parse(raw)
+                repaired = copy.deepcopy(damaged)
+                repaired["witnesses"][0]["key"] = listed
+                repaired["policy"] = damaged["policy"].replace(key, listed)
+                trust.validate(repaired)
 
     def test_validate_rejects_damage(self):
         for mutate in [

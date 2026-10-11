@@ -24,7 +24,7 @@ fork/bad-twelve-keys expected="schema" got="version"
 # D-072 (c), 2026-10-09: the C2SP CCTV set (SPEC 3.1) adds ed25519-cctv/cases.json,
 # a case table the sealed harness does not know, so its own coverage check lists
 # one table fewer than the suite holds. Every new case table changes this line.
-coverage/case-tables expected=["anchors/cases.json","checkpoints-bad/cases.json","detect/cases.json","ed25519-cctv/cases.json","entries-hostile/cases.json","fork/cases.json","genesis-good/cases.json","genesis/cases.json","policies/cases.json","proofs-bad/cases.json","proofs-rotated/cases.json","proofs/cases.json","proven/cases.json","receipt-bad/cases.json","receipt-rotated/cases.json","requests-bad/cases.json","requests/cases.json","served-bad/cases.json","served-extra-witness/cases.json","served-genesis/cases.json","served-large/cases.json","served-name-collision/cases.json","served-rotated/cases.json","served-superseded/cases.json","served-twice-cosigned/cases.json","served-unknown-algorithm/cases.json","trust-bad/cases.json","trust-good/cases.json"] got=["anchors/cases.json","checkpoints-bad/cases.json","detect/cases.json","entries-hostile/cases.json","fork/cases.json","genesis-good/cases.json","genesis/cases.json","policies/cases.json","proofs-bad/cases.json","proofs/cases.json","proven/cases.json","receipt-bad/cases.json","requests-bad/cases.json","requests/cases.json","served-bad/cases.json","served-extra-witness/cases.json","served-large/cases.json","served-name-collision/cases.json","served-rotated/cases.json","served-superseded/cases.json","served-twice-cosigned/cases.json","trust-bad/cases.json","trust-good/cases.json"]
+coverage/case-tables expected=["anchors/cases.json","checkpoints-bad/cases.json","detect/cases.json","ed25519-cctv/cases.json","entries-hostile/cases.json","fork/cases.json","genesis-good/cases.json","genesis/cases.json","policies/cases.json","proofs-bad/cases.json","proofs-rotated/cases.json","proofs/cases.json","proven/cases.json","receipt-bad/cases.json","receipt-rotated/cases.json","requests-bad/cases.json","requests/cases.json","served-bad/cases.json","served-extra-witness/cases.json","served-genesis/cases.json","served-large/cases.json","served-name-collision/cases.json","served-rotated/cases.json","served-stranger-name/cases.json","served-superseded/cases.json","served-twice-cosigned/cases.json","served-unknown-algorithm/cases.json","trust-bad/cases.json","trust-good/cases.json"] got=["anchors/cases.json","checkpoints-bad/cases.json","detect/cases.json","entries-hostile/cases.json","fork/cases.json","genesis-good/cases.json","genesis/cases.json","policies/cases.json","proofs-bad/cases.json","proofs/cases.json","proven/cases.json","receipt-bad/cases.json","requests-bad/cases.json","requests/cases.json","served-bad/cases.json","served-extra-witness/cases.json","served-large/cases.json","served-name-collision/cases.json","served-rotated/cases.json","served-superseded/cases.json","served-twice-cosigned/cases.json","trust-bad/cases.json","trust-good/cases.json"]
 #
 # D-072 (b), 2026-10-09: a present empty `labels` map is a schema fault (SPEC 4.0,
 # 16.1). The sealed verifier decodes `labels: {}` and, its signature covering the
@@ -36,7 +36,7 @@ requests-bad/empty-labels expected="refuse" got="accept"
 # non-canonical genesis root, a cofactored-only torsion R and a non-canonical
 # witness key; it does not replay the new log-admission/ directory, so its
 # protocol-artifact coverage check lists those files as unvisited.
-coverage/protocol-artifacts expected=[] got=["log-admission/00-genesis.cbor","log-admission/01-signer_add-mixed-order.cbor","log-admission/01-signer_add-mixed-order.reason","log-admission/02-root_add-mixed-order.cbor","log-admission/02-root_add-mixed-order.reason","log-admission/03-log_key-mixed-order.cbor","log-admission/03-log_key-mixed-order.reason","log-admission/04-signer_add-honest.cbor","proofs-rotated/nas.bundle","served-unknown-algorithm/checkpoint"]
+coverage/protocol-artifacts expected=[] got=["log-admission/00-genesis.cbor","log-admission/01-signer_add-mixed-order.cbor","log-admission/01-signer_add-mixed-order.reason","log-admission/02-root_add-mixed-order.cbor","log-admission/02-root_add-mixed-order.reason","log-admission/03-log_key-mixed-order.cbor","log-admission/03-log_key-mixed-order.reason","log-admission/04-signer_add-honest.cbor","proofs-rotated/nas.bundle","served-stranger-name/checkpoint","served-unknown-algorithm/checkpoint"]
 genesis/23-root-order-eight/00-genesis.cbor expected="bad-genesis" got="accept"
 genesis/23-root-order-eight/state.json expected="byte-identical" got="different"
 genesis/24-root-noncanonical/00-genesis.cbor expected="bad-genesis" got="accept"
@@ -53,3 +53,9 @@ checkpoints-bad/20-signature-payload-too-long expected="log-signature" got="note
 # expectation for each bare case it was built against and none for the new
 # `bare-simple`; its decoder refuses the item ("float/simple item").
 entries-hostile/bare-simple expected="UNKNOWN CASE" got="float/simple item"
+#
+# D-074 (f), 2026-10-11, row 6.5l-ix-f-f-ii: a key id is lowercase hex and a
+# key name is ASCII 0x21-0x7E without '+'. The sealed verifier compares the id
+# without regard to case and takes any non-space name, so it accepts both.
+trust-bad/49-witness-key-id-uppercase.cbor expected="trust" got="accept"
+trust-bad/50-witness-key-name-not-ascii.cbor expected="trust" got="accept"

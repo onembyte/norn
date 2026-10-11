@@ -1,0 +1,5 @@
+{
+  "comment": "the served head with one MORE cosignature line, from a stranger whose name is not ASCII -- a name SPEC 7's key-name grammar would refuse in a verifier key. The grammar is a verifier key's; a signature line's name is only matched against verifier keys, so this line names nobody and is ignored (D-074 c, f). This head MUST be accepted. Serve it in place of served/checkpoint over the same tiles",
+  "serve_over": "served",
+  "stranger": "witness.example/zürich"
+}

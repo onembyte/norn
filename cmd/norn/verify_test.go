@@ -763,6 +763,54 @@ func TestALineOnAnAlgorithmNobodyHereKnowsIsIgnoredWhateverItsLength(t *testing.
 	}
 }
 
+// D-074 (f) and (c). The ASCII key-name grammar is a verifier key's: it says
+// which names a trust file and a policy may give a key. A signature line's name
+// is only matched against those keys, so a stranger's cosignature under a name
+// no verifier key could carry -- one outside ASCII -- is still ignored, not
+// refused. A reader that applied the grammar to every line it read would refuse
+// heads every other reader of a shared log accepts.
+
+func TestAStrangerUnderANonASCIINameIsStillIgnored(t *testing.T) {
+	dir := filepath.Join(vectors(), "served-stranger-name")
+	raw, err := os.ReadFile(filepath.Join(dir, "cases.json"))
+	if err != nil {
+		t.Fatalf("no vector shows the key-name grammar stops at verifier keys: %v", err)
+	}
+	var doc struct {
+		ServeOver string `json:"serve_over"`
+		Stranger  string `json:"stranger"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	if strings.IndexFunc(doc.Stranger, func(r rune) bool { return r > 0x7e }) < 0 {
+		t.Fatalf("%q is ASCII, so the grammar would not refuse it as a key name", doc.Stranger)
+	}
+	signed, err := os.ReadFile(filepath.Join(dir, "checkpoint"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(signed), "\n— "+doc.Stranger+" ") {
+		t.Fatalf("the head carries no line from %s", doc.Stranger)
+	}
+	anchor, err := os.ReadFile(filepath.Join(vectors(), "trust.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(anchor), doc.Stranger) {
+		t.Fatalf("%s is in the trust file, so the policy does know it", doc.Stranger)
+	}
+
+	log := servedWithCheckpoint(t, filepath.Join(dir, "checkpoint"))
+	out, err := exec.Command(nornBinary(t), "verify",
+		"-trust", filepath.Join(vectors(), "trust.cbor"), "-log", log).CombinedOutput()
+	if err != nil {
+		t.Fatalf("refused a checkpoint over a stranger's cosignature under a non-ASCII "+
+			"name; the key-name grammar is a verifier key's, and such a line is "+
+			"ignored:\n%s", out)
+	}
+}
+
 // --- Cold-model gate run 10, defect D11 ---------------------------------
 //
 // §6 states two rules about a served log: rebuild the tree from the entry

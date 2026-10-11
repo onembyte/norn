@@ -1760,7 +1760,34 @@ def trust_rejections() -> list[tuple[str, dict[str, Any]]]:
             policy=_policy_with(witness_key=("pi", note.vkey(
                 "norn-witness/pi-alt", note.parse_vkey(base["witnesses"][0]["key"]).public,
                 note.ALG_COSIGNATURE))))),
+        # D-074 (f): a key id is lowercase hex and a key name is one or more
+        # ASCII bytes 0x21-0x7E without '+'. Each breaks one of those on pi's
+        # key, carried into the policy too, so only that rule refuses it. No
+        # case carries U+001C, the character the two implementations once
+        # disagreed on: §9.1 forbids control bytes anywhere in policy text, so
+        # a trust file with it in a key name is refused by that rule as well,
+        # and the key-name tests in both implementations pin it instead.
+        ("49-witness-key-id-uppercase", damaged(
+            witnesses=[dict(base["witnesses"][0], key=_vkey_with_uppercase_id(base["witnesses"][0]["key"]))]
+            + [dict(w) for w in base["witnesses"][1:]],
+            policy=_policy_with(witness_key=("pi", _vkey_with_uppercase_id(base["witnesses"][0]["key"]))))),
+        ("50-witness-key-name-not-ascii", damaged(
+            witnesses=[dict(base["witnesses"][0], key=_pi_key_named("norn-witness/p\u00ed"))]
+            + [dict(w) for w in base["witnesses"][1:]],
+            policy=_policy_with(witness_key=("pi", _pi_key_named("norn-witness/p\u00ed"))))),
     ]
+
+
+def _vkey_with_uppercase_id(vkey: str) -> str:
+    name, key_id, data = vkey.split("+", 2)
+    if key_id.upper() == key_id:
+        raise ValueError("this key id has no letter whose case could change")
+    return f"{name}+{key_id.upper()}+{data}"
+
+
+def _pi_key_named(name: str) -> str:
+    """pi's own cosigning key under another name, its id recomputed."""
+    return note.vkey(name, note.parse_vkey(witness_vkey("pi")).public, note.ALG_COSIGNATURE)
 
 
 def _vkey_with_ignored_cr(vkey: str) -> str:
