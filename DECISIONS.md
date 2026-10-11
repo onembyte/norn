@@ -1129,3 +1129,17 @@ text strings, arrays, maps, `false` and `true`; every other type, simple value
 included, is refused; the existing rules (shortest form, definite lengths,
 strictly increasing keys, the whole input) stand, with vectors for each.
 Rows: 6.5l-ix-f's sub-rows (H5-f-a … h).
+
+## D-075 · The two keys §3.1 item 2 admitted without naming: a rotate's incoming `device_pk`, a policy entry's witness keys (2026-10-11)
+The owner's answer of 2026-10-11 to the DECISION 023r-f wrote (`BUILD-LOG.md`,
+"DECISION — 6.5m-sec-023r-f"): **A to both.**
+**(a)** §3.1 item 2 names a `rotate`'s incoming `device_pk`; §5.2's rotate row
+requires it, when present, to be a valid point, refused `decode` in the body
+step, before `unknown-device` — the same rule and code as `enroll`'s.
+**(b)** §3.1 item 2 names every verifier key a `policy` entry's text carries
+(§5.2), refused `decode`; the trust file's policy goes through the same parser.
+One rule throughout: every key that enters a verifier's state is a valid point
+where it enters. Both implementations check; `log-admission/` gains a
+device-signed `rotate` and a root-signed `policy`, each with a mixed-order key.
+Rows: 6.5m-sec-023r-g.
+
