@@ -306,13 +306,9 @@ func Check(ev *Evidence, origin string, logVKeys []string, readerPolicy string) 
 		}
 	}
 
-	if heldRoot == conflicting.Root {
-		return nil, evidenceErrorf(evrefusal.Consistent,
-			"both checkpoints give the same root at size %d; nothing here is a fork", ev.Size)
-	}
 	finding := &Finding{Size: ev.Size, Held: heldRoot, Claimed: conflicting.Root}
-	// Step 5 follows the fork conclusion: a consistent file still proves no
-	// fork, whatever split the accuser claims.
+	// Every proof a file carries is checked before the fork conclusion
+	// (D-076), even when the roots agree and the file proves no fork.
 	if ev.Version == 2 {
 		if ev.Split < 0 || ev.Split > ev.Size {
 			return nil, evidenceErrorf(evrefusal.Proof, "split %d is above size %d", ev.Split, ev.Size)
@@ -335,6 +331,10 @@ func Check(ev *Evidence, origin string, logVKeys []string, readerPolicy string) 
 		}
 		finding.Split = ev.Split
 	}
+	if heldRoot == conflicting.Root {
+		return nil, evidenceErrorf(evrefusal.Consistent,
+			"both checkpoints give the same root at size %d; nothing here is a fork", ev.Size)
+	}
 	return finding, nil
 }
 
@@ -355,7 +355,7 @@ func checkSplitProof(which string, split int64, root [32]byte, hashes [][]byte, 
 			return evidenceErrorf(evrefusal.Proof, "the %s split proof at its head's own size requires none and the signed root", which)
 		}
 	} else if err := upstream.CheckTree(proof, head.Size, head.Root, split, root); err != nil {
-		return evidenceErrorf(evrefusal.Proof, "the %s split proof does not chain to its signed head: %v", which, err)
+		return evidenceErrorf(evrefusal.Proof, "the %s split proof does not chain to its signed head; every proof a file carries is checked before the file is read as a fork (D-076): %v", which, err)
 	}
 	return nil
 }

@@ -710,6 +710,20 @@ func buildBadCheckpoints(root, origin string, key ed25519.PrivateKey,
 			"be ignored, but the note is not UTF-8",
 		notUTF8})
 
+	// D-076 gives decimal note lines §4.0's integer bound. Re-sign and
+	// cosign the oversized size so only the checkpoint body can refuse it.
+	boundedSizeLines := strings.Split(strings.TrimSuffix(body, "\n"), "\n")
+	boundedSizeLines[1] = "9223372036854775808"
+	aboveBound, err := note.Sign(strings.Join(boundedSizeLines, "\n")+"\n", origin, key)
+	if err != nil {
+		return nil, err
+	}
+	aboveBound, err = cosignWith(aboveBound, signers...)
+	if err != nil {
+		return nil, err
+	}
+	out = append(out, badCheckpoint{"33-size-above-2-63", "at most 2⁶³−1", aboveBound})
+
 	return out, nil
 }
 
@@ -769,6 +783,7 @@ func writeBadCheckpoints(root, origin string, key ed25519.PrivateKey,
 	// which is how §7's terminating newline, §6's canonical size line and
 	// §10's every-line rule all reached a gate unstated.
 	rules := map[string]map[string]string{
+		"33-size-above-2-63":      {"section": "6", "says": "at most 2⁶³−1"},
 		"31-cosignature-S-plus-L": {"section": "10", "says": "must verify"},
 		"32-signature-name-not-utf8": {"section": "7",
 			"says": "The signed text and every signature line MUST be valid UTF-8"},
@@ -819,6 +834,7 @@ func writeBadCheckpoints(root, origin string, key ed25519.PrivateKey,
 	// order refuses every file here too, and the suite cannot tell: 01 is
 	// `note` and not `log-signature`, 03 is `log-signature` and not `origin`.
 	codes := map[string]refusal.Code{
+		"33-size-above-2-63":                          refusal.Checkpoint,
 		"31-cosignature-S-plus-L":                     refusal.Cosignature,
 		"32-signature-name-not-utf8":                  refusal.Note,
 		"01-unsigned":                                 refusal.Note,

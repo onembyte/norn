@@ -1318,6 +1318,8 @@ def policy_grammar() -> list[tuple[str, str, bool, str]]:
     return [
         ("minimal", f"{log}\n{pi}\nquorum pi\n", True,
          "one log, one witness, one quorum"),
+        ("bad-final-comment-no-lf", f"{log}\n{pi}\nquorum pi\n# note", False,
+         "A missing final line feed is an error whatever the last line holds"),
         ("bad-no-trailing-newline", f"{log}\n{pi}\nquorum pi", False,
          "every directive line, including the final one, ends in line feed"),
         ("quorum-none-empty", "quorum none\n", True,

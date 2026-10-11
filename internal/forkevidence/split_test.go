@@ -59,7 +59,7 @@ func setSplit(t *testing.T, ev *Evidence, held, conflicting *tlog.Tree, at int64
 	}
 }
 
-func TestSplitProofsAreCheckedAfterTheForkIsProven(t *testing.T) {
+func TestSplitProofsAreCheckedBeforeTheForkIsConcluded(t *testing.T) {
 	good, held, conflicting := splitPair(t)
 	key, _, pol := trustKeys(t)
 	for _, tc := range []struct {
@@ -76,13 +76,13 @@ func TestSplitProofsAreCheckedAfterTheForkIsProven(t *testing.T) {
 			e.SplitProofConflicting = [][]byte{make([]byte, 32)}
 		}, evrefusal.Proof},
 		{"zero with a root", func(e *Evidence) { setSplit(t, e, held, conflicting, 0); e.SplitRoot[0] = 1 }, evrefusal.Proof},
-		{"consistent before split", func(e *Evidence) {
+		{"bad split before consistent", func(e *Evidence) {
 			e.Conflicting = e.Held
 			e.Size = held.Size()
 			e.HeldRoot = bytes.Clone(heldHead(t, held))
 			e.Proof = nil
 			e.Split = e.Size + 1
-		}, evrefusal.Consistent},
+		}, evrefusal.Proof},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ev := *good

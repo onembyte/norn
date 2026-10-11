@@ -2906,7 +2906,7 @@ func TestEveryServedAndBundleNegativeCitesTheRuleOfItsCode(t *testing.T) {
 			"receipt":       {"The first line MUST be"},
 			"origin":        {"The origin line MUST equal the anchored origin"},
 			"leaf-hash":     {"The leaf hash MUST be standard base64 and decode to exactly 32 bytes", "unused pad bits in the leaf hash MUST be zero"},
-			"deadline":      {"The deadline MUST be canonical decimal"},
+			"deadline":      {"The deadline MUST be canonical decimal", "at most 2⁶³−1"},
 			"entry":         {"the submitted entry's leaf hash MUST equal the receipt's leaf hash"},
 			"expired":       {"A nonzero checking time at or after the deadline MUST refuse the receipt"},
 		},

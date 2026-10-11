@@ -139,6 +139,11 @@ func Check(signed string, logKeys []string, origin string, leaf []byte, now time
 	if err != nil {
 		return nil, refusalf(Deadline, "the deadline is not a unix timestamp: %w", err)
 	}
+	// D-076 bounds every decimal note line before a signed clock comparison.
+	// A larger deadline is malformed, not an expired promise after a cast.
+	if deadline > 1<<63-1 {
+		return nil, refusalf(Deadline, "the deadline is above 2^63-1")
+	}
 	// Canonical decimal, exactly as §6's size line: no leading zeroes, no
 	// sign. §7 calls a receipt non-repudiable proof of log misbehaviour, which
 	// means two parties will one day compare two copies of one -- and a number

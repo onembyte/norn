@@ -71,3 +71,41 @@ func TestTheIndependentVerifierIsKeptAsWritten(t *testing.T) {
 		t.Error("the Makefile has no `verify-py` target")
 	}
 }
+
+// The cold verifier is sealed: it reads the SPEC it was built from, and a
+// normative change after the seal is a check it fails for a reason that is
+// not a defect in the suite -- D-076's bound on decimal lines, which the
+// second build predates, is the first for this build. Those failures are recorded, one line
+// each, in `contrib/verify-py.known-failures`, and `make verify-py` passes
+// only when the harness fails exactly those lines: a new failure fails it,
+// and so does a recorded one that starts to pass. The list is a debt, not an
+// exemption -- its header names the row that pays it with a new cold build,
+// and the file goes when that row lands.
+func TestTheColdVerifiersKnownFailuresAreRecordedAndOwed(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join(root(t), "contrib", "verify-py.known-failures"))
+	if err != nil {
+		t.Fatalf("the cold verifier's known failures are not recorded: %v", err)
+	}
+	var header strings.Builder
+	line := regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9/._-]* expected=.* got=.*$`)
+	for _, text := range strings.Split(strings.TrimRight(string(raw), "\n"), "\n") {
+		if strings.HasPrefix(text, "#") {
+			header.WriteString(text)
+			continue
+		}
+		if text != "" && !line.MatchString(text) {
+			t.Errorf("%q is not a harness line (`<check> expected=… got=…`)", text)
+		}
+	}
+	if !strings.Contains(header.String(), "6.7-r") {
+		t.Error("the known failures do not name the row that clears them (6.7-r)")
+	}
+	makefile, err := os.ReadFile(filepath.Join(root(t), "Makefile"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	recipe := regexp.MustCompile(`(?ms)^verify-py:.*?\n\n`).Find(makefile)
+	if !strings.Contains(string(recipe), "contrib/verify-py.known-failures") {
+		t.Error("`make verify-py` does not compare the harness's failures with contrib/verify-py.known-failures")
+	}
+}

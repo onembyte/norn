@@ -15,9 +15,12 @@ This is the **second** cold build (row 6.7-r). The first, sealed at
 the signed-note profile, the key-name grammar, the CBOR allow-list, the
 `genesis` code and §3.1's admission points; by 6.5m-sec-023r-g it failed 25
 checks for those reasons alone, each recorded in a known-failures list that
-`make verify-py` compared against. This build passes every check, so that
-list and its guard are gone: `make verify-py` now passes only when the
-harness exits 0.
+`make verify-py` compared against. This build passed every check at its
+seal, so the list emptied and was deleted — and came back two lines long the
+same day, when D-076 bounded every decimal line in a note after the seal
+(`contrib/verify-py.known-failures`): `make verify-py` passes only when the
+harness fails exactly the lines recorded there, and the list goes again with
+the next cold build.
 
 `make verify-py` runs it (and `make ci` runs that): it copies this directory
 and `testdata/vectors/` into a temporary directory in the sealed layout the
@@ -65,6 +68,7 @@ only under `work/` and its report directory.
 |---|---|---|---|
 | In the seal, 2026-10-11 13:30 | `6ef1a16` | 1817 | 0 |
 | At integration, 2026-10-11 | `4f65ce7` | 1817 | 0 |
+| After D-076, 2026-10-11 | `fc4e141` + 6.7-r-f-d | 1821 | 2, recorded (the two decimal-bound vectors) |
 
 Every canonical state the suite carries is reproduced byte for byte (28: the
 main log's, `log-empty/`, `log-admission/`, 24 aborted geneses and the

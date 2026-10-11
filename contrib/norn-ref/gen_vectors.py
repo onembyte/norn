@@ -561,6 +561,12 @@ def write_trust(out: pathlib.Path) -> None:
     add_case("leaf-hash-unpadded.note", "\n".join(changed) + "\n", "leaf-hash",
              "The leaf hash MUST be standard base64 and decode to exactly 32 bytes")
 
+    # D-076 bounds every decimal note line at the signed integer maximum.
+    changed = body_lines.copy()
+    changed[3] = "9223372036854775808"
+    add_case("deadline-above-2-63.note", "\n".join(changed) + "\n", "deadline",
+             "at most 2⁶³−1")
+
     # The same receipt with one leading zero, re-signed so only its spelling is
     # wrong. `ParseUint` alone accepts this second representation.
     changed = body_lines.copy()
@@ -732,6 +738,8 @@ def write_policies(out: pathlib.Path) -> None:
     policy_rules["bad-uppercase-keyword"] = {"section": "9.1", "says": "are **lowercase**"}
     policy_rules["blank-and-whitespace-lines"] = {
         "section": "9.1", "says": "holds only spaces and tabs, is **ignored**"}
+    policy_rules["bad-final-comment-no-lf"] = {
+        "section": "9.1", "says": "A missing final line feed is an error whatever the last line holds"}
     policy_rules["bad-no-trailing-newline"] = {
         "section": "9.1", "says": "Every directive line, including the final line, ends in ASCII line feed"}
     policy_rules["bad-crlf"] = {"section": "9.1", "says": "carriage return is forbidden"}

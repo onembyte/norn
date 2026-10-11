@@ -187,6 +187,41 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 		return err
 	}
 
+	// D-076 separates proof checking from the root comparison. These heads
+	// share one tree, but one corrupted held split hash must decide first.
+	consistentSplit := *consistent
+	consistentSplit.Version = 2
+	consistentSplit.Split = forkAt
+	splitRootAt, err := heldTree.HeadAt(consistentSplit.Split)
+	if err != nil {
+		return err
+	}
+	consistentSplit.SplitRoot = append([]byte(nil), splitRootAt[:]...)
+	prefixTree, err := tlog.Build(entries[:prefixAt])
+	if err != nil {
+		return err
+	}
+	for tree, into := range map[*tlog.Tree]*[][]byte{heldTree: &consistentSplit.SplitProofHeld, prefixTree: &consistentSplit.SplitProofConflicting} {
+		proof, err := tree.ConsistencyProof(consistentSplit.Split)
+		if err != nil {
+			return err
+		}
+		for _, hash := range proof {
+			*into = append(*into, append([]byte(nil), hash[:]...))
+		}
+	}
+	if len(consistentSplit.SplitProofHeld) == 0 {
+		return fmt.Errorf("the agreeing roots need a held split proof to corrupt")
+	}
+	consistentSplit.SplitProofHeld[0][0] ^= 1
+	rawConsistentSplit, err := consistentSplit.Encode()
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(dir, "bad-consistent-and-bad-split.cbor"), rawConsistentSplit, 0o644); err != nil {
+		return err
+	}
+
 	// 2. A real fork, of a different network. Perfectly valid evidence, and
 	// none of this anchor's business: an accusation a reader must not accept
 	// on behalf of a log it is not about.
@@ -765,6 +800,7 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 		{"name": "bad-policy-unparseable", "says": "not a `tlog-policy`"},
 		{"name": "bad-policy-unparseable-and-foreign-held", "says": "not a `tlog-policy`"},
 		{"name": "bad-proof-at-same-size", "says": "requires none"},
+		{"name": "bad-consistent-and-bad-split", "says": "every proof a file carries is checked before the file is read as a fork"},
 		{"name": "bad-consistent", "says": "nothing here is a fork"},
 		{"name": "bad-other-origin", "says": "the held checkpoint"},
 		{"name": "bad-forged-proof", "says": "does not chain"},
@@ -775,6 +811,7 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 	// deciding. bad-policy-says-quorum-none is `held`: the carried policy
 	// parses, and the held checkpoint fails the reader's OWN quorum.
 	forkCodes := map[string]evrefusal.Code{
+		"bad-consistent-and-bad-split":            evrefusal.Proof,
 		"bad-oversize":                            evrefusal.Oversize,
 		"bad-open-schema":                         evrefusal.Schema,
 		"bad-wrong-version":                       evrefusal.Version,
@@ -809,6 +846,7 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 
 	manifest := map[string]any{
 		"rules": map[string]map[string]string{
+			"bad-consistent-and-bad-split":            {"section": "11.1", "says": "every proof a file carries is checked before the file is read as a fork"},
 			"bad-oversize":                            {"section": "11.1", "says": "MAX_EVIDENCE_BYTES"},
 			"bad-open-schema":                         {"section": "11.1", "says": "a closed map of exactly these seven keys at"},
 			"bad-wrong-version":                       {"section": "11.1", "says": "| `version` | uint | `1` or `2` |"},

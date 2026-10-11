@@ -1,0 +1,14 @@
+# Checks the cold-built verifier in contrib/verify-py fails for a reason that is
+# not a defect in the suite: a normative change made after it was sealed at
+# 6ef1a16 (2026-10-11 13:16). `make verify-py` passes only when the harness
+# fails exactly these lines -- a new failure fails it, and so does a line here
+# that starts to pass. Each is a harness line without its trailing " FAIL". The
+# verifier is never edited to clear one; the row that clears this list is the
+# next cold build, 6.7-r's successor, and this file goes when it lands.
+#
+# D-076 (3), 2026-10-11, row 6.7-r-f-d: every decimal integer line in a note is
+# at most 2^63-1. The sealed verifier bounds neither a checkpoint's size nor a
+# receipt's deadline (its NOTES.md, item 6), so it reads the oversize head and
+# goes looking for its tiles, and accepts the oversize deadline as a promise.
+checkpoints-bad/33-size-above-2-63 expected="checkpoint" got="unserved"
+receipt-bad/deadline-above-2-63.note expected="deadline" got="accept"

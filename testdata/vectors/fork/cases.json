@@ -73,6 +73,10 @@
       "says": "requires none"
     },
     {
+      "name": "bad-consistent-and-bad-split",
+      "says": "every proof a file carries is checked before the file is read as a fork"
+    },
+    {
       "name": "bad-consistent",
       "says": "nothing here is a fork"
     },
@@ -124,6 +128,7 @@
   "codes": {
     "bad-bool-size": "schema",
     "bad-consistent": "consistent",
+    "bad-consistent-and-bad-split": "proof",
     "bad-forged-proof": "proof",
     "bad-held-root-at-same-size": "proof",
     "bad-non-canonical-cbor": "cbor",
@@ -161,6 +166,10 @@
     },
     "bad-consistent": {
       "says": "only if `held_root` differs",
+      "section": "11.1"
+    },
+    "bad-consistent-and-bad-split": {
+      "says": "every proof a file carries is checked before the file is read as a fork",
       "section": "11.1"
     },
     "bad-forged-proof": {

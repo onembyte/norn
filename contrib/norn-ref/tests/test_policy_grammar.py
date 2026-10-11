@@ -34,6 +34,17 @@ class LinesMayFollowQuorumButNamesKeepTheirMeaning(unittest.TestCase):
         self.assertEqual((root / f"{name}.txt").read_bytes(), text.encode())
         return text, shipped.get("evaluate", [])
 
+    def test_a_final_comment_needs_a_line_feed(self):
+        text, _ = self._vector(
+            "bad-final-comment-no-lf", False,
+            "A missing final line feed is an error whatever the last line holds")
+        minimal = next(text for name, text, _, _ in fixture.policy_grammar()
+                       if name == "minimal")
+        self.assertEqual(text, minimal + "# note")
+        with self.assertRaises(policy.PolicyError):
+            policy.parse(text)
+        policy.parse(text + "\n")
+
     def test_directives_after_quorum_leave_its_members_unchanged(self):
         text, evaluations = self._vector(
             "directive-after-quorum", True, "lines may appear in **any order**")
