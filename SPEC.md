@@ -110,8 +110,10 @@ Let `p = 2²⁵⁵ − 19`, `B` the base point, `L = 2²⁵² +
    `signer_add`, `log_key` or `enroll` entry, a `rotate`'s incoming
    `device_pk`, and every verifier key a `policy` entry's text carries (§5), an
    enrollment request (§16), and a trust file's `log_key` and `witnesses` (§9).
-   A key that is not is refused as `decode` where the entry or request is
-   decoded, and makes a trust file invalid. One rule throughout: every key that
+   A key that is not is refused as `decode` at its entry type's body step
+   (§5.1, §5.2) — for a governance entry that step follows the root quorum, so
+   an under-signed one is `threshold` first — and where a request is decoded
+   (§16); it makes a trust file invalid. One rule throughout: every key that
    enters a verifier's state is a valid point where it enters (D-075).
 3. **A signature** `R ‖ S` (64 bytes) verifies under a key `A` over a message
    `M` only if `R` is a valid point; `S`, read as a little-endian integer,
@@ -1525,7 +1527,7 @@ checks:
 |---|---|---|
 | 0 | `oversize` | the file is larger than `MAX_EVIDENCE_BYTES`; a reader accepts **from a stranger**, so the size bound is checked before any parse |
 | 1 | `cbor` | the file is not valid deterministic CBOR (§4.0), or is not a map |
-| 2 | `version` | the map's `version` is not `1` or `2` — absent, not a uint, or another number. Checked **before** the key set: a key set is only closed relative to a version, so a reader cannot judge the schema of a version it does not speak, and a file with `version: 2` and a key version 1 lacks is `version` |
+| 2 | `version` | the map's `version` is not `1` or `2` — absent, not a uint, or another number. Checked **before** the key set: a key set is only closed relative to a version, so a reader cannot judge the schema of a version it does not speak, and a file with `version: 3` and a key no version defines is `version`, not `schema` (`fork/bad-version-and-unknown-key`) |
 | 3 | `schema` | the map is not the closed set of exactly seven keys (version 1) or eleven (version 2), or a value has the wrong type — for example, the `size` field is a boolean rather than a uint — which includes a `held_root` or a `proof` hash that is not **exactly 32 bytes**, as the table above types them. A wrong length is a schema fault, checked here, before any checkpoint is read |
 | 4 | `policy` | the carried `policy` is not a well-formed `c2sp.org/tlog-policy`. The field is **informational**, but a closed schema is part of the format |
 | 5 | `held` | the held checkpoint fails any §10 check: note framing, log signature, checkpoint body, origin, cosignature, or quorum |
@@ -1562,10 +1564,12 @@ suite is checked only against its own author.
 
 **What `cases.json`'s `says` field is.** Every negative in this suite carries a
 `says` string, and **`says` is a **semantic hint** — the rule the case is about,
-in words, and **not the bytes your implementation must produce**.** §5.2 gives
-replay a closed list of reason codes; no other refusing layer has one, so
-outside replay there is nothing for a second implementation to emit and nothing
-to compare. A reader is expected to map each `says` onto its own error by hand,
+in words, and **not the bytes your implementation must produce**.** What a
+reader compares is the `codes` map wherever a manifest has one: replay's reason
+codes (§5.2), a receipt's (§7), a checkpoint's and a bundle's (§10.1) and fork
+evidence's (§11.1) are all closed lists. `says` stays a hint beside them, and
+where a manifest gives no code the rule it names is what a reader checks. A
+reader is expected to map each `says` onto its own error by hand,
 once, and a suite runner that string-matches it is testing this repository's
 phrasing rather than the document (cold gate run 11, D10, where a fresh reader
 reverse-engineered its whole error vocabulary out of these files).
@@ -1780,6 +1784,11 @@ admits its holes, so:
   trust file's `log_key`. A verifier key encodes 33 bytes, so it has no unused
   base64 pad bits to vector.
 
+- **OpenTimestamps attestations.** §6 and §12 state the anchor's digest
+  contract — exactly which bytes are hashed — and `anchors/cases.json` pins it.
+  The proof tree, its calendar reply and any Bitcoin attestation are
+  `python-opentimestamps`'s format, which this document does not describe, so
+  no reader is asked to validate them; anchoring is advisory (D-009).
 - **`quorum none` accepting an uncosigned head.** It needs a second trust
   anchor, and one is not shipped.
 - **§4.3's "a key contributes at most once".** `sigs` is sorted by `kid` with
