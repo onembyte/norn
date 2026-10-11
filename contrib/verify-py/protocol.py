@@ -1,8 +1,4 @@
-"""Independent Norn v1 verifier, implemented from SPEC.md only.
-
-The filesystem reader accepts a local mirror or explicit byte overlays. It
-never performs network I/O. Refused operations raise Refusal with closed codes.
-"""
+"""Independent Norn verifier. Rules derived solely from sealed SPEC.md."""
 import base64
 import hashlib
 import ipaddress
@@ -15,448 +11,449 @@ import merkle
 import bech32m
 
 class Refusal(ValueError):
-    def __init__(self,code,detail=''):
-        self.code,self.detail=code,detail
-        super().__init__(code+(': '+detail if detail else ''))
+    def __init__(self,code): self.code=code; super().__init__(code)
 
-def require(condition,code='decode',detail=''):
-    if not condition: raise Refusal(code,detail)
+def require(ok,code='decode'):
+    if not ok: raise Refusal(code)
 
-def uint(x): return type(x)==int and 0<=x<=2**63-1
+def uint(x): return type(x) is int and 0<=x<2**63
 
-def blob(x,n): return type(x)==bytes and len(x)==n
+def octets(x,n): return isinstance(x,bytes) and len(x)==n
 
-def text(x,low=0,high=None):
-    return type(x)==str and low<=len(x.encode('utf-8')) and (high is None or len(x.encode('utf-8'))<=high)
+def text(x,lo=0,hi=None):
+    return isinstance(x,str) and len(x.encode('utf-8'))>=lo and (hi is None or len(x.encode('utf-8'))<=hi)
 
-def closed(x,required,optional=(),code='decode'):
-    require(type(x)==dict and set(required)<=set(x)<=set(required)|set(optional),code)
+def closed(x,required,optional=()):
+    return isinstance(x,dict) and set(required)<=x.keys() and x.keys()<=set(required)|set(optional)
 
-def decimal(s):
-    require(type(s)==str and re.fullmatch(r'0|[1-9][0-9]*',s) is not None,'decimal')
-    return int(s)
-
-def b64(s):
-    try:
-        b=base64.b64decode(s,validate=True)
-        require(base64.b64encode(b).decode()==s,'base64')
-        return b
-    except (ValueError,TypeError):
-        raise Refusal('base64') from None
+def ident(x): return isinstance(x,str) and re.fullmatch('[a-z0-9][a-z0-9.-]{0,63}',x) is not None
 
 def kid(pk): return hashlib.sha256(pk).digest()[:8].hex()
 
+def kid_ok(x): return isinstance(x,str) and re.fullmatch('[0-9a-f]{16}',x) is not None
+
+def sha(b): return hashlib.sha256(b).digest()
+
 def preimage(e): return b'norn/entry/v1\n'+cbor.dumps({k:v for k,v in e.items() if k!='sigs'})
 
-def json_bytes(obj):
-    def normalize(x):
-        if type(x)==bytes: return x.hex()
-        if type(x)==list: return [normalize(v) for v in x]
-        if type(x)==dict: return {k.hex() if type(k)==bytes else k:normalize(v) for k,v in x.items()}
-        return x
-    # Unicode scalar order equals UTF-8 bytewise order for valid UTF-8 strings.
-    return (json.dumps(normalize(obj),sort_keys=True,ensure_ascii=False,separators=(',',':'))+'\n').encode('utf-8')
+def request_preimage(r): return b'norn/enroll-request/v1\n'+cbor.dumps({k:v for k,v in r.items() if k!='sig'})
 
-def vkey(s,alg=None):
-    try:
-        name,ident,data=s.split('+',2)
-        require(name and not any(c.isspace() or c=='+' for c in name),'key')
-        require(re.fullmatch('[0-9a-fA-F]{8}',ident) is not None,'key')
-        raw=b64(data)
-        require(len(raw)==33 and raw[0] in (1,4),'key')
-        require(alg is None or raw[0]==alg,'key')
-        computed=hashlib.sha256(name.encode()+b'\n'+raw).digest()[:4]
-        require(bytes.fromhex(ident)==computed,'key')
-        return {'name':name,'id':computed,'alg':raw[0],'pk':raw[1:]}
-    except (ValueError,TypeError,AttributeError):
-        raise Refusal('key') from None
+def b64(s):
+    require(isinstance(s,str))
+    try: b=base64.b64decode(s,validate=True)
+    except (ValueError,UnicodeEncodeError): raise Refusal('decode')
+    require(base64.b64encode(b).decode()==s)
+    return b
+
+def decimal(s):
+    require(isinstance(s,str) and re.fullmatch('0|[1-9][0-9]*',s) is not None)
+    # Textual sizes/deadlines have no bit-width limit stated in §§6–7.
+    # The 63-bit limit belongs to CBOR integers, not decimal note lines.
+    return int(s)
+
+def vkey(s,alg):
+    require(isinstance(s,str))
+    parts=s.split('+',2); require(len(parts)==3)
+    name,hexid,data=parts
+    require(bool(name) and all(33<=ord(c)<=126 and c!='+' for c in name))
+    require(re.fullmatch('[0-9a-f]{8}',hexid) is not None)
+    raw=b64(data); require(len(raw)==33 and raw[0]==alg)
+    require(ed25519.valid_point(raw[1:]))
+    keyid=sha(name.encode()+b'\n'+raw)[:4]
+    require(keyid.hex()==hexid)
+    return {'name':name,'id':keyid,'pk':raw[1:],'alg':alg,'text':s}
 
 def make_vkey(name,pk,alg=1):
     raw=bytes([alg])+pk
-    return name+'+'+hashlib.sha256(name.encode()+b'\n'+raw).digest()[:4].hex()+'+'+base64.b64encode(raw).decode()
+    return name+'+'+sha(name.encode()+b'\n'+raw)[:4].hex()+'+'+base64.b64encode(raw).decode()
 
 class Policy:
     def __init__(self,s):
-        require(type(s)==str,'policy')
-        raw=s.encode('utf-8')
-        require(not any(b<32 and b not in (9,10) or b==127 for b in raw),'policy')
-        require(s.endswith('\n'),'policy')
+        require(text(s) and (not s or s.endswith('\n')))
+        require(not any((ord(c)<32 and c not in '\t\n') or ord(c)==127 for c in s))
         self.witnesses={}; self.groups={}; self.logs=[]; self.quorum=None
-        names={'none'}; public=set()
-        for line in s.split('\n')[:-1]:
+        names={'none'}; keys=set()
+        for line in s.split('\n'):
             line=line.strip(' \t')
             if not line or line.startswith('#'): continue
-            fields=re.split('[ \t]+',line); command=fields[0]; f=fields[1:]
-            if command in ('witness','log'):
-                require(len(f) in ((2,3) if command=='witness' else (1,2)),'policy')
-                key=vkey(f[1] if command=='witness' else f[0],4 if command=='witness' else 1)
-                require(key['pk'] not in public,'policy'); public.add(key['pk'])
-                if command=='log': self.logs.append(key)
+            f=re.split('[ \t]+',line); cmd=f[0]
+            if cmd in ('log','witness'):
+                require(len(f) in ((2,3) if cmd=='log' else (3,4)))
+                k=vkey(f[1] if cmd=='log' else f[2],1 if cmd=='log' else 4)
+                require(k['pk'] not in keys); keys.add(k['pk'])
+                if cmd=='log': self.logs.append(k)
                 else:
-                    require(f[0] not in names,'policy'); names.add(f[0]); self.witnesses[f[0]]=key
-            elif command=='group':
-                require(len(f)>=3 and f[0] not in names,'policy')
-                members=f[2:]
-                require(len(set(members))==len(members) and all(m in names and m!='none' for m in members),'policy')
-                try: k=len(members) if f[1]=='all' else 1 if f[1]=='any' else decimal(f[1])
-                except ValueError: raise Refusal('policy') from None
-                require(1<=k<=len(members),'policy')
-                self.groups[f[0]]=(k,members); names.add(f[0])
-            elif command=='quorum':
-                require(len(f)==1 and self.quorum is None and f[0] in names,'policy')
-                self.quorum=f[0]
-            else: raise Refusal('policy')
-        require(self.quorum is not None,'policy')
+                    name=f[1]; require(name not in names); names.add(name); self.witnesses[name]=k
+            elif cmd=='group':
+                require(len(f)>=4)
+                name=f[1]; threshold=f[2]; members=f[3:]
+                require(name not in names and len(set(members))==len(members))
+                require(all(m in names and m!='none' for m in members))
+                k=len(members) if threshold=='all' else 1 if threshold=='any' else decimal(threshold)
+                require(1<=k<=len(members)); names.add(name); self.groups[name]=(k,members)
+            elif cmd=='quorum':
+                require(len(f)==2 and self.quorum is None and f[1] in names)
+                self.quorum=f[1]
+            else: raise Refusal('decode')
+        require(self.quorum is not None)
     def satisfied(self,cosigners):
-        def met(name):
-            if name=='none': return True
-            if name in self.groups:
-                k,members=self.groups[name]
-                return sum(met(m) for m in members)>=k
-            return name in cosigners
-        return met(self.quorum)
-    def time(self,timestamps):
+        def sat(n):
+            if n=='none': return True
+            if n in self.witnesses: return n in cosigners
+            k,ms=self.groups[n]; return sum(sat(m) for m in ms)>=k
+        return sat(self.quorum)
+    def quorum_time(self,times):
         if self.quorum=='none': return None
-        for t in sorted(set(timestamps.values()),reverse=True):
-            if self.satisfied({n for n,v in timestamps.items() if v>=t}): return t
+        for t in sorted(set(times.values()),reverse=True):
+            if self.satisfied({n for n,v in times.items() if v>=t}): return t
         return None
 
-def trust(data):
-    try:
-        t=cbor.loads(data,65536)
-        closed(t,('version','net','origin','name','genesis_hash','log_key','log_urls','witnesses','policy'),('anchor',),'trust')
-        require(uint(t['version']) and t['version']==1 and blob(t['net'],16) and blob(t['genesis_hash'],32),'trust')
-        require(text(t['name'],1,64),'trust')
-        origin='norn/'+base64.b32encode(t['net']).decode().lower().rstrip('=')
-        require(t['origin']==origin,'trust')
-        key=vkey(t['log_key'],1); require(key['name']==origin,'trust')
-        require(type(t['log_urls'])==list and len(t['log_urls'])>=1 and all(text(s,1) for s in t['log_urls']),'trust')
-        require(type(t['witnesses'])==list and len(t['witnesses'])>=1,'trust')
-        ws={}
-        for w in t['witnesses']:
-            closed(w,('name','key'),('url',),'trust')
-            require(text(w['name'],1,64) and w['name'] not in ws,'trust')
-            require('url' not in w or text(w['url']),'trust')
-            ws[w['name']]=vkey(w['key'],4)
-        p=Policy(t['policy'])
-        require(p.witnesses==ws and all(k==key for k in p.logs),'trust')
-        if 'anchor' in t:
-            a=t['anchor']; closed(a,('type','max_lag','mode'),code='trust')
-            require(text(a['type']) and uint(a['max_lag']) and a['mode']=='advisory','trust')
-        return t
-    except (ValueError,TypeError): raise Refusal('trust') from None
+def trust(raw):
+    t=cbor.loads(raw,65536)
+    require(closed(t,('version','net','origin','name','genesis_hash','log_key','log_urls','witnesses','policy'),('anchor',)))
+    require(uint(t['version']) and t['version']==1 and octets(t['net'],16) and octets(t['genesis_hash'],32))
+    require(text(t['name'],1,64))
+    origin='norn/'+base64.b32encode(t['net']).decode().lower().rstrip('=')
+    require(t['origin']==origin)
+    lk=vkey(t['log_key'],1); require(lk['name']==origin)
+    require(isinstance(t['log_urls'],list) and t['log_urls'] and all(text(u,1) for u in t['log_urls']))
+    require(isinstance(t['witnesses'],list) and t['witnesses'])
+    ws={}
+    for w in t['witnesses']:
+        require(closed(w,('name','key'),('url',)) and text(w['name'],1,64))
+        require(w['name'] not in ws and ('url' not in w or text(w['url'])))
+        ws[w['name']]=vkey(w['key'],4)['text']
+    p=Policy(t['policy'])
+    require(ws=={n:k['text'] for n,k in p.witnesses.items()})
+    require(all(k['text']==lk['text'] for k in p.logs))
+    if 'anchor' in t:
+        a=t['anchor']; require(closed(a,('type','mode','max_lag')))
+        require(text(a['type']) and a['mode']=='advisory' and uint(a['max_lag']))
+    return t
 
-def fingerprint(data):
-    alphabet='0123456789ABCDEFGHJKMNPQRSTVWXYZ'
-    n=int.from_bytes(hashlib.sha256(data).digest()[:10],'big')
-    s=''.join(alphabet[(n>>(5*(15-i)))&31] for i in range(16))
+def fingerprint(raw):
+    abc='0123456789ABCDEFGHJKMNPQRSTVWXYZ'; n=int.from_bytes(sha(raw)[:10],'big')
+    s=''.join(abc[(n>>(5*(15-i)))&31] for i in range(16))
     return '-'.join(s[i:i+4] for i in range(0,16,4))+'\n'
 
-DEFAULTS={'checkpoint_interval':60,'staleness':600,'mmd':60,'rotate_needs_signer':False,'routes':'granted'}
-TYPES={'genesis','enroll','rotate','revoke','signer_add','signer_remove','signer_thr','root_add','root_remove','root_thr','log_key','policy','params','note'}
-GOV=TYPES-{'genesis','enroll','rotate','revoke','note'}
+def labels(x):
+    require(isinstance(x,dict) and 1<=len(x)<=32)
+    require(all(text(k,1,23) and text(v,0,256) for k,v in x.items()))
 
-def params(p):
-    require(type(p)==dict and p and set(p)<=set(DEFAULTS))
-    for k,v in p.items():
-        require(type(v)==bool if k=='rotate_needs_signer' else v in ('granted','advisory') if k=='routes' else uint(v))
-
-def labels(l):
-    require(type(l)==dict and len(l)<=32 and all(text(k,1,23) and text(v,0,256) for k,v in l.items()))
-
-def device_id(s): return text(s) and re.fullmatch('[a-z0-9][a-z0-9.-]{0,63}',s) is not None
-
-def request(data,net=None,verify=True):
-    try: r=cbor.loads(data)
-    except ValueError: raise Refusal('decode') from None
-    closed(r,('v','ts','net','sig','wg_pk','device_id','device_pk'),('labels','expires'))
-    require(uint(r['v']) and r['v']==1 and uint(r['ts']) and blob(r['net'],16) and (net is None or r['net']==net))
-    require(blob(r['sig'],64) and blob(r['wg_pk'],32) and blob(r['device_pk'],32) and device_id(r['device_id']))
+def request(raw,net=None,check_sig=True):
+    r=cbor.loads(raw)
+    require(closed(r,('v','ts','net','sig','wg_pk','device_id','device_pk'),('labels','expires')))
+    require(uint(r['v']) and r['v']==1 and uint(r['ts']) and octets(r['net'],16))
+    require(net is None or r['net']==net)
+    require(octets(r['sig'],64) and octets(r['wg_pk'],32) and ident(r['device_id']))
+    require(ed25519.valid_point(r['device_pk']))
     if 'labels' in r: labels(r['labels'])
     if 'expires' in r: require(uint(r['expires']) and r['expires']>r['ts'])
-    if verify:
-        msg=b'norn/enroll-request/v1\n'+cbor.dumps({k:v for k,v in r.items() if k!='sig'})
-        require(ed25519.verify(r['device_pk'],msg,r['sig']),'no-device-sig')
+    if check_sig: require(ed25519.verify(r['device_pk'],request_preimage(r),r['sig']),'no-device-sig')
     return r
 
-def request_text(s,net=None): return request(bech32m.payload(s),net)
+def request_text(s): return request(bech32m.payload(s))
 
-def envelope(data,net):
-    try: e=cbor.loads(data)
-    except ValueError: raise Refusal('decode') from None
-    closed(e,('v','t','net','ts','body','sigs'),('after',))
-    require(uint(e['v']) and e['v']==1 and text(e['t']) and e['net']==net and blob(e['net'],16) and uint(e['ts']) and type(e['body'])==dict)
+DEFAULTS={'checkpoint_interval':60,'staleness':600,'mmd':60,'rotate_needs_signer':False,'routes':'granted'}
+GOV={'signer_add','signer_remove','signer_thr','root_add','root_remove','root_thr','log_key','policy','params'}
+TYPES=GOV|{'genesis','enroll','rotate','revoke','note'}
+
+def params(b):
+    require(isinstance(b,dict) and b and b.keys()<=DEFAULTS.keys())
+    for k,v in b.items():
+        require(type(v) is bool if k=='rotate_needs_signer' else v in ('granted','advisory') and type(v) is str if k=='routes' else uint(v))
+
+def envelope(raw,net):
+    e=cbor.loads(raw)
+    require(closed(e,('v','t','net','ts','body','sigs'),('after',)))
+    require(uint(e['v']) and e['v']==1 and text(e['t']) and octets(e['net'],16) and e['net']==net)
+    require(uint(e['ts']) and isinstance(e['body'],dict) and isinstance(e['sigs'],list))
     require('after' not in e or uint(e['after']))
-    require(type(e['sigs'])==list)
-    previous=''
-    for sig in e['sigs']:
-        closed(sig,('kid','role','sig'))
-        require(text(sig['kid']) and re.fullmatch('[0-9a-f]{16}',sig['kid']) is not None and sig['kid']>previous)
-        previous=sig['kid']
-        require(sig['role'] in ('root','signer','device') and blob(sig['sig'],64))
+    prev=''
+    for s in e['sigs']:
+        require(closed(s,('kid','role','sig')) and kid_ok(s['kid']) and s['kid']>prev)
+        require(s['role'] in ('root','signer','device') and octets(s['sig'],64)); prev=s['kid']
     return e
 
-def valid_sigs(e,keys,role):
+def body(e):
+    b=e['body']; t=e['t']
+    fields={
+      'genesis':(('name','roots','root_thr','signers','signer_thr'),('params',)),
+      'enroll':(('request',),()),'rotate':(('device_id','wg_pk'),('device_pk',)),
+      'revoke':(('device_id',),('reason',)),
+      'root_add':(('pk',),()),'signer_add':(('pk',),()),
+      'root_remove':(('kid',),()),'signer_remove':(('kid',),()),
+      'root_thr':(('thr',),()),'signer_thr':(('thr',),()),
+      'log_key':(('pk','overlap'),()),'policy':(('text',),()),'note':(('text',),())}
+    if t=='params': params(b); return b
+    require(closed(b,*fields[t]))
+    for k,v in b.items():
+        if k=='device_id': require(ident(v))
+        elif k in ('pk','device_pk'): require(ed25519.valid_point(v))
+        elif k=='wg_pk': require(octets(v,32))
+        elif k=='kid': require(kid_ok(v))
+        elif k in ('thr','overlap','root_thr','signer_thr'): require(uint(v))
+        elif k=='request': require(isinstance(v,bytes))
+        elif k=='text': require(text(v,0,4096))
+        elif k=='reason': require(text(v,0,256))
+        elif k=='name': require(text(v,1,64))
+        elif k in ('roots','signers'):
+            require(isinstance(v,list) and v and all(ed25519.valid_point(pk) for pk in v))
+            require(len(set(v))==len(v))
+        elif k=='params': params(v)
+    if t=='policy': Policy(b['text'])
+    return b
+
+def zero(anchor):
+    return dict(name='',net=anchor['net'],size=0,root_thr=0,signer_thr=0,roots={},signers={},params=DEFAULTS.copy(),policy='',log_keys=[],devices={},active_wg={},rejected=[])
+
+def signatures(e,keys,role):
     msg=preimage(e)
     return {s['kid'] for s in e['sigs'] if s['role']==role and s['kid'] in keys and ed25519.verify(keys[s['kid']],msg,s['sig'])}
 
-def zero(net):
-    return {'name':'','net':net,'size':0,'root_thr':0,'signer_thr':0,'roots':{},'signers':{},'params':DEFAULTS.copy(),'policy':'','log_keys':[],'devices':{},'active_wg':{},'rejected':[]}
-
 def replay(anchor,entries):
-    state=zero(anchor['net']); seen=set()
+    st=zero(anchor); seen=set()
     for i,raw in enumerate(entries):
         e=None
         try: e=envelope(raw,anchor['net'])
-        except Refusal: pass
-        duplicate=hashlib.sha256(preimage(e) if e is not None else raw).digest()
+        except (ValueError,TypeError): pass
+        duplicate=sha(preimage(e)) if e is not None else sha(raw)
         try:
             require(duplicate not in seen,'dup-entry'); seen.add(duplicate)
             require(e is not None)
-            t,b=e['t'],e['body']
+            t=e['t']; b=e['body']
             if i==0:
                 require(t=='genesis' and merkle.leaf(raw)==anchor['genesis_hash'])
-                require(e.get('after',0)==0)
-                closed(b,('name','roots','root_thr','signers','signer_thr'),('params',))
-                require(text(b['name'],1,64))
-                for role in ('roots','signers'):
-                    keys=b[role]
-                    require(type(keys)==list and all(blob(k,32) for k in keys) and len(set(keys))==len(keys))
+                require(e.get('after',0)==0); body(e)
                 require(not set(b['roots'])&set(b['signers']))
-                for role,thr in [('roots','root_thr'),('signers','signer_thr')]:
-                    require(uint(b[thr]) and 1<=b[thr]<=len(b[role]))
-                if 'params' in b: params(b['params'])
-                roots={kid(p):p for p in b['roots']}
-                require(len(valid_sigs(e,roots,'root'))>=b['root_thr'])
-                state.update(name=b['name'],roots=roots,signers={kid(p):p for p in b['signers']},root_thr=b['root_thr'],signer_thr=b['signer_thr'])
-                state['params'].update(b.get('params',{}))
+                require(1<=b['root_thr']<=len(b['roots']) and 1<=b['signer_thr']<=len(b['signers']))
+                ks={kid(pk):pk for pk in b['roots']}
+                require(len(signatures(e,ks,'root'))>=b['root_thr'])
+                st.update(name=b['name'],roots=ks,signers={kid(pk):pk for pk in b['signers']},root_thr=b['root_thr'],signer_thr=b['signer_thr'])
+                st['params'].update(b.get('params',{}))
             else:
                 require(t in TYPES,'unknown-type'); require(t!='genesis','dup-genesis')
                 require(e.get('after',0)<=i,'after')
-                roots=valid_sigs(e,state['roots'],'root')
-                signers=valid_sigs(e,state['signers'],'signer')
-                rq=len(roots)>=state['root_thr']; sq=len(signers)>=state['signer_thr']
-                if t in GOV: require(rq,'threshold')
-                if t=='note': require(roots or signers,'threshold')
+                rs=signatures(e,st['roots'],'root'); ss=signatures(e,st['signers'],'signer')
+                root_ok=len(rs)>=st['root_thr']; signer_ok=len(ss)>=st['signer_thr']
+                if t in GOV: require(root_ok,'threshold')
+                if t=='note': require(rs or ss,'threshold')
+                body(e)
                 if t=='enroll':
-                    closed(b,('request',)); require(type(b['request'])==bytes)
-                    r=request(b['request'],e['net'])
-                    require(sq,'threshold'); ident=r['device_id']
-                    require(ident not in state['devices'] or state['devices'][ident]['status']!='active','dup-id')
-                    require(r['wg_pk'] not in state['active_wg'],'dup-wg')
-                    state['devices'][ident]={'device_pk':r['device_pk'],'wg_pk':r['wg_pk'],'status':'active','since_index':i,'labels':r.get('labels',{}),'expires':r.get('expires',0)}
+                    r=request(b['request'],anchor['net'],False)
+                    require(ed25519.verify(r['device_pk'],request_preimage(r),r['sig']),'no-device-sig')
+                    require(signer_ok,'threshold'); id=r['device_id']
+                    require(id not in st['devices'] or st['devices'][id]['status']!='active','dup-id')
+                    require(r['wg_pk'] not in st['active_wg'],'dup-wg')
+                    st['devices'][id]={k:r[k] for k in ('wg_pk','device_pk')}
+                    st['devices'][id].update(status='active',since_index=i,labels=r.get('labels',{}),expires=r.get('expires',0))
                 elif t in ('rotate','revoke'):
-                    closed(b,('device_id','wg_pk') if t=='rotate' else ('device_id',),('device_pk',) if t=='rotate' else ('reason',))
-                    require(device_id(b['device_id']))
-                    if t=='rotate': require(blob(b['wg_pk'],32) and ('device_pk' not in b or blob(b['device_pk'],32)))
-                    else: require('reason' not in b or text(b['reason'],0,256))
-                    ident=b['device_id']; require(ident in state['devices'],'unknown-device'); d=state['devices'][ident]
+                    id=b['device_id']; require(id in st['devices'],'unknown-device'); d=st['devices'][id]
                     require(d['status']=='active','not-active')
-                    device=bool(valid_sigs(e,{kid(d['device_pk']):d['device_pk']},'device'))
+                    current=d['device_pk']; ds=signatures(e,{kid(current):current},'device')
                     if t=='revoke':
-                        require(sq or rq or device,'threshold'); d.update(status='revoked',since_index=i)
+                        require(root_ok or signer_ok or ds,'threshold'); d.update(status='revoked',since_index=i)
                     else:
-                        require(device,'no-device-sig')
-                        if state['params']['rotate_needs_signer']: require(sq,'threshold')
-                        require(b['wg_pk'] not in state['active_wg'] or state['active_wg'][b['wg_pk']]==ident,'dup-wg')
-                        if 'device_pk' in b: require(valid_sigs(e,{kid(b['device_pk']):b['device_pk']},'device'),'no-device-sig')
+                        require(ds,'no-device-sig')
+                        if st['params']['rotate_needs_signer']: require(signer_ok,'threshold')
+                        require(b['wg_pk'] not in st['active_wg'] or st['active_wg'][b['wg_pk']]==id,'dup-wg')
+                        if 'device_pk' in b:
+                            incoming=b['device_pk']; require(signatures(e,{kid(incoming):incoming},'device'),'no-device-sig'); d['device_pk']=incoming
                         d['wg_pk']=b['wg_pk']
-                        if 'device_pk' in b: d['device_pk']=b['device_pk']
                 elif t in ('root_add','signer_add'):
-                    closed(b,('pk',)); require(blob(b['pk'],32)); k=kid(b['pk'])
-                    require(k not in state['roots'] and k not in state['signers'],'dup-key')
-                    state['roots' if t=='root_add' else 'signers'][k]=b['pk']
+                    k=kid(b['pk']); require(k not in st['roots'] and k not in st['signers'],'dup-key')
+                    st['roots' if t=='root_add' else 'signers'][k]=b['pk']
                 elif t in ('root_remove','signer_remove'):
-                    closed(b,('kid',)); require(text(b['kid']) and re.fullmatch('[0-9a-f]{16}',b['kid']) is not None)
-                    keys=state['roots' if t=='root_remove' else 'signers']; require(b['kid'] in keys,'unknown-key')
-                    if t=='root_remove': require(len(keys)-1>=max(state['root_thr'],1),'root-invariant')
-                    del keys[b['kid']]
+                    ks=st['roots' if t=='root_remove' else 'signers']; require(b['kid'] in ks,'unknown-key')
+                    if t=='root_remove': require(len(ks)-1>=st['root_thr'],'root-invariant')
+                    del ks[b['kid']]
                 elif t in ('root_thr','signer_thr'):
-                    closed(b,('thr',)); require(uint(b['thr']))
-                    require(1<=b['thr']<=len(state['roots' if t=='root_thr' else 'signers']),'bad-thr'); state[t]=b['thr']
-                elif t=='log_key':
-                    closed(b,('pk','overlap')); require(blob(b['pk'],32) and uint(b['overlap']))
-                    state['log_keys'].append(dict(b,since_index=i))
-                elif t=='params': params(b); state['params'].update(b)
-                elif t in ('note','policy'):
-                    closed(b,('text',)); require(text(b['text'],0,4096))
-                    if t=='policy':
-                        try: Policy(b['text'])
-                        except ValueError: raise Refusal('decode') from None
-                        state['policy']=b['text']
-            state['active_wg']={d['wg_pk']:ident for ident,d in state['devices'].items() if d['status']=='active'}
-        except Refusal as error:
+                    ks=st['roots' if t=='root_thr' else 'signers']; require(1<=b['thr']<=len(ks),'bad-thr'); st[t]=b['thr']
+                elif t=='params': st['params'].update(b)
+                elif t=='policy': st['policy']=b['text']
+                elif t=='log_key': st['log_keys'].append(dict(pk=b['pk'],overlap=b['overlap'],since_index=i))
+            st['active_wg']={d['wg_pk']:id for id,d in st['devices'].items() if d['status']=='active'}
+        except (ValueError,TypeError) as ex:
             if i==0:
-                state=zero(anchor['net']); state['rejected']=[{'index':0,'reason':'bad-genesis'}]; return state
-            state['rejected'].append({'index':i,'reason':error.code})
-        state['size']=i+1
-    return state
+                st=zero(anchor); st['rejected']=[dict(index=0,reason='bad-genesis')]; return st
+            st['rejected'].append(dict(index=i,reason=ex.code if isinstance(ex,Refusal) else 'decode'))
+        st['size']=i+1
+    return st
 
-def note(data):
-    try:
-        if type(data)==str: data=data.encode('utf-8')
-        require(data.endswith(b'\n') and b'\n\n' in data,'note')
-        signed,block=data.split(b'\n\n',1); signed+=b'\n'
-        require(signed and all(signed[:-1].split(b'\n')) and block,'note')
-        lines=block[:-1].decode('utf-8').split('\n'); sigs=[]
-        for line in lines:
-            require(line.startswith('\u2014 '),'note')
-            name,payload=line[2:].split(' ',1)
-            require(name and not any(c.isspace() for c in name),'note')
-            raw=b64(payload); require(len(raw) in (68,76),'note')
-            sigs.append((name,raw))
-        require(sigs,'note'); signed.decode('utf-8')
-        return signed,sigs
-    except (ValueError,TypeError): raise Refusal('note') from None
+def jsonable(x):
+    if isinstance(x,bytes): return x.hex()
+    if isinstance(x,list): return list(map(jsonable,x))
+    if isinstance(x,dict): return {(k.hex() if isinstance(k,bytes) else k):jsonable(v) for k,v in x.items()}
+    return x
 
-def log_signatures(signed,sigs,keys):
-    found=False
-    for name,raw in sigs:
-        for key in keys:
-            if name==key['name'] and raw[:4]==key['id']:
+def canonical_json(x):
+    # Unicode scalar order agrees with UTF-8 byte order for valid Unicode text.
+    return (json.dumps(jsonable(x),sort_keys=True,ensure_ascii=False,separators=(',',':'))+'\n').encode('utf-8')
+
+class Reader:
+    def __init__(self,t,state=None):
+        self.trust=t; self.log_keys=[vkey(t['log_key'],1)]
+        if state:
+            self.log_keys += [vkey(make_vkey(t['origin'],k['pk']),1) for k in state['log_keys']]
+        self.policy=Policy(state['policy'] if state and state['policy'] else t['policy'])
+    def log_verify(self,signed,lines):
+        found=False
+        for name,payload in lines:
+            matches=[k for k in self.log_keys if name==k['name'] and payload[:4]==k['id']]
+            if matches:
                 found=True
-                require(len(raw)==68 and ed25519.verify(key['pk'],signed,raw[4:]),'log-signature')
-    require(found,'log-signature')
+                require(len(payload)==68 and ed25519.verify(matches[0]['pk'],signed,payload[4:]),'log-signature')
+        require(found,'log-signature')
+    def checkpoint(self,raw):
+        signed,lines=note(raw); self.log_verify(signed,lines)
+        try:
+            f=signed.decode().split('\n')[:-1]; require(len(f)==3)
+            size=decimal(f[1]); h=b64(f[2]); require(len(h)==32)
+        except (ValueError,TypeError): raise Refusal('checkpoint')
+        require(f[0]==self.trust['origin'],'origin')
+        times={}
+        for name,payload in lines:
+            for short,k in self.policy.witnesses.items():
+                if k['name']!=name or k['id']!=payload[:4]: continue
+                require(len(payload)==76,'cosignature')
+                t=int.from_bytes(payload[4:12],'big')
+                msg=b'cosignature/v1\ntime '+str(t).encode()+b'\n'+signed
+                require(ed25519.verify(k['pk'],msg,payload[12:]),'cosignature')
+                times[short]=max(t,times.get(short,0))
+        require(self.policy.satisfied(set(times)),'quorum')
+        return dict(origin=f[0],size=size,root=h,quorum_time=self.policy.quorum_time(times),times=times)
+    def receipt(self,raw,submitted=None,now=0):
+        signed,lines=note(raw); self.log_verify(signed,lines)
+        f=signed.decode().split('\n')[:-1]
+        require(len(f)==4 and f[0]=='norn/receipt/v1','receipt')
+        require(f[1]==self.trust['origin'],'origin')
+        try: h=b64(f[2]); require(len(h)==32)
+        except ValueError: raise Refusal('leaf-hash')
+        try: deadline=decimal(f[3])
+        except ValueError: raise Refusal('deadline')
+        require(submitted is None or h==submitted,'entry')
+        require(not now or now<deadline,'expired')
+        return dict(leaf_hash=h,deadline=deadline,signed=signed)
+    def bundle(self,raw):
+        try:
+            b=cbor.loads(raw,81919)
+            require(closed(b,('v','device','index','entry','proof','checkpoint')))
+            require(uint(b['v']) and b['v']==1 and ident(b['device']) and uint(b['index']))
+            require(isinstance(b['entry'],bytes) and len(b['entry'])<=65535 and text(b['checkpoint']) and hashes(b['proof']))
+        except (ValueError,TypeError): raise Refusal('bundle')
+        cp=self.checkpoint(b['checkpoint'].encode())
+        require(merkle.inclusion(merkle.leaf(b['entry']),b['index'],cp['size'],b['proof'],cp['root']),'inclusion')
+        try:
+            e=envelope(b['entry'],self.trust['net']); body(e)
+            id=request(e['body']['request'],self.trust['net'],False)['device_id'] if e['t']=='enroll' else e['body'].get('device_id')
+            require(id==b['device'])
+        except (ValueError,TypeError,KeyError): raise Refusal('binding')
+        return b
+    def evidence(self,raw):
+        require(len(raw)<=65536,'oversize')
+        try: e=cbor.loads(raw,65536); require(isinstance(e,dict))
+        except ValueError: raise Refusal('cbor')
+        require(uint(e.get('version')) and e['version'] in (1,2),'version')
+        fields={'version','held','conflicting','size','held_root','proof','policy'}
+        if e['version']==2: fields|={'split','split_root','split_proof_held','split_proof_conflicting'}
+        require(set(e)==fields,'schema')
+        require(uint(e['size']) and octets(e['held_root'],32) and hashes(e['proof']) and all(text(e[k]) for k in ('held','conflicting','policy')),'schema')
+        if e['version']==2:
+            require(uint(e['split']) and octets(e['split_root'],32) and hashes(e['split_proof_held']) and hashes(e['split_proof_conflicting']),'schema')
+        try: Policy(e['policy'])
+        except ValueError: raise Refusal('policy')
+        try: h=self.checkpoint(e['held'].encode())
+        except ValueError: raise Refusal('held')
+        try: c=self.checkpoint(e['conflicting'].encode())
+        except ValueError: raise Refusal('conflicting')
+        require(e['size']<=h['size'] and e['size']==c['size'],'size')
+        require(merkle.consistency(e['size'],h['size'],e['held_root'],h['root'],e['proof']),'proof')
+        # §11.1 closed-code table places all split proof checks before consistent.
+        if e['version']==2:
+            s=e['split']; require(s<=e['size'],'proof')
+            if s==0:
+                require(e['split_root']==bytes(32) and not e['split_proof_held'] and not e['split_proof_conflicting'],'proof')
+            else:
+                require(merkle.consistency(s,h['size'],e['split_root'],h['root'],e['split_proof_held']),'proof')
+                require(merkle.consistency(s,c['size'],e['split_root'],c['root'],e['split_proof_conflicting']),'proof')
+        require(e['held_root']!=c['root'],'consistent')
+        return e
+    def served(self,source,checkpoint=None,stored=None,held_entries=None):
+        fetch=source if callable(source) else lambda p: (Path(source)/p).read_bytes()
+        def read(p):
+            try: return fetch(p)
+            except (OSError,KeyError): raise Refusal('unserved')
+        cp=self.checkpoint(checkpoint if checkpoint is not None else read('checkpoint'))
+        n=cp['size']; entries=[]
+        for start in range(0,n,256):
+            w=min(n-start,256); data=read(tile_path('entries',start//256,w)); pos=0; batch=[]
+            while pos<len(data):
+                require(pos+2<=len(data),'entries'); sz=int.from_bytes(data[pos:pos+2],'big'); pos+=2
+                require(pos+sz<=len(data),'entries'); batch.append(data[pos:pos+sz]); pos+=sz
+            require(len(batch)==w,'entries'); entries+=batch
+        hs=list(map(merkle.leaf,entries)); require(merkle.root(hs)==cp['root'],'head')
+        if stored:
+            at=min(n,stored['size']); mine=None
+            if at==stored['size']: mine=stored['root']
+            elif held_entries is not None and len(held_entries)>=at: mine=merkle.root(list(map(merkle.leaf,held_entries[:at])))
+            if mine is not None: require(merkle.root(hs[:at])==mine,'fork')
+            require(n>=stored['size'],'rollback')
+        require(entries and replay(self.trust,entries[:1])['size']==1,'genesis')
+        level=0; row=hs
+        while row:
+            for start in range(0,len(row),256):
+                tile=row[start:start+256]
+                require(read(tile_path(level,start//256,len(tile)))==b''.join(tile),'tiles')
+            row=[merkle.root(row[i:i+256]) for i in range(0,len(row)-255,256)]
+            level+=1
+        state=replay(self.trust,entries)
+        return dict(checkpoint=cp,entries=entries,state=state,proven=proven(state,cp['quorum_time']))
 
-def checkpoint(data,t,accepted=None):
-    signed,sigs=note(data)
-    keys=[vkey(t['log_key'],1)]
-    if accepted:
-        keys += [vkey(make_vkey(t['origin'],k['pk']),1) for k in accepted['log_keys']]
-    log_signatures(signed,sigs,keys)
+def hashes(x): return isinstance(x,list) and all(octets(h,32) for h in x)
+
+def note(raw):
     try:
-        lines=signed.decode('utf-8').split('\n')[:-1]
-        require(len(lines)==3,'checkpoint')
-        size=decimal(lines[1]); root=b64(lines[2]); require(len(root)==32,'checkpoint')
-    except ValueError: raise Refusal('checkpoint') from None
-    require(lines[0]==t['origin'],'origin')
-    p=Policy(accepted['policy'] if accepted and accepted['policy'] else t['policy'])
-    times={}
-    for name,raw in sigs:
-        for witness,key in p.witnesses.items():
-            if name==key['name'] and raw[:4]==key['id']:
-                require(len(raw)==76,'cosignature')
-                timestamp=int.from_bytes(raw[4:12],'big')
-                msg=b'cosignature/v1\ntime '+str(timestamp).encode()+b'\n'+signed
-                require(ed25519.verify(key['pk'],msg,raw[12:]),'cosignature')
-                times[witness]=max(times.get(witness,0),timestamp)
-    require(p.satisfied(set(times)),'quorum')
-    return {'origin':lines[0],'size':size,'root':root,'quorum_time':p.time(times),'signed':signed,'timestamps':times}
-
-def receipt(data,t,submitted=None,now=0):
-    signed,sigs=note(data); log_signatures(signed,sigs,[vkey(t['log_key'],1)])
-    lines=signed.decode().split('\n')[:-1]
-    require(len(lines)==4 and lines[0]=='norn/receipt/v1','receipt')
-    require(lines[1]==t['origin'],'origin')
-    try: h=b64(lines[2]); require(len(h)==32,'leaf-hash')
-    except ValueError: raise Refusal('leaf-hash') from None
-    try: deadline=decimal(lines[3])
-    except ValueError: raise Refusal('deadline') from None
-    require(submitted is None or submitted==h,'entry')
-    require(not now or now<deadline,'expired')
-    return {'origin':lines[1],'leaf_hash':h,'deadline':deadline,'text_sha256':hashlib.sha256(signed).digest()}
-
-def group_path(n):
-    require(type(n)==int and n>=0,'path')
-    parts=[f'{n%1000:03d}']; n//=1000
-    while n:
-        parts.insert(0,f'x{n%1000:03d}'); n//=1000
-    return '/'.join(parts)
+        s=raw.decode('utf-8'); require('\n\n' in s and s.endswith('\n'))
+        signed,block=s.split('\n\n',1); signed+='\n'
+        require(signed!='\n' and block and all(signed.split('\n')[:-1]))
+        lines=[]
+        for line in block.split('\n')[:-1]:
+            require(line.startswith('— ')); tail=line[2:]; require(' ' in tail)
+            name,data=tail.split(' ',1); require(bool(name)); payload=b64(data); require(len(payload)>=4)
+            lines.append((name,payload))
+        require(lines); return signed.encode(),lines
+    except (ValueError,UnicodeError,TypeError): raise Refusal('note')
 
 def tile_path(level,index,width=256):
-    return 'tile/'+str(level)+'/'+group_path(index)+('' if width==256 else '.p/'+str(width))
+    require(uint(index) and 1<=width<=256)
+    groups=[f'{index%1000:03d}']; index//=1000
+    while index: groups.insert(0,f'x{index%1000:03d}'); index//=1000
+    p='tile/'+str(level)+'/'+'/'.join(groups)
+    return p if width==256 else p+'.p/'+str(width)
 
-def entry_path(index,width=256):
-    return 'tile/entries/'+group_path(index)+('' if width==256 else '.p/'+str(width))
+def proven(state,t):
+    return {id:d for id,d in state['devices'].items() if d['status']=='active' and (t is None or not d['expires'] or d['expires']>t)}
 
-class Mirror:
-    def __init__(self,path,overlay=None): self.path=Path(path); self.overlay=overlay or {}
-    def read(self,path):
-        if path in self.overlay:
-            data=self.overlay[path]; require(data is not None,'unserved',path); return data
-        try: return (self.path/path).read_bytes()
-        except FileNotFoundError: raise Refusal('unserved',path) from None
-
-def served(mirror,t,accepted=None,stored=None,held_entries=None):
-    cp=checkpoint(mirror.read('checkpoint'),t,accepted)
-    entries=[]
-    for start in range(0,cp['size'],256):
-        width=min(256,cp['size']-start); raw=mirror.read(entry_path(start//256,width)); offset=0; bundle=[]
-        while offset<len(raw):
-            require(offset+2<=len(raw),'entries'); n=int.from_bytes(raw[offset:offset+2],'big'); offset+=2
-            require(offset+n<=len(raw),'entries'); bundle.append(raw[offset:offset+n]); offset+=n
-        require(len(bundle)==width,'entries'); entries+=bundle
-    hashes=[merkle.leaf(e) for e in entries]
-    require(merkle.root(hashes)==cp['root'],'head')
-    if stored:
-        at=min(cp['size'],stored['size'])
-        mine=stored['root'] if at==stored['size'] else merkle.root([merkle.leaf(e) for e in held_entries[:at]]) if held_entries is not None and len(held_entries)>=at else None
-        if mine is not None: require(merkle.root(hashes[:at])==mine,'fork')
-        require(cp['size']>=stored['size'],'rollback')
-    level=0; level_hashes=hashes
-    while level_hashes:
-        for start in range(0,len(level_hashes),256):
-            width=min(256,len(level_hashes)-start)
-            raw=mirror.read(tile_path(level,start//256,width))
-            require(raw==b''.join(level_hashes[start:start+width]),'tiles')
-        level_hashes=[merkle.root(level_hashes[i:i+256]) for i in range(0,len(level_hashes)-255,256)]
-        level+=1
-    state=replay(t,entries)
-    # Replay failure is carried by canonical state; it has no additional §10 code.
-    return cp,state,entries
-
-def bundle(data,t,accepted=None):
+def grant(d):
     try:
-        b=cbor.loads(data,81919)
-        closed(b,('v','device','index','entry','proof','checkpoint'),code='bundle')
-        require(uint(b['v']) and b['v']==1 and text(b['device']) and uint(b['index']) and type(b['entry'])==bytes and type(b['checkpoint'])==str and type(b['proof'])==list and all(blob(p,32) for p in b['proof']),'bundle')
-    except ValueError: raise Refusal('bundle') from None
-    cp=checkpoint(b['checkpoint'],t,accepted)
-    require(merkle.inclusion(merkle.leaf(b['entry']),b['index'],cp['size'],b['proof'],cp['root']),'inclusion')
-    try:
-        e=envelope(b['entry'],t['net'])
-        ident=request(e['body']['request'],t['net'],False)['device_id'] if e['t']=='enroll' else e['body'].get('device_id') if e['t'] in ('rotate','revoke') else None
-        require(ident==b['device'],'binding')
-    except (ValueError,KeyError): raise Refusal('binding') from None
-    return b,cp
-
-def evidence(data,t,accepted=None):
-    require(len(data)<=65536,'oversize')
-    try: e=cbor.loads(data,65536); require(type(e)==dict,'cbor')
-    except ValueError: raise Refusal('cbor') from None
-    require(uint(e.get('version')) and e['version']==1,'version')
-    closed(e,('version','held','conflicting','size','held_root','proof','policy'),code='schema')
-    require(text(e['held']) and text(e['conflicting']) and uint(e['size']) and blob(e['held_root'],32) and type(e['proof'])==list and all(blob(p,32) for p in e['proof']) and text(e['policy']),'schema')
-    try: Policy(e['policy'])
-    except ValueError: raise Refusal('policy') from None
-    try: held=checkpoint(e['held'],t,accepted)
-    except Refusal as err: raise Refusal('held',err.code) from None
-    try: conflicting=checkpoint(e['conflicting'],t,accepted)
-    except Refusal as err: raise Refusal('conflicting',err.code) from None
-    require(e['size']<=held['size'] and e['size']==conflicting['size'],'size')
-    require(merkle.consistency(e['size'],held['size'],e['held_root'],held['root'],e['proof']),'proof')
-    require(e['held_root']!=conflicting['root'],'consistent')
-    return e
+        s=d['labels'].get('ip',''); parts=s.split(','); nets=[]
+        for part in parts:
+            n=ipaddress.ip_network(part.strip(),strict=False)
+            if n.version==6 and n.network_address.ipv4_mapped is not None: return []
+            nets.append(str(n))
+        return sorted(set(nets))
+    except ValueError: return []
 
 def freshness(elapsed,staleness,hard=0):
     if elapsed is None: return 'unknown'
     if hard and elapsed>hard: return 'hard_stale'
-    if elapsed<=staleness: return 'fresh'
-    return 'degraded'
+    return 'fresh' if elapsed<=staleness else 'degraded'
 
-def proven(state,T=None):
-    return {i:d for i,d in state['devices'].items() if d['status']=='active' and (T is None or not d['expires'] or d['expires']>T)}
-
-def grant(labels):
-    if 'ip' not in labels: return []
-    try:
-        out=set()
-        for part in labels['ip'].split(','):
-            # Reject mapped source addresses even if masking hides the mapping.
-            s=part.strip(); address=ipaddress.ip_address(s.split('/')[0])
-            if isinstance(address,ipaddress.IPv6Address) and address.ipv4_mapped is not None: return []
-            net=ipaddress.ip_network(s,strict=False)
-            if isinstance(net,ipaddress.IPv6Network) and net.network_address.ipv4_mapped is not None: return []
-            out.add(str(net))
-        return sorted(out)
-    except ValueError: return []
+class WitnessClock:
+    def __init__(self,persisted=None): self.bounds=[] if persisted is None else [(persisted,0)]
+    def observe(self,q,monotonic):
+        if q is not None: self.bounds.append((q,monotonic))
+    def now(self,m): return max((q+m-at for q,at in self.bounds),default=None)
+    def age(self,q,m):
+        now=self.now(m)
+        return None if q is None or now is None else max(0,now-q)
