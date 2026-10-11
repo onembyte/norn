@@ -147,6 +147,13 @@ func hRotate(r *replayer, st *state.State, env *entry.Envelope, index uint64) er
 	if err != nil {
 		return err
 	}
+	// D-075 admits the incoming key in the body step, before device lookup.
+	var incoming []byte
+	if _, present := env.Body["device_pk"]; present {
+		if incoming, err = fieldKey(env.Body, "device_pk"); err != nil {
+			return err
+		}
+	}
 	device, known := st.Devices[id]
 	if !known {
 		return rejectWith(ReasonUnknownDevice)
@@ -169,11 +176,7 @@ func hRotate(r *replayer, st *state.State, env *entry.Envelope, index uint64) er
 	if owner, taken := st.ActiveWg[hexOf(wgPk)]; taken && owner != id {
 		return rejectWith(ReasonDupWg)
 	}
-	var incoming []byte
-	if _, present := env.Body["device_pk"]; present {
-		if incoming, err = fieldBytes(env.Body, "device_pk", entry.KeyLen); err != nil {
-			return err
-		}
+	if incoming != nil {
 		// Proof of possession of the key being installed (D-032).
 		if !r.deviceSigned(env, incoming) {
 			return rejectWith(ReasonNoDeviceSig)

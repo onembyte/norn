@@ -36,7 +36,7 @@ requests-bad/empty-labels expected="refuse" got="accept"
 # non-canonical genesis root, a cofactored-only torsion R and a non-canonical
 # witness key; it does not replay the new log-admission/ directory, so its
 # protocol-artifact coverage check lists those files as unvisited.
-coverage/protocol-artifacts expected=[] got=["log-admission/00-genesis.cbor","log-admission/01-signer_add-mixed-order.cbor","log-admission/01-signer_add-mixed-order.reason","log-admission/02-root_add-mixed-order.cbor","log-admission/02-root_add-mixed-order.reason","log-admission/03-log_key-mixed-order.cbor","log-admission/03-log_key-mixed-order.reason","log-admission/04-signer_add-honest.cbor","proofs-rotated/nas.bundle","served-stranger-name/checkpoint","served-unknown-algorithm/checkpoint"]
+coverage/protocol-artifacts expected=[] got=["log-admission/00-genesis.cbor","log-admission/01-signer_add-mixed-order.cbor","log-admission/01-signer_add-mixed-order.reason","log-admission/02-root_add-mixed-order.cbor","log-admission/02-root_add-mixed-order.reason","log-admission/03-log_key-mixed-order.cbor","log-admission/03-log_key-mixed-order.reason","log-admission/04-signer_add-honest.cbor","log-admission/05-enroll-honest.cbor","log-admission/06-rotate-mixed-order.cbor","log-admission/06-rotate-mixed-order.reason","log-admission/07-policy-small-order.cbor","log-admission/07-policy-small-order.reason","log-admission/08-policy-honest.cbor","proofs-rotated/nas.bundle","served-stranger-name/checkpoint","served-unknown-algorithm/checkpoint"]
 genesis/23-root-order-eight/00-genesis.cbor expected="bad-genesis" got="accept"
 genesis/23-root-order-eight/state.json expected="byte-identical" got="different"
 genesis/24-root-noncanonical/00-genesis.cbor expected="bad-genesis" got="accept"

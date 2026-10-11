@@ -13,6 +13,7 @@ import (
 	"github.com/onembyte/norn/internal/cbor"
 	"github.com/onembyte/norn/internal/enrollreq"
 	"github.com/onembyte/norn/internal/entry"
+	"github.com/onembyte/norn/internal/note"
 	"github.com/onembyte/norn/internal/state"
 )
 
@@ -200,6 +201,99 @@ func TestAnEnrollmentOfAKeyThatIsNotAValidPointIsDecode(t *testing.T) {
 		}
 		if got != want {
 			t.Errorf("an enrollment of a %s device_pk: %q, want %q", kind, got, want)
+		}
+	}
+}
+
+// D-075 puts incoming key admission in the body step, before device lookup.
+func TestARotateAdmitsOnlyAValidIncomingPointBeforeDeviceLookup(t *testing.T) {
+	anchor, entries, _ := loadCase(t, filepath.Join(vectorRoot(), "log-admission"))
+	entries = entries[:1]
+	current, incoming := privateKey(t, "pi-cam"), privateKey(t, "spare")
+	req, err := enrollreq.New(anchor.Net, "pi-cam", current.Public().(ed25519.PublicKey), bytes.Repeat([]byte{0x5a}, 32), 1_760_700_000, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := enrollreq.Sign(req, current); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := enrollreq.Encode(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	env := &entry.Envelope{V: entry.Version, T: "enroll", Net: anchor.Net, TS: 1_760_700_000, Body: map[string]any{"request": raw}}
+	signAs(t, env, Replay(anchor, entries), "signer", "signer1")
+	entries = appended(t, entries, env)
+	before := Replay(anchor, entries)
+	if got := lastOutcome(before, 1); got != "" {
+		t.Fatalf("honest enrollment: %s", got)
+	}
+	candidates := notValidPoints(t, incoming.Public().(ed25519.PublicKey))
+	candidates["honest"] = incoming.Public().(ed25519.PublicKey)
+	for kind, pk := range candidates {
+		for _, id := range []string{"pi-cam", "unknown"} {
+			t.Run(kind+"/"+id, func(t *testing.T) {
+				env := &entry.Envelope{V: entry.Version, T: "rotate", Net: anchor.Net, TS: 1_760_700_001, Body: map[string]any{"device_id": id, "wg_pk": bytes.Repeat([]byte{0x6a}, 32), "device_pk": pk}}
+				for _, key := range []ed25519.PrivateKey{current, incoming} {
+					if err := entry.Sign(env, key, "device"); err != nil {
+						t.Fatal(err)
+					}
+				}
+				after := Replay(anchor, appended(t, entries, env))
+				want := ReasonDecode
+				if kind == "honest" {
+					want = ""
+					if id == "unknown" {
+						want = ReasonUnknownDevice
+					}
+				}
+				if got := lastOutcome(after, len(entries)); got != want {
+					t.Errorf("got %q, want %q", got, want)
+				}
+				if want != "" && (!reflect.DeepEqual(before.Devices, after.Devices) || !reflect.DeepEqual(before.ActiveWg, after.ActiveWg)) {
+					t.Error("refused rotate changed devices")
+				}
+				if want == "" && after.Devices[id].DevicePk != hex.EncodeToString(pk) {
+					t.Error("honest incoming key was not installed")
+				}
+			})
+		}
+	}
+}
+
+// A root quorum cannot admit a policy verifier key that §3.1 refuses.
+func TestAPolicyEntryAdmitsOnlyValidVerifierPointsAfterTheQuorum(t *testing.T) {
+	anchor, entries, _ := loadCase(t, filepath.Join(vectorRoot(), "log-admission"))
+	entries = entries[:1]
+	before := Replay(anchor, entries)
+	candidates := notValidPoints(t, publicOf(t, "spare"))
+	candidates["honest"] = publicOf(t, "spare")
+	for kind, pk := range candidates {
+		for _, directive := range []string{"witness", "log"} {
+			alg, prefix, suffix := byte(note.AlgCosignature), "witness w ", "\nquorum w\n"
+			if directive == "log" {
+				alg, prefix, suffix = note.AlgEd25519, "log ", "\nquorum none\n"
+			}
+			text := prefix + note.VerifierKeyFor("admission", pk, alg) + suffix
+			env := &entry.Envelope{V: entry.Version, T: "policy", Net: anchor.Net, TS: 1_760_700_000, Body: map[string]any{"text": text}}
+			signAs(t, env, before, "root", "root1", "root2")
+			after := Replay(anchor, appended(t, entries, env))
+			want := ReasonDecode
+			if kind == "honest" {
+				want = ""
+				if after.Policy != text {
+					t.Error("honest policy was not installed")
+				}
+			} else if after.Policy != before.Policy {
+				t.Error("refused policy changed state")
+			}
+			if got := lastOutcome(after, 1); got != want {
+				t.Errorf("%s/%s: got %q, want %q", directive, kind, got, want)
+			}
+			env.Sigs = env.Sigs[:1]
+			if got := lastOutcome(Replay(anchor, appended(t, entries, env)), 1); got != ReasonThreshold {
+				t.Errorf("under-signed policy: %s", got)
+			}
 		}
 	}
 }

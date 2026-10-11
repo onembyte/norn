@@ -1225,8 +1225,8 @@ def genesis_aborts() -> list[tuple[str, bytes, "replay.Anchor"]]:
 def admission_log() -> list[LogItem]:
     """An isolated log for §3.1 key admission, not the served fixture.
 
-    A refused admission must leave the keys unchanged. An honest signer beside
-    the three refusals makes rejecting every entry an observable wrong answer.
+    A refused admission must leave the keys unchanged. Honest entries before
+    and after the refusals make stopping early an observable wrong answer.
     """
     mixed = crypto_core_ed25519_add(KEYS["signer3"].public, ORDER_EIGHT)
     builder = _Builder()
@@ -1240,6 +1240,39 @@ def admission_log() -> list[LogItem]:
                     "decode")
     builder.add("04-signer_add-honest", builder.build(
         "signer_add", {"pk": KEYS["signer3"].public}, [("root1", "root"), ("root2", "root")]))
+    builder.add("05-enroll-honest", builder.build(
+        "enroll", _enroll_body("pi-cam"), [("signer1", "signer")]))
+    incoming = crypto_core_ed25519_add(KEYS["spare"].public, ORDER_EIGHT)
+    rotate = builder.build("rotate", {"device_id": "pi-cam", "wg_pk": WG["spare"],
+                                     "device_pk": incoming}, [("pi-cam", "device")])
+    # Sign with the honest scalar but hash A + T. Cofactoring kills [k]T,
+    # so this proves possession to a cofactored verifier but fails §3.1.
+    key = KEYS["spare"]
+    expanded = bytearray(hashlib.sha512(key.seed).digest())
+    expanded[0] &= 248
+    expanded[31] = (expanded[31] & 63) | 64
+    a = int.from_bytes(expanded[:32], "little")
+    message = entry.preimage(rotate)
+    r = int.from_bytes(hashlib.sha512(bytes(expanded[32:]) + message).digest(), "little") % keys.L
+    while True:
+        R = crypto_scalarmult_ed25519_base_noclamp(r.to_bytes(32, "little"))
+        k = int.from_bytes(hashlib.sha512(R + incoming + message).digest(), "little") % keys.L
+        # A challenge divisible by 8 would also satisfy the cofactorless
+        # equation. Keep this vector on the edge where the equations part.
+        if k % 8:
+            break
+        r = (r + 1) % keys.L
+    signature = R + ((r + k * a) % keys.L).to_bytes(32, "little")
+    rotate["sigs"].append({"kid": keys.kid(incoming), "role": "device", "sig": signature})
+    rotate["sigs"].sort(key=lambda sig: (sig["kid"], sig["role"]))
+    builder.add("06-rotate-mixed-order", rotate, "decode")
+    small = note.vkey("norn-witness/pi", ORDER_EIGHT, note.ALG_COSIGNATURE)
+    builder.add("07-policy-small-order", builder.build(
+        "policy", {"text": f"witness pi {small}\nquorum pi\n"},
+        [("root1", "root"), ("root2", "root")]), "decode")
+    builder.add("08-policy-honest", builder.build(
+        "policy", {"text": f"witness pi {witness_vkey('pi')}\nquorum pi\n"},
+        [("root1", "root"), ("root2", "root")]))
     return builder.items
 
 

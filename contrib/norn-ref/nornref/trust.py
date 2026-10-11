@@ -11,7 +11,7 @@ import base64
 import hashlib
 from typing import Any
 
-from . import cbor, keys, note
+from . import cbor, keys, note, policy
 
 VERSION = 1
 
@@ -102,9 +102,8 @@ def validate(doc: dict[str, Any]) -> None:
         log_key = note.parse_vkey(doc["log_key"])
     except note.NoteError as exc:
         raise TrustError(f"log_key: {exc}") from exc
-    # A trust file admits keys, not just verifier-key syntax. Keep the §3.1
-    # check here: parse_vkey also reads policy entries, whose witness keys
-    # are not among the admission points that item 2 names.
+    # A trust file admits keys, not just verifier-key syntax. Policy text
+    # applies the same §3.1 point rule through its own parser (D-075).
     if not keys.valid_point(log_key.public):
         raise TrustError("log_key must be a valid Ed25519 point")
     # The note name binds the key to this network: a checkpoint signed by a key
@@ -146,6 +145,10 @@ def validate(doc: dict[str, Any]) -> None:
         seen.add(witness["name"])
     if not isinstance(doc["policy"], str) or "quorum" not in doc["policy"]:
         raise TrustError("policy must be tlog-policy text containing a quorum line")
+    try:
+        policy.parse(doc["policy"])
+    except policy.PolicyError as exc:
+        raise TrustError(f"policy: {exc}") from exc
     _check_policy_matches_witnesses(doc)
     # The policy's `log` line is informational -- Norn takes the log key from
     # `log_key` -- but a file whose two halves name different logs is the same

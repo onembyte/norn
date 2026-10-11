@@ -29,7 +29,7 @@ func TestKeysDefineOneEd25519Predicate(t *testing.T) {
 	for _, phrase := range []string{
 		"the canonical encoding (RFC 8032 §5.1.3) of a point of order exactly `L`",
 		"not the identity and has no component of order 2, 4 or 8",
-		"`S` MUST be less than `L`",
+		"`S`, read as a little-endian integer, MUST be less than `L`",
 		"[S]B = R + [k]A",
 		"the cofactored and the cofactorless equations agree",
 		"PureEdDSA",
@@ -42,6 +42,26 @@ func TestKeysDefineOneEd25519Predicate(t *testing.T) {
 	} {
 		if !strings.Contains(text, phrase) {
 			t.Errorf("§3 does not define NORN-ED25519-v1: missing %q", phrase)
+		}
+	}
+}
+
+// D-075 names the two remaining admission points and their body-step reason.
+func TestEveryKeyEnteringVerifierStateIsAdmittedAsAValidPoint(t *testing.T) {
+	doc := load(t)
+	for section, phrases := range map[string][]string{
+		"3.1": {"One rule throughout: every key that enters a verifier's state is a valid point where it enters (D-075)."},
+		"5.1": {"body well-formed and closed, its `device_pk` when present a valid point (§3.1) (`decode`)", "`text` MUST parse as `c2sp.org/tlog-policy`, every verifier key it carries a valid point (§3.1) (`decode`)"},
+	} {
+		part, ok := doc.Section(section)
+		if !ok {
+			t.Fatalf("missing §%s", section)
+		}
+		text := strings.Join(strings.Fields(part.Body), " ")
+		for _, phrase := range phrases {
+			if !strings.Contains(text, phrase) {
+				t.Errorf("§%s missing %q", section, phrase)
+			}
 		}
 	}
 }

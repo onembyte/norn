@@ -13,7 +13,7 @@ import json
 import pathlib
 
 
-# Canonical encoding checks precede small-order and subgroup checks (§3.1).
+# The deciding flag is the first flag in §3.1's listing, not evaluation order.
 DECIDING_FLAGS = (
     "non_canonical_A", "non_canonical_R", "low_order_A", "low_order_R",
     "low_order_component_A", "low_order_component_R",
@@ -42,9 +42,9 @@ def main() -> None:
         cases.append(case)
     assert [c["number"] for c in cases if c["outcome"] == "accept"] == [305]
     table = {
-        "comment": "Derived from ed25519vectors.json's flags in SPEC.md §3.1's deciding order. "
+        "comment": "Derived from ed25519vectors.json's flags in SPEC.md §3.1's listing order. "
                    "outcome is NORN-ED25519-v1's, not RFC 8032's. The flag names the first "
-                   "rejection: non_canonical and low_order mean not a valid point; "
+                   "flag in §3.1's listing: non_canonical and low_order mean not a valid point; "
                    "low_order_component means not of order exactly L.",
         "cases": cases,
     }

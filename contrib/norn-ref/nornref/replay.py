@@ -221,6 +221,8 @@ def _h_enroll(state: State, env: dict[str, Any], index: int) -> None:
 def _h_rotate(state: State, env: dict[str, Any], index: int) -> None:
     body = env["body"]
     device_id, wg_pk = _device_id(body), _pk(body, "wg_pk")
+    # D-075 admits the incoming key in the body step, before device lookup.
+    new_device_pk = _key(body, "device_pk") if "device_pk" in body else None
     if device_id not in state.devices:
         raise Reject("unknown-device")
     device = state.active_device(device_id)
@@ -232,7 +234,6 @@ def _h_rotate(state: State, env: dict[str, Any], index: int) -> None:
         _require(len(_valid_kids(env, "signer", state.signers)), state.signer_thr)
     if wg_pk in state.active_wg and state.active_wg[wg_pk] != device_id:
         raise Reject("dup-wg")
-    new_device_pk = _pk(body, "device_pk") if "device_pk" in body else None
     # Proof of possession of the incoming identity key (D-032): a device that
     # installs a key it does not hold can never rotate again without a
     # signer-assisted re-enrolment. It holds both keys at this moment, so

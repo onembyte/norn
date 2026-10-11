@@ -2,7 +2,7 @@
 
 import re
 
-from . import note
+from . import keys as ed25519_keys, note
 
 
 class PolicyError(ValueError):
@@ -21,6 +21,9 @@ def _read_vkey(text: str, algorithm: int, number: int, keys: set[bytes]) -> None
         raise PolicyError(
             f"line {number}: verifier key algorithm 0x{verifier.alg:02x}, "
             f"want 0x{algorithm:02x}")
+    # Policy text admits verifier keys into state just as an entry does (D-075).
+    if not ed25519_keys.valid_point(verifier.public):
+        raise PolicyError(f"line {number}: verifier key is not a valid point (SPEC §3.1)")
     if verifier.public in keys:
         raise PolicyError(f"line {number}: that public key is already in this policy")
     keys.add(verifier.public)

@@ -4,7 +4,7 @@ import unittest
 
 from nacl.bindings import crypto_core_ed25519_add
 
-from nornref import cbor, enrollreq, entry, fixture, keys, note, replay, trust
+from nornref import cbor, enrollreq, entry, fixture, keys, note, policy, replay, trust
 
 SMALL_ORDER = bytes.fromhex("26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05")
 HONEST = fixture.KEYS["spare"].public
@@ -164,3 +164,61 @@ class Admission(unittest.TestCase):
 
     def test_a_trust_files_witness_keys_must_be_valid_points(self):
         self._trust_admission("witness")
+
+
+class RemainingAdmission(unittest.TestCase):
+    def test_rotate_admits_only_valid_incoming_points_before_device_lookup(self):
+        genesis = entry.encode(fixture.genesis())
+        enroll = entry.new("enroll", fixture.NET, fixture.T0 + 1, fixture._enroll_body("pi-cam"))
+        entry.sign(enroll, fixture.KEYS["signer1"], "signer")
+        anchor = replay.Anchor(fixture.NET, entry.leaf_hash(genesis))
+        raw = [genesis, entry.encode(enroll)]
+        before = replay.replay(anchor, raw)
+        self.assertEqual(before.rejected, [])
+        for kind, public, admitted in KEY_CASES:
+            for device_id in ("pi-cam", "unknown"):
+                with self.subTest(key=kind, device=device_id):
+                    env = entry.new("rotate", fixture.NET, fixture.T0 + 2,
+                                    {"device_id": device_id, "wg_pk": fixture.WG["spare"],
+                                     "device_pk": public})
+                    for name in ("pi-cam", "spare"):
+                        entry.sign(env, fixture.KEYS[name], "device")
+                    state = replay.replay(anchor, [*raw, entry.encode(env)])
+                    reason = ("unknown-device" if device_id == "unknown" else "") if admitted else "decode"
+                    self.assertEqual(state.rejected, [{"index": 2, "reason": reason}] if reason else [])
+                    if reason:
+                        self.assertEqual(state.devices, before.devices)
+                        self.assertEqual(state.active_wg, before.active_wg)
+                    else:
+                        self.assertEqual(state.devices[device_id]["device_pk"], public)
+
+    def test_policy_admits_only_valid_verifier_points_after_the_quorum(self):
+        genesis = entry.encode(fixture.genesis())
+        for kind, public, admitted in KEY_CASES:
+            for directive, algorithm in (("witness", note.ALG_COSIGNATURE), ("log", note.ALG_ED25519)):
+                with self.subTest(key=kind, directive=directive):
+                    key = note.vkey("admission", public, algorithm)
+                    text = f"witness w {key}\nquorum w\n" if directive == "witness" else f"log {key}\nquorum none\n"
+                    if admitted:
+                        policy.parse(text)
+                    else:
+                        with self.assertRaises(policy.PolicyError):
+                            policy.parse(text)
+                    env = entry.new("policy", fixture.NET, fixture.T0 + 1, {"text": text})
+                    state = replay_with(genesis, [root_sign(env)])
+                    self.assertEqual(state.rejected, [] if admitted else [{"index": 1, "reason": "decode"}])
+                    self.assertEqual(state.policy, text if admitted else "")
+                    env["sigs"] = []
+                    entry.sign(env, fixture.KEYS["root1"], "root")
+                    self.assertEqual(replay_with(genesis, [entry.encode(env)]).rejected,
+                                     [{"index": 1, "reason": "threshold"}])
+
+    def test_a_trust_policy_cannot_hide_an_invalid_key_before_an_honest_one(self):
+        doc = copy.deepcopy(fixture.trust_file())
+        trust.validate(doc)
+        # A text reader that keeps only the last key for a witness name can
+        # hide an earlier invalid point from the correspondence check.
+        invalid = note.vkey("norn-witness/pi", SMALL_ORDER, note.ALG_COSIGNATURE)
+        doc["policy"] = f"witness pi {invalid}\n" + doc["policy"]
+        with self.assertRaises(trust.TrustError):
+            trust.validate(doc)

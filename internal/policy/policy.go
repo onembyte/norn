@@ -19,6 +19,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/onembyte/norn/internal/ed25519v1"
 	"github.com/onembyte/norn/internal/note"
 )
 
@@ -213,6 +214,10 @@ func parsePolicyVKey(text string, wantAlg byte) (note.Verifier, error) {
 	}
 	if v.Alg != wantAlg {
 		return note.Verifier{}, fmt.Errorf("verifier key uses algorithm 0x%02x, want 0x%02x", v.Alg, wantAlg)
+	}
+	// Policy text admits verifier keys into state just as an entry does (D-075).
+	if !ed25519v1.ValidPoint(v.Public) {
+		return note.Verifier{}, fmt.Errorf("verifier key is not a valid point (SPEC §3.1)")
 	}
 	return v, nil
 }

@@ -821,7 +821,7 @@ def write_requests(out: pathlib.Path) -> None:
         "rules": {
             "small-order-device-pk": {"section": "3.1", "says": "MUST be a valid point wherever a key is admitted"},
             "torsion-R-signature": {"section": "3.1", "says": "only if `R` is a valid point"},
-            "S-plus-L-signature": {"section": "3.1", "says": "S` MUST be less than `L`"},
+            "S-plus-L-signature": {"section": "3.1", "says": "MUST be less than `L` — below `L`"},
             "bool-expires": {"says": "requested expiry, unix seconds; MUST be > `ts`", "section": "16.1"},
             "corrupt-character": {"says": "the six-character checksum", "section": "16.2"},
             "empty-label-key": {"says": "every **map key** is a text string of 1–23 bytes", "section": "4.0"},

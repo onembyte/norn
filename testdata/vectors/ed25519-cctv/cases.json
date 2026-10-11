@@ -1,5 +1,5 @@
 {
-  "comment": "Derived from ed25519vectors.json's flags in SPEC.md §3.1's deciding order. outcome is NORN-ED25519-v1's, not RFC 8032's. The flag names the first rejection: non_canonical and low_order mean not a valid point; low_order_component means not of order exactly L.",
+  "comment": "Derived from ed25519vectors.json's flags in SPEC.md §3.1's listing order. outcome is NORN-ED25519-v1's, not RFC 8032's. The flag names the first flag in §3.1's listing: non_canonical and low_order mean not a valid point; low_order_component means not of order exactly L.",
   "cases": [
     {
       "number": 0,
