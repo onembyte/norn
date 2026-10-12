@@ -13,6 +13,37 @@ import (
 	"github.com/onembyte/norn/internal/refusal"
 )
 
+func TestTheSignedTextCarriageReturnVectorRefusesBeforeSignaturesAndRepairsExactly(t *testing.T) {
+	anchor := shippedLogAnchor(t)
+	honest := filepath.Join(vectorRoot(), "served")
+	base := readFile(t, filepath.Join(honest, "checkpoint"))
+	head := readFile(t, filepath.Join(vectorRoot(), "checkpoints-bad", "44-carriage-return-in-signed-text.checkpoint"))
+	runFourteenAnswer(t, servedWith(t, honest, head), anchor, "note")
+	body, _, err := note.Split(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	badBody, _, found := strings.Cut(head, "\n\n")
+	badBody += "\n"
+	if !found || strings.Count(head, "\r") != 1 || badBody != strings.TrimSuffix(body, "\n")+"\r\n" {
+		t.Fatal("the signed body must differ from the honest body by exactly one CR before the root LF")
+	}
+	if head != runFourteenSign(t, badBody, anchor.Origin, true) {
+		t.Fatal("the log and all three witnesses must sign the exact CR-bearing body in fixture order")
+	}
+	normalized := strings.ReplaceAll(head, "\r", "")
+	runFourteenAnswer(t, servedWith(t, honest, normalized), anchor, "log-signature")
+	repaired := runFourteenSign(t, strings.ReplaceAll(badBody, "\r", ""), anchor.Origin, true)
+	if repaired != base {
+		t.Fatal("removing the CR and signing and cosigning must reproduce served/checkpoint byte for byte")
+	}
+	runFourteenAnswer(t, servedWith(t, honest, repaired), anchor, "accept")
+	// Every signature verifies over the CR, so a reader without the
+	// control-byte rule gets past them, and the root line, which keeps the CR,
+	// fails the body check: `checkpoint`. The integrator's control showed it
+	// (6.5l-xi-c-iv-c); the test does not rebuild the package to say so.
+}
+
 // Every repair changes only the malformed stranger name or the one witness
 // line. The body, honest signatures and served tiles are retained verbatim.
 func TestTheNoteGrammarVectorsRefuseTheirFaultAndAcceptItsRepair(t *testing.T) {

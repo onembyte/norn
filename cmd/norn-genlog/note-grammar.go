@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	cosignpkg "github.com/onembyte/norn/internal/cosign"
 	"github.com/onembyte/norn/internal/note"
@@ -50,6 +51,27 @@ func writeNoteGrammarCheckpoints(root, signed string, signers []cosignpkg.Signer
 	} {
 		cases = append(cases, badCheckpoint{c.name, "an otherwise honest head with a malformed stranger name", signed + note.SignatureLine(c.stranger, make([]byte, 68)) + "\n"})
 	}
+	crBody := strings.TrimSuffix(body, "\n") + "\r\n"
+	key, err := seedKey(root, "logkey")
+	if err != nil {
+		return err
+	}
+	origin := strings.SplitN(body, "\n", 2)[0]
+	crHead, err := note.Sign(crBody, origin, key)
+	if err != nil {
+		return err
+	}
+	// Append frames the note before cosigning and therefore refuses this body.
+	// Sign the exact malformed bytes directly, in the honest head's order and
+	// at its timestamps, so only the framing rule supplies the note refusal.
+	for i, signer := range signers {
+		line, err := cosignpkg.Sign(crBody, signer.Name, signer.Key, time.Unix(CosignedAt+int64(i*CosignSpread), 0))
+		if err != nil {
+			return err
+		}
+		crHead += line + "\n"
+	}
+	cases = append(cases, badCheckpoint{"44-carriage-return-in-signed-text", "the honest body with one CR before the root line's LF, signed and cosigned over those exact bytes", crHead})
 	listed := make([]map[string]string, 0, len(cases))
 	codes := map[string]string{}
 	rules := map[string]map[string]string{}
@@ -65,7 +87,7 @@ func writeNoteGrammarCheckpoints(root, signed string, signers []cosignpkg.Signer
 			rules[c.Name]["section"] = "10.1"
 			rules[c.Name]["says"] = "whose timestamp is above 2⁶³−1 (§7, D-077)"
 		}
-		if i == 5 {
+		if i == 5 || c.Name == "44-carriage-return-in-signed-text" {
 			rules[c.Name]["says"] = "MUST NOT contain an ASCII control character below U+0020"
 		}
 	}

@@ -78,3 +78,16 @@ class NoteGrammarVectors(unittest.TestCase):
                 _, _, blob = extra[len(note.SIG_PREFIX):].partition(" ")
                 repaired = projected + note.SIG_PREFIX + "stranger " + blob
                 self.assertEqual(note.verify(repaired, [trust["log_key"]]), body + "\n")
+
+        with self.subTest(name="44-carriage-return-in-signed-text"):
+            head = (root / "checkpoints-bad/44-carriage-return-in-signed-text.checkpoint").read_bytes().decode()
+            bad_body, block = head.split("\n\n", 1)
+            self.assertEqual(bad_body, body + "\r")
+            self.assertEqual(head.count("\r"), 1)
+            self.assertEqual(manifest["codes"]["44-carriage-return-in-signed-text"], "note")
+            projected = bad_body + "\n\n" + block.split("\n")[0] + "\n"
+            with self.assertRaises(note.NoteError):
+                note.split(projected)
+            repaired = note.sign(bad_body.replace("\r", "") + "\n", body.split("\n")[0],
+                                 keys.Ed25519.from_name("logkey"))
+            self.assertEqual(note.verify(repaired, [trust["log_key"]]), body + "\n")
