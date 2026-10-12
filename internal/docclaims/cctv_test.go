@@ -77,7 +77,7 @@ func TestTheCCTVCaseTableNamesTheFirstDecidingFlag(t *testing.T) {
 		}
 		flagsByNumber[v.Number] = v.Flags
 	}
-	order := []string{"non_canonical_A", "non_canonical_R", "low_order_A", "low_order_R", "low_order_component_A", "low_order_component_R"}
+	order := []string{"low_order_A", "low_order_R", "non_canonical_A", "non_canonical_R", "low_order_component_A", "low_order_component_R"}
 	seen := map[int]bool{}
 	accepts := 0
 	for _, c := range table.Cases {

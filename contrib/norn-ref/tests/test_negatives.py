@@ -82,7 +82,7 @@ class GenesisAborts(unittest.TestCase):
 
     def test_the_name_cap_is_pinned_on_both_sides(self):
         """Run 13, D17: 64 bytes is a network, 65 is an abort -- in bytes, not runes."""
-        (_, raw, anchor), = fixture.genesis_accepts()
+        _, raw, anchor = next(case for case in fixture.genesis_accepts() if case[0] == "01-name-at-the-cap")
         state = replay.replay(anchor, [raw])
         self.assertEqual((state.size, state.rejected), (1, []))
         self.assertEqual(len(state.to_dict()["name"].encode("utf-8")), 64)

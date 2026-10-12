@@ -2,6 +2,7 @@ package policy
 
 import (
 	"encoding/json"
+	"github.com/onembyte/norn/internal/note"
 	"os"
 	"path/filepath"
 	"strings"
@@ -46,6 +47,24 @@ func policyCases(t *testing.T) []policyCase {
 }
 
 func TestEveryPolicyGrammarCaseIsDecidedTheSameWay(t *testing.T) {
+	t.Run("distinct witness algorithm", func(t *testing.T) {
+		text := policyText(t, "bad-witness-vkey-algorithm-distinct")
+		if _, err := Parse(text); err == nil {
+			t.Fatal("note-key witness accepted")
+		}
+		fields := strings.Fields(text)
+		if len(fields) != 5 || fields[0] != "witness" {
+			t.Fatal("expected one witness and one quorum, without log")
+		}
+		key, err := note.ParseVerifierKey(fields[2])
+		if err != nil {
+			t.Fatal(err)
+		}
+		repaired := strings.Replace(text, fields[2], note.CosignerVerifierKey(key.Name, key.Public), 1)
+		if _, err := Parse(repaired); err != nil {
+			t.Fatalf("algorithm repair: %v", err)
+		}
+	})
 	cases := policyCases(t)
 	var accepted, refused int
 	for _, c := range cases {

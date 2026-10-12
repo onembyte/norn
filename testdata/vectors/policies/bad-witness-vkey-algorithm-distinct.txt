@@ -1,0 +1,2 @@
+witness w edge-witness+6f53b2af+AYVxfRiOUOhe4oKGCBf4uRMOJuzIx+spqIKb+ySurtKe
+quorum w

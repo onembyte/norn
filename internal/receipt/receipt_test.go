@@ -349,6 +349,7 @@ func TestReceiptLeafHashRejectsNonzeroPadBits(t *testing.T) {
 }
 
 func TestReceiptBadVectorsMatchTheirDeclaredCodes(t *testing.T) {
+	t.Run("run fourteen body boundaries", checkReceiptBoundaries)
 	root := filepath.Join("..", "..", "testdata", "vectors")
 	var manifest struct {
 		Cases []struct {

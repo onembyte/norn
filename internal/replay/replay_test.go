@@ -152,6 +152,7 @@ func TestMalformedReservedHintsSurviveEnrollmentReplay(t *testing.T) {
 }
 
 func TestEveryGenesisCaseAbortsAndMatchesItsState(t *testing.T) {
+	t.Run("closed body", checkClosedGenesisBody)
 	dirs, err := filepath.Glob(filepath.Join(vectorRoot(), "genesis", "*"))
 	if err != nil {
 		t.Fatal(err)
@@ -195,6 +196,9 @@ func TestEveryGenesisCaseAbortsAndMatchesItsState(t *testing.T) {
 // cap, which a reader whose cap was 63 refused -- aborting the whole network
 // -- and no vector said so.
 func TestEveryAcceptedGenesisReplaysToItsState(t *testing.T) {
+	if _, err := os.Stat(filepath.Join(vectorRoot(), "genesis-good", "02-name-one-byte", "00-genesis.cbor")); err != nil {
+		t.Fatal(err)
+	}
 	dirs, err := filepath.Glob(filepath.Join(vectorRoot(), "genesis-good", "*"))
 	if err != nil {
 		t.Fatal(err)

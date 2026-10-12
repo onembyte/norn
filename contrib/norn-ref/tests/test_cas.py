@@ -117,6 +117,9 @@ class CAS(unittest.TestCase):
                 env['body']['pk']=f.KEYS['root3'].public;r._h_log_key(st,env,9,anchor)
 
     def test_cas_manifest_and_every_negative_repair(self):
+        from test_run14_vectors import check_edge_log
+        with self.subTest(directory="log-edges"):
+            check_edge_log(self)
         import json
         from pathlib import Path
         directory=Path(__file__).resolve().parents[3]/'testdata/vectors/log-cas'

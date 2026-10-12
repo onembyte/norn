@@ -101,18 +101,7 @@ class State:
         differ, and a grant is compared as text.
         """
         label = self.devices[device_id].get("labels", {}).get("ip")
-        if not isinstance(label, str):
-            return []
-        out: set[str] = set()
-        for part in label.split(","):
-            try:
-                network = ipaddress.ip_network(part.strip(), strict=False)
-            except ValueError:
-                return []
-            if network.version == 6 and network.network_address.ipv4_mapped is not None:
-                return []
-            out.add(network.with_prefixlen)
-        return sorted(out)
+        return grant_from_label(label)
 
     def proven(self, at: int) -> list[str]:
         """The devices a node would admit at evaluation time `at` (SPEC §5.3).
@@ -168,3 +157,19 @@ class State:
         if kind.startswith("root_"):
             return self.versions["roots"]
         return self.versions.get(kind)
+
+
+def grant_from_label(label: str | None) -> list[str]:
+    """Derive §4.0's grant from label text without device or replay state."""
+    if not isinstance(label, str):
+        return []
+    out: set[str] = set()
+    for part in label.split(","):
+        try:
+            network = ipaddress.ip_network(part.strip(), strict=False)
+        except ValueError:
+            return []
+        if network.version == 6 and network.network_address.ipv4_mapped is not None:
+            return []
+        out.add(network.with_prefixlen)
+    return sorted(out)

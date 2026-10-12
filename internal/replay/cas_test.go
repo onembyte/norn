@@ -217,6 +217,7 @@ func TestGenesisWithPrevAbortsEvenWhenItsHashAndSignatureMatch(t *testing.T) {
 }
 
 func TestTheCASLogReplaysToItsManifestAndState(t *testing.T) {
+	t.Run("log-edges", checkEdgeLog)
 	dir := vectorRoot() + "/log-cas"
 	anchor, items, m := loadCase(t, dir)
 	st := Replay(anchor, items)

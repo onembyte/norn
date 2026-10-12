@@ -15,7 +15,7 @@ import pathlib
 
 # The deciding flag is the first flag in §3.1's listing, not evaluation order.
 DECIDING_FLAGS = (
-    "non_canonical_A", "non_canonical_R", "low_order_A", "low_order_R",
+    "low_order_A", "low_order_R", "non_canonical_A", "non_canonical_R",
     "low_order_component_A", "low_order_component_R",
 )
 AUXILIARY_FLAGS = {"low_order_residue", "reencoded_k"}

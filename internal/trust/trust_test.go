@@ -103,6 +103,7 @@ func TestGenesisHashIsTheLeafHashOfEntryZero(t *testing.T) {
 // Every damaged anchor must be refused -- and must decode first, so that the
 // refusal comes from validation rather than from the codec.
 func TestEveryDamagedAnchorIsRejected(t *testing.T) {
+	t.Run("run fourteen boundaries", checkTrustBoundaries)
 	matches, err := filepath.Glob(filepath.Join(vectorRoot(), "trust-bad", "*.cbor"))
 	if err != nil {
 		t.Fatal(err)
@@ -384,7 +385,7 @@ func TestEveryTrustMemberRuleHasItsCase(t *testing.T) {
 // an unknown *mode* or member is not.
 func TestTheOptionalTrustMembersAreOptional(t *testing.T) {
 	for _, name := range []string{"witness-without-url", "anchor-unknown-type",
-		"url-fields-are-opaque"} {
+		"url-fields-are-opaque", "name-at-the-cap", "name-one-byte", "witness-name-at-the-cap", "witness-name-one-byte"} {
 		t.Run(name, func(t *testing.T) {
 			raw, err := os.ReadFile(filepath.Join(vectorRoot(), "trust-good", name+".cbor"))
 			if err != nil {

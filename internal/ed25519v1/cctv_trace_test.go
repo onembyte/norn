@@ -49,6 +49,16 @@ func TestEveryCCTVFlagTracesToTheClauseThatRefusesIt(t *testing.T) {
 		for _, f := range v.Flags {
 			flags[f] = true
 		}
+		want := ""
+		for _, flag := range []string{"low_order_A", "low_order_R", "non_canonical_A", "non_canonical_R", "low_order_component_A", "low_order_component_R"} {
+			if flags[flag] {
+				want = flag
+				break
+			}
+		}
+		if deciding[v.Number] != want {
+			t.Errorf("vector %d: deciding flag %q, want %q in §3.1 order", v.Number, deciding[v.Number], want)
+		}
 		sig := unhex(t, v.Sig)
 		for side, b := range map[string][]byte{"A": unhex(t, v.Key), "R": sig[:32]} {
 			nonCanonical, lowOrder, component := flags["non_canonical_"+side],

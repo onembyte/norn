@@ -1282,6 +1282,8 @@ def genesis_aborts() -> list[tuple[str, bytes, "replay.Anchor"]]:
     raw = entry.encode(carrying_prev)
     cases.append(("25-prev-present", raw, anchor_for([raw])))
 
+    bad_body("26-body-unknown-key", extra="closed body")
+
     assert good_anchor  # the good anchor is exercised by the log fixture
     return cases
 
@@ -1356,6 +1358,11 @@ def genesis_accepts() -> list[tuple[str, bytes, "replay.Anchor"]]:
                   [("root1", "root"), ("root2", "root")])
     raw = entry.encode(env)
     cases.append(("01-name-at-the-cap", raw, replay.Anchor(NET, entry.leaf_hash(raw))))
+    body = dict(genesis()["body"], name="n")
+    env = _signed(entry.new("genesis", NET, ts=T0, body=body),
+                  [("root1", "root"), ("root2", "root")])
+    raw = entry.encode(env)
+    cases.append(("02-name-one-byte", raw, anchor_for([raw])))
     return cases
 
 
@@ -1520,7 +1527,10 @@ def policy_grammar() -> list[tuple[str, str, bool, str]]:
          "a log verifier key uses algorithm `0x01`"),
         ("bad-witness-vkey-algorithm",
          f"{log}\nwitness pi {log_vkey()}\nquorum pi\n", False,
-         "a witness verifier key uses algorithm `0x04`"),
+         "a witness verifier key uses algorithm `0x04`; this case also repeats the log public key"),
+        ("bad-witness-vkey-algorithm-distinct",
+         f"witness w {note.vkey('edge-witness', KEYS['spare'].public)}\nquorum w\n", False,
+         "a distinct honest witness public key under algorithm 0x01 fails only the witness algorithm rule"),
         ("bad-vkey-name-space",
          f"log {note.vkey(ORIGIN + ' bad', KEYS['logkey'].public)} {LOG_URLS[0]}\n"
          f"{pi}\nquorum pi\n", False,
@@ -1650,6 +1660,11 @@ def trust_rejections() -> list[tuple[str, dict[str, Any]]]:
     reused_log = dict(base, witnesses=[{"name":"w", "key":reuse}],
                       policy=f"witness w {reuse}\nquorum w\n")
     return [("51-witness-key-is-log-key", reused_log),
+        ("52-name-one-past-the-cap", damaged(name="n" * 65)),
+        ("53-log-cosignature-without-policy-log", damaged(
+            log_key=note.vkey(ORIGIN, KEYS["logkey"].public, note.ALG_COSIGNATURE),
+            policy="".join(line for line in base["policy"].splitlines(keepends=True)
+                           if not line.startswith("log ")))),
         # The key ID and policy name the very same damaged point, so only
         # §3.1 refuses it, not correspondence or verifier-key framing.
         ("47-witness-noncanonical-point", damaged(
@@ -1962,7 +1977,17 @@ def trust_acceptances() -> list[tuple[str, dict[str, Any]]]:
     urls["witnesses"][1]["url"] = "http://[invalid"
     urls["policy"] = base["policy"].replace(LOG_URLS[0], "http://[invalid", 1).replace(
         WITNESS_URLS["vps"], "http://other.invalid", 1)
+    def renamed_pi(name: str) -> dict[str, Any]:
+        doc = dict(base, witnesses=[dict(w) for w in base["witnesses"]])
+        doc["witnesses"][0]["name"] = name
+        doc["policy"] = base["policy"].replace("witness pi ", "witness " + name + " ").replace(" pi ", " " + name + " ")
+        return doc
+
     return [
+        ("name-at-the-cap", dict(base, name="n" * 64)),
+        ("name-one-byte", dict(base, name="n")),
+        ("witness-name-at-the-cap", renamed_pi("p" * 64)),
+        ("witness-name-one-byte", renamed_pi("p")),
         ("witness-without-url", dict(base, witnesses=without_url + base["witnesses"][1:])),
         ("url-fields-are-opaque", urls),
         # Anchoring is advisory (D-009): a reader that cannot check an unknown
@@ -2816,4 +2841,36 @@ def cas_log() -> list[LogItem]:
     add("stale-before-dup-key", "signer_add", {"pk":KEYS["signer1"].public}, roots, "stale-state", prev=0)
     add("stale-before-dup-wg", "rotate", {"device_id":"nas","wg_pk":WG["laptop"]}, device, "stale-state", prev=0)
     add("rotate-same-device-key-one-signature", "rotate", {"device_id":"nas","wg_pk":WG["nas2"],"device_pk":KEYS["nas"].public}, device)
+    return b.items
+
+
+def edges_log() -> list[LogItem]:
+    """Run 14's field and lifecycle boundaries, separate from the served log."""
+    b = _Builder()
+    signer = [("signer1", "signer")]
+    b.add("00-genesis", genesis())
+    request = _request("nas2", "spare", "nas2", 0)
+    request["device_id"] = "nas2\n"
+    b.add("01-enroll-device-id-newline", b.build("enroll", _raw_enroll_body(request, "spare"), signer), "decode")
+    env = b.build("note", {"text": "inclusive integer maximum"}, [])
+    env["ts"] = (1 << 63) - 1
+    b.add("02-note-integer-at-the-cap", _signed(env, signer))
+    b.add("03-enroll-nas-with-label", b.build("enroll", _enroll_body("nas", labels={"ip": "10.9.1.5/24"}), signer))
+    b.add("04-revoke-nas", b.build("revoke", {"device_id": "nas"}, signer))
+    b.add("05-reenroll-nas-without-labels", b.build("enroll", _enroll_body("nas"), signer))
+    b.add("06-enroll-nas2", b.build("enroll", {"request": cbor.encode(_request("nas2", "spare", "nas2", 0))}, signer))
+    b.add("07-rotate-unknown-open-body", b.build("rotate", {"device_id": "never-enrolled", "wg_pk": WG["spare"], "extra": "closed"}, [("spare", "device")]), "decode")
+    b.add("08-revoke-unknown-open-body", b.build("revoke", {"device_id": "never-enrolled", "extra": "closed"}, signer), "decode")
+    b.add("09-revoke-reason-at-the-cap", b.build("revoke", {"device_id": "nas", "reason": "r" * 256}, signer))
+    request = _request("nas2", "spare", "nas2", 0)
+    request["device_id"] = "identity-device"
+    request["wg_pk"] = WG["printer"]
+    request["device_pk"] = b"\x01" + bytes(31)
+    # No signature verifies under the identity; admission must refuse the
+    # point before proof of possession can decide no-device-sig.
+    request["sig"] = bytes(64)
+    b.add("10-enroll-request-identity", b.build("enroll", {"request": cbor.encode(request)}, signer), "decode")
+    wrong = note.vkey("edge-witness", KEYS["spare"].public)
+    b.add("11-policy-witness-note-key", b.build("policy", {"text": f"witness w {wrong}\nquorum w\n"}, [("root1", "root"), ("root2", "root")]), "decode")
+    b.add("12-note-after-refusals", b.build("note", {"text": "replay continues"}, signer))
     return b.items

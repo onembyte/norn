@@ -1361,7 +1361,7 @@ func TestEveryNegativeDeclaresTheSectionThatStatesItsRule(t *testing.T) {
 	for _, dir := range []string{
 		"checkpoints-bad", "proofs-bad", "served-bad", "fork",
 		"entries-hostile", "policies", "genesis", "trust-bad", "receipt-bad", "requests-bad",
-		"served-genesis", "log-cas",
+		"served-genesis", "log-cas", "log-edges",
 	} {
 		t.Run(dir, func(t *testing.T) {
 			var manifest struct {
@@ -1376,7 +1376,7 @@ func TestEveryNegativeDeclaresTheSectionThatStatesItsRule(t *testing.T) {
 				} `json:"rules"`
 			}
 			file := "cases.json"
-			if dir == "log-cas" {
+			if dir == "log-cas" || dir == "log-edges" {
 				file = "manifest.json"
 			}
 			readJSON(t, filepath.Join(root, dir, file), &manifest)
@@ -1406,7 +1406,7 @@ func TestEveryNegativeDeclaresTheSectionThatStatesItsRule(t *testing.T) {
 			// others. A failed unmarshal into []string leaves the slice
 			// populated with empties, so the fallback starts from nil.
 			var names []string
-			if dir == "log-cas" {
+			if dir == "log-cas" || dir == "log-edges" {
 				for _, e := range manifest.Entries {
 					if e.Reason != "" {
 						names = append(names, e.Name)
@@ -2917,7 +2917,7 @@ func TestEveryServedAndBundleNegativeCitesTheRuleOfItsCode(t *testing.T) {
 		"receipt-bad": {
 			"note":          {"a second `0x0A` after the final signature creates a forbidden blank line"},
 			"log-signature": {"The note MUST verify under a log key the verifier trusts"},
-			"receipt":       {"The first line MUST be"},
+			"receipt":       {"The first line MUST be", "Require exactly four signed-text lines"},
 			"origin":        {"The origin line MUST equal the anchored origin"},
 			"leaf-hash":     {"The leaf hash MUST be standard base64 and decode to exactly 32 bytes", "unused pad bits in the leaf hash MUST be zero"},
 			"deadline":      {"The deadline MUST be canonical decimal", "at most 2⁶³−1"},

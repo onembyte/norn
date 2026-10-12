@@ -44,72 +44,72 @@
     {
       "number": 8,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 9,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 10,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 11,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 12,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 13,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 14,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 15,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 16,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 17,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 18,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 19,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 20,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 21,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 22,
@@ -154,72 +154,72 @@
     {
       "number": 30,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 31,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 32,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 33,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 34,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 35,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 36,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 37,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 38,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 39,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 40,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 41,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 42,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 43,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 44,
@@ -264,152 +264,152 @@
     {
       "number": 52,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 53,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 54,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 55,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 56,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 57,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 58,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 59,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 60,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 61,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 62,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 63,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 64,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 65,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 66,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 67,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 68,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 69,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 70,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 71,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 72,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 73,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 74,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 75,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 76,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 77,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 78,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 79,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 80,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 81,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 82,
@@ -434,17 +434,17 @@
     {
       "number": 86,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 87,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 88,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 89,
@@ -469,17 +469,17 @@
     {
       "number": 93,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 94,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 95,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 96,
@@ -504,17 +504,17 @@
     {
       "number": 100,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 101,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 102,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 103,
@@ -539,17 +539,17 @@
     {
       "number": 107,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 108,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 109,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 110,
@@ -594,72 +594,72 @@
     {
       "number": 118,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 119,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 120,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 121,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 122,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 123,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 124,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 125,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 126,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 127,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 128,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 129,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 130,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 131,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 132,
@@ -704,72 +704,72 @@
     {
       "number": 140,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 141,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 142,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 143,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 144,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 145,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 146,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 147,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 148,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 149,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 150,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 151,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 152,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 153,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 154,
@@ -814,72 +814,72 @@
     {
       "number": 162,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 163,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 164,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 165,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 166,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 167,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 168,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 169,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 170,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 171,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 172,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 173,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 174,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 175,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 176,
@@ -924,152 +924,152 @@
     {
       "number": 184,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 185,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 186,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 187,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 188,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 189,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 190,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 191,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 192,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 193,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 194,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 195,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 196,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 197,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 198,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 199,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 200,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 201,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 202,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 203,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 204,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 205,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 206,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 207,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 208,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 209,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 210,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 211,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 212,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 213,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 214,
@@ -1094,17 +1094,17 @@
     {
       "number": 218,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 219,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 220,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 221,
@@ -1129,17 +1129,17 @@
     {
       "number": 225,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 226,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 227,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 228,
@@ -1164,17 +1164,17 @@
     {
       "number": 232,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 233,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 234,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 235,
@@ -1199,17 +1199,17 @@
     {
       "number": 239,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 240,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 241,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 242,
@@ -1254,72 +1254,72 @@
     {
       "number": 250,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 251,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 252,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 253,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 254,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 255,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 256,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 257,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 258,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 259,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 260,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 261,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 262,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 263,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 264,
@@ -1344,77 +1344,77 @@
     {
       "number": 268,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 269,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 270,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 271,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 272,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 273,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 274,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 275,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 276,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 277,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 278,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 279,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 280,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 281,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 282,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 283,
@@ -1439,77 +1439,77 @@
     {
       "number": 287,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 288,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 289,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 290,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 291,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 292,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 293,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 294,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 295,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 296,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 297,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 298,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 299,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 300,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 301,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 302,
@@ -1533,137 +1533,137 @@
     {
       "number": 306,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 307,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 308,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 309,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 310,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 311,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 312,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 313,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 314,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 315,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 316,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 317,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 318,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 319,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 320,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 321,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 322,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 323,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 324,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 325,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 326,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 327,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 328,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 329,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 330,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 331,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 332,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 333,
@@ -1688,47 +1688,47 @@
     {
       "number": 337,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 338,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 339,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 340,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 341,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 342,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 343,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 344,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 345,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 346,
@@ -1753,47 +1753,47 @@
     {
       "number": 350,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 351,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 352,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 353,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 354,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 355,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 356,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 357,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 358,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 359,
@@ -1818,47 +1818,47 @@
     {
       "number": 363,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 364,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 365,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 366,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 367,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 368,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 369,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 370,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 371,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 372,
@@ -1883,47 +1883,47 @@
     {
       "number": 376,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 377,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 378,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 379,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 380,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 381,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 382,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 383,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 384,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 385,
@@ -1948,77 +1948,77 @@
     {
       "number": 389,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 390,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 391,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 392,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 393,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 394,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 395,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 396,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 397,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 398,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 399,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 400,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 401,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 402,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 403,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 404,
@@ -2063,32 +2063,32 @@
     {
       "number": 412,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 413,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 414,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 415,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 416,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 417,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 418,
@@ -2133,32 +2133,32 @@
     {
       "number": 426,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 427,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 428,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 429,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 430,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 431,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 432,
@@ -2203,92 +2203,92 @@
     {
       "number": 440,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 441,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 442,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 443,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 444,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 445,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 446,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 447,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 448,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 449,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 450,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 451,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 452,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 453,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 454,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 455,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 456,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 457,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 458,
@@ -2493,32 +2493,32 @@
     {
       "number": 498,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 499,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 500,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 501,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 502,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 503,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 504,
@@ -2563,32 +2563,32 @@
     {
       "number": 512,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 513,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 514,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 515,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 516,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 517,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 518,
@@ -2633,32 +2633,32 @@
     {
       "number": 526,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 527,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 528,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 529,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 530,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 531,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 532,
@@ -2703,92 +2703,92 @@
     {
       "number": 540,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 541,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 542,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 543,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 544,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 545,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 546,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 547,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 548,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 549,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 550,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 551,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 552,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 553,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 554,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 555,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 556,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 557,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 558,
@@ -2993,32 +2993,32 @@
     {
       "number": 598,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 599,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 600,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 601,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 602,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 603,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 604,
@@ -3063,32 +3063,32 @@
     {
       "number": 612,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 613,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 614,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 615,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 616,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 617,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 618,
@@ -3133,32 +3133,32 @@
     {
       "number": 626,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 627,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 628,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 629,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 630,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 631,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 632,
@@ -3203,92 +3203,92 @@
     {
       "number": 640,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 641,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 642,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 643,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 644,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 645,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 646,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 647,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 648,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 649,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 650,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 651,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 652,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 653,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 654,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 655,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 656,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 657,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 658,
@@ -3493,32 +3493,32 @@
     {
       "number": 698,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 699,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 700,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 701,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 702,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 703,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 704,
@@ -3563,32 +3563,32 @@
     {
       "number": 712,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 713,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 714,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 715,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 716,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 717,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 718,
@@ -3633,32 +3633,32 @@
     {
       "number": 726,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 727,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 728,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 729,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 730,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 731,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 732,
@@ -3703,92 +3703,92 @@
     {
       "number": 740,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 741,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 742,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 743,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 744,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 745,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 746,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 747,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 748,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 749,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 750,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 751,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 752,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 753,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 754,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 755,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 756,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 757,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 758,
@@ -3993,32 +3993,32 @@
     {
       "number": 798,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 799,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 800,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 801,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 802,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 803,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 804,
@@ -4043,37 +4043,37 @@
     {
       "number": 808,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 809,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 810,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 811,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 812,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 813,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 814,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 815,
@@ -4098,37 +4098,37 @@
     {
       "number": 819,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 820,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 821,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 822,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 823,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 824,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 825,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 826,
@@ -4173,152 +4173,152 @@
     {
       "number": 834,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 835,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 836,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 837,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 838,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 839,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 840,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 841,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 842,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 843,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 844,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 845,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 846,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 847,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 848,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 849,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 850,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 851,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 852,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 853,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 854,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 855,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 856,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 857,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 858,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 859,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 860,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 861,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 862,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 863,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 864,
@@ -4343,17 +4343,17 @@
     {
       "number": 868,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 869,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 870,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 871,
@@ -4378,17 +4378,17 @@
     {
       "number": 875,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 876,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 877,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 878,
@@ -4413,17 +4413,17 @@
     {
       "number": 882,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 883,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 884,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 885,
@@ -4448,17 +4448,17 @@
     {
       "number": 889,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 890,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 891,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 892,
@@ -4503,72 +4503,72 @@
     {
       "number": 900,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 901,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 902,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 903,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 904,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 905,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 906,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 907,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_A"
     },
     {
       "number": 908,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 909,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 910,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 911,
       "outcome": "reject",
-      "flag": "non_canonical_R"
+      "flag": "low_order_R"
     },
     {
       "number": 912,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     },
     {
       "number": 913,
       "outcome": "reject",
-      "flag": "non_canonical_A"
+      "flag": "low_order_A"
     }
   ]
 }

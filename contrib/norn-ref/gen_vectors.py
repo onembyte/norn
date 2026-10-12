@@ -35,7 +35,7 @@ OWNED = frozenset({
     "keys.json", "entries", "log", "genesis", "state.json",
     "trust.cbor", "trust.toml", "trust.fingerprint", "trust-bad", "trust-good",
     "receipt.note", "receipt.json", "receipt-bad", "requests", "requests-bad", "policies",
-    "entries-hostile", "proven", "log-empty", "log-admission", "log-cas", "genesis-good",
+    "entries-hostile", "proven", "log-empty", "log-admission", "log-cas", "log-edges", "genesis-good",
     "receipt-rotated",
 })
 
@@ -150,6 +150,18 @@ def write_proven(out: pathlib.Path, final: Any, entries: list[bytes]) -> None:
     that hardcodes an instant stops testing the boundary the moment the entry
     behind it changes.
     """
+    from nornref.state import grant_from_label
+    labels = [final.devices[name]["labels"]["ip"] for name in ("router", "badgrant")]
+    labels.append("::ffff:10.0.0.1/128")
+    write(out / "proven" / "grant-labels.json", canonjson.dumps({
+        "comment": "SPEC 4.0 grant derivation as a pure function of label text; no log is needed. Later prefix-syntax cases extend this table.",
+        "cases": [{"label": label, "grant": grant_from_label(label), "says": says}
+                  for label, says in zip(labels, (
+                      "duplicates removed, sorted as text",
+                      "does not parse **as a whole** is **no grant**",
+                      "An IPv4-mapped IPv6 prefix is no grant either"))],
+    }) + "\n")
+
     deadlines = sorted({d["expires"] for d in final.devices.values()
                         if d["status"] == "active" and d.get("expires")})
     if not deadlines:
@@ -264,6 +276,7 @@ def write_genesis_aborts(out: pathlib.Path) -> None:
     step7 = {"section": "5.1", "says": "genesis signatures are counted against the `roots`"}
     genesis_rules = {
         "01-hash-mismatch": step4, "02-not-genesis": step3, "03-wrong-net": step3,
+        "26-body-unknown-key": {"section": "4.0", "says": "unknown keys → reject"},
         "25-prev-present": {"section":"5.1", "says":"`prev` MUST be absent"},
         "04-after-nonzero": step5, "05-root-thr-above-set": step6,
         "06-under-root-threshold": step7, "07-undecodable": step2,
@@ -310,8 +323,12 @@ def write_genesis_accepts(out: pathlib.Path) -> None:
         write(folder / "state.json", state.to_json() + "\n")
         index.append(name)
     write(out / "genesis-good" / "cases.json", canonjson.dumps({
-        "rules": {"01-name-at-the-cap": {
-            "section": "4.0", "says": "| `name`, `reason` | UTF-8, 1–64 / 0–256 bytes |"}},
+        "rules": {
+            "01-name-at-the-cap": {
+                "section": "4.0", "says": "| `name`, `reason` | UTF-8, 1–64 / 0–256 bytes |"},
+            "02-name-one-byte": {
+                "section": "4.0", "says": "UTF-8, 1–64 / 0–256 bytes"},
+        },
         "comment": "each subdirectory is a one-entry log whose genesis a reader MUST "
                    "accept: replay yields size 1, nothing rejected, and its state.json",
         "cases": index,
@@ -351,6 +368,8 @@ def write_trust_rejections(out: pathlib.Path) -> None:
     mode = {"section": "9.1", "says": "`mode` MUST be"}
     size = {"section": "9.1", "says": "MAX_TRUST_BYTES"}
     trust_rules = {
+        "52-name-one-past-the-cap": name,
+        "53-log-cosignature-without-policy-log": logkey,
         "51-witness-key-is-log-key": {"section":"9.1", "says":"no witness `key`'s public key equals `log_key`'s"},
         "01-unknown-key": closed, "02-wrong-version": version, "03-short-net": net,
         "04-origin-mismatch": origin, "05-short-genesis-hash": ghash,
@@ -464,6 +483,31 @@ def write_cas_log(out: pathlib.Path) -> None:
     write(out / "log-cas" / "state.json", replay.replay(anchor,raw).to_json()+"\n")
 
 
+def write_edges_log(out: pathlib.Path) -> None:
+    """Keep boundary replay vectors independent of the fixed served log."""
+    items = fixture.edges_log()
+    raw = [it.raw for it in items]
+    anchor = fixture.anchor_for(raw)
+    rules = {
+        "01-enroll-device-id-newline": {"section": "4.0", "says": "every byte of the string"},
+        "07-rotate-unknown-open-body": {"section": "5.1", "says": "body well-formed and closed"},
+        "08-revoke-unknown-open-body": {"section": "5.1", "says": "body well-formed and closed"},
+        "10-enroll-request-identity": {"section": "3.1", "says": "MUST be a valid point wherever a key is admitted"},
+        "11-policy-witness-note-key": {"section": "9.1", "says": "a `witness` vkey MUST use algorithm `0x04`"},
+    }
+    for it in items:
+        write(out / "log-edges" / (it.name + ".cbor"), it.raw)
+        if it.reason:
+            write(out / "log-edges" / (it.name + ".reason"), it.reason + "\n")
+    write(out / "log-edges" / "manifest.json", canonjson.dumps({
+        "anchor": {"net": anchor.net, "genesis_hash": anchor.genesis_hash, "log_key": anchor.log_key, "policy": anchor.policy},
+        "entries": [{"index": i, "name": it.name, "reason": it.reason or ""} for i, it in enumerate(items)],
+        "codes": {it.name: it.reason for it in items if it.reason},
+        "rules": rules,
+    }) + "\n")
+    write(out / "log-edges" / "state.json", replay.replay(anchor, raw).to_json() + "\n")
+
+
 def write_trust_acceptances(out: pathlib.Path) -> None:
     """Trust files §9.1 permits (cold gate run 8, D22).
 
@@ -550,6 +594,13 @@ def write_trust(out: pathlib.Path) -> None:
              "The note MUST verify under a log key the verifier trusts", signer="logkey2")
 
     body_lines = good_text.splitlines()
+    add_case("fifth-line.note", good_text + "extra\n", "receipt",
+             "Require exactly four signed-text lines")
+    changed = body_lines.copy()
+    changed[1] = changed[1][:5] + changed[1][5].upper() + changed[1][6:]
+    add_case("origin-case-changed.note", "\n".join(changed) + "\n", "origin",
+             "The origin line MUST equal the anchored origin")
+
     changed = body_lines.copy()
     changed[0] = "norn/receipt/v2"
     add_case("wrong-header.note", "\n".join(changed) + "\n", "receipt",
@@ -750,7 +801,12 @@ def write_policies(out: pathlib.Path) -> None:
             "section": "9.1", "says": "declared key ID MUST equal the recomputed ID"}
     policy_rules["bad-log-vkey-algorithm"] = {
         "section": "9.1", "says": "A `log` vkey MUST use algorithm `0x01`"}
+    # This older case has both a role mismatch and a duplicate public key.
+    # Its hint names the grammar as a whole; the distinct-key case isolates
+    # the algorithm rule.
     policy_rules["bad-witness-vkey-algorithm"] = {
+        "section": "9.1", "says": "**The policy grammar.**"}
+    policy_rules["bad-witness-vkey-algorithm-distinct"] = {
         "section": "9.1", "says": "a `witness` vkey MUST use algorithm `0x04`"}
     policy_rules["bad-vkey-name-space"] = {
         "section": "9.1", "says": "Key names follow §7's ASCII grammar"}
@@ -997,6 +1053,7 @@ def main(argv: list[str]) -> int:
     write_empty_log(out)
     write_admission_log(out)
     write_cas_log(out)
+    write_edges_log(out)
     write_trust(out)
     write_receipt_rotated(out)
     write_policies(out)

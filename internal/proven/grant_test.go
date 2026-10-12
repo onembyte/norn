@@ -15,6 +15,7 @@ import (
 // carries every active device's, so a second implementation computes the
 // same bound a node will enforce (§4.0, §13.1).
 func TestEveryActiveDeviceHasItsGrantInTheFixture(t *testing.T) {
+	t.Run("grant-labels", checkGrantLabels)
 	result, _ := verified(t)
 	raw, err := os.ReadFile(filepath.Join(vectorRoot(), "proven", "cases.json"))
 	if err != nil {
