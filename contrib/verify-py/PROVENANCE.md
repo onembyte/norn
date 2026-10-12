@@ -109,6 +109,25 @@ verifier.
 `replayed-state.json` (the CLI's replay) — which any run of `make verify-py`
 reproduces.
 
+## After the seal
+
+Row 6.5l-xi-c-iii (2026-10-12) added four `served-*` directories. This build's
+harness reads every `served-*` directory other than `served-bad/`,
+`served-genesis/` and `served-large/` as a checkpoint served over another log
+named by `serve_over`. Two of the new ones are complete logs with no such key
+(`served-empty-entry/`, `served-rotated-earlier/`), and `served-large-bad/`
+replaces tiles rather than the checkpoint. The harness stops at the first,
+with `KeyError: 'serve_over'`, before it prints its total.
+
+A stop is not a failed check, so `contrib/verify-py.known-failures` cannot
+record it, and `make verify-py` fails with "the harness did not finish" until
+the next cold build replaces this one. The directories keep their names and
+shapes. `SPEC.md` defines `serve_over` for `served-bad/` alone and states no
+rule by name, so the harness's rule is this builder's inference, and bending
+the suite to fit it would hide what the next build must handle. The fourth
+cold build is row 6.5l-xii-f, sealed after D-077's note rules (6.5l-xi-c-iv-b)
+land.
+
 ## Files, as written
 
 | File | SHA-256 |

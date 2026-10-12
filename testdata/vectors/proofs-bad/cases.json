@@ -51,6 +51,10 @@
     {
       "name": "wrong-log-key",
       "says": "no valid signature from a trusted key"
+    },
+    {
+      "name": "wrong-version-and-untrusted-checkpoint",
+      "says": "unsupported version"
     }
   ],
   "codes": {
@@ -66,9 +70,10 @@
     "wrong-entry": "inclusion",
     "wrong-log-key": "log-signature",
     "wrong-origin": "origin",
-    "wrong-version": "bundle"
+    "wrong-version": "bundle",
+    "wrong-version-and-untrusted-checkpoint": "bundle"
   },
-  "comment": "bundles that MUST be refused under the log key above, with the SPEC §10.1 code `codes` names for each. Each differs from a valid bundle in exactly one thing, so a verifier that skips one check accepts exactly one of them -- except no-quorum-tampered-proof, which differs in two so that §10.1's order decides: it is `quorum`, and a reader that checks the inclusion proof first says `inclusion`",
+  "comment": "bundles that MUST be refused under the log key above, with the SPEC §10.1 code `codes` names for each. Each differs from a valid bundle in exactly one thing, so a verifier that skips one check accepts exactly one of them -- except wrong-version-and-untrusted-checkpoint and no-quorum-tampered-proof, which differs in two so that §10.1's order decides: it is `quorum`, and a reader that checks the inclusion proof first says `inclusion`",
   "log_key": "norn/nzxxe3rnorsxg5domv2c2mbqge+bea4a666+AV6v97lmGyW99eHglI8syFAU2uY+/HuHHq0VYz9Rmio1",
   "origin": "norn/nzxxe3rnorsxg5domv2c2mbqge",
   "rules": {
@@ -121,6 +126,10 @@
       "section": "8.1"
     },
     "wrong-version": {
+      "says": "`v` | uint | `1`",
+      "section": "8.1"
+    },
+    "wrong-version-and-untrusted-checkpoint": {
       "says": "`v` | uint | `1`",
       "section": "8.1"
     }

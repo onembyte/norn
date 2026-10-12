@@ -1,0 +1,22 @@
+{
+  "cases": [
+    {
+      "name": "zero-length-entry",
+      "says": "accepted checkpoint, empty entry at index 2 rejected by replay as decode"
+    }
+  ],
+  "codes": {
+    "zero-length-entry": "accept"
+  },
+  "comment": "A four-entry log with a zero-length frame between real entries, its honest rebuilt tree, signed and cosigned head, and expected replayed state.",
+  "replay_codes": {
+    "2": "decode"
+  },
+  "rules": {
+    "zero-length-entry": {
+      "says": "a uint16 length of 0 is a frame",
+      "section": "10.1"
+    }
+  },
+  "size": 4
+}

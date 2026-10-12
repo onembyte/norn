@@ -192,6 +192,7 @@ func TestTheBundleClaimsNoDomainItDoesNotCarry(t *testing.T) {
 // itself to check its work, which is the reader doing the suite's job.
 
 func TestEveryProofNegativeIsRefused(t *testing.T) {
+	checkRunFourteenBundlePair(t)
 	dir := filepath.Join("..", "..", "testdata", "vectors", "proofs-bad")
 	raw, err := os.ReadFile(filepath.Join(dir, "cases.json"))
 	if err != nil {

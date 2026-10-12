@@ -1,0 +1,32 @@
+{
+  "cases": [
+    {
+      "file": "full-entry-bundle-trailing-bytes.bin",
+      "name": "full-entry-bundle-trailing-bytes",
+      "path": "tile/entries/000",
+      "says": "two trailing bytes after 256 entry frames"
+    },
+    {
+      "file": "full-hash-tile-trailing-bytes.bin",
+      "name": "full-hash-tile-trailing-bytes",
+      "path": "tile/0/000",
+      "says": "two trailing bytes after 256 leaf hashes"
+    }
+  ],
+  "codes": {
+    "full-entry-bundle-trailing-bytes": "entries",
+    "full-hash-tile-trailing-bytes": "tiles"
+  },
+  "comment": "Replace each named full width-256 path over served-large. Only the trailing bytes differ.",
+  "rules": {
+    "full-entry-bundle-trailing-bytes": {
+      "says": "Bytes after the last frame a full bundle needs",
+      "section": "10.1"
+    },
+    "full-hash-tile-trailing-bytes": {
+      "says": "compared byte for byte, length included",
+      "section": "10.1"
+    }
+  },
+  "serve_over": "served-large"
+}

@@ -123,6 +123,18 @@
     {
       "name": "bad-version-three",
       "says": "unsupported version"
+    },
+    {
+      "name": "bad-policy-unparseable-and-unknown-key",
+      "says": "unknown field"
+    },
+    {
+      "name": "bad-unverifiable-conflicting-and-size-mismatch",
+      "says": "the conflicting checkpoint"
+    },
+    {
+      "name": "bad-size-zero-empty-held",
+      "says": "at size 0"
     }
   ],
   "codes": {
@@ -140,6 +152,7 @@
     "bad-policy-says-quorum-none": "held",
     "bad-policy-unparseable": "policy",
     "bad-policy-unparseable-and-foreign-held": "policy",
+    "bad-policy-unparseable-and-unknown-key": "schema",
     "bad-proof-at-same-size": "proof",
     "bad-short-held-root-and-size-above-held": "schema",
     "bad-short-proof-hash": "schema",
@@ -147,6 +160,7 @@
     "bad-size-above-held": "size",
     "bad-size-mismatch": "size",
     "bad-size-zero": "proof",
+    "bad-size-zero-empty-held": "proof",
     "bad-split-above-size": "proof",
     "bad-split-proof-conflicting": "proof",
     "bad-split-proof-held": "proof",
@@ -154,6 +168,7 @@
     "bad-split-zero-with-a-proof": "proof",
     "bad-twelve-keys": "schema",
     "bad-unverifiable-conflicting": "conflicting",
+    "bad-unverifiable-conflicting-and-size-mismatch": "conflicting",
     "bad-version-and-unknown-key": "version",
     "bad-version-three": "version",
     "bad-wrong-version": "version"
@@ -216,6 +231,10 @@
       "says": "MUST parse as `c2sp.org/tlog-policy`",
       "section": "11.1"
     },
+    "bad-policy-unparseable-and-unknown-key": {
+      "says": "the map is not the closed set of exactly seven keys",
+      "section": "11.1"
+    },
     "bad-proof-at-same-size": {
       "says": "Empty when `size` equals",
       "section": "11.1"
@@ -241,6 +260,10 @@
       "section": "11.1"
     },
     "bad-size-zero": {
+      "says": "no file can show a disagreement at size 0",
+      "section": "11.1"
+    },
+    "bad-size-zero-empty-held": {
       "says": "no file can show a disagreement at size 0",
       "section": "11.1"
     },
@@ -270,6 +293,10 @@
     },
     "bad-unverifiable-conflicting": {
       "says": "verify **both** checkpoints",
+      "section": "11.1"
+    },
+    "bad-unverifiable-conflicting-and-size-mismatch": {
+      "says": "the conflicting checkpoint fails any §10 check",
       "section": "11.1"
     },
     "bad-version-and-unknown-key": {

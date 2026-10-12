@@ -23,6 +23,7 @@ import (
 // the format it uses is not defined in SPEC.md.
 
 func TestEveryForkNegativeIsRefused(t *testing.T) {
+	checkRunFourteenEvidence(t)
 	root := filepath.Join("..", "..", "testdata", "vectors")
 	raw, err := os.ReadFile(filepath.Join(root, "fork", "cases.json"))
 	if err != nil {

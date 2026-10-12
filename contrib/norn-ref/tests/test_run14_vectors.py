@@ -145,3 +145,75 @@ class RunFourteen(unittest.TestCase):
                 else:
                     self.assertEqual(lines[1].lower(), doc['origin']); lines[1] = doc['origin']
                 self.assertEqual('\n'.join(lines)+'\n', honest)
+
+    def test_go_owned_run_fourteen_vectors_use_shared_note_and_replay_rules(self):
+        # The reference has no served-log, bundle or evidence verifier. Walk
+        # the new artifacts through the shared layers it does implement.
+        def read(path):
+            return (ROOT / path).read_bytes()
+        def verify_log(head, keys):
+            # This reference's note splitter accepts plain signatures only.
+            # Witness lines are checked by Go; exercise the log's note here.
+            text, separator, block = head.partition('\n\n')
+            lines = [line for line in block.splitlines()
+                     if not line.startswith('— norn-witness/')]
+            return note.verify(text+separator+'\n'.join(lines)+'\n', keys)
+        anchor = f.trust_file()
+        learned = note.vkey(anchor['origin'], f.KEYS['logkey2'].public)
+        for directory, answer in [('served-rotated-wrong-name',False), ('served-rotated-earlier',True)]:
+            with self.subTest(directory=directory):
+                manifest = json.loads(read(directory + '/cases.json'))
+                head = read(directory + '/checkpoint').decode()
+                self.assertEqual(manifest['fresh'], 'log-signature')
+                with self.assertRaises(note.NoteError): verify_log(head,[anchor['log_key']])
+                if answer:
+                    self.assertEqual(verify_log(head,[anchor['log_key'],learned]).splitlines()[1],'20')
+                else:
+                    with self.assertRaises(note.NoteError): verify_log(head,[anchor['log_key'],learned])
+        with self.subTest(directory='served-empty-entry'):
+            directory = ROOT / 'served-empty-entry'
+            manifest = json.loads((directory / 'cases.json').read_bytes())
+            raw = (directory / 'tile/entries/000.p/4').read_bytes()
+            entries = []
+            while raw:
+                width = int.from_bytes(raw[:2],'big')
+                self.assertGreaterEqual(len(raw),2+width)
+                entries.append(raw[2:2+width]); raw=raw[2+width:]
+            self.assertEqual(entries[2],b'')
+            _, replay_anchor, _ = load_log(ROOT / 'log')
+            state = replay.replay(replay_anchor,entries)
+            self.assertEqual(state.rejected,[{'index':2,'reason':'decode'}])
+            self.assertEqual(state.to_json()+'\n',(directory/'state.json').read_text())
+            verify_log((directory/'checkpoint').read_bytes().decode(),[anchor['log_key']])
+        for name in ['34-four-lines-and-wrong-origin','35-wrong-origin-and-forged-pi','36-no-quorum-and-size-163','37-crlf']:
+            with self.subTest(checkpoint=name):
+                head=read('checkpoints-bad/'+name+'.checkpoint').decode()
+                if name=='37-crlf':
+                    with self.assertRaises(note.NoteError): note.split(head)
+                else:
+                    verify_log(head,[anchor['log_key']])
+        with self.subTest(bundle='wrong-version-and-untrusted-checkpoint'):
+            bundle=cbor.decode(read('proofs-bad/wrong-version-and-untrusted-checkpoint.bundle'))
+            self.assertEqual(bundle['v'],2)
+            with self.assertRaises(note.NoteError): verify_log(bundle['checkpoint'],[anchor['log_key']])
+        for name in ['bad-policy-unparseable-and-unknown-key','bad-unverifiable-conflicting-and-size-mismatch','bad-size-zero-empty-held']:
+            with self.subTest(evidence=name):
+                ev=cbor.decode(read('fork/'+name+'.cbor'))
+                if 'unknown-key' in name:
+                    self.assertIn('surprise',ev)
+                    with self.assertRaises(policy.PolicyError): policy.parse(ev['policy'])
+                elif 'mismatch' in name:
+                    with self.assertRaises(note.NoteError): verify_log(ev['conflicting'],[anchor['log_key']])
+                else:
+                    heads=[verify_log(ev[field],[anchor['log_key']]).splitlines() for field in ['held','conflicting']]
+                    self.assertEqual([head[1] for head in heads],['0','0'])
+                    self.assertNotEqual(heads[0][2],heads[1][2])
+        for name in ['other-genesis-missing-tile','other-genesis-tampered-tile']:
+            with self.subTest(detect=name):
+                verify_log(read('detect/'+name+'/checkpoint').decode(),[anchor['log_key']])
+        with self.subTest(directory='served-large-bad'):
+            manifest=json.loads(read('served-large-bad/cases.json'))
+            for case in manifest['cases']:
+                honest=read(manifest['serve_over']+'/'+case['path'])
+                damaged=read('served-large-bad/'+case['file'])
+                self.assertTrue(damaged.startswith(honest)); self.assertGreater(len(damaged),len(honest))

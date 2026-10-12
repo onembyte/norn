@@ -18,8 +18,8 @@ import (
 // writeRotatedHead ships §9.4's rotation case: the same head, signed by a key
 // the log's roots published rather than by the one the trust file names.
 //
-// It is the only vector with two correct answers, and which one is right
-// depends on what the reader has done rather than on what the file contains: a
+// It was the suite's first vector with two correct answers, and which one is
+// right depends on what the reader has done rather than on what the file contains: a
 // node holding only `trust.cbor` must refuse it, and a node that has replayed
 // this log -- and so learned the key -- must accept it. That is the whole of
 // D-020, and nothing in the suite expressed it.

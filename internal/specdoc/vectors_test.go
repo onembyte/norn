@@ -1361,7 +1361,8 @@ func TestEveryNegativeDeclaresTheSectionThatStatesItsRule(t *testing.T) {
 	for _, dir := range []string{
 		"checkpoints-bad", "proofs-bad", "served-bad", "fork",
 		"entries-hostile", "policies", "genesis", "trust-bad", "receipt-bad", "requests-bad",
-		"served-genesis", "log-cas", "log-edges",
+		"served-genesis", "log-cas", "log-edges", "served-large-bad", "served-empty-entry",
+		"served-rotated-wrong-name", "served-rotated-earlier",
 	} {
 		t.Run(dir, func(t *testing.T) {
 			var manifest struct {

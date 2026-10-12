@@ -19,6 +19,7 @@ import (
 // reads each back against the verifier: fresh is `trust.cbor` alone, informed
 // is the reader that replayed `served/`.
 func TestTheRotationManifestsStateEveryAnswer(t *testing.T) {
+	checkRunFourteenLearnedKeys(t)
 	fresh := shippedLogAnchor(t)
 	honest := filepath.Join(vectorRoot(), "served")
 	held, err := Verify(Dir(honest), fresh)
@@ -80,5 +81,59 @@ func TestTheRotationManifestsStateEveryAnswer(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// Integrating 6.5l-xi-c-iii: two new rotation manifests wrote `signed_by` as a
+// signed-note verifier key and left out `overlap`, where `served-rotated/`, the
+// bundles and the receipts write the published key's bytes in hex beside the
+// `since_index` and `overlap` of its `log_key` entry. One field with two
+// encodings is a trap for a reader built from the suite alone, so each
+// manifest that names a signer must name one key the replayed log published,
+// in that one form.
+func TestEveryRotationManifestNamesAPublishedKeyInOneForm(t *testing.T) {
+	held, err := Verify(Dir(filepath.Join(vectorRoot(), "served")), shippedLogAnchor(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths, err := filepath.Glob(filepath.Join(vectorRoot(), "served-*", "cases.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	named := 0
+	for _, path := range paths {
+		var manifest map[string]any
+		if err := json.Unmarshal([]byte(readFile(t, path)), &manifest); err != nil {
+			t.Fatal(err)
+		}
+		if _, ok := manifest["signed_by"]; !ok {
+			continue
+		}
+		named++
+		dir := filepath.Base(filepath.Dir(path))
+		var meta struct {
+			SignedBy   string  `json:"signed_by"`
+			SinceIndex *uint64 `json:"since_index"`
+			Overlap    *uint64 `json:"overlap"`
+		}
+		if err := json.Unmarshal([]byte(readFile(t, path)), &meta); err != nil {
+			t.Fatal(err)
+		}
+		if meta.SinceIndex == nil || meta.Overlap == nil {
+			t.Errorf("%s names a signer without its since_index and overlap", dir)
+			continue
+		}
+		found := false
+		for _, k := range held.State.LogKeys {
+			if k.Pk == meta.SignedBy && k.SinceIndex == *meta.SinceIndex && k.Overlap == *meta.Overlap {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("%s: signed_by %q (since %d) is not a published log key in hex", dir, meta.SignedBy, *meta.SinceIndex)
+		}
+	}
+	if named < 3 {
+		t.Fatalf("%d manifests name a signer; served-rotated and run 14's two do", named)
 	}
 }

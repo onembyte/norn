@@ -42,7 +42,7 @@ OWNED = frozenset({
 #: Produced by `make vectors-log` from the Go implementation, because building
 #: a tiled log requires one (SPEC §12, the suite's two provenances). Pruning
 #: them here deleted them silently -- eleven files -- until this was scoped.
-FOREIGN = frozenset({"served", "served-large", "proofs", "fork", "checkpoints-bad", "served-rotated",
+FOREIGN = frozenset({"served-empty-entry", "served-large-bad", "served-rotated-wrong-name", "served-rotated-earlier", "served", "served-large", "proofs", "fork", "checkpoints-bad", "served-rotated",
                     "proofs-bad", "served-bad", "served-superseded",
                     "served-twice-cosigned", "served-extra-witness",
                     "served-name-collision", "served-unknown-algorithm", "served-stranger-name", "detect",

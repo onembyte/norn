@@ -1,0 +1,32 @@
+{
+  "cases": [
+    {
+      "name": "fresh",
+      "says": "the reader has not learned logkey2"
+    },
+    {
+      "name": "informed",
+      "says": "the reader has replayed served and learned logkey2"
+    }
+  ],
+  "codes": {
+    "fresh": "log-signature",
+    "informed": "accept"
+  },
+  "comment": "a complete 20-entry log whose head logkey2 signs, though logkey2's log_key entry is at index 27 of served. A reader holding only trust.cbor (`fresh`) refuses it as log-signature; one that has replayed served (`informed`) accepts it: a learned key verifies any head, with no activation index on the verifier's side (SPEC 9.4)",
+  "fresh": "log-signature",
+  "informed": "accept",
+  "overlap": 2592000,
+  "rules": {
+    "fresh": {
+      "says": "accepted nothing has only the trust file's key",
+      "section": "9.4"
+    },
+    "informed": {
+      "says": "There is no separate activation index and",
+      "section": "9.4"
+    }
+  },
+  "signed_by": "efe54ffd513af32b5f82b092c79bf3ffb20ce096798e45285b0b55ef2562fdc0",
+  "since_index": 27
+}

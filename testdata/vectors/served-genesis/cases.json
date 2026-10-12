@@ -9,11 +9,23 @@
       "name": "empty",
       "says": "the log has no entry 0",
       "serve": "../detect/empty"
+    },
+    {
+      "name": "other-genesis-missing-tile",
+      "says": "entry 0 is not the anchored genesis, before the missing hash tile is fetched",
+      "serve": "../detect/other-genesis-missing-tile"
+    },
+    {
+      "name": "other-genesis-tampered-tile",
+      "says": "entry 0 is not the anchored genesis, before the changed hash tile is compared",
+      "serve": "../detect/other-genesis-tampered-tile"
     }
   ],
   "codes": {
     "another-genesis": "genesis",
-    "empty": "genesis"
+    "empty": "genesis",
+    "other-genesis-missing-tile": "genesis",
+    "other-genesis-tampered-tile": "genesis"
   },
   "comment": "each case serves a directory under ../detect, tiles and all, to a reader that holds no checkpoint and only trust.cbor. Both MUST be refused with the SPEC 10.1 code `codes` names. detect/ serves the same two to a reader holding detect/earlier.checkpoint, which MUST answer `fork` and `rollback`: `genesis` is decided after the comparison with a held head",
   "rules": {
@@ -23,6 +35,14 @@
     },
     "empty": {
       "says": "the served log has no entry 0",
+      "section": "10.1"
+    },
+    "other-genesis-missing-tile": {
+      "says": "its entry 0 is not the genesis the anchor pins",
+      "section": "10.1"
+    },
+    "other-genesis-tampered-tile": {
+      "says": "its entry 0 is not the genesis the anchor pins",
       "section": "10.1"
     }
   }

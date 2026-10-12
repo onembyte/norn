@@ -433,6 +433,7 @@ func onlyFile(t *testing.T, root string) string {
 // `log-signature`.
 
 func TestEveryBadCheckpointIsRefusedWithItsCode(t *testing.T) {
+	checkRunFourteenCheckpointPairs(t)
 	var manifest struct {
 		Cases []string                `json:"cases"`
 		Codes map[string]refusal.Code `json:"codes"`
@@ -522,6 +523,7 @@ func (c servedNegative) apply(t *testing.T, serveOver string) string {
 }
 
 func TestEveryServedNegativeIsRefusedWithItsCode(t *testing.T) {
+	checkRunFourteenServed(t)
 	cases, codes, serveOver := servedNegatives(t)
 	if len(codes) != len(cases) {
 		t.Fatalf("%d cases and %d codes: every case names the §10.1 code it is refused with",

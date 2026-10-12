@@ -1,0 +1,33 @@
+{
+  "cases": [
+    {
+      "name": "fresh",
+      "says": "the reader has not learned logkey2"
+    },
+    {
+      "name": "informed",
+      "says": "the reader has replayed served and learned logkey2"
+    }
+  ],
+  "codes": {
+    "fresh": "log-signature",
+    "informed": "log-signature"
+  },
+  "comment": "the served head, signed by logkey2 under the name elsewhere/log instead of the network's origin. Serve it in place of served/checkpoint over the same tiles. A reader holding only trust.cbor (`fresh`) refuses it as log-signature, and so does one that has replayed served (`informed`): the key it learned is named the origin, as the trust file's log key is (SPEC 9.4)",
+  "fresh": "log-signature",
+  "informed": "log-signature",
+  "overlap": 2592000,
+  "rules": {
+    "fresh": {
+      "says": "accepted nothing has only the trust file's key",
+      "section": "9.4"
+    },
+    "informed": {
+      "says": "named the origin, as the trust file's log key is",
+      "section": "9.4"
+    }
+  },
+  "serve_over": "served",
+  "signed_by": "efe54ffd513af32b5f82b092c79bf3ffb20ce096798e45285b0b55ef2562fdc0",
+  "since_index": 27
+}

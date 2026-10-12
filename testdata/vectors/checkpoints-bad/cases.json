@@ -32,7 +32,11 @@
     "08-forged-cosignature",
     "31-cosignature-S-plus-L",
     "32-signature-name-not-utf8",
-    "33-size-above-2-63"
+    "33-size-above-2-63",
+    "34-four-lines-and-wrong-origin",
+    "35-wrong-origin-and-forged-pi",
+    "36-no-quorum-and-size-163",
+    "37-crlf"
   ],
   "codes": {
     "01-unsigned": "note",
@@ -67,7 +71,11 @@
     "30-noncanonical-size-under-untrusted-signer": "log-signature",
     "31-cosignature-S-plus-L": "cosignature",
     "32-signature-name-not-utf8": "note",
-    "33-size-above-2-63": "checkpoint"
+    "33-size-above-2-63": "checkpoint",
+    "34-four-lines-and-wrong-origin": "checkpoint",
+    "35-wrong-origin-and-forged-pi": "origin",
+    "36-no-quorum-and-size-163": "quorum",
+    "37-crlf": "note"
   },
   "comment": "each file is served in place of served/checkpoint, over the honest tiles, under trust.cbor; every one MUST be refused, with the SPEC §10.1 code `codes` names for it. `signature_blind_accepts` lists the ones whose only defect is a signature that does not verify: a reader that never calls Ed25519 accepts exactly those, and nothing else here",
   "reasons": {
@@ -103,7 +111,11 @@
     "30-noncanonical-size-under-untrusted-signer": "a leading-zero size, signed by a key the anchor does not pin: the signature step comes first",
     "31-cosignature-S-plus-L": "a listed witness's honest cosignature with S + L: everything but the scalar encoding is valid",
     "32-signature-name-not-utf8": "a stranger's 76-byte line appended to a head every listed witness cosigned, its name ending in the byte 0xff: the line names no trusted key and would be ignored, but the note is not UTF-8",
-    "33-size-above-2-63": "at most 2⁶³−1"
+    "33-size-above-2-63": "at most 2⁶³−1",
+    "34-four-lines-and-wrong-origin": "four body lines and another origin: the body is checked first",
+    "35-wrong-origin-and-forged-pi": "another origin and a forged pi line: the origin is checked first",
+    "36-no-quorum-and-size-163": "a log-only head one entry beyond served: quorum decides before fetching entries",
+    "37-crlf": "the honest head with every LF changed to CRLF: no note framing"
   },
   "rules": {
     "01-unsigned": {
@@ -237,6 +249,22 @@
     "33-size-above-2-63": {
       "says": "at most 2⁶³−1",
       "section": "6"
+    },
+    "34-four-lines-and-wrong-origin": {
+      "says": "exactly three lines",
+      "section": "6"
+    },
+    "35-wrong-origin-and-forged-pi": {
+      "says": "cp.origin == norn.trust.origin",
+      "section": "10"
+    },
+    "36-no-quorum-and-size-163": {
+      "says": "the quorum must be satisfied",
+      "section": "10"
+    },
+    "37-crlf": {
+      "says": "including the last, ends in one",
+      "section": "7"
     }
   },
   "signature_blind_accepts": [
