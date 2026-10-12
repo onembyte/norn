@@ -291,7 +291,7 @@ func TestSizeKeepsCountingAcrossARestart(t *testing.T) {
 }
 
 // A log that has witnesses must serve a checkpoint carrying their
-// cosignatures, not just its own signature: §10 step 3 makes the quorum part
+// cosignatures, not just its own signature: §10.1 step 7 makes the quorum part
 // of what a verifier checks, so a head no witness has corroborated is a head
 // no correctly-configured node will accept. The store does not know how a
 // cosignature is obtained -- over `tlog-witness` from a real witness (4.3), or

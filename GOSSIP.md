@@ -77,7 +77,7 @@ network go `degraded` with nothing wrong, the quietest networks first.
 
 `norn-log -self-witness <policy name>=<keyfile>` is that first row, and it is how a
 network gets through its first minutes: a log with no witness publishes heads that
-every verifier refuses (§10 step 3), so something has to cosign before the network
+every verifier refuses (`SPEC.md` §10.1 step 7), so something has to cosign before the network
 works at all. The log says so on every start, because a witness sharing the log's
 host cannot detect the one thing witnesses exist to detect — that log serving two
 different views. Moving those keys onto a second machine is the whole improvement;

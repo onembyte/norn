@@ -121,7 +121,7 @@ func seededServer(t *testing.T, opts ...Option) (*Server, replay.Anchor, string)
 	origin := "norn/logserver-test"
 	dir := t.TempDir()
 	// This log has one witness, and it runs in-process. A verifier checks the
-	// quorum (§10 step 3), so a log that no witness corroborates is one these
+	// quorum (§10.1 step 7), so a log that no witness corroborates is one these
 	// tests could not verify -- and pretending otherwise here would hide the
 	// very check the anchor exists to make.
 	store, err := tlogstore.Open(dir, origin, logKey(t), tlogstore.WithCosigner(

@@ -82,7 +82,7 @@ func run(args []string) error {
 		return err
 	}
 
-	// A verifier checks the witness quorum (§10 step 3), so a log nothing
+	// A verifier checks the witness quorum (§10.1 step 7), so a log nothing
 	// cosigns publishes heads every correctly-configured node refuses. Holding
 	// the witness keys here answers that -- and protects against nothing,
 	// because a witness on the log's own host is independent of nothing

@@ -536,8 +536,8 @@ Replay is the pure function
 replay(anchor, entries[]) → state
 ```
 
-where `entries[]` are the raw entry byte strings in log order and **`anchor`** is
-the pair taken from the verifier's trust file (§9):
+where `entries[]` are the raw entry byte strings in log order and **`anchor`**
+holds four fields of the verifier's trust file (§9):
 
 | field | type | source |
 |---|---|---|
@@ -1133,26 +1133,16 @@ does not move it: for any device that has ever rotated, the bundle that proves
 it is older than its key, and that is the normal case rather than an edge one.
 A reader that required the bundle's `wg_pk` to equal the replayed one would
 drop every rotated peer, quietly, in the ordinary course of operation.
-`proven/cases.json`'s `bundles` map gives both keys for every active device —
-`nas` is the one where they differ (its bundle proves the enrol at index 1;
-`log/35-rotate-nas` changed the key), and `nas` is proven in all four cases
-(cold gate run 11, D14).
+`proofs/nas.bundle` proves `nas`'s enrolment at index 1, and its entry carries
+the key `116f00fa…`; replay gives `2a955fd2…`, the key `nas` rotated to at
+`log/35-rotate-nas`. `proofs/cases.json` lists under `installs` the key a node
+installs for each device whose bundle ships, and `proven/cases.json`'s
+`bundles` map gives both keys for every active device, `nas` proven in all four
+cases (cold gate run 11, D14).
 
 Because the node replays the whole log, condition 3 is what actually decides;
 the bundle is the portable, offline-checkable evidence that goes in alerts and
 audit output.
-
-**A bundle proves that its device was enrolled, not which key it uses now.**
-The bundle's entry is the one that made the device `active`. For an `enroll`,
-that entry holds the request and the key the request carried. A `rotate`
-changes the key and leaves `since_index` where it was (§5.1), so any device
-that has ever rotated carries a bundle whose entry names a key it no longer
-uses. That is the normal case and not a stale bundle. `proofs/nas.bundle`
-proves `nas`'s enrolment at index 1, and its entry carries the key
-`116f00fa…`. Replay gives `2a955fd2…`, the key `nas` rotated to at
-`35-rotate-nas`. A node that required the two to match would drop every peer
-that had ever rotated, and nothing would tell it so. `proofs/cases.json` lists
-under `installs` the key a node installs for each device whose bundle ships.
 
 ## 9. Trust file — `norn.trust`
 
@@ -1358,6 +1348,10 @@ Two consequences worth stating rather than discovering:
 
 ## 10. Verifier procedure (normative outline)
 
+The outline names the checks in the order §10.1's table numbers them, and that
+table gives the code each refusal carries. Where a reader needs an order,
+§10.1's table decides.
+
 ```
 loop every T_g or on demand:
   cp := fetch checkpoint (log_urls or a proven peer)     # §15
@@ -1388,6 +1382,7 @@ loop every T_g or on demand:
                                                         # can be replayed, so
                                                         # acceptance cannot depend
                                                         # on anything the log says
+  require cp's text is a tlog-checkpoint body (§6)      # exactly three lines
   require cp.origin == norn.trust.origin                # which log this is about
   verify witness policy: every cosignature LINE naming a witness the policy
       names must verify, and the quorum must be satisfied  # refuse otherwise
@@ -1412,6 +1407,12 @@ loop every T_g or on demand:
       # not name is normal in a shared log, and a reader that refuses over one
       # stops accepting checkpoints everybody else accepts. The log's own
       # signature line may appear anywhere in the block; order carries nothing.
+  # The entries before any comparison: the branch comparison below is
+  # recomputed from them, so they are fetched, framed and hashed first.
+  entries := fetch the entry bundles cp.size implies    # TileFetcher / TileFS
+                                                        # + PermanentCache
+  require the bundles frame and hold cp.size entries    # §6
+  require root(entries) == cp.root                      # the signed head
   if stored_cp exists:
       # Compare the two branches where BOTH can speak, and do it BEFORE the
       # size rule. A log that forks onto a SHORTER branch is otherwise filed
@@ -1432,7 +1433,9 @@ loop every T_g or on demand:
                                            # an earlier view undoes every
                                            # revocation made since, and is
                                            # signed and cosigned correctly
-  fetch new tiles / entry bundles (TileFetcher / TileFS + PermanentCache)
+  require entries[0] is the genesis the anchor pins     # §5.1
+  require every served hash tile == the rebuilt tree's  # byte for byte,
+                                                        # length included
   state := replay(trust, entries[0:cp.size])
   T := the evaluation time of cp (§5.3)                  # witness time, never ours
   proven := { d ∈ state.devices : status == active && not expired(d, T) }
@@ -1849,8 +1852,8 @@ this table drifted out of date the moment one was.
 | §10.1 and §11.1 the order of the checks | — | every negative in `checkpoints-bad/`, `served-bad/`, `proofs-bad/`, `fork/` and `detect/` names its code, and these fail two steps so the order decides — the codes make an ordering observable, and a file with both faults is what observes it: `checkpoints-bad/01-unsigned` is `note`, not `log-signature` (framing before signature); `checkpoints-bad/03-wrong-origin` and `proofs-bad/foreign-checkpoint` are `log-signature`, not `origin` (the signature decides before the origin); `checkpoints-bad/30-noncanonical-size-under-untrusted-signer` is `log-signature`, not `checkpoint` (the signature before the body — every other body fault in the directory is signed by the log, cold gate run 13, D4); `served-bad/tampered-entry-bundle` is `head`, not `tiles` (head before tiles); `detect/tampered-bundle-under-a-stored-head` is `head`, not `fork` (head before the branch comparison — a reader that compares first accuses an honest log over one corrupt byte, permanently); `proofs-bad/no-quorum-tampered-proof` is `quorum`, not `inclusion`, and `proofs-bad/wrong-entry` is `inclusion`, not `binding` (a bundle's checkpoint, then its proof, then its binding); `fork/bad-oversize-and-not-cbor` is `oversize`, not `cbor`; `fork/bad-version-and-unknown-key` is `version`, not `schema`; `fork/bad-short-held-root-and-size-above-held` is `schema`, not `size`; `fork/bad-policy-unparseable-and-foreign-held` is `policy`, not `held` (the carried policy does not parse and held is a foreign head; closed-code step 4 precedes step 5, cold gate run 13, D4); and `fork/bad-other-origin` is `held`, not `conflicting` |
 | §10 verifier loop, steps 1–4 | `served/` verified end to end, **signature first** | `checkpoints-bad/01-unsigned`, `02-wrong-log-key`, `03-wrong-origin` and **`04-forged-log-signature`** — the last one being a signature of the right shape under the right key id that does not verify. Without it a verifier that never checks the log signature reproduces the whole suite |
 | §10 the origin comparison is **equality** | `served/checkpoint` | `checkpoints-bad/21-origin-with-a-suffix` (this network's origin plus one base32 character) and `22-origin-case-changed` (the same origin, one letter in the other case), each signed and cosigned exactly as correctly as the real head, plus `trust-bad/40-log-key-name-suffix` for §9.1's "the log key's note name MUST equal `origin`". Every earlier origin negative used an **unrelated** origin, so a prefix match and a case-folded match both passed all 622 checks. §10 argues the cosignature match must be name **and** key id because a name-only match hands anyone a veto; this is that argument from the other side, where a loose match hands an attacker an acceptance (cold gate run 11, D7) |
-| §10 step 3, the witness quorum | `served/checkpoint`, cosigned by all three witnesses | `checkpoints-bad/05-one-cosignature-short`, `06-no-cosignatures`, `07-unnamed-witness-only` and **`08-forged-cosignature`**, which carries two lines naming witnesses the policy lists, one of which does not verify: the quorum is met by counting and refused by checking. `quorum none` accepting an uncosigned head needs a second anchor and is **not vectored** |
-| §10 step 3, **which** lines count as a listed witness's | `served-extra-witness/` (an unlisted **name**) and `served-name-collision/` (a listed name under an unlisted **key id**) — both MUST be accepted, and the second is the only file that separates matching on the name alone from matching on name and key id. Run 10's `V236_CosigNoKeyIDMatch` passed 236/236 without it | the negatives are `checkpoints-bad/08-forged-cosignature`, `11-forged-cosignature-with-quorum` and `12-second-line-from-one-witness`, where the line's name *and* id are the policy's and the signature is not |
+| §10.1 steps 6 and 7, the witnesses' lines and their quorum | `served/checkpoint`, cosigned by all three witnesses | `checkpoints-bad/05-one-cosignature-short`, `06-no-cosignatures`, `07-unnamed-witness-only` and **`08-forged-cosignature`**, which carries two lines naming witnesses the policy lists, one of which does not verify: the quorum is met by counting and refused by checking. `quorum none` accepting an uncosigned head needs a second anchor and is **not vectored** |
+| §10.1 step 6, **which** lines count as a listed witness's | `served-extra-witness/` (an unlisted **name**) and `served-name-collision/` (a listed name under an unlisted **key id**) — both MUST be accepted, and the second is the only file that separates matching on the name alone from matching on name and key id. Run 10's `V236_CosigNoKeyIDMatch` passed 236/236 without it | the negatives are `checkpoints-bad/08-forged-cosignature`, `11-forged-cosignature-with-quorum` and `12-second-line-from-one-witness`, where the line's name *and* id are the policy's and the signature is not |
 | §4.0 reserved label hints | `requests/req-reserved-hints` accepts a correctly signed request with `ip = "not-a-cidr"` and `endpoint = "not-an-endpoint"`; accepted log entry `enroll-unicode-labels` carries both values through replay into `state.json` | —; request checking and replay do not validate advisory hint syntax |
 | §16 enrollment requests | `requests/`, **9 request cases** including a 64-byte `device_id`, non-ASCII labels, the 203-byte padding control, the 256-byte label boundary, malformed reserved hints, an uppercase text form and `req-labels-at-the-cap` (32 labels) | `requests-bad/`, **30 request refusals** across all four layers, including §3.1's `small-order-device-pk`, `torsion-R-signature` and `S-plus-L-signature`, and **`forged-signature`** (structurally perfect, signed by another key), `oversize-label-key` (§4.0's map-key cap), `empty-label-key` (its floor, re-signed so only the key bound refuses it) and `empty-labels` (a present empty map, signed over it, so only §16.1's at-least-one-pair rule refuses it — D-072 (b)) |
 | §11.1 fork evidence | `fork/evidence.cbor` and `fork/conflicting.checkpoint`: a second branch of this same network, diverging at entry 40, signed by the same log key and cosigned by the same witnesses. Checking it needs only `trust.cbor` | one per reader step: `fork/bad-other-origin` and `fork/bad-unverifiable-conflicting` (step 1, each half), `fork/bad-size-mismatch` (step 2), `fork/bad-forged-proof` (step 3 — both checkpoints verify and the sizes agree, so nothing but the proof can refuse it), and `fork/bad-consistent` (step 5: a log and its own earlier self) |

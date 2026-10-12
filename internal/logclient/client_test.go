@@ -581,7 +581,7 @@ func TestTheStoreServesExactlyTheTilesTheTreeImplies(t *testing.T) {
 	}
 }
 
-// SPEC §10 step 3 -- the step this project carried unimplemented from 2.9e
+// SPEC §10.1 step 7 -- the step this project carried unimplemented from 2.9e
 // until 4.1c. A checkpoint the log signed is only half of what a node is
 // allowed to believe: GOSSIP.md part 1 makes witnesses the guard against the
 // log itself, so a head no quorum of witnesses has cosigned must be refused

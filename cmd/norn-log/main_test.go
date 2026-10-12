@@ -129,7 +129,7 @@ func TestNornLogServesAndAccepts(t *testing.T) {
 	}
 	addr := freePort(t)
 
-	// The fixture's policy needs two of three witnesses (§10 step 3), so the
+	// The fixture's policy needs two of three witnesses (§10.1 step 7), so the
 	// log has to be able to obtain cosignatures or nothing will accept its
 	// head. Here it holds two witness keys itself -- GOSSIP part 3's "same
 	// host as the log" row, independent from nothing, which is why a real

@@ -71,7 +71,7 @@ func writableLog(t *testing.T) (dir string, store *tlogstore.Store, entries [][]
 	t.Helper()
 	doc := anchor(t)
 	dir = t.TempDir()
-	// The fixture's anchor requires two of three witnesses (§10 step 3), so a
+	// The fixture's anchor requires two of three witnesses (§10.1 step 7), so a
 	// log built here must be corroborated exactly as the shipped one is --
 	// otherwise these tests would be exercising a verifier with its quorum
 	// check disabled, which is the check most worth not disabling.

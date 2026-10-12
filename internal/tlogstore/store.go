@@ -39,7 +39,7 @@ func storeErrorf(format string, args ...any) error {
 
 // A Cosigner turns a log-signed checkpoint into a cosigned one -- SPEC §6,
 // `c2sp.org/tlog-cosignature`. A log that serves an uncosigned head serves one
-// that §10 step 3 makes every correctly-configured verifier refuse, so the
+// that §10.1 step 7 makes every correctly-configured verifier refuse, so the
 // store treats corroboration as part of publishing rather than as something
 // that happens afterwards.
 //

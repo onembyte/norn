@@ -130,7 +130,7 @@ type Anchor struct {
 	Origin string
 	// Policy is the network's `c2sp.org/tlog-policy`, verbatim from the trust
 	// file. It says which witnesses must have cosigned before this node will
-	// believe a checkpoint -- §10 step 3, and the difference between "the log
+	// believe a checkpoint -- §10.1 step 7, and the difference between "the log
 	// operator says this is the log" and "somebody else saw this too".
 	Policy string
 	// Stored is the head this node already holds, if any. §10 requires a new
