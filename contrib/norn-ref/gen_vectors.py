@@ -153,13 +153,53 @@ def write_proven(out: pathlib.Path, final: Any, entries: list[bytes]) -> None:
     from nornref.state import grant_from_label
     labels = [final.devices[name]["labels"]["ip"] for name in ("router", "badgrant")]
     labels.append("::ffff:10.0.0.1/128")
+    cases = [{"label": label, "grant": grant_from_label(label), "says": says}
+             for label, says in zip(labels, (
+                 "duplicates removed, sorted as text",
+                 "does not parse **as a whole** is **no grant**",
+                 "An IPv4-mapped IPv6 prefix is no grant either"))]
+    # D-077's expected grants come from the grammar, so the table can catch
+    # a library accepting another form instead of certifying its own output.
+    syntax = "A part is `<address>/<length>` and nothing else"
+    zero = "place of the length, a zone, a leading zero, any other whitespace or any other"
+    mask = "A bare address, a netmask or hostmask in"
+    whitespace = "any other whitespace or any other"
+    space = "U+0020 is removed from both of its ends and nothing else is."
+    canonical = "every group in lowercase hexadecimal (an embedded dotted quad is written as"
+    forms = [
+        ("10.9.1.5", [], mask),
+        ("10.9.1.0/024", [], zero),
+        ("010.9.1.0/24", [], zero),
+        ("10.9.1.0/255.255.255.0", [], mask),
+        ("10.9.1.0/0.0.0.255", [], mask),
+        ("fe80::1%eth0/64", [], "bits, and no zone."),
+        *[(char + "10.9.1.0/24", [], whitespace)
+          for char in ("\t", "\r", "\v", "\u001c", "\u001f", "\u0085",
+                       "\u00a0", "\u200b", "\u3000")],
+        ("10.9.1.0/24 ", ["10.9.1.0/24"], space),
+        (" 10.9.1.0/24 ,fd00::5/64", ["10.9.1.0/24", "fd00::/64"], space),
+        ("10.9.1/24", [], "dotted quad — four decimal octets 0–255, none with a leading zero"),
+        ("1.2.3.4/33", [], "The length is decimal without a leading zero, at most 32"),
+        ("fd00::5/129", [], "for a dotted quad and 128 for IPv6."),
+        ("10.9.1.0/+24", [], "The length is decimal without a leading zero, at most 32"),
+        ("1.2.3.4/", [], syntax),
+        ("/24", [], syntax),
+        ("10.9.1.0/24,", [], syntax),
+        ("", [], syntax),
+        ("FD00::5/64", ["fd00::/64"], canonical),
+        ("fd00:0000::5/64", ["fd00::/64"], canonical),
+        ("fd00:00000::5/64", [], "address as RFC 4291 §2.2 writes it: groups of one to four hexadecimal digits in"),
+        ("64:ff9b::10.0.0.1/96", ["64:ff9b::/96"], canonical),
+        ("64:ff9b::10.0.0.1/128", ["64:ff9b::a00:1/128"], canonical),
+        ("1.2.3.4/0", ["0.0.0.0/0"], "The grant is each masked prefix in"),
+        ("::/0", ["::/0"], "The grant is each masked prefix in"),
+        ("::ffff:10.0.0.1/0", [], "An IPv4-mapped IPv6 prefix is no grant either"),
+    ]
+    cases.extend({"label": label, "grant": grant, "says": says}
+                 for label, grant, says in forms)
     write(out / "proven" / "grant-labels.json", canonjson.dumps({
-        "comment": "SPEC 4.0 grant derivation as a pure function of label text; no log is needed. Later prefix-syntax cases extend this table.",
-        "cases": [{"label": label, "grant": grant_from_label(label), "says": says}
-                  for label, says in zip(labels, (
-                      "duplicates removed, sorted as text",
-                      "does not parse **as a whole** is **no grant**",
-                      "An IPv4-mapped IPv6 prefix is no grant either"))],
+        "comment": "SPEC 4.0 grant derivation as a pure function of label text; D-077 grammar, U+0020 trim and canonical masked text (cold gate run 14, H1).",
+        "cases": cases,
     }) + "\n")
 
     deadlines = sorted({d["expires"] for d in final.devices.values()

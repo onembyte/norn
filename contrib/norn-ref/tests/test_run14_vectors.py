@@ -76,10 +76,15 @@ class RunFourteen(unittest.TestCase):
         doc = json.loads((ROOT / 'proven/grant-labels.json').read_text())
         from nornref.state import grant_from_label
         self.assertTrue(doc['comment'])
-        self.assertGreaterEqual(len(doc['cases']), 3)
+        self.assertGreaterEqual(len(doc['cases']), 36)
+        section = (ROOT.parents[1] / 'SPEC.md').read_text().split('### 4.0', 1)[1].split('### 4.1', 1)[0]
         for case in doc['cases']:
             with self.subTest(label=case['label']):
                 self.assertEqual(grant_from_label(case['label']), case['grant'])
+            with self.subTest(rule=case['label']):
+                self.assertTrue(case['says'])
+                self.assertNotIn('\n', case['says'])
+                self.assertIn(case['says'], section)
 
     def test_genesis_boundaries_accept_and_extra_body_key_repairs(self):
         _, anchor, raw = load_log(ROOT / 'genesis-good/02-name-one-byte')

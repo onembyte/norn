@@ -40,6 +40,8 @@ the base64 is canonical, and the note is UTF-8 (D-074 c). The specifications:
 - BIP-350 — bech32m, the text form of an enrollment request (§16.2). §16.2
   states Norn's choices within it and nothing else about it
 - RFC 8032 — Ed25519 · RFC 7748 — X25519
+- RFC 4291 §2.2 — IPv6 address text, the grammar of a grant's addresses (§4.0) ·
+  RFC 5952 — the canonical IPv6 text a grant is written and compared in (§4.0)
 
 Referenced but **not** reused: BIP-173, whose 90-character limit §16.2
 explains does not apply here.
@@ -335,6 +337,20 @@ allowed-ips under `params.routes = "granted"` (§13.1); `proven/cases.json`'s
 plane may override: reachability is not authorization. A `rotate` keeps the
 device's labels and so its grant; changing a grant is a `revoke` and a new
 `enroll`, as changing any label is.
+
+**What parses (D-077).** A part is `<address>/<length>` and nothing else, once
+U+0020 is removed from both of its ends and nothing else is. The address is a
+dotted quad — four decimal octets 0–255, none with a leading zero — or an IPv6
+address as RFC 4291 §2.2 writes it: groups of one to four hexadecimal digits in
+either case, at most one `::`, a dotted quad allowed in place of the last 32
+bits, and no zone. The length is decimal without a leading zero, at most 32
+for a dotted quad and 128 for IPv6. A bare address, a netmask or hostmask in
+place of the length, a zone, a leading zero, any other whitespace or any other
+byte makes the whole label no grant. The grant is each masked prefix in
+canonical text: the dotted quad, or the IPv6 address in RFC 5952 form with
+every group in lowercase hexadecimal (an embedded dotted quad is written as
+two groups), then `/` and the length. `proven/grant-labels.json` has one case
+per form (cold gate run 14, H1).
 
 ### 4.1 Envelope
 
@@ -1681,7 +1697,7 @@ naming that rule is how the generators and the placement guards check it.
 | `receipt.json` | `{comment, origin, leaf_hash, deadline, text_sha256}`, where `text_sha256` is `SHA-256` of the **signed text** — through the newline ending the last text line, excluding the blank separator and the signature lines |
 | `checkpoints-bad/<NN-case>.checkpoint` | 33 checkpoints, including `31-cosignature-S-plus-L` (`cosignature`), that MUST be refused, each served in place of `served/checkpoint` over the honest tiles. `cases.json` lists them, and its `signature_blind_accepts` names the ones a verifier that never calls Ed25519 accepts — six of the thirty-three. That set is **computed** from the shipped files, not asserted |
 | `entries-hostile/<name>.cbor` | input that is not an entry and never could be, for §4.0's three resource limits — the entry size, the nesting depth and the map-key cap. `cases.json` says what each refusal must be about, and marks the cases that sit exactly **at** a limit and MUST be accepted |
-| `proven/grant-labels.json` | a pure-function table with a `comment` and a list of `{label, grant, says}` cases: router masking, whole-label failure and an IPv4-mapped prefix producing no grant |
+| `proven/grant-labels.json` | a pure-function table with a `comment` and 36 `{label, grant, says}` cases: D-077 prefix grammar, U+0020-only trimming, canonical masked text, whole-label failure and IPv4-mapped refusals |
 | `proven/cases.json` | the devices admitted at four evaluation times (§5.3), including the boundary where `expires` equals `T`; and under `grants`, every active device's §4.0 grant, which the evaluation time does not change |
 | `fork/` | `evidence.cbor` and the `conflicting.checkpoint` it is about (§11.1), plus ten more sound files including `evidence-at-same-size.cbor` (the served held head and a different root at the same size, both signed and cosigned, with an empty proof). `cases.json` names all eleven under `sound` and codes all thirty-one refusals, including `bad-simple-size` (`cbor`, a simple value outside §4.0's allow-list) and `bad-policy-unparseable-and-foreign-held` (`policy`, before `held`) |
 | `anchors/` | OpenTimestamps proofs written by `python-opentimestamps`: `checkpoint-<size>.ots`, `sample.ots` over an arbitrary digest, and a calendar's reply. **`cases.json` states each proof's digest in hex and names the bytes that produce it** — for the checkpoint proof, `served/checkpoint` through the newline that terminates the blank separator line, which is the §6 range and *not* the three-line body. Without it a reader has to parse the OpenTimestamps container, a format this document does not describe, before it can tell which of three byte ranges was stamped |
@@ -1743,7 +1759,7 @@ this table drifted out of date the moment one was.
 | §9.1 trust and witness name boundaries | `trust-good/name-at-the-cap`, `trust-good/name-one-byte`, `trust-good/witness-name-at-the-cap` and `trust-good/witness-name-one-byte`: 64-byte and one-byte labels; renamed witnesses correspond in the policy | `trust-bad/52-name-one-past-the-cap` is exactly 65 bytes; `trust-bad/26-name-too-long` is 66 bytes |
 | §9.1 trust-level log algorithm without a policy log line | `trust.cbor` | `trust-bad/53-log-cosignature-without-policy-log` has a valid 0x04 log key and no policy log line, so only the trust-level algorithm rule refuses it |
 | §7 receipt line count and origin equality | `receipt.note` | `receipt-bad/fifth-line.note` has five signed lines (`receipt`); `receipt-bad/origin-case-changed.note` changes one origin letter's case (`origin`). Both are re-signed by the log key |
-| §4.0 grant derivation without replay | `proven/grant-labels.json` masks the router label and makes the badgrant label and `::ffff:10.0.0.1/128` no grant | — |
+| §4.0 grant grammar and trimming (D-077) | `proven/grant-labels.json`: U+0020 at either end; IPv6 case and zero compression, embedded dotted quads rendered as hexadecimal, masking and zero lengths | the same table: bare addresses, leading zeros, masks, zones, non-U+0020 whitespace, malformed addresses and lengths, empty parts and IPv4-mapped addresses before masking |
 | §5.1 `prev` check order | accepted entries in `log-cas/` | `log-cas/25-threshold-before-stale` (`threshold`), `log-cas/28-current-signature-before-stale` (`no-device-sig`), `log-cas/29-stale-before-incoming-proof`, `log-cas/30-stale-before-dup-key` and `log-cas/31-stale-before-dup-wg` (`stale-state`): two faults each, with the deciding check first |
 | §9.1 log/witness public-key disjointness (D-077) | `log-cas/23-policy-spare-witness` | `log-cas/20-policy-witness-is-anchor-log-key`, `log-cas/21-policy-witness-is-learned-log-key`, `log-cas/22-log-key-is-trust-witness`, `log-cas/24-log-key-is-replayed-witness` (`dup-key`); `trust-bad/51-witness-key-is-log-key` invalidates the trust file even without a policy `log` line |
 | §4.4 `after` at the boundary | `after-at-its-own-index`: a floor met exactly | `bad-after-by-one`: one past the index, the smallest violation there is |

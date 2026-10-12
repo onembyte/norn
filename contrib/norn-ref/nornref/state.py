@@ -7,6 +7,7 @@ has no opinion about which entries are valid. That decision belongs to `replay`.
 from __future__ import annotations
 
 import ipaddress
+import re
 
 from dataclasses import dataclass, field
 from typing import Any
@@ -165,11 +166,24 @@ def grant_from_label(label: str | None) -> list[str]:
         return []
     out: set[str] = set()
     for part in label.split(","):
-        try:
-            network = ipaddress.ip_network(part.strip(), strict=False)
-        except ValueError:
+        # D-077 names one byte to trim, since whitespace tables differ.
+        part = part.strip(" ")
+        if part.count("/") != 1:
             return []
-        if network.version == 6 and network.network_address.ipv4_mapped is not None:
+        address, length = part.split("/")
+        if not re.fullmatch(r"0|[1-9][0-9]*", length):
+            return []
+        if "%" in address:
+            return []
+        try:
+            parsed = ipaddress.ip_address(address)
+            # Refuse the input address before masking can hide its mapping.
+            if parsed.version == 6 and parsed.ipv4_mapped is not None:
+                return []
+            if int(length) > (32 if parsed.version == 4 else 128):
+                return []
+            network = ipaddress.ip_network(part, strict=False)
+        except ValueError:
             return []
         out.add(network.with_prefixlen)
     return sorted(out)

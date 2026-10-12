@@ -23,7 +23,9 @@ func Grant(labels map[string]string) []string {
 	seen := map[string]bool{}
 	var out []string
 	for _, part := range strings.Split(label, ",") {
-		prefix, err := netip.ParsePrefix(strings.TrimSpace(part))
+		// A whitespace class is a table two languages disagree about (§7
+		// records the same for key names); a byte is not. D-077 trims U+0020.
+		prefix, err := netip.ParsePrefix(strings.Trim(part, " "))
 		if err != nil || prefix.Addr().Is4In6() {
 			return nil
 		}
