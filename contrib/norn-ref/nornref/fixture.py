@@ -1152,10 +1152,10 @@ def genesis_aborts() -> list[tuple[str, bytes, "replay.Anchor"]]:
     from . import replay
 
     good = entry.encode(genesis())
-    good_anchor = replay.Anchor(NET, entry.leaf_hash(good))
+    good_anchor = replay.Anchor(NET, entry.leaf_hash(good), log_vkey(), policy_text())
     cases: list[tuple[str, bytes, replay.Anchor]] = [
         # the anchor pins a different genesis
-        ("01-hash-mismatch", good, replay.Anchor(NET, bytes(32))),
+        ("01-hash-mismatch", good, replay.Anchor(NET, bytes(32), log_vkey(), policy_text())),
     ]
 
     # entry 0 is not a genesis at all
@@ -1163,48 +1163,48 @@ def genesis_aborts() -> list[tuple[str, bytes, "replay.Anchor"]]:
                                     body={"text": "index 0 is not a genesis"}),
                           [("signer1", "signer")])
     raw = entry.encode(not_genesis)
-    cases.append(("02-not-genesis", raw, replay.Anchor(NET, entry.leaf_hash(raw))))
+    cases.append(("02-not-genesis", raw, replay.Anchor(NET, entry.leaf_hash(raw), log_vkey(), policy_text())))
 
     # a genesis for another network
     other = _signed(entry.new("genesis", b"\xff" * 16, ts=T0, body=genesis()["body"]),
                     [("root1", "root"), ("root2", "root")])
     raw = entry.encode(other)
-    cases.append(("03-wrong-net", raw, replay.Anchor(NET, entry.leaf_hash(raw))))
+    cases.append(("03-wrong-net", raw, replay.Anchor(NET, entry.leaf_hash(raw), log_vkey(), policy_text())))
 
     # `after` must be 0 at index 0
     ahead = genesis(after=7)
     raw = entry.encode(ahead)
-    cases.append(("04-after-nonzero", raw, replay.Anchor(NET, entry.leaf_hash(raw))))
+    cases.append(("04-after-nonzero", raw, replay.Anchor(NET, entry.leaf_hash(raw), log_vkey(), policy_text())))
 
     # a body that cannot be applied: threshold above the number of roots
     body = dict(genesis()["body"], root_thr=9)
     bad_body = _signed(entry.new("genesis", NET, ts=T0, body=body),
                        [("root1", "root"), ("root2", "root")])
     raw = entry.encode(bad_body)
-    cases.append(("05-root-thr-above-set", raw, replay.Anchor(NET, entry.leaf_hash(raw))))
+    cases.append(("05-root-thr-above-set", raw, replay.Anchor(NET, entry.leaf_hash(raw), log_vkey(), policy_text())))
 
     # bootstrap shortfall: root_thr is 2, only one root signed
     under = _signed(entry.new("genesis", NET, ts=T0, body=genesis()["body"]),
                     [("root1", "root")])
     raw = entry.encode(under)
-    cases.append(("06-under-root-threshold", raw, replay.Anchor(NET, entry.leaf_hash(raw))))
+    cases.append(("06-under-root-threshold", raw, replay.Anchor(NET, entry.leaf_hash(raw), log_vkey(), policy_text())))
 
     # entry 0 that does not decode at all (SPEC §5.1 entry-0 step 2)
     raw = b"\xa1\x61t\xf9\x3c\x00"  # a map whose value is a float: outside the profile
-    cases.append(("07-undecodable", raw, replay.Anchor(NET, entry.leaf_hash(raw))))
+    cases.append(("07-undecodable", raw, replay.Anchor(NET, entry.leaf_hash(raw), log_vkey(), policy_text())))
 
     # body invariants beyond the threshold check (entry-0 step 6)
     dup_root = dict(genesis()["body"], roots=[KEYS["root1"].public, KEYS["root1"].public])
     env = _signed(entry.new("genesis", NET, ts=T0, body=dup_root),
                   [("root1", "root"), ("root2", "root")])
     raw = entry.encode(env)
-    cases.append(("08-duplicate-root", raw, replay.Anchor(NET, entry.leaf_hash(raw))))
+    cases.append(("08-duplicate-root", raw, replay.Anchor(NET, entry.leaf_hash(raw), log_vkey(), policy_text())))
 
     overlap = dict(genesis()["body"], signers=[KEYS["root1"].public, KEYS["signer1"].public])
     env = _signed(entry.new("genesis", NET, ts=T0, body=overlap),
                   [("root1", "root"), ("root2", "root")])
     raw = entry.encode(env)
-    cases.append(("09-role-overlap", raw, replay.Anchor(NET, entry.leaf_hash(raw))))
+    cases.append(("09-role-overlap", raw, replay.Anchor(NET, entry.leaf_hash(raw), log_vkey(), policy_text())))
 
     # `case` rather than `name`, because `name` is also a genesis body key and
     # a case that damages it would collide with this parameter.
@@ -1215,7 +1215,7 @@ def genesis_aborts() -> list[tuple[str, bytes, "replay.Anchor"]]:
                          [("root1", "signer"), ("root2", "signer")])
     raw = entry.encode(wrong_role)
     cases.append(("18-bootstrap-sigs-wrong-role", raw,
-                  replay.Anchor(NET, entry.leaf_hash(raw))))
+                  replay.Anchor(NET, entry.leaf_hash(raw), log_vkey(), policy_text())))
 
     # §5.1 entry-0 step 7 resolves genesis signatures against the `roots` in
     # the body -- and which key SET it resolves against was pinned by nothing:
@@ -1228,14 +1228,14 @@ def genesis_aborts() -> list[tuple[str, bytes, "replay.Anchor"]]:
                            [(SIGNERS[0], "root"), (SIGNERS[1], "root")])
     raw = entry.encode(from_signers)
     cases.append(("19-bootstrap-sigs-from-signers", raw,
-                  replay.Anchor(NET, entry.leaf_hash(raw))))
+                  replay.Anchor(NET, entry.leaf_hash(raw), log_vkey(), policy_text())))
 
     def bad_body(case: str, **changes: Any) -> None:
         body = dict(genesis()["body"], **changes)
         env = _signed(entry.new("genesis", NET, ts=T0, body=body),
                       [("root1", "root"), ("root2", "root")])
         raw = entry.encode(env)
-        cases.append((case, raw, replay.Anchor(NET, entry.leaf_hash(raw))))
+        cases.append((case, raw, replay.Anchor(NET, entry.leaf_hash(raw), log_vkey(), policy_text())))
 
     bad_body("10-duplicate-signer",
              signers=[KEYS["signer1"].public, KEYS["signer1"].public])
@@ -1357,7 +1357,7 @@ def genesis_accepts() -> list[tuple[str, bytes, "replay.Anchor"]]:
     env = _signed(entry.new("genesis", NET, ts=T0, body=body),
                   [("root1", "root"), ("root2", "root")])
     raw = entry.encode(env)
-    cases.append(("01-name-at-the-cap", raw, replay.Anchor(NET, entry.leaf_hash(raw))))
+    cases.append(("01-name-at-the-cap", raw, replay.Anchor(NET, entry.leaf_hash(raw), log_vkey(), policy_text())))
     body = dict(genesis()["body"], name="n")
     env = _signed(entry.new("genesis", NET, ts=T0, body=body),
                   [("root1", "root"), ("root2", "root")])

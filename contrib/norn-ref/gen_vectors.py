@@ -468,10 +468,11 @@ def write_empty_log(out: pathlib.Path) -> None:
     """
     from nornref import replay as replaymod
     anchor = replaymod.Anchor(fixture.NET, entry.leaf_hash(
-        entry.encode(fixture.genesis())))
+        entry.encode(fixture.genesis())), fixture.log_vkey(), fixture.policy_text())
     state = replaymod.replay(anchor, [])
     write(out / "log-empty" / "manifest.json", canonjson.dumps({
-        "anchor": {"net": fixture.NET, "genesis_hash": anchor.genesis_hash},
+        "anchor": {"net": anchor.net, "genesis_hash": anchor.genesis_hash,
+                   "log_key": anchor.log_key, "policy": anchor.policy},
         "entries": [],
         "comment": "a log with no entries at all. SPEC 5.1: replay yields the "
                    "zero state -- size 0, `rejected` empty -- and NOT a "
