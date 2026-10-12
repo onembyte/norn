@@ -616,7 +616,7 @@ checks live inside step 8, after that rule's own body validation.
 | `t` | checks, in order | effect |
 |---|---|---|
 | `enroll` | body closed and `request` present · the request decodes under §16.1 and its `net` equals the entry's (`decode`) · the request's signature verifies under its **own** `device_pk` (`no-device-sig`) · valid `signer` count ≥ `signer_thr` (`threshold`) · `prev` is the `device_id`'s record `version`, or absent when no accepted entry has ever named the id (`stale-state`) · `device_id` not currently `active` (`dup-id`) · `wg_pk` not in `active_wg` (`dup-wg`) | add the device `active`, with the `device_id`, `device_pk`, `wg_pk`, `labels` and `expires` **from the request**, its `version` this index |
-| `rotate` | body well-formed and closed, its `device_pk` when present a valid point (§3.1) (`decode`) · `device_id` known (`unknown-device`) · currently `active` (`not-active`) · valid `device` signature by the device's **current** `device_pk` (`no-device-sig`) · if `params.rotate_needs_signer`, signer count ≥ `signer_thr` (`threshold`) · if the body carries `device_pk`, a valid `device` signature by **that** key as well — the same signature when it is the current key (`no-device-sig`) · `prev` is the record's `version` (`stale-state`) · new `wg_pk` not active **for another device** (`dup-wg`) | replace `wg_pk`, and `device_pk` if the body carries one; `version` becomes this index |
+| `rotate` | body well-formed and closed, its `device_pk` when present a valid point (§3.1) (`decode`) · `device_id` known (`unknown-device`) · currently `active` (`not-active`) · valid `device` signature by the device's **current** `device_pk` (`no-device-sig`) · if `params.rotate_needs_signer`, signer count ≥ `signer_thr` (`threshold`) · `prev` is the record's `version` (`stale-state`) · new `wg_pk` not active **for another device** (`dup-wg`) · if the body carries `device_pk`, a valid `device` signature by **that** key as well — the same signature when it is the current key (`no-device-sig`) | replace `wg_pk`, and `device_pk` if the body carries one; `version` becomes this index |
 | `revoke` | body well-formed and closed (`decode`) · `device_id` known (`unknown-device`) · currently `active` (`not-active`) · authorised by signers, roots **or** the device itself (`threshold`) · `prev` is the record's `version` (`stale-state`) | `status` = `revoked`, drop from `active_wg`; `version` becomes this index |
 | `signer_add`, `root_add` | body well-formed and closed (`decode`) · `prev` is `versions.signers` or `versions.roots` (`stale-state`) · `kid(pk)` not already a root or signer (`dup-key`) | add to that role; that version becomes this index |
 | `signer_remove` | body well-formed and closed (`decode`) · `prev` is `versions.signers` (`stale-state`) · `kid` is a signer (`unknown-key`) | remove; `versions.signers` becomes this index. **No quorum invariant** — removing a compromised signer key MUST always be possible, including the last one (D-028). A network left with fewer signers than `signer_thr` cannot enrol until roots add one; that is recoverable, an unremovable stolen key is not. |
@@ -628,10 +628,13 @@ checks live inside step 8, after that rule's own body validation.
 | `note` | body well-formed and closed (`decode`) · `text` ≤ 4096 bytes (`decode`) · `prev` absent (`decode`) | none |
 
 Every accepted entry that changes state sets the version of the object it
-changed to its own index (§4.4), and `prev` is checked after the entry's
-signatures and before the checks on the set it joins, so `stale-state` names an
-entry that would otherwise have been applied: the withheld entry §4.4 describes,
-not a malformed or unauthorised one.
+changed to its own index (§4.4), and `prev` is checked after the signatures
+that authorise the entry and before the checks on the set it joins — for
+`rotate`, after the current key's signature and any signer threshold and before
+`dup-wg`, the proof of possession on an incoming key staying last, where
+`log/111-bad-rotate-dupwg-and-no-new-key-sig` pins it — so `stale-state` names
+an entry authorised against a state that has since moved: the withheld entry
+§4.4 describes, not an unauthorised one.
 
 A rejected entry is appended to `state.rejected` as `{index, reason}` and
 changes nothing else. `size` becomes `index + 1` whether the entry was accepted
@@ -663,7 +666,7 @@ time** (§5.3), not at replay, so the state itself stays clock-independent.
 | `unknown-key` | `signer_remove`/`root_remove` of a `kid` not in that role |
 | `root-invariant` | `root_remove` would leave `< root_thr` roots or `< 1` root. **Removals only** — a `root_thr`/`signer_thr` value outside `1 … len(set)` is `bad-thr`, because the *value* is wrong rather than the resulting set (D11). |
 | `bad-thr` | a `signer_thr`/`root_thr` value of 0, or one exceeding the size of the set it applies to. This is a **replay** decision, not a schema one: the value is a well-formed uint, so it is never `decode`. |
-| `stale-state` | `prev` is not the current version of the object the entry changes (§4.4): absent where the object exists, present where none does, or another index. The entry was authorised against a state that is no longer current and is refused whole; the submitter re-signs against the version it can see. Checked after the entry's signatures (§5.1), so it names an entry that would otherwise have been applied |
+| `stale-state` | `prev` is not the current version of the object the entry changes (§4.4): absent where the object exists, present where none does, or another index. The entry was authorised against a state that is no longer current and is refused whole; the submitter re-signs against the version it can see. Checked after the signatures that authorise the entry (§5.1), so it names an entry authorised against a state that has since moved |
 
 Signature counting, precisely: a signature `{kid, role, sig}` is *valid* iff
 `kid` names a key this entry may be signed by **in that role**, and Ed25519
