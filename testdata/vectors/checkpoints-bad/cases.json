@@ -7,6 +7,7 @@
     "05-one-cosignature-short",
     "06-no-cosignatures",
     "07-unnamed-witness-only",
+    "08-forged-cosignature",
     "09-extension-line",
     "10-wrong-body-origin",
     "11-forged-cosignature-with-quorum",
@@ -23,20 +24,25 @@
     "22-origin-case-changed",
     "23-extra-final-newline",
     "24-log-key-other-algorithm-length",
-    "28-witness-key-other-algorithm-length",
     "25-signature-nonzero-pad-bits",
     "26-cosignature-nonzero-pad-bits",
     "27-root-nonzero-pad-bits",
+    "28-witness-key-other-algorithm-length",
     "29-root-unpadded",
     "30-noncanonical-size-under-untrusted-signer",
-    "08-forged-cosignature",
     "31-cosignature-S-plus-L",
     "32-signature-name-not-utf8",
     "33-size-above-2-63",
     "34-four-lines-and-wrong-origin",
     "35-wrong-origin-and-forged-pi",
     "36-no-quorum-and-size-163",
-    "37-crlf"
+    "37-crlf",
+    "38-cosignature-time-above-2-63",
+    "39-signature-name-empty",
+    "40-signature-name-tab",
+    "41-signature-name-nbsp",
+    "42-signature-name-plus",
+    "43-signature-name-nul"
   ],
   "codes": {
     "01-unsigned": "note",
@@ -75,7 +81,13 @@
     "34-four-lines-and-wrong-origin": "checkpoint",
     "35-wrong-origin-and-forged-pi": "origin",
     "36-no-quorum-and-size-163": "quorum",
-    "37-crlf": "note"
+    "37-crlf": "note",
+    "38-cosignature-time-above-2-63": "cosignature",
+    "39-signature-name-empty": "note",
+    "40-signature-name-tab": "note",
+    "41-signature-name-nbsp": "note",
+    "42-signature-name-plus": "note",
+    "43-signature-name-nul": "note"
   },
   "comment": "each file is served in place of served/checkpoint, over the honest tiles, under trust.cbor; every one MUST be refused, with the SPEC §10.1 code `codes` names for it. `signature_blind_accepts` lists the ones whose only defect is a signature that does not verify: a reader that never calls Ed25519 accepts exactly those, and nothing else here",
   "reasons": {
@@ -115,7 +127,13 @@
     "34-four-lines-and-wrong-origin": "four body lines and another origin: the body is checked first",
     "35-wrong-origin-and-forged-pi": "another origin and a forged pi line: the origin is checked first",
     "36-no-quorum-and-size-163": "a log-only head one entry beyond served: quorum decides before fetching entries",
-    "37-crlf": "the honest head with every LF changed to CRLF: no note framing"
+    "37-crlf": "the honest head with every LF changed to CRLF: no note framing",
+    "38-cosignature-time-above-2-63": "a listed witness re-cosigns the honest head at 9223372036854775808",
+    "39-signature-name-empty": "an otherwise honest head with a malformed stranger name",
+    "40-signature-name-tab": "an otherwise honest head with a malformed stranger name",
+    "41-signature-name-nbsp": "an otherwise honest head with a malformed stranger name",
+    "42-signature-name-plus": "an otherwise honest head with a malformed stranger name",
+    "43-signature-name-nul": "an otherwise honest head with a malformed stranger name"
   },
   "rules": {
     "01-unsigned": {
@@ -264,6 +282,30 @@
     },
     "37-crlf": {
       "says": "including the last, ends in one",
+      "section": "7"
+    },
+    "38-cosignature-time-above-2-63": {
+      "says": "whose timestamp is above 2⁶³−1 (§7, D-077)",
+      "section": "10.1"
+    },
+    "39-signature-name-empty": {
+      "says": "**A signature line's name** is one or more characters, none of them `+`",
+      "section": "7"
+    },
+    "40-signature-name-tab": {
+      "says": "**A signature line's name** is one or more characters, none of them `+`",
+      "section": "7"
+    },
+    "41-signature-name-nbsp": {
+      "says": "**A signature line's name** is one or more characters, none of them `+`",
+      "section": "7"
+    },
+    "42-signature-name-plus": {
+      "says": "**A signature line's name** is one or more characters, none of them `+`",
+      "section": "7"
+    },
+    "43-signature-name-nul": {
+      "says": "MUST NOT contain an ASCII control character below U+0020",
       "section": "7"
     }
   },

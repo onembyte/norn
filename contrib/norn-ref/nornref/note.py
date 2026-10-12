@@ -86,7 +86,26 @@ def parse_vkey(text: str) -> Verifier:
     return Verifier(name, public, alg)
 
 
+# The complete white-space property is protocol data, not str.isspace's
+# runtime table, which also includes U+001C-U+001F (D-077).
+_SIGNATURE_NAME_SPACE = (
+    "\u0009\u000a\u000b\u000c\u000d\u0020\u0085\u00a0\u1680"
+    "\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a"
+    "\u2028\u2029\u202f\u205f\u3000"
+)
+
+
+def _valid_signature_name(name: str) -> bool:
+    return bool(name) and not any(char == "+" or char in _SIGNATURE_NAME_SPACE for char in name)
+
+
 def _check_text(text: str) -> None:
+    try:
+        text.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        raise NoteError("the note is not UTF-8") from exc
+    if any(ord(char) < 0x20 and char != "\n" for char in text):
+        raise NoteError("the note contains an ASCII control character")
     if not text or not text.endswith("\n"):
         raise NoteError("note text must be non-empty and end with a newline")
 
@@ -101,6 +120,8 @@ def sign(text: str, name: str, key: keys.Ed25519) -> str:
 
 def split(signed: str) -> tuple[str, list[tuple[str, bytes]]]:
     """Split a signed note into its text and its (name, keyid||sig) lines."""
+    # Check every byte before matching names, including ignored strangers.
+    _check_text(signed)
     text, sep, block = signed.partition("\n\n")
     if not sep:
         raise NoteError("note has no signature block")
@@ -114,7 +135,9 @@ def split(signed: str) -> tuple[str, list[tuple[str, bytes]]]:
     for line in block[:-1].split("\n"):
         if not line.startswith(SIG_PREFIX):
             raise NoteError(f"bad signature line: {line!r}")
-        name, _, blob = line[len(SIG_PREFIX):].partition(" ")
+        name, separator, blob = line[len(SIG_PREFIX):].partition(" ")
+        if not separator or not _valid_signature_name(name):
+            raise NoteError("signature line has an invalid key name")
         try:
             raw = base64.b64decode(blob, validate=True)
         except (ValueError, base64.binascii.Error) as exc:

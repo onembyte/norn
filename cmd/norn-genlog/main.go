@@ -244,6 +244,9 @@ func run(root string) error {
 	if err := writeRunFourteen(root, origin, key, entries, signed, anchor, signers); err != nil {
 		return err
 	}
+	if err := writeNoteGrammarCheckpoints(root, signed, signers); err != nil {
+		return err
+	}
 
 	fmt.Printf("served %d entries to %s, %d proof bundles\n", store.Size(), served, len(ids))
 	return nil

@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	cosignpkg "github.com/onembyte/norn/internal/cosign"
@@ -734,6 +735,7 @@ func writeBadCheckpoints(root, origin string, key ed25519.PrivateKey,
 	if err != nil {
 		return err
 	}
+	sort.Slice(cases, func(i, j int) bool { return cases[i].Name < cases[j].Name })
 	dir := filepath.Join(root, "checkpoints-bad")
 	if err := os.RemoveAll(dir); err != nil {
 		return err
@@ -768,7 +770,11 @@ func writeBadCheckpoints(root, origin string, key ed25519.PrivateKey,
 		// log signature that does not verify, which a reader that never calls
 		// Ed25519 cannot see. The set is now *computed* from the shipped files
 		// by `TestTheSignatureBlindSetIsComputedNotAsserted`; this list is
-		// checked against that computation rather than trusted.
+		// checked against that computation rather than trusted. Since
+		// 6.5l-xi-c-iv-b the generator also recomputes the shipped list over
+		// every case once the later writers have appended theirs
+		// (`signatureBlindCheckpoints`), so this list is the starting value
+		// and the test remains the independent check.
 		"16-two-log-signatures",
 		"31-cosignature-S-plus-L",
 	}

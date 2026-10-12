@@ -68,6 +68,17 @@ func extendRunFourteenManifest(root, dir string, cases []map[string]string, code
 	if dir == "proofs-bad" {
 		manifest["comment"] = strings.Replace(manifest["comment"].(string), "except no-quorum-tampered-proof", "except wrong-version-and-untrusted-checkpoint and no-quorum-tampered-proof", 1)
 	}
+	if dir == "checkpoints-bad" {
+		names := make([]string, 0, len(listed))
+		for _, name := range listed {
+			names = append(names, name.(string))
+		}
+		blind, err := signatureBlindCheckpoints(root, names)
+		if err != nil {
+			return err
+		}
+		manifest["signature_blind_accepts"] = blind
+	}
 	return writeRunFourteenJSON(path, manifest)
 }
 

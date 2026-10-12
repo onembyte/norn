@@ -865,7 +865,10 @@ spec's rules produce.
   - **algorithm `0x04`**, a `c2sp.org/tlog-cosignature` v1 line (every
     witness's): `key_id ‖ timestamp ‖ signature` — 4 + 8 + 64 = 76 bytes. The
     timestamp is an unsigned 64-bit **big-endian** count of seconds since the
-    Unix epoch, and it is the only timestamp in the artifact: §5.3's `T` is
+    Unix epoch, at most 2⁶³−1 — the bound on every decimal line, and it is one
+    in the cosigned message below (D-077); a listed witness's line whose
+    timestamp is above it fails that witness's check, `cosignature`, before its
+    signature is verified. It is the only timestamp in the artifact: §5.3's `T` is
     derived from these eight bytes and from nothing else. The signature is
     **not** over the note text. It is over
     `"cosignature/v1\n" ‖ "time " ‖ <timestamp as decimal, no leading zeroes> ‖ "\n" ‖ <note text>`
@@ -879,6 +882,14 @@ spec's rules produce.
   it may be a cosignature on an algorithm this document does not use, and
   refusing it would stop a Norn reader accepting the checkpoints every other
   reader of a shared log accepts (§10, D-074 c).
+- **A signature line's name** is one or more characters, none of them `+` and
+  none a Unicode white-space character — U+0009–U+000D, U+0020, U+0085, U+00A0,
+  U+1680, U+2000–U+200A, U+2028, U+2029, U+202F, U+205F and U+3000, the whole
+  property, written out so that no implementation consults its own table — as
+  `c2sp.org/signed-note` requires. A line whose name is empty or breaks this
+  rule does not frame, and the note is `note`. "Ignored" is said only of a line
+  that has framed: a well-formed line whose name and key id match no trusted
+  key (D-077).
 - The decoded payload is **exactly** that length for the matched key, never a
   prefix or the other algorithm's supported length, and never "at least": a
   verifier that reads the first 68 bytes and ignores what follows accepts
@@ -891,7 +902,7 @@ spec's rules produce.
   (`checkpoints-bad/20-signature-payload-too-long`) and a 76-byte payload
   under the log's `0x01` key are both `log-signature` failures, not `note`
   framing failures, and MUST be refused even if another line from that key verifies (`checkpoints-bad/24-log-key-other-algorithm-length`, D14c, §10.1). The same holds for a listed witness: a 68-byte payload under its name and cosignature key id is a `cosignature` failure, not a line to skip (`checkpoints-bad/28-witness-key-other-algorithm-length`).
-- The signed text and every signature line MUST be valid UTF-8. A note that is not is malformed note framing, refused as `note` before any key is looked for: a reader that decodes the text before it verifies must see the bytes this one does (D-074 c).
+- The signed text and every signature line MUST be valid UTF-8, and MUST NOT contain an ASCII control character below U+0020 other than the line feeds that end lines — a carriage return included — as `c2sp.org/signed-note` requires. A note that is not is malformed note framing, refused as `note` before any key is looked for: a reader that decodes the text before it verifies must see the bytes this one does (D-074 c, D-077).
 - A note carries **at least one signature line**. A block with none is a
   malformed note rather than an unsigned one, and §10.1 refuses it as `note` —
   the framing — before any signature is looked for: there is nothing to verify
@@ -917,9 +928,10 @@ spec's rules produce.
   implementations consult disagree — one counts U+001C–U+001F as space, the
   other does not — and a name one accepts and the other refuses splits them on
   the same trust file. Every name Norn issues, an origin or `norn-witness/…`,
-  is already inside it. The grammar is a verifier key's; a signature line's
-  name is only matched against verifier keys, so a stranger's line under any
-  other name is still ignored, as above. The
+  is already inside it. The grammar is a verifier key's. A signature line's
+  name follows the looser rule above — any characters but `+` and white space —
+  so a stranger's well-formed line under a name outside this grammar, a
+  non-ASCII one say, is still ignored (`served-stranger-name/`). The
   verifier-key data MUST be canonical RFC 4648 base64: `alg ‖ pk` is 33 bytes,
   and 33 bytes encode to 44 base64 characters without padding or unused pad
   bits. Decoding and re-encoding MUST reproduce the exact data text; a carriage
@@ -1458,11 +1470,11 @@ these codes and no other, and the first step whose check fails decides which.
 | step | code | the refusal |
 |---|---|---|
 | 1 | `unserved` | the checkpoint is not served. The same code for any file a later step needs and cannot fetch — an entry bundle (step 8), a hash tile (step 12) — reported at that step |
-| 2 | `note` | the checkpoint is not a well-formed signed note (§7): no blank separator line, a signature line that does not frame, a payload that is not canonical padded base64 of at least a 4-byte key id, text or a line that is not UTF-8, an unterminated block, an extra blank line after the last signature line, or **no signature line at all**. Framing comes first because there is nothing to verify until the lines are found |
+| 2 | `note` | the checkpoint is not a well-formed signed note (§7): no blank separator line, a signature line that does not frame, a payload that is not canonical padded base64 of at least a 4-byte key id, text or a line that is not UTF-8 or carries an ASCII control character other than a line-ending LF, a signature line whose name is empty or holds `+` or white space, an unterminated block, an extra blank line after the last signature line, or **no signature line at all**. Framing comes first because there is nothing to verify until the lines are found |
 | 3 | `log-signature` | no line whose name and key id match a trusted log key (§9.4) verifies, or any line that matches does not. The matching key's algorithm fixes the signature length too: a 76-byte payload under the log's `0x01` key fails here, even beside a valid line from that key (`checkpoints-bad/24-log-key-other-algorithm-length`, D14c), and so does any other length but 68 (`checkpoints-bad/20-signature-payload-too-long`). **The signature decides before the origin**: a checkpoint signed by a key this anchor does not trust is refused as `log-signature`, whatever origin it names |
 | 4 | `checkpoint` | the signed text is not a `tlog-checkpoint` body (§6): not exactly three lines, a size that is not canonical decimal or is above 2⁶³−1 (§6), a root that is not 32 bytes of standard padded base64 |
 | 5 | `origin` | the body's origin line is not **equal** to `norn.trust.origin` — not a prefix of it, not a case variant of it |
-| 6 | `cosignature` | a cosignature line whose name **and** key id match a listed witness does not verify — including one whose payload is not a cosignature's 76 bytes (`checkpoints-bad/28-witness-key-other-algorithm-length`) |
+| 6 | `cosignature` | a cosignature line whose name **and** key id match a listed witness does not verify — including one whose payload is not a cosignature's 76 bytes (`checkpoints-bad/28-witness-key-other-algorithm-length`) or whose timestamp is above 2⁶³−1 (§7, D-077) |
 | 7 | `quorum` | the verifying lines from listed witnesses do not satisfy the policy |
 | 8 | `entries` | the entry bundles the checkpoint's size implies do not frame (§6's big-endian uint16 length prefixes), or do not add up to that size. A zero-length frame **frames** — a uint16 length of 0 is a frame — and the empty entry it carries is §5.1's `decode`: a rejected entry in an accepted log, not this code. Bytes after the last frame a full bundle needs are either further frames, which do not add up, or a truncated one, which does not frame: this code either way (run 14, M2 and M3) |
 | 9 | `head` | the tree rebuilt from the served entries does not hash to the signed root |
@@ -1698,7 +1710,7 @@ naming that rule is how the generators and the placement guards check it.
 | `requests/<name>.cbor` · `.txt` · `.json` | enrollment requests (§16): the request bytes, its bech32m text form, and a mirror `{request, preimage_sha256, text, size}`. `cases.json` lists them, each with a `form` — `canonical` for §16.2's lowercase form, or `uppercase` for the same request in the form §16.2 says a reader MUST also accept, which names the canonical case it duplicates |
 | `requests-bad/<name>.txt` | 30 requests, including `small-order-device-pk`, `torsion-R-signature` and `S-plus-L-signature`, that MUST be refused — by the text layer, the CBOR profile, a field rule or signature verification. `cases.json` gives each case's reason |
 | `receipt.json` | `{comment, origin, leaf_hash, deadline, text_sha256}`, where `text_sha256` is `SHA-256` of the **signed text** — through the newline ending the last text line, excluding the blank separator and the signature lines |
-| `checkpoints-bad/<NN-case>.checkpoint` | 37 checkpoints, including `31-cosignature-S-plus-L` (`cosignature`), that MUST be refused, each served in place of `served/checkpoint` over the honest tiles. `cases.json` lists them, and its `signature_blind_accepts` names the ones a verifier that never calls Ed25519 accepts — six of the thirty-seven. That set is **computed** from the shipped files, not asserted |
+| `checkpoints-bad/<NN-case>.checkpoint` | 43 checkpoints, including `31-cosignature-S-plus-L` (`cosignature`), that MUST be refused, each served in place of `served/checkpoint` over the honest tiles. `cases.json` lists them, and its `signature_blind_accepts` names the ones a verifier that never calls Ed25519 accepts — six of the forty-three. That set is **computed** from the shipped files, not asserted |
 | `entries-hostile/<name>.cbor` | input that is not an entry and never could be, for §4.0's three resource limits — the entry size, the nesting depth and the map-key cap. `cases.json` says what each refusal must be about, and marks the cases that sit exactly **at** a limit and MUST be accepted |
 | `proven/grant-labels.json` | a pure-function table with a `comment` and 36 `{label, grant, says}` cases: D-077 prefix grammar, U+0020-only trimming, canonical masked text, whole-label failure and IPv4-mapped refusals |
 | `proven/cases.json` | the devices admitted at four evaluation times (§5.3), including the boundary where `expires` equals `T`; and under `grants`, every active device's §4.0 grant, which the evaluation time does not change |
@@ -1772,6 +1784,9 @@ this table drifted out of date the moment one was.
 | §10.1 genesis precedes hash tiles (run 14, L1) | — | `served-genesis/other-genesis-missing-tile` serves `detect/other-genesis-missing-tile` and is `genesis` before `unserved`; `served-genesis/other-genesis-tampered-tile` serves `detect/other-genesis-tampered-tile` and is `genesis` before `tiles`; both hold no stored checkpoint |
 | §10.1 adjacent checkpoint checks (run 14, L2) | `served/checkpoint` | `checkpoints-bad/34-four-lines-and-wrong-origin` is `checkpoint` before `origin`; `checkpoints-bad/35-wrong-origin-and-forged-pi` is `origin` before `cosignature`; `checkpoints-bad/36-no-quorum-and-size-163` is `quorum` before the missing entries can be fetched (`unserved`) |
 | §7 LF note framing (run 14, L2) | `served/checkpoint` | `checkpoints-bad/37-crlf` changes all LF endings to CRLF and is `note` |
+| §7 bounded cosignature time (D-077) | `served/checkpoint`; the bound itself, 2⁶³−1, is accepted in the cosignature unit test | `checkpoints-bad/38-cosignature-time-above-2-63` re-cosigns the honest head with listed witness pi at 2⁶³, signing its unsigned decimal message: `cosignature` before the cast or signature check |
+| §7 signature name framing (D-077) | `served-stranger-name/` stays accepted; repairs change only the added name to `stranger`, leaving an ignored line | `checkpoints-bad/39-signature-name-empty`, `checkpoints-bad/40-signature-name-tab`, `checkpoints-bad/41-signature-name-nbsp` (U+00A0) and `checkpoints-bad/42-signature-name-plus` each append one stranger line to the honest head: `note` |
+| §7 whole-note control-byte framing (D-077) | `served/checkpoint` | `checkpoints-bad/43-signature-name-nul` places NUL inside an added stranger's name: `note`. `checkpoints-bad/37-crlf` does not pin CR: CRLF endings leave no blank separator line, so it is `note` without this rule. Unit tests cover every byte below 0x20 except LF in signed text, names and payloads; no vector yet isolates a CR in otherwise frameable signed text. The reference checks the five stranger names on a note-only projection retaining the actual log signature and extra 68-byte line; it verifies no checkpoint or cosignature |
 | §10.1 bundle version precedes its checkpoint (run 14, L2) | `proofs/nas.bundle` | `proofs-bad/wrong-version-and-untrusted-checkpoint` carries `v: 2` and a checkpoint signed by an untrusted key: `bundle` before `log-signature` |
 | §11.1 adjacent evidence checks (run 14, L2) | `fork/evidence-v1.cbor` | `fork/bad-policy-unparseable-and-unknown-key` is `schema` before `policy`; `fork/bad-unverifiable-conflicting-and-size-mismatch` is `conflicting` before `size` |
 | §11.1 size 0 with an empty held head (run 14, L4 c) | — | `fork/bad-size-zero-empty-held` carries two signed and cosigned size-0 heads with different roots and an empty held head: `proof`. The held root matches its head and the proof is empty, isolating the explicit size-0 rule |
@@ -1841,7 +1856,7 @@ this table drifted out of date the moment one was.
 | §7 note framing | `served/checkpoint` and `receipt.note`, both read with these rules | `checkpoints-bad/13-ascii-dash-signature`, `14-unterminated-signature-block`, `18-signature-name-with-space`, `19-signature-unpadded-base64`, `23-extra-final-newline`, and `32-signature-name-not-utf8` (a stranger's line, otherwise ignored, whose name is not UTF-8); `01-unsigned` pins the requirement for at least one signature line. The generated notes isolate the stated framing rules |
 | §7 canonical signature payload base64 | `served/checkpoint` has a canonical log signature and witness cosignatures | `checkpoints-bad/25-signature-nonzero-pad-bits` and `checkpoints-bad/26-cosignature-nonzero-pad-bits`: each changes only unused pad bits, preserving the decoded valid signature bytes, and both MUST be refused as malformed note framing |
 | §10.1 a matched log key with the other valid payload length | `served/checkpoint` | `checkpoints-bad/24-log-key-other-algorithm-length` appends a 76-byte line whose name and key ID match the log's `0x01` key. It is frameable as a note but fails the matched key's signature check, so its code is `log-signature`; the failure remains observable beside the checkpoint's good log signature. `20-signature-payload-too-long` is the log's own line one byte long: framed since D-074 (c), refused by the matched key, `log-signature` |
-| §7 a line no trusted key matches is ignored whatever its length (D-074 c) | `served-unknown-algorithm/` — the served head plus one 70-byte line, a key id under an algorithm byte §7 does not use and 66 bytes, from a key nobody here holds. It MUST be **accepted**: every other stranger's line in the suite is 76 bytes, so a reader that framed only 68 and 76 passed them all and refused a shared log the day one witness used a third algorithm | `checkpoints-bad/32-signature-name-not-utf8`: a stranger's line the profile would ignore, refused as `note` because its name is not UTF-8 |
+| §7 a line no trusted key matches is ignored whatever its length (D-074 c) | `served-unknown-algorithm/` — the served head plus one 70-byte line, a key id under an algorithm byte §7 does not use and 66 bytes, from a key nobody here holds. It MUST be **accepted**: the accepted stranger cosignature lines in the suite are 76 bytes, so a reader that framed only 68 and 76 passed them all and refused a shared log the day one witness used a third algorithm | `checkpoints-bad/32-signature-name-not-utf8`: a stranger's line the profile would ignore, refused as `note` because its name is not UTF-8 |
 | §7 the key-name grammar is a verifier key's (D-074 f) | `served-stranger-name/` — the served head plus one cosignature line from a stranger whose name is not ASCII, a name §7's grammar refuses in a verifier key. The line is only matched against verifier keys and matches none, so it MUST be **accepted**: a reader that applied the grammar to every line it read would refuse heads every other reader accepts | `trust-bad/49-witness-key-id-uppercase` and `50-witness-key-name-not-ascii` — pi's key broken one way each, in the witness array and the policy alike. U+001C, the character the two implementations once disagreed on, has no trust-file vector: §9.1 forbids control bytes anywhere in policy text, and correspondence puts the key there, so such a file is refused by that rule too. The key-name tests in both implementations pin it at the verifier-key parser |
 | §10.1 a matched witness key with the other valid payload length | `served/checkpoint` | `checkpoints-bad/28-witness-key-other-algorithm-length` appends a 68-byte line whose name and cosignature key ID match the listed witness `pi`. A reader that skips it as "not a cosignature" still counts three good lines and accepts; its code is `cosignature`, the witness side of `24` (SEC-027) |
 | §8.1 a bundle's checkpoint is checked per §10 | `proofs/`, whose checkpoints carry the quorum | `proofs-bad/no-quorum` (the log's signature and nobody else's) and `proofs-bad/wrong-origin` (this network's key over another network's origin line) |

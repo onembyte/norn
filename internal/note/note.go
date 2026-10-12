@@ -141,6 +141,26 @@ func validKeyName(name string) bool {
 	return true
 }
 
+// validSignatureName is the looser signed-note grammar, not a verifier key's
+// ASCII grammar. The white-space property is written out so a runtime's
+// Unicode table cannot change which stranger lines frame (D-077).
+func validSignatureName(name string) bool {
+	if name == "" {
+		return false
+	}
+	for _, c := range name {
+		switch c {
+		case '+', '\u0009', '\u000a', '\u000b', '\u000c', '\u000d',
+			'\u0020', '\u0085', '\u00a0', '\u1680', '\u2000', '\u2001',
+			'\u2002', '\u2003', '\u2004', '\u2005', '\u2006', '\u2007',
+			'\u2008', '\u2009', '\u200a', '\u2028', '\u2029', '\u202f',
+			'\u205f', '\u3000':
+			return false
+		}
+	}
+	return true
+}
+
 // Sign returns the signed note: text, a blank line, one signature line.
 func Sign(text, name string, key ed25519.PrivateKey) (string, error) {
 	if text == "" || !strings.HasSuffix(text, "\n") {
@@ -172,6 +192,13 @@ func Split(signed string) (string, []Signature, error) {
 	if !utf8.ValidString(signed) {
 		return "", nil, noteErrorf("the note is not UTF-8")
 	}
+	// The whole note follows signed-note's control-byte rule, including
+	// unknown signature lines that would otherwise be ignored (D-077).
+	for i := 0; i < len(signed); i++ {
+		if signed[i] < 0x20 && signed[i] != '\n' {
+			return "", nil, noteErrorf("the note contains an ASCII control character")
+		}
+	}
 	text, block, found := strings.Cut(signed, "\n\n")
 	if !found {
 		return "", nil, noteErrorf("note has no signature block")
@@ -195,8 +222,8 @@ func Split(signed string) (string, []Signature, error) {
 			return "", nil, noteErrorf("bad signature line %q", line)
 		}
 		name, blob, ok := strings.Cut(strings.TrimPrefix(line, SigPrefix), " ")
-		if !ok {
-			return "", nil, noteErrorf("signature line has no key name")
+		if !ok || !validSignatureName(name) {
+			return "", nil, noteErrorf("signature line has an invalid key name")
 		}
 		raw, err := base64.StdEncoding.Strict().DecodeString(blob)
 		if err != nil || base64.StdEncoding.EncodeToString(raw) != blob {
