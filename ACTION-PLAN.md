@@ -12,8 +12,8 @@ What exists and is checked by the gate: a frozen `SPEC.md`; a byte-exact vector
 suite with three provenances; the Go node agent, log server, witness wrapper and
 CLI; a Python reference implementation that produces the same states byte for
 byte; an independent verifier built cold from the specification alone
-(`contrib/verify-py/`, which stops on the anchor format D-077 introduced until
-the third cold build replaces it); a simulation of the attack scenarios. The
+(`contrib/verify-py/`, the third such build, which passes every check); a
+simulation of the attack scenarios. The
 README's status line has the current counts.
 
 What has not happened: nothing has run on a real kernel or a real network; no
@@ -261,8 +261,9 @@ Each box is a fact to check on the day, not a promise made today.
 - [ ] **`RELEASE-NOTES-v0.1.md` is stale.** It calls D-072 and D-074 unresolved
   (both are decided), counts 13 cold-model runs (there are 14), and predates
   D-075, D-076 and D-077. Refresh it when you tag v0.1 (U8).
-- [ ] **`make verify-py` green.** Red until the third cold build (6.5l-xii-d)
-  replaces the verifier sealed before D-077.
+- [ ] **`make verify-py` green.** Green since the third cold build (6.5l-xii-d,
+  2026-10-12); recheck on the day, since a vector added after its seal is
+  recorded in `contrib/verify-py.known-failures`.
 - [ ] **Which numbers come from a real deployment.** None, today. Every message
   says so, and stays true to it.
 

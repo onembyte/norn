@@ -1,11 +1,10 @@
-"""RFC 6962 §2.1 hashing, §2.1.1 inclusion, §2.1.2 consistency.
-Procedural verifiers (RFC 9162 §2.1.3.2/§2.1.4.2), from memory.
-Proof ordering is the recursive RFC SUBPROOF / PATH order, bottom to top.
+"""RFC 6962 §§2.1, 2.1.1, 2.1.2; verification procedures as RFC 9162
+§§2.1.3.2 and 2.1.4.2, implemented from memory. Proofs are bottom-up.
 """
 from hashlib import sha256
 
-def leaf(b): return sha256(b'\x00'+b).digest()
-def node(a,b): return sha256(b'\x01'+a+b).digest()
+def leaf(e): return sha256(b'\0'+e).digest()
+def node(a,b): return sha256(b'\1'+a+b).digest()
 def root(hashes):
     n=len(hashes)
     if not n: return sha256(b'').digest()
@@ -13,30 +12,29 @@ def root(hashes):
     k=1<<((n-1).bit_length()-1)
     return node(root(hashes[:k]),root(hashes[k:]))
 
-def inclusion(h,index,size,proof,target):
+def inclusion(h,index,size,proof,expected):
     if not 0<=index<size: return False
-    fn=index; sn=size-1
+    fn=index; sn=size-1; r=h
     for p in proof:
-        if sn==0 or len(p)!=32: return False
+        if sn==0: return False
         if fn&1 or fn==sn:
-            h=node(p,h)
+            r=node(p,r)
             while fn and not fn&1: fn>>=1; sn>>=1
-        else: h=node(h,p)
+        else: r=node(r,p)
         fn>>=1; sn>>=1
-    return sn==0 and h==target
+    return sn==0 and r==expected
 
 def consistency(m,n,old,new,proof):
-    if m<=0 or m>n: return False
+    if not 0<m<=n: return False
     if m==n: return not proof and old==new
     fn=m-1; sn=n-1
     while fn&1: fn>>=1; sn>>=1
-    pos=0
-    if fn==0: fr=sr=old
+    if fn==0: fr=sr=old; rest=proof
     else:
         if not proof: return False
-        fr=sr=proof[0]; pos=1
-    for p in proof[pos:]:
-        if sn==0 or len(p)!=32: return False
+        fr=sr=proof[0]; rest=proof[1:]
+    for p in rest:
+        if sn==0: return False
         if fn&1 or fn==sn:
             fr=node(p,fr); sr=node(p,sr)
             while fn and not fn&1: fn>>=1; sn>>=1
@@ -44,31 +42,16 @@ def consistency(m,n,old,new,proof):
         fn>>=1; sn>>=1
     return sn==0 and fr==old and sr==new
 
-def path(h,i):
-    if len(h)==1: return []
-    k=1<<((len(h)-1).bit_length()-1)
-    return path(h[:k],i)+[root(h[k:])] if i<k else path(h[k:],i-k)+[root(h[:k])]
-
-def subproof(h,m,complete=True):
-    n=len(h)
-    if m==n: return [] if complete else [root(h)]
-    k=1<<((n-1).bit_length()-1)
-    if m<=k: return subproof(h[:k],m,complete)+[root(h[k:])]
-    return subproof(h[k:],m-k,False)+[root(h[:k])]
-
 def selftest():
-    a,b,c,d=map(leaf,[b'a',b'b',b'c',b'd'])
-    assert root([a,b,c])==node(node(a,b),c)
-    assert inclusion(c,2,3,[node(a,b)],root([a,b,c]))
-    assert consistency(2,3,node(a,b),root([a,b,c]),[c])
-    assert consistency(3,4,root([a,b,c]),root([a,b,c,d]),[c,d,node(a,b)])
-    for n in range(1,34):
-        h=[leaf(bytes([i])) for i in range(n)]
-        for i in range(n):
-            p=path(h,i)
-            assert inclusion(h[i],i,n,p,root(h))
-            assert not inclusion(h[i],i,n,p+[a],root(h))
-        for m in range(1,n+1):
-            p=subproof(h,m)
-            assert consistency(m,n,root(h[:m]),root(h),p)
-            assert not consistency(m,n,root(h[:m]),root(h),p+[a])
+    a,b,c,d=[leaf(bytes([i])) for i in range(4)]
+    r3=node(node(a,b),c); r4=node(node(a,b),node(c,d))
+    assert root([a,b,c])==r3 and root([a,b,c,d])==r4
+    for i,p in enumerate(([b,c],[a,c],[node(a,b)])):
+        assert inclusion([a,b,c][i],i,3,p,r3)
+        assert not inclusion([a,b,c][i],i,3,p+[d],r3)
+    assert consistency(1,3,a,r3,[b,c])
+    assert consistency(2,3,node(a,b),r3,[c])
+    assert consistency(3,4,r3,r4,[c,d,node(a,b)])
+    assert consistency(4,4,r4,r4,[])
+    assert not consistency(3,4,r3,r4,[d,c,node(a,b)])
+    assert not consistency(0,4,b'\0'*32,r4,[])

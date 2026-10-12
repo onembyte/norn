@@ -1,63 +1,59 @@
 #!/usr/bin/env python3
-"""Offline command-line interface; all protocol decisions live in protocol.py."""
-import sys
-sys.dont_write_bytecode=True
+"""Offline command-line entry point; no network or external dependencies."""
 import argparse
 import json
 from pathlib import Path
-import protocol as p
-import cbor
+import sys
+import verifier as v
+import bech32m
 
+DEFAULT_TRUST=Path(__file__).resolve().parents[2]/'vectors'/'trust.cbor'
+def directory_reader(directory):
+    root=Path(directory)
+    def get(path):
+        p=root/path
+        return p.read_bytes() if p.is_file() else None
+    return get
 
 def main():
-    ap=argparse.ArgumentParser(description='Independent, standard-library Norn verifier')
-    ap.add_argument('--trust',type=Path,default=Path(__file__).resolve().parents[2]/'vectors/trust.cbor')
-    ap.add_argument('--learn-from',type=Path,action='append',default=[],help='verify and replay this served log before checking the target; repeat for successive heads')
-    sub=ap.add_subparsers(dest='command',required=True)
-    for cmd in ('served','bundle','evidence','receipt','request','trust','replay','decode'):
-        a=sub.add_parser(cmd); a.add_argument('path',type=Path)
-        if cmd=='request': a.add_argument('--text',action='store_true')
-        if cmd=='receipt':
-            a.add_argument('--entry',type=Path); a.add_argument('--time',type=int,default=0)
-    args=ap.parse_args()
+    parser=argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('kind',choices=('trust','request','checkpoint','served','bundle','evidence','receipt','replay'))
+    parser.add_argument('artifact',type=Path)
+    parser.add_argument('--trust',type=Path,default=DEFAULT_TRUST)
+    parser.add_argument('--prior',type=Path,help='previous served directory to verify under the initial trust and learn from')
+    parser.add_argument('--entry',type=Path,help='submitted entry bound by a receipt')
+    parser.add_argument('--now',type=int,default=0,help='trusted receipt checking time; 0 skips expiry')
+    parser.add_argument('--text',action='store_true',help='request artifact is Bech32m text with an optional file LF')
+    args=parser.parse_args()
     try:
-        if args.command=='decode': result=cbor.loads(args.path.read_bytes())
-        elif args.command=='trust':
-            raw=args.path.read_bytes(); t=p.trust(raw)
-            result={'origin':t['origin'],'fingerprint':p.fingerprint(raw).rstrip('\n')}
-        elif args.command=='replay':
-            m=json.loads(args.path.read_bytes()); anchor={k:bytes.fromhex(v) for k,v in m['anchor'].items()}
-            entries=[]
-            for i,e in enumerate(m['entries']):
-                p.require(e['index']==i)
-                name=e['name']; p.require('/' not in name and '\\' not in name and name not in ('.','..'))
-                entries.append((args.path.parent/(name+'.cbor')).read_bytes())
-            result=p.replay(anchor,entries)
-        elif args.command=='request':
-            raw=args.path.read_bytes()
-            if args.text:
-                s=raw.decode('utf-8'); s=s[:-1] if s.endswith('\n') else s
-                result=p.request_text(s)
-            else: result=p.request(raw)
+        t=v.trust(args.trust.read_bytes()); state=stored=stored_entries=None
+        if args.prior:
+            stored,state,stored_entries=v.served(directory_reader(args.prior),t)
+        if args.kind=='served':
+            cp,result,entries=v.served(directory_reader(args.artifact),t,state,stored,stored_entries)
+            output={'checkpoint':cp,'state':result,'proven':v.proven(result,cp['time'])}
+        elif args.kind=='replay':
+            # A manifest supplies ordering only. The trust file supplies the anchor.
+            manifest=json.loads(args.artifact.read_bytes())
+            entries=[(args.artifact.parent/(e['name']+'.cbor')).read_bytes() for e in manifest['entries']]
+            sys.stdout.buffer.write(v.canonical(v.replay(t,entries))); return 0
         else:
-            t=p.trust(args.trust.read_bytes()); reader=p.Reader(t); previous=None
-            for source in args.learn_from:
-                view=reader.served(source,stored=previous['checkpoint'] if previous else None,held_entries=previous['entries'] if previous else None)
-                reader=p.Reader(t,view['state']); previous=view
-            if args.command=='served':
-                view=reader.served(args.path,stored=previous['checkpoint'] if previous else None,held_entries=previous['entries'] if previous else None)
-                result={'checkpoint':view['checkpoint'],'state':view['state'],'proven':view['proven']}
-            elif args.command=='bundle': result=reader.bundle(args.path.read_bytes())
-            elif args.command=='evidence': result=reader.evidence(args.path.read_bytes())
-            else:
-                submitted=p.merkle.leaf(args.entry.read_bytes()) if args.entry else None
-                result=reader.receipt(args.path.read_bytes(),submitted,args.time)
-        sys.stdout.buffer.write(p.canonical_json(result)); return 0
-    except p.Refusal as ex:
-        print(ex.code,file=sys.stderr); return 1
-    except cbor.DecodeError as ex:
-        print('decode: '+str(ex),file=sys.stderr); return 1
-    except (ValueError,OSError) as ex:
-        print(str(ex),file=sys.stderr); return 1
+            raw=args.artifact.read_bytes()
+            if args.kind=='trust': output=v.trust(raw)
+            elif args.kind=='request':
+                if args.text: raw=bech32m.payload(raw.decode().removesuffix('\n'))
+                output=v.request(raw,t['net'])
+            elif args.kind=='checkpoint': output=v.checkpoint(raw,t,state)
+            elif args.kind=='bundle':
+                b,cp=v.bundle(raw,t,state); output={'device':b['device'],'index':b['index'],'checkpoint':cp}
+            elif args.kind=='evidence':
+                e=v.evidence(raw,t,state); output={'fork':True,'version':e['version'],'size':e['size'],'split':e.get('split',0)}
+            elif args.kind=='receipt': output=v.receipt(raw,t,state,args.entry.read_bytes() if args.entry else None,args.now)
+        sys.stdout.buffer.write(v.canonical({'outcome':'accept','result':output})); return 0
+    except v.Refusal as e:
+        print(json.dumps({'outcome':e.code},separators=(',',':'))); return 1
+    except (ValueError,OSError,KeyError,TypeError) as e:
+        # Trust/configuration/input failures have no protocol refusal vocabulary.
+        print(json.dumps({'error':str(e)},separators=(',',':'))); return 1
 
 if __name__=='__main__': sys.exit(main())

@@ -87,7 +87,7 @@ func TestTheColdVerifiersKnownFailuresAreRecordedAndOwed(t *testing.T) {
 		t.Fatalf("the cold verifier's known failures are not recorded: %v", err)
 	}
 	var header strings.Builder
-	line := regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9/._-]* expected=.* got=.*$`)
+	line := regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9/._#-]* expected=.* got=.*$`)
 	for _, text := range strings.Split(strings.TrimRight(string(raw), "\n"), "\n") {
 		if strings.HasPrefix(text, "#") {
 			header.WriteString(text)
@@ -97,8 +97,8 @@ func TestTheColdVerifiersKnownFailuresAreRecordedAndOwed(t *testing.T) {
 			t.Errorf("%q is not a harness line (`<check> expected=… got=…`)", text)
 		}
 	}
-	if !strings.Contains(header.String(), "6.7-r") {
-		t.Error("the known failures do not name the row that clears them (6.7-r)")
+	if !strings.Contains(header.String(), "6.5l-xii-d") {
+		t.Error("the known failures do not name the cold build they belong to (6.5l-xii-d)")
 	}
 	makefile, err := os.ReadFile(filepath.Join(root(t), "Makefile"))
 	if err != nil {
