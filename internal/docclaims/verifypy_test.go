@@ -97,8 +97,8 @@ func TestTheColdVerifiersKnownFailuresAreRecordedAndOwed(t *testing.T) {
 			t.Errorf("%q is not a harness line (`<check> expected=… got=…`)", text)
 		}
 	}
-	if !strings.Contains(header.String(), "6.5l-xii-d") {
-		t.Error("the known failures do not name the cold build they belong to (6.5l-xii-d)")
+	if !strings.Contains(header.String(), "6.5l-xii-f") {
+		t.Error("the known failures do not name the cold build they belong to (6.5l-xii-f)")
 	}
 	makefile, err := os.ReadFile(filepath.Join(root(t), "Makefile"))
 	if err != nil {

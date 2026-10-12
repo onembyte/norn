@@ -1,69 +1,64 @@
-# Independent sealed Norn verifier
+# Independent Python verifier — Lane BJ
 
-Python 3.11 or later, standard library only. No installation or network access.
-`tomllib` is used only for the harness's human trust-file rendering check.
-
-From the sealed directory:
+From the sealed directory, run:
 
 ```sh
 python3 work/verify-py/harness.py
 ```
 
-The harness first runs the three primitive self-tests, then verifies every
-`SHA256SUMS` entry and executes all declared cases. Each check prints its path,
-expected result, actual result and PASS/FAIL. It exits nonzero on a mismatch,
-unknown case declaration, uncovered data artifact or unhandled error. Large
-values are displayed as hashes; comparisons use the complete original values.
-The captured successful run is `results.txt`: 3,001 checks, zero failures.
+Python 3.11 or newer is required (`tomllib` checks the trust-file rendering).
+All code uses the standard library. No installation, network access, signing
+service or other project checkout is used. The harness locates `vectors/`
+relative to itself, runs the standards self-tests first, prints a line with
+path, expected, got and PASS/FAIL for each assertion, and returns status 1 for
+failures, unexpected exceptions or an unhandled manifest/case shape.
+Large byte comparisons print SHA-256 digests; comparison itself is byte for byte.
 
-Coverage includes deterministic CBOR and resource boundaries; all replay
-fixtures and canonical states; entry/request mirrors and hashes; trust files,
-TOML round-trip and fingerprint; policy parsing/evaluation; request text and
-signatures; checkpoint notes, log signatures, cosignatures and quorum times;
-entry bundles, reconstructed heads and all implied hash tiles; inclusion
-bundles, receipt bindings/deadlines, both reader states after rotations;
-version-1/version-2 fork evidence and every carried consistency proof;
-stored-head fork/rollback decisions, witness-time freshness, expiry, grants
-and installed keys; all 914 CCTV signatures. Auxiliary tiles on refused
-branches are checked separately without changing refusal precedence.
+Coverage includes every shipped case/manifest, every replay fixture and
+canonical state, encoding-profile boundaries, all 914 CCTV signatures, entry
+and request mirrors, bech32m forms, trust CBOR/TOML/fingerprint, policies and
+quorum evaluation, receipts, checkpoints, hash tiles at multiple levels,
+entry bundles, inclusion bundles, rotated keys and policies with both reader
+histories, fork evidence versions 1 and 2, held-head comparisons, witness time,
+freshness, expiry, historical versus installed keys, and grant parsing.
+Served manifests decide whether a fixture is a complete log, an overlaid
+checkpoint, named served directories or file replacements/removals.
+`SHA256SUMS` is checked for every shipped file and for a complete inventory.
 
-OpenTimestamps is advisory: the harness checks the checkpoint's stamped byte
-range/digest and every OTS file's suite checksum, and reports the unrelated
-sample/calendar files as present but unvalidated. It does not parse OTS or
-claim to validate an external timestamp. See `NOTES.md` for specification
-choices and boundaries.
+The protocol code is independent of expected outcomes:
 
-The offline command-line verifier is also available:
+- `cbor.py`: restricted deterministic CBOR codec.
+- `ed25519.py`, `merkle.py`, `bech32m.py`: pure Python primitives and self-tests.
+- `protocol.py`: trust/policy/request checking, entry envelopes, replay,
+  canonical JSON, grants, proven-set derivation and freshness.
+- `verify.py`: signed notes, checkpoints, receipts, proof bundles, served logs,
+  tile paths and fork evidence. `Refusal.code` carries the specified code.
+- `harness.py`: reads expectations and compares them with the implementation.
 
-```sh
-python3 work/verify-py/verify.py served vectors/served
-python3 work/verify-py/verify.py bundle vectors/proofs/nas.bundle
-python3 work/verify-py/verify.py evidence vectors/fork/evidence.cbor
-python3 work/verify-py/verify.py request vectors/requests/req-minimal.txt --text
-python3 work/verify-py/verify.py receipt vectors/receipt.note --entry vectors/log/0-genesis.cbor
-python3 work/verify-py/verify.py replay vectors/log/manifest.json
+For example, from this directory:
+
+```python
+from pathlib import Path
+from protocol import trust, canonical_json
+from verify import Verifier, Files
+
+vectors = Path("../../vectors")
+anchor = trust((vectors / "trust.cbor").read_bytes())
+reader = Verifier(anchor)
+head, state, entries = reader.served(Files(vectors / "served"))
+print(canonical_json(state).decode(), end="")
+informed = Verifier(anchor, state)  # state must already have been accepted
+informed.bundle((vectors / "proofs-rotated/nas.bundle").read_bytes())
 ```
 
-`--trust` selects an authoritative trust CBOR file; the default is the sealed
-suite's `trust.cbor`. `--prior vectors/served` verifies that earlier directory
-under the initial trust, learns its keys/policy, and supplies its held branch
-when checking a candidate served log. For example:
+`served(source, stored=head, stored_entries=entries)` compares a candidate with
+an already accepted branch. If the held branch is unavailable at a shorter
+candidate's size, it refuses rollback without accusing a fork. Learning keys
+and a policy alone does not fabricate a held checkpoint. No candidate can teach
+its own checkpoint verifier a key or policy before it has been accepted.
 
-```sh
-python3 work/verify-py/verify.py bundle vectors/proofs-rotated/nas.bundle --prior vectors/served
-```
-
-A standalone rotated checkpoint can likewise use `checkpoint` and `--prior`.
-The served-head variants contain only a checkpoint, so the harness overlays
-them on the directory their manifest names. `replay` takes only ordering from
-the manifest and its anchor from `--trust`; use the harness for genesis
-fixtures with intentionally different manifest anchors. Successful replay
-prints canonical state JSON directly; other commands print a JSON result and
-return 0 on acceptance, 1 on refusal/configuration errors.
-
-`verifier.py` exposes the same pure operations for Python callers. `served`
-takes a local byte-fetch callback; this implementation contains no network
-client. Bundles establish inclusion and device binding; current authorization
-and the installed WireGuard key come from the verified log's replay, never
-from the historical bundle key. Expected answers are confined to the harness;
-protocol modules neither open manifests nor consult vector outcomes.
+OpenTimestamps checking is limited to the assertions §12 supplies: the exact
+checkpoint byte range and digest, and the declared arbitrary digest in its
+opaque fixture. This does not validate OTS timestamp trees, calendar replies or
+Bitcoin confirmations; SPEC does not describe that format. See `NOTES.md` for
+the standards remembered, interpretations and scope limits.

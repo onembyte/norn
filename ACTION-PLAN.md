@@ -261,7 +261,7 @@ Each box is a fact to check on the day, not a promise made today.
 - [ ] **`RELEASE-NOTES-v0.1.md` is stale.** It calls D-072 and D-074 unresolved
   (both are decided), counts 13 cold-model runs (there are 14), and predates
   D-075, D-076 and D-077. Refresh it when you tag v0.1 (U8).
-- [ ] **`make verify-py` green.** Green since the third cold build (6.5l-xii-d,
+- [ ] **`make verify-py` green.** Green since the fourth cold build (6.5l-xii-f,
   2026-10-12); recheck on the day, since a vector added after its seal is
   recorded in `contrib/verify-py.known-failures`.
 - [ ] **Which numbers come from a real deployment.** None, today. Every message
@@ -304,8 +304,8 @@ Each box is a fact to check on the day, not a promise made today.
 
 `HARDENING-PLAN.md` H17 needs every row H0–H19 done, or blocked on a decision
 it states. Open today: H6 (D-068's two consecutive clean cold-model runs: run
-15 waits on run 14's fixes, 6.5l-xi-c-ii to -iv, and on the third cold build,
-6.5l-xii-d); H15 (the Phase 6 gate audit, after H6); and the owner's rows U1–U9.
+15 waits on the triage of the fourth cold build's readings, 6.5l-xii-g; run
+14's fixes and that build are in); H15 (the Phase 6 gate audit, after H6); and the owner's rows U1–U9.
 H21's problem statement (`standards/`) waits on U8's answer by design. When those
 close, this file's facts are rechecked, the row is ticked, and the loop stops
 itself as H17 (d) says.

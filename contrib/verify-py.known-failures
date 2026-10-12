@@ -1,36 +1,8 @@
-# Known failures of the independent verifier in contrib/verify-py — the third
-# cold build (row 6.5l-xii-d), sealed from d4374b8 on 2026-10-12.
+# Known failures of the independent verifier in contrib/verify-py — the fourth
+# cold build (row 6.5l-xii-f), sealed from d011a94 on 2026-10-12.
 #
 # `make verify-py` passes only when the harness fails exactly the lines below.
 # The build passed every check at its seal, so the list starts empty. A vector
 # added after the seal that this build cannot answer is recorded here, one
 # harness line each, as a debt the next cold build clears — never by editing
 # the verifier, which is kept exactly as written (PROVENANCE.md).
-
-# 6.5l-xi-c-ii, 2026-10-12 (lane BD): run 14's reference-side boundaries, added after
-# this build's seal. Every new case in a directory the build already reads
-# passes; what it cannot read is a directory and a table it has never seen,
-# `log-edges/` and `proven/grant-labels.json`, which its harness reports as an
-# unknown case file and unrun artifacts.
-log-edges/00-genesis.cbor#coverage expected="runner consumed artifact" got="UNRUN ARTIFACT"
-log-edges/01-enroll-device-id-newline.cbor#coverage expected="runner consumed artifact" got="UNRUN ARTIFACT"
-log-edges/01-enroll-device-id-newline.reason#coverage expected="runner consumed artifact" got="UNRUN ARTIFACT"
-log-edges/02-note-integer-at-the-cap.cbor#coverage expected="runner consumed artifact" got="UNRUN ARTIFACT"
-log-edges/03-enroll-nas-with-label.cbor#coverage expected="runner consumed artifact" got="UNRUN ARTIFACT"
-log-edges/04-revoke-nas.cbor#coverage expected="runner consumed artifact" got="UNRUN ARTIFACT"
-log-edges/05-reenroll-nas-without-labels.cbor#coverage expected="runner consumed artifact" got="UNRUN ARTIFACT"
-log-edges/06-enroll-nas2.cbor#coverage expected="runner consumed artifact" got="UNRUN ARTIFACT"
-log-edges/07-rotate-unknown-open-body.cbor#coverage expected="runner consumed artifact" got="UNRUN ARTIFACT"
-log-edges/07-rotate-unknown-open-body.reason#coverage expected="runner consumed artifact" got="UNRUN ARTIFACT"
-log-edges/08-revoke-unknown-open-body.cbor#coverage expected="runner consumed artifact" got="UNRUN ARTIFACT"
-log-edges/08-revoke-unknown-open-body.reason#coverage expected="runner consumed artifact" got="UNRUN ARTIFACT"
-log-edges/09-revoke-reason-at-the-cap.cbor#coverage expected="runner consumed artifact" got="UNRUN ARTIFACT"
-log-edges/10-enroll-request-identity.cbor#coverage expected="runner consumed artifact" got="UNRUN ARTIFACT"
-log-edges/10-enroll-request-identity.reason#coverage expected="runner consumed artifact" got="UNRUN ARTIFACT"
-log-edges/11-policy-witness-note-key.cbor#coverage expected="runner consumed artifact" got="UNRUN ARTIFACT"
-log-edges/11-policy-witness-note-key.reason#coverage expected="runner consumed artifact" got="UNRUN ARTIFACT"
-log-edges/12-note-after-refusals.cbor#coverage expected="runner consumed artifact" got="UNRUN ARTIFACT"
-log-edges/manifest.json expected="runner registered" got="UNKNOWN CASE FILE"
-log-edges/manifest.json#coverage expected="runner consumed artifact" got="UNRUN ARTIFACT"
-log-edges/state.json#coverage expected="runner consumed artifact" got="UNRUN ARTIFACT"
-proven/grant-labels.json#coverage expected="runner consumed artifact" got="UNRUN ARTIFACT"

@@ -1,105 +1,128 @@
-# Sources, choices and boundaries
+# Implementation notes — Lane BJ, row 6.5l-xii-f
 
-This implementation was cold-built from the sealed `SPEC.md`. Vector files
-were used to supply test inputs, expected outcomes and fixture transport
-ordering, not to derive protocol rules. No other project copy, shared project
-rules file, implementation or network source was consulted. The later sealed
-read restriction takes precedence over the earlier general request to read a
-shared rules file. There was no delegation and no dependency installation.
-`SPEC.md` and the vector files were not edited; all 850 entries in
-`SHA256SUMS` verify.
+This continues the five modules left by the interrupted earlier session. They
+were read first and retained. No other project copy, shared rules outside the
+seal, web page, network resource or third-party package was read. The later
+sealed-directory prohibition takes precedence over the earlier instruction to
+read a shared rules file elsewhere. SPEC and the fixture files were not edited.
+Rules were implemented from the current SPEC before examining vector outcomes;
+manifests subsequently supplied input ordering, fixture shape and expectations.
 
-## Public standards implemented from memory
+## Standards implemented from memory
 
-* `ed25519.py`: RFC 8032 §§5.1.3 and 5.1.7, with the cofactorless equation
-  `[S]B = R + [k]A`. Extended Edwards coordinates implement addition and scalar
-  multiplication. Both A and R are decoded canonically and checked for exact
-  prime order (`[L]P = O`, `P != O`); S must be below L. These additional
-  admissibility restrictions come from Norn §3.1. No library verification or
-  reduction of an out-of-range S occurs. The initial self-test embeds RFC
-  8032 §7.1 TEST 1 (empty message, public key d75a9801...) and TEST 2 (message
-  0x72, public key 3d4017c3...), checks both signatures, then rejects changed
-  messages and S+L. It also rejects the identity. The harness subsequently
-  executes every CCTV vector using its actual key, message and signature,
-  without using flags to decide verification.
-* `merkle.py`: RFC 6962 §§2.1, 2.1.1 and 2.1.2, using the equivalent iterative
-  verification procedures in RFC 9162 §§2.1.3.2 and 2.1.4.2. Inclusion paths
-  are leaf-to-root, with the right-edge collapse; consistency paths initialize
-  from the old root for a power-of-two old size and otherwise from the first
-  proof node. Proof consumption is exact. Initial self-tests use four leaves
-  `SHA256(0x00 || single-byte i)`, i=0..3: all three paths in a three-leaf
-  tree; consistency 1->3, 2->3, 3->4 and 4->4; surplus/reordered proofs and
-  size-zero rejection. These are hand-built trees, not downloaded fixtures.
-  The suite also checks its 127-leaf right edge and all sound/corrupt evidence
-  proofs, including power-of-two, same-size and version-2 split proofs.
-* `bech32m.py`: BIP-350's Bech32m decoding/checksum, including its inherited
-  BIP-173 HRP expansion and bit conversion. The module implements the last
-  separator, ASCII range, case rule, charset, generators, checksum constant
-  and exact zero-padding checks. Norn §16.2 supplies HRP `norn`, the decoded
-  byte cap and removal of the address-length limit. Initial self-tests embed
-  the published valid strings `A1LQFN3A`, `a1lqfn3a`,
-  `abcdef1l7aum6echk45nj3s0wdvt2fg8x9yrzpqzd3ryx`,
-  `split1checkupstagehandshakeupstreamerranterredcaperredlc445v`, and
-  `?1v759aa`; published invalid strings `A1G7SGD8`, `1p2gdwpf`, `x1b4n0q5`,
-  `li1dgmt3` and `de1lg7wt` followed by byte 0xff. Additional tests reject
-  mixed case and the Bech32 (not Bech32m) string `a12uel5l`, test byte
-  round-trips and reject excessive/nonzero padding. The harness then runs all
-  positive/negative Norn request forms.
+- **RFC 8032 §§5.1.3 and 5.1.7**, PureEdDSA Ed25519 point decoding and the
+  cofactorless verification equation. SPEC §3.1 adds exact-prime-order checks
+  for A and R: canonical y, canonical zero-x sign, on-curve point, nonidentity,
+  and `[L]P = O`. S is checked strictly below L without reduction. Extended
+  Edwards coordinates implement addition and scalar multiplication.
+  `ed25519.selftest()` uses RFC 8032 §7.1 TEST 1, TEST 2 and TEST 3, their
+  public keys, messages (empty, `72`, `af82`) and published signatures.
+  The signature in TEST 3 was mistranscribed in the interrupted work. It was
+  corrected locally by checking RFC TEST 3's remembered seed
+  `c5aa8df43f9f837bedb7442f31dcb7b166d38535076f094b85ce3a2e0b4458f7`
+  against deterministic RFC §5.1.6 signing during diagnosis; signing is not a
+  dependency of the self-test or verifier. All three exact signatures remain
+  visible in the self-test for comparison against the RFC. Each test also
+  rejects a changed message and S+L. Identity and order-four encodings fail
+  point admission. The separate fixture check executes all 914 untouched
+  upstream CCTV signatures, rather than deriving answers from flags.
 
-These recollected test vectors and algorithms are stated explicitly so a
-reviewer can compare them to the published standards; none was fetched.
+- **RFC 6962 §2.1, §2.1.1 and §2.1.2** (equivalent to RFC 9162 §2.1.3.2 and
+  §2.1.4.2): SHA-256 leaf/internal/empty hashing, leaf-to-root inclusion
+  verification and old-to-new consistency verification. The proof verifier
+  follows the `fn`/`sn` bit-walking procedures, including non-power-of-two
+  right edges and the old-size power-of-two initialization branch.
+  `merkle.selftest()` checks the known SHA-256 empty-tree and empty-leaf
+  digests, the explicit three-leaf shape `node(node(a,b),c)` and the final
+  leaf's one-node proof. For sizes 1, 2, 3, 4, 5, 7, 8, 9, 15, 16 and 17 it
+  checks every inclusion index and every positive old size, using recursive
+  proof construction independent of the iterative verifiers. Extra proof
+  nodes and changed roots must fail. Fixture proofs add the 127-leaf right
+  edge and version-1/version-2 fork evidence at ordinary, same and power-of-two
+  sizes. No empty-tree consistency proof is accepted (§11.1).
 
-## Specification choices and ambiguities
+- **BIP-350, Specification / Bech32m and Test vectors**, with the BIP-173
+  checksum-polynomial and HRP-expansion machinery it retains. The self-test's
+  seven published generic valid strings are `A1LQFN3A`, `a1lqfn3a`, the
+  83-character HRP ending `...bioandnumber11sg7hg6`, `abcdef1l7aum6...zd3ryx`,
+  `11llll...udsr8`, `split1checkup...lc445v`, and `?1v759aa`. The complete
+  strings are embedded in `bech32m.py`. Invalid published strings cover the
+  ASCII range, 84-character HRP, absent separator, empty HRP, charset, short
+  checksum and uppercase-HRP checksum cases; the self-test also covers an
+  absent-separator spelling. A newly added long-HRP self-test string was
+  initially the BIP-173 version and was corrected to the remembered BIP-350
+  string above before the final run. There is no lookup or network dependency.
+  Byte/group conversion round-trips empty, zero and all 256 byte values.
+  The generic decoder enforces length 90; Norn explicitly disables that limit
+  in §16.2 and bounds the decoded request instead. Shipped request cases test
+  canonical lowercase, required uppercase acceptance, mixed case, wrong HRP,
+  the wrong checksum constant and both forbidden padding forms.
 
-1. **§5 anchor wording and old empty fixture.** The prose still says “pair”
-   while its normative table has four fields. The table governs: trusted
-   replay needs net, genesis_hash, log_key and policy. The last two are used
-   only at key/policy invariant checks, as §5 expressly says. The existing
-   `log-empty/manifest.json` supplies only the older two byte fields. Its empty
-   replay needs neither text field, so the harness passes that input directly
-   to the pure replay operation and checks the zero state; it does not infer
-   missing keys/policy from other fixtures. Real CLI verification validates
-   the complete trust file and supplies its four fields. Empty strings in
-   single-genesis fixture anchors are likewise unused, not verifier keys.
-2. **§10 pseudocode versus §10.1 ordering.** The outline places fetching after
-   its fork block, but §10.1 explicitly explains that entries must frame and
-   hash to the signed head first. The numbered refusal procedure governs:
-   signatures/body/quorum, entry framing, head, fork/rollback, genesis, tiles.
-   Hash tiles for a branch already refused at fork/rollback/head are checked
-   in a separate harness check, never as a reason to change its first code.
-3. **§8.1 portable bundles versus full authorization.** A portable bundle
-   cannot reconstruct all prior signer keys or object versions. Its standalone
-   operation checks the specified checkpoint, inclusion and entry-device
-   binding. Binding an enroll decodes its request structurally; it does not
-   substitute for replay's signer/device-consent authorization. Proven sets
-   and installed keys come only from full verified replay. An old enrollment
-   key differing from the current key is valid historical evidence, as §8.1
-   expressly requires. No additional bundle refusal codes were invented.
-4. **§4.0 grants.** “CIDR”/“prefix” is read to require an explicit `/` length;
-   a bare host address is not a grant. Masking uses the parsed interface's
-   network. An IPv4-mapped IPv6 address is rejected before masking, including
-   a prefix length that would mask away the mapped marker. All comma-separated
-   parts must parse; one failure discards the whole grant. The shipped grants
-   check masking/deduplication/order and whole-list refusal, but do not settle
-   every accepted spelling of CIDR; the explicit-slash choice is recorded.
-5. **§7 witness timestamp bound.** Checkpoint size and receipt deadline are
-   decimal note lines and obey the stated 2^63-1 bound. A witness's timestamp
-   is explicitly an unsigned 64-bit binary field; it retains that range.
-   Its derived `time <decimal>` signing header is not an extra note-body line.
-6. **§12.1 OpenTimestamps boundary.** The spec explicitly says the OTS
-   timestamp/calendar format is not supplied and readers are not asked to
-   validate it. The checkpoint digest is computed over all three body LFs
-   plus the separator LF and compared to `anchors/cases.json`. For the sample
-   whose digest has no Norn preimage and the calendar response, only presence
-   and suite SHA-256 integrity are asserted. Their timestamp claims are not
-   called verified. This is the spec's stated exclusion, not an omitted
-   failing Norn case.
+All three primitive self-tests run before the harness opens any vector file.
+No external standard document was consulted. The reviewer can compare the
+embedded constants, procedures and exact test literals with the named standards.
 
-No declared protocol case is blocked by these choices. The full harness has
-3,001 checks and zero failures, including all four replay fixtures, 25 bad
-and one good genesis state, every refusal code, all reader-state pairs, and
-all 914 CCTV signatures. No unrecognized case or uncovered data artifact
-remains. Self-tests and vector checks show conformance to these supplied
-artifacts; they are not a claim of formal verification or of real witness/
-calendar behavior. The implementation is an offline verifier, not a signing
-tool, gossip daemon, WireGuard enforcer or timestamp client.
+## Interpretations and ambiguities
+
+1. **§10.1, “Why the head comes before the fork.”** Its explanatory paragraph
+   still says the pseudocode lists entry fetching after the fork block, although
+   current §10's outline fetches first. I follow §10.1's explicit numbered
+   order: framing and signed head, branch comparison, genesis, hash tiles.
+   This is a stale explanatory sentence, not a conflicting operative rule.
+
+2. **§5.3, no evaluation clock.** The closing phrase “satisfied at no instant —
+   which includes quorum none” is mathematically inconsistent with the earlier
+   explanation that `none` is satisfied at every instant. I use the explicit
+   rule “Under quorum none there is no clock”: `None` internally means no
+   witness time, and expiry is not judged. The proven fixture's t=0 sentinel
+   is translated to `None` by the harness only; an actual signed Unix time 0
+   remains a real timestamp in the verifier.
+
+3. **§§8.1 and 10.1, bundle binding versus authorization.** The portable bundle
+   check verifies its checkpoint, inclusion and named-device binding. It does
+   not conclude current membership or install the historical entry's key.
+   Embedded enrollment requests are structurally decoded to obtain their id;
+   their signature is checked during replay, where entry authorization belongs.
+   Full served-log replay supplies current membership and installed keys. The
+   spec's three bundle refusal stages do not define an additional independent
+   entry-authorization refusal code.
+
+4. **§§6 and 12, served fixture shape.** No shape is inferred from a directory
+   name. `serve_over` selects a base; `serve` selects a case's complete
+   directory; `path`/`file`, `files` and `remove` describe overlays; otherwise
+   checkpoint/tile fixtures are complete local logs. Fresh/informed answers
+   describe knowledge of keys/policy, not an implicit stored checkpoint. Thus
+   the informed 20-entry rotated head can pass, while a candidate explicitly
+   supplied with a larger held head would undergo the fork/rollback checks.
+   A previously verified state supplies learned keys; candidate replay never
+   bootstraps its own checkpoint trust.
+
+5. **§§6 and 12, anchors.** SPEC expressly supplies the stamped digest and byte
+   range so that no OTS parser is required. The harness hashes the checkpoint
+   through the separator's final LF (four LFs total). For the arbitrary sample
+   it checks that the declared digest occurs in the opaque shipped proof, and
+   checks SHA256SUMS for both proofs and the calendar reply. It makes no claim
+   about timestamp-tree validity or Bitcoin attestation. No normative OTS
+   decoding or reply-verification algorithm is given by SPEC.
+
+6. **§14, UTF-8 object-key order.** Python's scalar Unicode ordering has the
+   same order as UTF-8 bytes for the valid Unicode strings admitted by strict
+   UTF-8 decoding. Therefore `json.dumps(sort_keys=True, ensure_ascii=False)`
+   with compact separators supplies the specified order and escaping; no
+   normalization or HTML escaping is performed. All canonical state files
+   are compared as raw bytes with their final LF.
+
+No ambiguity prevents answering a shipped case. Where the suite supplies only
+semantic hints, the harness uses local diagnostics, not hint-string matching:
+request failures are mapped explicitly to text/HRP/padding/profile/schema/
+signature layers; hostile CBOR inputs are mapped to the codec's own reason.
+Closed refusal codes are compared exactly wherever the manifest defines them.
+
+## Scope
+
+This is an offline verifier and suite runner. It does not implement log
+submission, key custody, signing ceremonies, HTTP/gossip services, WireGuard
+enforcement, durable daemon state, or OTS/Bitcoin validation. These services
+are not required to decide the supplied verifier vectors; SPEC §12.1 names
+unvectored operational requirements. Passing the suite does not claim those
+services or every unvectored MUST has been implemented.

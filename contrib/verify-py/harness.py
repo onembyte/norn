@@ -1,340 +1,342 @@
 #!/usr/bin/env python3
-"""Execute every declared sealed vector; unknown declarations/files fail closed."""
+"""Run the sealed suite. Expected data never enters the protocol verifier."""
 from pathlib import Path
-import hashlib
-import json
-import sys
-import traceback
-import cbor
-import ed25519
-import merkle
-import bech32m
-import verifier as v
+import hashlib, json, sys, tomllib, traceback
+import cbor, ed25519 as ed, merkle, bech32m, protocol as p
+from verify import Verifier, Files, tile_path, groups
 
 ROOT=Path(__file__).resolve().parents[2]/'vectors'
-# All paths originate inside the vector root, never from the ambient filesystem.
-def path(name):
-    p=(ROOT/name).resolve()
-    if not p.is_relative_to(ROOT.resolve()): raise ValueError('vector path escapes sealed suite')
-    return p
-used=set()
-semantic_used=set()
-tracking=False
-def read(name):
-    p=path(name); n=p.relative_to(ROOT).as_posix(); used.add(n)
-    if tracking: semantic_used.add(n)
-    return p.read_bytes()
-def jread(name): return json.loads(read(name))
-def label(x):
-    if type(x) is bytes:
-        return 'bytes:'+str(len(x))+':sha256:'+hashlib.sha256(x).hexdigest()
-    result=json.dumps(v.jsonable(x),ensure_ascii=False,separators=(',',':'))
-    if len(result)>240:
-        return 'value-sha256:'+hashlib.sha256(result.encode()).hexdigest()
-    return result
-checks=failures=0
 
-def check(name,expected,fn):
-    global checks,failures
-    checks+=1
-    try: got=fn()
-    except Exception as e: got='ERROR:'+type(e).__name__+':'+str(e)
-    passed=got==expected
-    if not passed: failures+=1
-    print(f'{name} expected={label(expected)} got={label(got)} {"PASS" if passed else "FAIL"}',flush=True)
-    return passed
+class Harness:
+    def __init__(self):
+        self.total=0; self.failures=0; self.manifests=set()
+    def display(self,v):
+        if isinstance(v,bytes): return 'sha256:'+hashlib.sha256(v).hexdigest()
+        s=json.dumps(p.jsonable(v),ensure_ascii=False,separators=(',',':'))
+        return s if len(s)<=300 else 'sha256:'+hashlib.sha256(s.encode()).hexdigest()
+    def check(self,path,expected,fn):
+        self.total+=1
+        try:
+            got=fn(); passed=got==expected
+        except Exception as ex:
+            got=f'ERROR {type(ex).__name__}: {ex}'; passed=False
+        if not passed: self.failures+=1
+        print(f'{path} expected={self.display(expected)} got={self.display(got)} '+('PASS' if passed else 'FAIL'),flush=True)
+    def outcome(self,fn):
+        try: fn(); return 'accept'
+        except p.Refusal as ex: return ex.code
+    def accept(self,fn):
+        try: fn(); return True
+        except ValueError: return False
+    def manifest(self,path):
+        path=Path(path); self.manifests.add(path.resolve())
+        return json.loads(path.read_text())
+    def log(self,path):
+        d=self.manifest(path/'manifest.json'); anchor=d['anchor'].copy()
+        for k in ('net','genesis_hash'): anchor[k]=bytes.fromhex(anchor[k])
+        entries=[(path/(e['name']+'.cbor')).read_bytes() for e in d['entries']]
+        state=p.replay(anchor,entries); reasons={e['index']:e['reason'] for e in state['rejected']}
+        for i,e in enumerate(d['entries']):
+            label=(path/(e['name']+'.cbor')).relative_to(ROOT)
+            self.check(label,e['reason'] or 'accept',lambda e=e: reasons.get(e['index'],'accept'))
+            self.check(str(label)+'#index',i,lambda e=e:e['index'])
+            if 'codes' in d and e['name'] in d['codes']:
+                self.check(str(label)+'#manifest-code',d['codes'][e['name']],lambda e=e:reasons.get(e['index'],'accept'))
+            reason_path=path/(e['name']+'.reason')
+            if reason_path.is_file():
+                self.check(reason_path.relative_to(ROOT),e['reason']+'\n',lambda f=reason_path:f.read_text())
+        state_path=ROOT/'state.json' if path==ROOT/'log' else path/'state.json'
+        self.check(state_path.relative_to(ROOT),state_path.read_bytes(),lambda:p.canonical_json(state))
+        return state,entries
 
-def outcome(fn):
-    try: fn(); return 'accept'
-    except v.Refusal as e: return e.code
+def request_layer(s):
+    try: hrp,data=bech32m.decode(s,max_length=None)
+    except ValueError: return 'text'
+    if hrp!='norn': return 'hrp'
+    try: raw=bytes(bech32m.convert(data,5,8,False))
+    except ValueError: return 'padding'
+    try: cbor.decode(raw)
+    except ValueError: return 'profile'
+    try: p.request(raw,verify=False)
+    except ValueError: return 'schema'
+    try: p.request(raw)
+    except ValueError: return 'signature'
+    return 'accept'
 
-def boolean(fn):
-    try: fn(); return True
-    except (ValueError,TypeError): return False
+# Explicit mapping of semantic hints to independently defined validation layers.
+REQUEST_LAYERS={
+    **dict.fromkeys(('small-order-device-pk','unknown-key','missing-sig','wrong-version','short-net',
+                    'uppercase-device-id','leading-dash-device-id','long-device-id','short-device-pk',
+                    'short-wg-pk','short-sig','bool-expires','expires-at-ts','empty-labels',
+                    'too-many-labels','oversize-label','non-string-label','ts-is-text'),'schema'),
+    **dict.fromkeys(('empty-label-key','unsorted-keys','oversize-label-key'),'profile'),
+    **dict.fromkeys(('torsion-R-signature','S-plus-L-signature','forged-signature'),'signature'),
+    **dict.fromkeys(('plain-bech32','mixed-case','corrupt-character'),'text'),
+    **dict.fromkeys(('excess-padding','non-zero-padding'),'padding'), 'wrong-hrp':'hrp'}
+HOSTILE={
+    **dict.fromkeys(('bare-null','bare-simple','bare-undefined'),'simple'),
+    'bare-float':'float','bare-negative-integer':'major type','bare-tag':'major type',
+    'bare-indefinite-text':'indefinite','bare-nontext-map-key':'key type','bare-invalid-utf8':'utf8',
+    **dict.fromkeys(('oversize-entry','past-the-size-limit'),'length'),
+    **dict.fromkeys(('deep-nesting','past-the-depth-limit'),'depth'), 'past-the-key-limit':'key length'}
 
-def getter(directory,overrides=None):
-    overrides=overrides or {}
-    def get(p):
-        if p in overrides: return overrides[p]
-        n=str(Path(directory)/p)
-        if not path(n).is_file(): return None
-        return read(n)
-    return get
+def cbor_result(raw):
+    try: cbor.decode(raw); return 'accept'
+    except cbor.DecodeError as ex: return str(ex)
 
-known_manifests=set()
-def cases(directory):
-    n=directory+'/cases.json'; known_manifests.add(n); return jread(n)
+def run(h):
+    # Primitive standards tests are run before even opening a vector artifact.
+    for module in (ed,bech32m,merkle):
+        h.check('selftest/'+module.__name__,'pass',lambda m=module:(m.selftest(),'pass')[1])
+    if h.failures: return
 
-replayed={}
-def replay_manifest(n):
-    known_manifests.add(n); m=jread(n); directory=str(Path(n).parent)
-    anchor={k:bytes.fromhex(x) if k in ('net','genesis_hash') else x for k,x in m['anchor'].items()}
-    entries=[read(directory+'/'+e['name']+'.cbor') for e in m['entries']]
-    s=v.replay(anchor,entries); replayed[directory]=(s,entries)
-    reasons={e['index']:e['reason'] for e in s['rejected']}
-    for pos,e in enumerate(m['entries']):
-        check(directory+'/'+e['name']+'.cbor',e['reason'] or 'accept',lambda e=e:reasons.get(e['index'],'') or 'accept')
-        check(directory+'/'+e['name']+'#index',pos,lambda e=e:e['index'])
-        nreason=directory+'/'+e['name']+'.reason'
-        if path(nreason).is_file(): check(nreason,e['reason']+'\n',lambda nreason=nreason:read(nreason).decode())
-    for name,code in m.get('codes',{}).items():
-        e=next((e for e in m['entries'] if e['name']==name),None)
-        check(directory+'/'+name+'#code',code,lambda e=e:reasons.get(e['index'],'') if e else 'UNKNOWN CASE')
-    state_file='state.json' if directory=='log' else directory+'/state.json'
-    # Compare every byte; display a compact result instead of whole states.
-    wanted=read(state_file); actual=v.canonical(s)
-    check(state_file,'byte-identical',lambda:'byte-identical' if actual==wanted else 'different sha256='+hashlib.sha256(actual).hexdigest())
-    if not m['entries']: check(directory+'#empty-replay',[],lambda:s['rejected'])
-    return s,entries
+    # SHA256SUMS is an integrity assertion for every shipped file, including
+    # auxiliary prose and opaque OpenTimestamps containers.
+    checksum_paths=set()
+    for line in (ROOT/'SHA256SUMS').read_text().splitlines():
+        digest,name=line.split(None,1); name=name.lstrip('*'); file=ROOT/name
+        checksum_paths.add(file.resolve())
+        h.check(name+'#SHA256SUMS',digest,lambda f=file:hashlib.sha256(f.read_bytes()).hexdigest())
+    actual={f.resolve() for f in ROOT.rglob('*') if f.is_file() and f.name!='SHA256SUMS'}
+    h.check('SHA256SUMS#complete',[],lambda:sorted(str(f.relative_to(ROOT)) for f in actual-checksum_paths))
+    h.check('SHA256SUMS#no-extra',[],lambda:sorted(str(f) for f in checksum_paths-actual))
 
-def main():
-    global tracking
-    # Must run before any protocol-vector parsing.
-    for mod in (ed25519,merkle,bech32m):
-        check('selftest/'+mod.__name__,'PASS',lambda mod=mod:(mod.selftest(),'PASS')[1])
-    if failures: return 1
+    raw_trust=(ROOT/'trust.cbor').read_bytes(); anchor=p.trust(raw_trust)
+    fresh=Verifier(anchor)
+    h.check('trust.cbor','accept',lambda:h.outcome(lambda:p.trust(raw_trust)))
+    alphabet='0123456789ABCDEFGHJKMNPQRSTVWXYZ'
+    n=int.from_bytes(hashlib.sha256(raw_trust).digest()[:10],'big')
+    fp=''.join(alphabet[(n>>(5*(15-i)))&31] for i in range(16))
+    fp='-'.join(fp[i:i+4] for i in range(0,16,4))+'\n'
+    h.check('trust.fingerprint',(ROOT/'trust.fingerprint').read_text(),lambda:fp)
+    toml=tomllib.loads((ROOT/'trust.toml').read_text())
+    toml['witnesses']=toml.pop('witness')
+    for k in ('net','genesis_hash'): toml[k]=bytes.fromhex(toml[k])
+    h.check('trust.toml#CBOR',raw_trust,lambda:cbor.encode(toml))
 
-    # Integrity is checked before using the suite. SHA256SUMS names support files too.
-    sums={}
-    for line in read('SHA256SUMS').decode().splitlines():
-        digest,n=line.split(None,1); n=n.lstrip('*'); sums[n]=digest
-        check(n+'#sha256',digest,lambda n=n:hashlib.sha256(read(n)).hexdigest())
-    if failures: return 1
+    state,entries=h.log(ROOT/'log')
+    informed=Verifier(anchor,state)
+    for path in sorted(ROOT.rglob('manifest.json')):
+        if path.resolve() not in h.manifests: h.log(path.parent)
+    for dirname in ('genesis','genesis-good'):
+        d=h.manifest(ROOT/dirname/'cases.json')
+        actual_cases={q.parent.name for q in (ROOT/dirname).glob('*/manifest.json')}
+        h.check(dirname+'/cases.json#complete',sorted(d['cases']),lambda:sorted(actual_cases))
 
-    tracking=True
-    t=v.trust(read('trust.cbor'))
-    check('trust.cbor','accept',lambda:outcome(lambda:v.trust(read('trust.cbor'))))
-    # Python 3.11's standard-library TOML reader, never a dependency.
-    import tomllib
-    rendering=tomllib.loads(read('trust.toml').decode())
-    rendering.pop('fingerprint',None)
-    rendering['witnesses']=rendering.pop('witness')
-    for k in ('net','genesis_hash'): rendering[k]=bytes.fromhex(rendering[k])
-    check('trust.toml','byte-identical',lambda:'byte-identical' if cbor.dumps(rendering)==read('trust.cbor') else 'different')
-    number=int.from_bytes(hashlib.sha256(read('trust.cbor')).digest()[:10],'big')
-    alphabet='0123456789ABCDEFGHJKMNPQRSTVWXYZ'; chars=''.join(alphabet[(number>>(5*i))&31] for i in reversed(range(16)))
-    fingerprint='-'.join(chars[i:i+4] for i in range(0,16,4))+'\n'
-    check('trust.fingerprint',read('trust.fingerprint').decode(),lambda:fingerprint)
+    cp,served_state,served_entries=fresh.served(Files(ROOT/'served'))
+    h.check('served/checkpoint','accept',lambda:h.outcome(lambda:fresh.served(Files(ROOT/'served'))))
+    h.check('served#replay',p.canonical_json(state),lambda:p.canonical_json(served_state))
+    h.check('served#entries',entries,lambda:served_entries)
 
-    keys=jread('keys.json')
-    check('keys.json#network',keys['net'],lambda:t['net'].hex())
-    for name,key in keys['ed25519'].items():
-        pk=bytes.fromhex(key['public'])
-        check('keys.json#'+name+'-valid-point',True,lambda pk=pk:ed25519.valid(pk))
-        check('keys.json#'+name+'-kid',key['kid'],lambda pk=pk:v.kid(pk))
-    for name,key in keys['x25519'].items():
-        check('keys.json#'+name+'-wg-key-length',32,lambda key=key:len(bytes.fromhex(key)))
+    keys=json.loads((ROOT/'keys.json').read_text())
+    publics={v['kid']:bytes.fromhex(v['public']) for v in keys['ed25519'].values()}
+    for name,row in keys['ed25519'].items():
+        pk=bytes.fromhex(row['public'])
+        h.check('keys.json/'+name+'/kid',row['kid'],lambda pk=pk:p.kid(pk))
+        h.check('keys.json/'+name+'/point',True,lambda pk=pk:ed.valid_point(pk))
+    h.check('keys.json/net',keys['net'],lambda:anchor['net'].hex())
+    for f in sorted((ROOT/'entries').glob('*.cbor')):
+        raw=f.read_bytes(); e=p.envelope(raw,anchor['net']); mirror=json.loads(f.with_suffix('.json').read_text())
+        got=dict(entry=p.jsonable(e),entry_hash=hashlib.sha256(raw).hexdigest(),leaf_hash=merkle.leaf(raw).hex(),
+                 preimage_sha256=hashlib.sha256(p.preimage(e)).hexdigest(),size=len(raw))
+        h.check(f.with_suffix('.json').relative_to(ROOT),mirror,lambda got=got:got)
+        h.check(str(f.relative_to(ROOT))+'#canonical',raw,lambda e=e:cbor.encode(e))
+        h.check(str(f.relative_to(ROOT))+'#signatures',True,
+                lambda e=e:all(ed.verify(publics[s['kid']],p.preimage(e),s['sig']) for s in e['sigs']))
 
-    s,entries=replay_manifest('log/manifest.json')
-    for n in ('log-empty','log-admission','log-cas'): replay_manifest(n+'/manifest.json')
-    for directory in ('genesis','genesis-good'):
-        m=cases(directory)
-        for name in m['cases']: replay_manifest(directory+'/'+name+'/manifest.json')
+    for dirname,accept in (('trust-bad',False),('trust-good',True)):
+        d=h.manifest(ROOT/dirname/'cases.json')
+        for name in d['cases']:
+            f=ROOT/dirname/(name+'.cbor')
+            h.check(f.relative_to(ROOT),accept,lambda f=f:h.accept(lambda:p.trust(f.read_bytes())))
+    d=h.manifest(ROOT/'entries-hostile/cases.json')
+    for case in d['cases']:
+        f=ROOT/'entries-hostile'/(case['name']+'.cbor')
+        expected='accept' if case.get('accepted') else HOSTILE[case['name']]
+        h.check(f.relative_to(ROOT),expected,lambda f=f:cbor_result(f.read_bytes()))
+    d=h.manifest(ROOT/'policies/cases.json')
+    for case in d['cases']:
+        f=ROOT/'policies'/(case['name']+'.txt')
+        h.check(f.relative_to(ROOT),case['accept'],lambda f=f:h.accept(lambda:p.Policy(f.read_bytes().decode('utf-8'))))
+        if case['accept']:
+            policy=p.Policy(f.read_bytes().decode('utf-8'))
+            for i,row in enumerate(case.get('evaluate',[])):
+                h.check(str(f.relative_to(ROOT))+f'#evaluate-{i}',row['satisfied'],
+                        lambda row=row,policy=policy:policy.satisfied(set(row['cosigners'])))
 
-    for directory,expected in (('trust-bad',False),('trust-good',True)):
-        m=cases(directory)
-        for name in m['cases']:
-            n=directory+'/'+name+'.cbor'; check(n,expected,lambda n=n:boolean(lambda:v.trust(read(n))))
+    d=h.manifest(ROOT/'requests/cases.json')
+    for case in d['cases']:
+        f=ROOT/'requests'/(case['name']+'.txt'); text=f.read_text().removesuffix('\n')
+        r,raw=p.request_text(text); expected=(f.with_suffix('.cbor')).read_bytes()
+        h.check(f.relative_to(ROOT),'accept',lambda text=text:request_layer(text))
+        h.check(str(f.relative_to(ROOT))+'#bytes',expected,lambda raw=raw:raw)
+        mirror=json.loads(f.with_suffix('.json').read_text())
+        got=dict(request=p.jsonable(r),preimage_sha256=hashlib.sha256(b'norn/enroll-request/v1\n'+cbor.encode({k:v for k,v in r.items() if k!='sig'})).hexdigest(),size=len(raw),text=text)
+        h.check(f.with_suffix('.json').relative_to(ROOT),mirror,lambda got=got:got)
+        if case['form'] not in ('canonical','uppercase'): raise ValueError('Unknown request form')
+        canonical=bech32m.encode('norn',bech32m.convert(raw,8,5,True))
+        h.check(str(f.relative_to(ROOT))+'#form',text,lambda canonical=canonical,case=case:canonical.upper() if case['form']=='uppercase' else canonical)
+        if 'same_request_as' in case:
+            h.check(str(f.relative_to(ROOT))+'#same-request',expected,
+                    lambda case=case:(ROOT/'requests'/(case['same_request_as']+'.cbor')).read_bytes())
+    d=h.manifest(ROOT/'requests-bad/cases.json')
+    for case in d['cases']:
+        f=ROOT/'requests-bad'/(case['name']+'.txt')
+        h.check(f.relative_to(ROOT),REQUEST_LAYERS[case['name']],lambda f=f:request_layer(f.read_text().removesuffix('\n')))
 
-    for p in sorted(path('entries').glob('*.cbor')):
-        n=p.relative_to(ROOT).as_posix(); mirror=jread(str(Path(n).with_suffix('.json'))); raw=read(n)
-        def entry_mirror(raw=raw):
-            e=v.envelope(raw,t['net'])
-            return dict(entry=v.jsonable(e),entry_hash=hashlib.sha256(raw).hexdigest(),leaf_hash=merkle.leaf(raw).hex(),
-                        preimage_sha256=hashlib.sha256(v.preimage(e)).hexdigest(),size=len(raw))
-        check(n+'#mirror',mirror,entry_mirror)
-        check(n+'#deterministic',raw,lambda raw=raw:cbor.dumps(cbor.loads(raw)))
+    receipt=fresh.receipt((ROOT/'receipt.note').read_bytes(),anchor['genesis_hash'])
+    mirror=json.loads((ROOT/'receipt.json').read_text()); mirror.pop('comment')
+    h.check('receipt.note#parsed',mirror,lambda:p.jsonable(receipt))
+    d=h.manifest(ROOT/'receipt-bad/cases.json')
+    for case in d['cases']:
+        f=ROOT/'receipt-bad'/case['name']
+        h.check(f.relative_to(ROOT),d['codes'][case['name']],
+                lambda f=f,case=case:h.outcome(lambda:fresh.receipt(f.read_bytes(),anchor['genesis_hash'],case.get('now_unix',0))))
+    d=h.manifest(ROOT/'checkpoints-bad/cases.json')
+    for name in d['cases']:
+        f=ROOT/'checkpoints-bad'/(name+'.checkpoint')
+        h.check(f.relative_to(ROOT),d['codes'][name],
+                lambda f=f:h.outcome(lambda:fresh.served(Files(ROOT/'served',{'checkpoint':f}))))
 
-    m=cases('entries-hostile')
-    for row in m['cases']:
-        n='entries-hostile/'+row['name']+'.cbor'
-        check(n,row.get('accepted',False),lambda n=n:boolean(lambda:cbor.loads(read(n))))
+    d=h.manifest(ROOT/'proofs/cases.json')
+    for device in d['devices']:
+        f=ROOT/'proofs'/(device+'.bundle')
+        h.check(f.relative_to(ROOT),'accept',lambda f=f:h.outcome(lambda:fresh.bundle(f.read_bytes())))
+        h.check(str(f.relative_to(ROOT))+'#installed-key',d['installs'][device],lambda device=device:served_state['devices'][device]['wg_pk'].hex())
+    h.check('proofs#origin',d['origin'],lambda:cp['origin'])
+    h.check('proofs#size',d['size'],lambda:cp['size'])
+    h.check('proofs#quorum-time',d['checkpoint_quorum_time'],lambda:cp['time'])
+    h.check('proofs#next-policy-quorum-time',d['replayed_policy_quorum_time'],
+            lambda:informed.checkpoint((ROOT/'served/checkpoint').read_bytes())['time'])
+    f=ROOT/'proofs'/d['at_the_cap']['file']
+    h.check(f.relative_to(ROOT),'accept',lambda:h.outcome(lambda:fresh.bundle(f.read_bytes())))
+    h.check(str(f.relative_to(ROOT))+'#length',d['at_the_cap']['bytes'],lambda:len(f.read_bytes()))
+    f=ROOT/'proofs'/d['right_edge_inclusion']['file']; edge=json.loads(f.read_text())
+    leaf=merkle.leaf(p.b64(edge['entry_b64']))
+    h.check(str(f.relative_to(ROOT))+'#leaf',edge['leaf_hash'],lambda:leaf.hex())
+    h.check(f.relative_to(ROOT),True,lambda:merkle.inclusion(leaf,edge['index'],edge['size'],list(map(bytes.fromhex,edge['proof'])),bytes.fromhex(edge['root'])))
+    d=h.manifest(ROOT/'proofs-bad/cases.json')
+    for case in d['cases']:
+        f=ROOT/'proofs-bad'/(case['name']+'.bundle')
+        h.check(f.relative_to(ROOT),d['codes'][case['name']],lambda f=f:h.outcome(lambda:fresh.bundle(f.read_bytes())))
+    for dirname,method,field in (('proofs-rotated','bundle','bundle'),('receipt-rotated','receipt','receipt')):
+        d=h.manifest(ROOT/dirname/'cases.json'); f=ROOT/dirname/d[field]
+        for reader,v in (('fresh',fresh),('informed',informed)):
+            h.check(dirname+'/'+d[field]+'#'+reader,d[reader],lambda v=v,method=method,f=f:h.outcome(lambda:getattr(v,method)(f.read_bytes())))
 
-    m=cases('policies')
-    for row in m['cases']:
-        n='policies/'+row['name']+'.txt'; raw=read(n).decode()
-        check(n,row['accept'],lambda raw=raw:boolean(lambda:v.Policy(raw)))
-        for i,e in enumerate(row.get('evaluate',[])):
-            check(n+'#evaluate-'+str(i),e['satisfied'],lambda raw=raw,e=e:v.Policy(raw).satisfied(set(e['cosigners'])))
-
-    m=cases('requests')
-    for row in m['cases']:
-        n='requests/'+row['name']; raw=read(n+'.cbor'); txt=read(n+'.txt').decode()
-        mirror=jread(n+'.json')
-        def request_mirror(raw=raw,txt=txt):
-            r=v.request(raw,t['net']); pre=b'norn/enroll-request/v1\n'+cbor.dumps({k:x for k,x in r.items() if k!='sig'})
-            return dict(request=v.jsonable(r),preimage_sha256=hashlib.sha256(pre).hexdigest(),text=txt.removesuffix('\n'),size=len(raw))
-        check(n+'.cbor',True,lambda raw=raw:boolean(lambda:v.request(raw,t['net'])))
-        check(n+'.txt',raw,lambda txt=txt:bech32m.payload(txt.removesuffix('\n')))
-        check(n+'.json',mirror,request_mirror)
-        expected=bech32m.encode('norn',raw)
-        if row['form']=='uppercase': expected=expected.upper()
-        elif row['form']!='canonical': check(n+'#form','known','UNKNOWN CASE')
-        check(n+'#text-form',expected+'\n',lambda txt=txt:txt)
-        if 'same_request_as' in row:
-            check(n+'#same-request',read('requests/'+row['same_request_as']+'.cbor'),lambda raw=raw:raw)
-    m=cases('requests-bad')
-    for row in m['cases']:
-        n='requests-bad/'+row['name']+'.txt'
-        check(n,False,lambda n=n:boolean(lambda:v.request(bech32m.payload(read(n).decode().removesuffix('\n')),t['net'])))
-
-    maincp,servedstate,servedentries=v.served(getter('served'),t)
-    check('served/checkpoint','accept',lambda:outcome(lambda:v.served(getter('served'),t)))
-    check('served/#canonical-state','byte-identical',lambda:'byte-identical' if v.canonical(servedstate)==read('state.json') else 'different')
-    check('served/#manifest-entries',entries,lambda:servedentries)
-    for p in sorted(ROOT.glob('served-*/cases.json')):
-        directory=p.parent.name
-        if directory in ('served-bad','served-genesis'): continue
-        m=cases(directory)
-        if directory=='served-large':
-            cp,ls,le=v.served(getter(directory),t)
-            check(directory+'/checkpoint','accept',lambda:outcome(lambda:v.served(getter(directory),t)))
-            check(directory+'#size',m['size'],lambda:cp['size'])
-            for row in m['tiles']:
-                check(directory+'/'+row['path']+'#width',row['width']*32,lambda row=row:len(read(directory+'/'+row['path'])))
-            for i,row in enumerate(m['paths']):
-                check(directory+'#path-'+str(i),row['path'],lambda row=row:v.tile_path('entries' if row['kind']=='entries' else row['level'],row['index'],row['width']))
-            continue
-        base=m['serve_over']; override={'checkpoint':read(directory+'/checkpoint')}
-        if 'fresh' in m:
-            for reader,prior in (('fresh',None),('informed',s)):
-                check(directory+'/checkpoint#'+reader,m[reader],lambda prior=prior,base=base,override=override:outcome(lambda:v.served(getter(base,override),t,prior)))
+    # Shapes come from manifests (§12), never from served-* directory names.
+    for f in sorted(ROOT.glob('served-*/cases.json')):
+        d=h.manifest(f); folder=f.parent; label=folder.name
+        if 'serve_over' in d:
+            base=ROOT/d['serve_over']
         else:
-            check(directory+'/checkpoint','accept',lambda base=base,override=override:outcome(lambda:v.served(getter(base,override),t)))
-        if 'informed_reads_served' in m:
-            check(directory+'#informed_reads_served',m['informed_reads_served'],lambda:outcome(lambda:v.served(getter('served'),t,s)))
-        if 'quorum_time' in m:
-            check(directory+'#quorum_time',m['quorum_time'],lambda override=override:v.checkpoint(override['checkpoint'],t)['time'])
-        if 'signed_by' in m:
-            check(directory+'#learned-key',True,lambda m=m:any(k['pk'].hex()==m['signed_by'] and k['since_index']==m['since_index'] and k['overlap']==m['overlap'] for k in s['log_keys']))
-
-    m=cases('checkpoints-bad')
-    for name in m['cases']:
-        n='checkpoints-bad/'+name+'.checkpoint'; raw=read(n)
-        check(n,m['codes'][name],lambda raw=raw:outcome(lambda:v.served(getter('served',{'checkpoint':raw}),t)))
-    m=cases('served-bad')
-    for row in m['cases']:
-        directory='served-bad'; overrides={}
-        for f in row.get('files',[]): overrides[f['path']]=read(directory+'/'+f['file'])
-        if 'path' in row: overrides[row['path']]=None if row.get('remove') else read(directory+'/'+row['file'])
-        check(directory+'/'+row['name'],m['codes'][row['name']],lambda overrides=overrides,m=m:outcome(lambda:v.served(getter(m['serve_over'],overrides),t)))
-    m=cases('served-genesis')
-    for row in m['cases']:
-        directory='served-genesis/'+row['serve']
-        check('served-genesis/'+row['name'],m['codes'][row['name']],lambda directory=directory:outcome(lambda:v.served(getter(directory),t)))
-
-    m=cases('proofs')
-    for id in m['devices']:
-        n='proofs/'+id+'.bundle'; check(n,'accept',lambda n=n:outcome(lambda:v.bundle(read(n),t)))
-        check(n+'#installs',m['installs'][id],lambda id=id:s['devices'][id]['wg_pk'].hex())
-    cap=m['at_the_cap']; n='proofs/'+cap['file']
-    check(n,'accept',lambda:outcome(lambda:v.bundle(read(n),t)))
-    check(n+'#length',cap['bytes'],lambda:len(read(n)))
-    check('proofs/#checkpoint-time',m['checkpoint_quorum_time'],lambda:maincp['time'])
-    check('proofs/#replayed-policy-time',m['replayed_policy_quorum_time'],lambda:v.checkpoint(read('served/checkpoint'),t,s)['time'])
-    edge=jread('proofs/'+m['right_edge_inclusion']['file']); h=merkle.leaf(v.b64(edge['entry_b64']))
-    check('proofs/right-edge.json#leaf',edge['leaf_hash'],lambda:h.hex())
-    check('proofs/right-edge.json#inclusion',True,lambda:merkle.inclusion(h,edge['index'],edge['size'],[bytes.fromhex(p) for p in edge['proof']],bytes.fromhex(edge['root'])))
-    m=cases('proofs-bad')
-    for row in m['cases']:
-        n='proofs-bad/'+row['name']+'.bundle'
-        check(n,m['codes'][row['name']],lambda n=n:outcome(lambda:v.bundle(read(n),t)))
-    m=cases('proofs-rotated'); n='proofs-rotated/'+m['bundle']
-    for reader,prior in (('fresh',None),('informed',s)):
-        check(n+'#'+reader,m[reader],lambda prior=prior:outcome(lambda:v.bundle(read(n),t,prior)))
-
-    parsed=v.receipt(read('receipt.note'),t,entry=entries[0]); mirror=jread('receipt.json'); mirror.pop('comment',None)
-    check('receipt.note#mirror',mirror,lambda:v.jsonable(parsed))
-    m=cases('receipt-bad')
-    for row in m['cases']:
-        n='receipt-bad/'+row['name']
-        check(n,m['codes'][row['name']],lambda n=n,row=row:outcome(lambda:v.receipt(read(n),t,entry=entries[0],now=row.get('now_unix',0))))
-    m=cases('receipt-rotated'); n='receipt-rotated/'+m['receipt']
-    for reader,prior in (('fresh',None),('informed',s)):
-        check(n+'#'+reader,m[reader],lambda prior=prior:outcome(lambda:v.receipt(read(n),t,prior,entries[0])))
-
-    m=cases('fork')
-    for name in m['sound']:
-        n='fork/'+name+'.cbor'; check(n,'accept',lambda n=n:outcome(lambda:v.evidence(read(n),t)))
-    for row in m['cases']:
-        n='fork/'+row['name']+'.cbor'; check(n,m['codes'][row['name']],lambda n=n:outcome(lambda:v.evidence(read(n),t)))
-    # The separately shipped checkpoint is also independently checked.
-    check('fork/conflicting.checkpoint','accept',lambda:outcome(lambda:v.checkpoint(read('fork/conflicting.checkpoint'),t)))
-
-    m=cases('detect')
-    for row in m['cases']:
-        stored=v.checkpoint(read('detect/'+row['stored']),t)
-        held=None if row.get('held')=='none' else entries[:stored['size']]
-        n='detect/'+row['name']; expected=m['codes'].get(row['name'],'accept')
-        check(n,expected,lambda row=row,stored=stored,held=held:outcome(lambda:v.served(getter('detect/'+row['serve']),t,stored=stored,stored_entries=held)))
-        # Compare the broad manifest outcome independently from the closed code.
-        def broad(row=row,stored=stored,held=held):
-            result=outcome(lambda:v.served(getter('detect/'+row['serve']),t,stored=stored,stored_entries=held))
-            return result if result in ('fork','accept') else 'refuse'
-        check(n+'#outcome',row['outcome'],broad)
-        candidate_get=getter('detect/'+row['serve'])
-        candidate_cp=v.checkpoint(candidate_get('checkpoint'),t)
-        candidate_entries=[]
-        for group in range((candidate_cp['size']+255)//256):
-            width=min(256,candidate_cp['size']-group*256)
-            raw=candidate_get(v.tile_path('entries',group,width)); pos=0
-            while pos<len(raw):
-                count=int.from_bytes(raw[pos:pos+2],'big'); pos+=2
-                candidate_entries.append(raw[pos:pos+count]); pos+=count
-        tile_expected='tiles' if row['name']=='tampered-bundle-under-a-stored-head' else 'accept'
-        check(n+'#isolated-tile-consistency',tile_expected,
-              lambda get=candidate_get,es=candidate_entries:outcome(lambda:v.verify_tiles(get,list(map(merkle.leaf,es)))))
-    known_manifests.add('detect/staleness.json'); m=jread('detect/staleness.json')
-    for row in m['cases']:
-        age=None if not row.get('have_clock',True) else (max(q+row['now']-learned for q,learned in row['observed'])-row['held'] if 'observed' in row else row['elapsed'])
-        check('detect/staleness.json#'+row['name'],row['expect'],lambda row=row,age=age:v.freshness(age,m['staleness'],row.get('hard',m['hard'])))
-        if 'observed' in row: check('detect/staleness.json#'+row['name']+'-elapsed',row['elapsed'],lambda age=age:age)
-
-    m=cases('proven')
-    for row in m['cases']:
-        check('proven/'+row['name'],row['proven'],lambda row=row:sorted(v.proven(s,row['t'] or None)))
-    for id,expected in m['grants'].items(): check('proven/#grant-'+id,expected,lambda id=id:v.grant(s['devices'][id]))
-    for id,row in m['bundles'].items():
-        b,cp=v.bundle(read(row['file']),t); e=v.envelope(b['entry'],t['net']); r=v.request(e['body']['request'],t['net'])
-        check('proven/#bundle-'+id,dict(bundle_wg_pk=row['bundle_wg_pk'],state_wg_pk=row['state_wg_pk'],proves_index=row['proves_index'],rotated_since=row['rotated_since']),
-              lambda b=b,r=r,id=id:dict(bundle_wg_pk=r['wg_pk'].hex(),state_wg_pk=s['devices'][id]['wg_pk'].hex(),proves_index=b['index'],rotated_since=r['wg_pk']!=s['devices'][id]['wg_pk']))
-
-    m=cases('ed25519-cctv'); source=jread('ed25519-cctv/ed25519vectors.json'); by_number={r['number']:r for r in source}
-    check('ed25519-cctv/#numbers',sorted(by_number),lambda:sorted(r['number'] for r in m['cases']))
-    for row in m['cases']:
-        r=by_number[row['number']]
-        check('ed25519-cctv/'+str(row['number']),row['outcome'],lambda r=r:'accept' if ed25519.verify(bytes.fromhex(r['key']),r['msg'].encode(),bytes.fromhex(r['sig'])) else 'reject')
-
-    m=cases('anchors')
-    for row in m['cases']:
-        n='anchors/'+row['name']
-        read(n)
-        if 'over' in row:
-            raw=read(row['over']); cut=raw.index(b'\n\n')
-            check(n+'#stamped-digest',row['digest'],lambda raw=raw,cut=cut:hashlib.sha256(raw[:cut+2]).hexdigest())
+            base=folder
+        if 'cases' in d and any('serve' in c for c in d['cases']):
+            for c in d['cases']:
+                h.check(label+'/'+c['name'],d['codes'][c['name']],
+                        lambda c=c:h.outcome(lambda:fresh.served(Files(folder/c['serve']))))
+        elif 'cases' in d and any('path' in c or 'files' in c for c in d['cases']):
+            for c in d['cases']:
+                replacements={}; removed=[]
+                if 'files' in c:
+                    replacements={item['path']:folder/item['file'] for item in c['files']}
+                elif c.get('remove'): removed=[c['path']]
+                else: replacements={c['path']:folder/c['file']}
+                h.check(label+'/'+c['name'],d['codes'][c['name']],
+                        lambda replacements=replacements,removed=removed,base=base:h.outcome(lambda:fresh.served(Files(base,replacements,removed))))
         else:
-            # SPEC §12.1 explicitly excludes OTS parsing. Integrity was checked above.
-            check(n+'#advisory-only','present; OTS not validated',lambda n=n:'present; OTS not validated' if read(n) else 'empty')
-    check('anchors/calendar-response.bin#advisory-only','present; OTS not validated',lambda:'present; OTS not validated' if read('anchors/calendar-response.bin') else 'empty')
+            if 'cases' in d and not ('fresh' in d and 'informed' in d) and 'replay_codes' not in d:
+                raise ValueError(f'Unknown served case shape: {label}')
+            overrides={'checkpoint':folder/'checkpoint'} if 'serve_over' in d else {}
+            if 'fresh' in d and 'informed' in d:
+                for reader,v in (('fresh',fresh),('informed',informed)):
+                    h.check(label+'#'+reader,d[reader],lambda v=v,base=base,overrides=overrides:h.outcome(lambda:v.served(Files(base,overrides))))
+                if 'informed_reads_served' in d:
+                    h.check(label+'#informed_reads_served',d['informed_reads_served'],lambda:h.outcome(lambda:informed.served(Files(ROOT/'served'))))
+                if 'cases' in d:
+                    h.check(label+'#reader-cases',['fresh','informed'],lambda d=d:[c['name'] for c in d['cases']])
+                    for c in d['cases']:
+                        h.check(label+'/'+c['name']+'#code',d['codes'][c['name']],lambda d=d,c=c:d[c['name']])
+            else:
+                h.check(label,'accept',lambda base=base,overrides=overrides:h.outcome(lambda:fresh.served(Files(base,overrides))))
+            if 'size' in d or 'quorum_time' in d or 'replay_codes' in d or 'tiles' in d:
+                head,st,es=fresh.served(Files(base,overrides))
+                if 'size' in d: h.check(label+'#size',d['size'],lambda:head['size'])
+                if 'quorum_time' in d: h.check(label+'#quorum-time',d['quorum_time'],lambda:head['time'])
+                if 'replay_codes' in d:
+                    h.check(label+'#replay-codes',d['replay_codes'],lambda:{str(r['index']):r['reason'] for r in st['rejected']})
+                    h.check(label+'/state.json',(folder/'state.json').read_bytes(),lambda:p.canonical_json(st))
+                    for c in d['cases']:
+                        h.check(label+'/'+c['name'],d['codes'][c['name']],lambda base=base,overrides=overrides:h.outcome(lambda:fresh.served(Files(base,overrides))))
+                if 'tiles' in d:
+                    rows=[]; n=head['size']; level=0
+                    while n:
+                        rows += [dict(path=tile_path(level,i,w),width=w) for i,w in groups(n)]
+                        n//=256; level+=1
+                    h.check(label+'#implied-tiles',d['tiles'],lambda:rows)
+            if 'paths' in d:
+                for i,row in enumerate(d['paths']):
+                    h.check(label+f'#path-{i}',row['path'],lambda row=row:tile_path('entries' if row['kind']=='entries' else row['level'],row['index'],row['width']))
 
-    # No cases/manifest can disappear silently when the suite is extended.
-    for p in sorted(ROOT.rglob('*.json')):
-        n=p.relative_to(ROOT).as_posix()
-        if p.name in ('cases.json','manifest.json') and n not in known_manifests:
-            check(n,'runner registered',lambda:'UNKNOWN CASE FILE')
-    # Every data file was integrity checked; all protocol artifacts must additionally
-    # have been consumed by a runner, not just passed through the checksum loop.
-    supports={'README.md','SHA256SUMS','ed25519-cctv/README.md','ed25519-cctv/PROVENANCE.md','ed25519-cctv/LICENSE','ed25519-cctv/gen_cases.py'}
-    for p in sorted(ROOT.rglob('*')):
-        if not p.is_file(): continue
-        n=p.relative_to(ROOT).as_posix()
-        if n not in sums and n!='SHA256SUMS': check(n+'#inventory','listed in SHA256SUMS',lambda:'UNLISTED FILE')
-        if n not in semantic_used and n not in supports:
-            check(n+'#coverage','runner consumed artifact',lambda:'UNRUN ARTIFACT')
-    print(f'TOTAL {checks} checks; {failures} FAIL',flush=True)
-    return int(failures!=0)
+    d=h.manifest(ROOT/'detect/cases.json')
+    for c in d['cases']:
+        stored=fresh.checkpoint((ROOT/'detect'/c['stored']).read_bytes())
+        held=None if c.get('held')=='none' else served_entries
+        expected=d['codes'].get(c['name'],'accept')
+        h.check('detect/'+c['name'],expected,lambda c=c,stored=stored,held=held:h.outcome(lambda:fresh.served(Files(ROOT/'detect'/c['serve']),stored,held)))
+    d=json.loads((ROOT/'detect/staleness.json').read_text())
+    for c in d['cases']:
+        elapsed=(max(q+c['now']-m for q,m in c['observed'])-c['held']) if 'observed' in c else c['elapsed']
+        h.check('detect/staleness.json/'+c['name']+'#age',c['elapsed'],lambda elapsed=elapsed:elapsed)
+        h.check('detect/staleness.json/'+c['name'],c['expect'],
+                lambda c=c,elapsed=elapsed:p.freshness(elapsed if c.get('have_clock',True) else None,d['staleness'],c.get('hard',d['hard'])))
+    d=h.manifest(ROOT/'fork/cases.json')
+    for name in d['sound']:
+        f=ROOT/'fork'/(name+'.cbor'); h.check(f.relative_to(ROOT),'accept',lambda f=f:h.outcome(lambda:fresh.evidence(f.read_bytes())))
+    for c in d['cases']:
+        f=ROOT/'fork'/(c['name']+'.cbor'); h.check(f.relative_to(ROOT),d['codes'][c['name']],lambda f=f:h.outcome(lambda:fresh.evidence(f.read_bytes())))
+    h.check('fork/conflicting.checkpoint','accept',lambda:h.outcome(lambda:fresh.checkpoint((ROOT/'fork/conflicting.checkpoint').read_bytes())))
+
+    d=h.manifest(ROOT/'ed25519-cctv/cases.json')
+    upstream={row['number']:row for row in json.loads((ROOT/'ed25519-cctv/ed25519vectors.json').read_text())}
+    for c in d['cases']:
+        row=upstream[c['number']]
+        h.check('ed25519-cctv/'+str(c['number']),c['outcome'],
+                lambda row=row:'accept' if ed.verify(bytes.fromhex(row['key']),row['msg'].encode(),bytes.fromhex(row['sig'])) else 'reject')
+    h.check('ed25519-cctv#complete',sorted(upstream),lambda:sorted(c['number'] for c in d['cases']))
+
+    d=h.manifest(ROOT/'proven/cases.json')
+    for c in d['cases']:
+        h.check('proven/'+c['name'],c['proven'],lambda c=c:sorted(p.proven(state,c['t'] or None)))
+    for id_,expected in d['grants'].items():
+        h.check('proven/grants/'+id_,expected,lambda id_=id_:p.grant(state['devices'][id_]['labels'].get('ip')))
+    for id_,row in d['bundles'].items():
+        b,head=fresh.bundle((ROOT/row['file']).read_bytes()); e=p.envelope(b['entry']); r=p.request(e['body']['request'])
+        got=dict(bundle_wg_pk=r['wg_pk'].hex(),state_wg_pk=state['devices'][id_]['wg_pk'].hex(),proves_index=b['index'],rotated_since=r['wg_pk']!=state['devices'][id_]['wg_pk'])
+        h.check('proven/bundles/'+id_,{k:row[k] for k in got},lambda got=got:got)
+    d=json.loads((ROOT/'proven/grant-labels.json').read_text())
+    for i,c in enumerate(d['cases']): h.check('proven/grant-labels.json/'+str(i),c['grant'],lambda c=c:p.grant(c['label']))
+
+    d=h.manifest(ROOT/'anchors/cases.json')
+    for c in d['cases']:
+        if 'over' in c:
+            raw=(ROOT/c['over']).read_bytes(); leading=raw.split(b'\n\n',1)[0]+b'\n\n'
+            h.check('anchors/'+c['name']+'#stamped-digest',c['digest'],lambda:hashlib.sha256(leading).hexdigest())
+        else:
+            # §12 explicitly permits checking this digest without an OTS parser.
+            # Match the declared SHA-256 digest in the external opaque artifact.
+            h.check('anchors/'+c['name']+'#declared-digest',True,
+                    lambda c=c:bytes.fromhex(c['digest']) in (ROOT/'anchors'/c['name']).read_bytes())
+
+    all_manifests={f.resolve() for name in ('cases.json','manifest.json') for f in ROOT.rglob(name)}
+    for f in sorted(all_manifests-h.manifests):
+        h.check(str(f.relative_to(ROOT))+'#unhandled','handled',lambda:'UNKNOWN CASE FORMAT')
 
 if __name__=='__main__':
-    try: sys.exit(main())
-    except Exception:
-        traceback.print_exc(); print('harness expected=complete got=UNHANDLED ERROR FAIL'); sys.exit(1)
+    harness=Harness()
+    try: run(harness)
+    except Exception as ex:
+        harness.check('harness#unhandled-exception','none',lambda:f'{type(ex).__name__}: {ex}')
+        traceback.print_exc()
+    print(f'TOTAL {harness.total} PASS {harness.total-harness.failures} FAIL {harness.failures}')
+    sys.exit(1 if harness.failures else 0)

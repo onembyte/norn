@@ -112,7 +112,7 @@ verify-py:
 	@tmp=$$(mktemp -d); mkdir -p $$tmp/work; \
 	cp -R testdata/vectors $$tmp/vectors; cp -R contrib/verify-py $$tmp/work/verify-py; \
 	(cd $$tmp && python3 -B work/verify-py/harness.py > harness.log 2>&1); \
-	if ! grep -q '^TOTAL [0-9]* checks; ' $$tmp/harness.log; then \
+	if ! grep -q '^TOTAL [0-9]* PASS [0-9]* FAIL [0-9]*$$' $$tmp/harness.log; then \
 		echo "verify-py: the harness did not finish:"; tail -20 $$tmp/harness.log; rm -rf $$tmp; exit 1; fi; \
 	grep -E ' FAIL$$' $$tmp/harness.log | grep -v '^TOTAL ' | sed 's/ FAIL$$//' | sort > $$tmp/failed; \
 	grep -v '^#' contrib/verify-py.known-failures | grep -v '^$$' | sort > $$tmp/known; \
