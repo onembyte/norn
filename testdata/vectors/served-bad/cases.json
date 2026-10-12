@@ -42,7 +42,7 @@
       "name": "missing-hash-tile",
       "path": "tile/0/001.p/44",
       "remove": true,
-      "says": "step 11 needs the hash tile to check the served tree, and it is not served: refused, not skipped"
+      "says": "step 12 needs the hash tile to check the served tree, and it is not served: refused, not skipped"
     },
     {
       "name": "missing-checkpoint",

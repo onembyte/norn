@@ -275,7 +275,7 @@ def write_genesis_aborts(out: pathlib.Path) -> None:
         "21-root-thr-bool": step6,
         "22-signer-thr-bool": step6,
         "23-root-order-eight": {"section": "3.1", "says": "of a point of order exactly `L`"},
-        "24-root-noncanonical": {"section": "3.1", "says": "the sign bit is 0 when `x` is 0"},
+        "24-root-noncanonical": {"section": "3.1", "says": "of a point of order exactly `L` on edwards25519"},
         "18-bootstrap-sigs-wrong-role": step7,
         # The role string and the key SET are two different halves of step 7;
         # `18` varies the first and `19` the second (run 10, D15).
@@ -378,7 +378,7 @@ def write_trust_rejections(out: pathlib.Path) -> None:
             "section": "9.1", "says": "verifier-key data MUST be canonical RFC 4648 base64"},
         "45-origin-case-changed": origin,
         "46-log-key-name-case-changed": logname,
-        "47-witness-noncanonical-point": {"section": "3.1", "says": "the sign bit is 0 when `x` is 0"},
+        "47-witness-noncanonical-point": {"section": "3.1", "says": "of a point of order exactly `L` on edwards25519"},
         # D-074 (d): the comparison, not merely the correspondence.
         "48-policy-witness-key-renamed": {
             "section": "9.1", "says": "compared as canonical text"},

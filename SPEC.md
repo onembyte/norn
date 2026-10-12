@@ -100,7 +100,13 @@ Let `p = 2²⁵⁵ − 19`, `B` the base point, `L = 2²⁵² +
    (RFC 8032 §5.1.3) of a point of order exactly `L` on edwards25519: the
    encoded `y` is below `p`, the sign bit is 0 when `x` is 0, the bytes decode to a point on
    the curve, and that point is not the identity and has no component of order
-   2, 4 or 8 — `[L]P = O` and `P ≠ O`. An honest key `[s]B` and an honest
+   2, 4 or 8 — `[L]P = O` and `P ≠ O`. The two canonical clauses are implied
+   by the order clause — every `y` at or above `p` decodes, read leniently, off
+   the curve or to a point of non-prime order, and `x` is 0 only at the
+   identity and the point of order 2 — and are stated because libraries decode
+   differently; no artifact can isolate them, so `genesis/24-root-noncanonical`
+   and `trust-bad/47-witness-noncanonical-point` pin this item, not the clause
+   they were named for (run 14, L3). An honest key `[s]B` and an honest
    `R = [r]B` always satisfy this; what it excludes are the encodings on which
    libraries disagree. A verifier may check it as libsodium's
    `crypto_core_ed25519_is_valid_point` does, or by decoding, re-encoding and
@@ -301,7 +307,7 @@ every failure is `bad-genesis` and aborts replay, per §5.1's entry-0 list):
 
 | Field | Constraint |
 |---|---|
-| `device_id` | matches `^[a-z0-9][a-z0-9.-]{0,63}$` |
+| `device_id` | matches `^[a-z0-9][a-z0-9.-]{0,63}$` **as a whole** — `\A…\z`, every byte of the string. An engine whose `$` also matches before a final newline accepts `nas2\n`; §2's rule is over the string, and both implementations here refuse it (cold gate run 14, H2) |
 | `name`, `reason` | UTF-8, 1–64 / 0–256 bytes |
 | `text` (`note`, `policy`) | UTF-8, ≤ 4096 bytes |
 | `labels` | map text→text; ≤ 32 entries; keys 1–23 bytes (the map-key cap above — a longer key is unencodable); values ≤ 256 bytes; a `labels` map, when present, MUST carry at least one pair; `labels: {}` is refused as a schema fault; absence is the one encoding of "no labels" |
@@ -1429,19 +1435,19 @@ these codes and no other, and the first step whose check fails decides which.
 
 | step | code | the refusal |
 |---|---|---|
-| 1 | `unserved` | the checkpoint is not served. The same code for any file a later step needs and cannot fetch — an entry bundle (step 8), a hash tile (step 11) — reported at that step |
+| 1 | `unserved` | the checkpoint is not served. The same code for any file a later step needs and cannot fetch — an entry bundle (step 8), a hash tile (step 12) — reported at that step |
 | 2 | `note` | the checkpoint is not a well-formed signed note (§7): no blank separator line, a signature line that does not frame, a payload that is not canonical padded base64 of at least a 4-byte key id, text or a line that is not UTF-8, an unterminated block, an extra blank line after the last signature line, or **no signature line at all**. Framing comes first because there is nothing to verify until the lines are found |
 | 3 | `log-signature` | no line whose name and key id match a trusted log key (§9.4) verifies, or any line that matches does not. The matching key's algorithm fixes the signature length too: a 76-byte payload under the log's `0x01` key fails here, even beside a valid line from that key (`checkpoints-bad/24-log-key-other-algorithm-length`, D14c), and so does any other length but 68 (`checkpoints-bad/20-signature-payload-too-long`). **The signature decides before the origin**: a checkpoint signed by a key this anchor does not trust is refused as `log-signature`, whatever origin it names |
 | 4 | `checkpoint` | the signed text is not a `tlog-checkpoint` body (§6): not exactly three lines, a size that is not canonical decimal or is above 2⁶³−1 (§6), a root that is not 32 bytes of standard padded base64 |
 | 5 | `origin` | the body's origin line is not **equal** to `norn.trust.origin` — not a prefix of it, not a case variant of it |
 | 6 | `cosignature` | a cosignature line whose name **and** key id match a listed witness does not verify — including one whose payload is not a cosignature's 76 bytes (`checkpoints-bad/28-witness-key-other-algorithm-length`) |
 | 7 | `quorum` | the verifying lines from listed witnesses do not satisfy the policy |
-| 8 | `entries` | the entry bundles the checkpoint's size implies do not frame (§6's big-endian uint16 length prefixes), or do not add up to that size |
+| 8 | `entries` | the entry bundles the checkpoint's size implies do not frame (§6's big-endian uint16 length prefixes), or do not add up to that size. A zero-length frame **frames** — a uint16 length of 0 is a frame — and the empty entry it carries is §5.1's `decode`: a rejected entry in an accepted log, not this code. Bytes after the last frame a full bundle needs are either further frames, which do not add up, or a truncated one, which does not frame: this code either way (run 14, M2 and M3) |
 | 9 | `head` | the tree rebuilt from the served entries does not hash to the signed root |
 | 10 | `fork` | the served branch and this node's branch disagree where both can speak (§10, §11). The checkpoint is not accepted **and** §11 applies: this is the one code that is also an accusation |
 | 10 | `rollback` | the served size is below the stored one and the branches agree where both speak — refused, **not** accused (§11.1). `fork` is decided first, which is why the two share a step |
 | 11 | `genesis` | the served log has no entry 0, or its entry 0 is not the genesis the anchor pins: replaying it alone aborts with `bad-genesis` (§5.1). Nothing in such a log is a fact about this network, and its replay would be the empty state an enforcer installs |
-| 12 | `tiles` | a served hash tile disagrees with the rebuilt tree |
+| 12 | `tiles` | a served hash tile disagrees with the rebuilt tree — compared byte for byte, length included: a tile of width `W` is exactly 32 × `W` bytes, and a longer or shorter one disagrees whatever its first 32 × `W` bytes say (run 14, M3) |
 
 **Why the head comes before the fork.** Step 10 compares the root the served
 branch has at `at`, *recomputed from the served entries*. If those entries do
@@ -1652,7 +1658,7 @@ naming that rule is how the generators and the placement guards check it.
 | `state.json` | canonical replay output for `log/` (§5.3) |
 | `genesis/<NN-case>/` | 24 single-entry logs, including `23-root-order-eight` and `24-root-noncanonical`, each refused `bad-genesis`, one per way entry 0 can abort, each with its own `manifest.json` and `state.json`; an abort stops replay, so the cases cannot share a log. `cases.json` lists them |
 | `genesis-good/<NN-case>/` | the other side: one single-entry log per genesis a reader **MUST accept**, each replaying to size 1 with nothing rejected and to its `state.json`. `cases.json` lists them |
-| `trust-bad/<NN-case>.cbor` | 45 trust files, including `47-witness-noncanonical-point`, that decode cleanly but MUST be rejected as anchors; the file name says why, `cases.json` lists them |
+| `trust-bad/<NN-case>.cbor` | 48 trust files, including `47-witness-noncanonical-point`, that decode cleanly but MUST be rejected as anchors; the file name says why, `cases.json` lists them |
 | `served/` | the fixture's 162 entries as a real **tlog-tiles directory**, with partial tile and bundle width 162: `tile/entries/…` bundles, `tile/<L>/…` hashes, and `checkpoint` — which **is** the signed note (§6), not an unsigned file with a signed sibling |
 | `served-large/` | a Go-generated 300-entry served log; `cases.json` records its full and partial level-0 and level-1 tile paths and widths, plus a separate `paths` table for hash-tile and entry-bundle path functions at group boundaries beyond this log |
 | `proofs/<device>.bundle` | one §8.1 proof bundle per active device, each proving the entry that made that device active; `cases.json` gives the origin, the log-key seed, the device list and, under `installs`, the key a node installs for each device (§8.1 condition 3) |
@@ -1765,7 +1771,7 @@ this table drifted out of date the moment one was.
 | §9.1 `anchor` is OPTIONAL | `trust-good/no-anchor` — **accepted**. Every other trust file in the suite carries one, so a reader that required it rejected nothing | — |
 | §9.1 open URL readings | `trust-good/url-fields-are-opaque` — **accepted** with an invalid URI spelling in `log_urls`, an explicitly empty witness URL, and a different policy URL. The empty field survives canonical re-encoding | `trust-bad/33-log-url-empty-string`: `log_urls` still has a non-empty constraint |
 | §9.1 the members the table shows and never constrained | `trust-good/witness-without-url`, `trust-good/anchor-unknown-type`, and `trust-good/url-fields-are-opaque`, all **accepted**: a reader that requires an optional member, refuses an unknown anchor type, validates URL syntax, or requires URL correspondence refuses a file this document permits | `31-witness-open-schema`, `32-witness-name-too-long` (renamed in the policy too, so correspondence holds), `33-log-url-empty-string`, `34-anchor-missing-member`, `35-anchor-unknown-mode`, `36-policy-log-key-mismatch`, and `43-anchor-unknown-member`. An unknown anchor **type** is ignorable — anchoring is advisory (D-009) — where an unknown **mode** or member is not |
-| §9 trust file, fingerprint | `trust.cbor` | **48 rejected anchors** in `trust-bad/`. **`15`** and **`16`** parse cleanly as verifier keys and are refused only by the algorithm rule; **`17`** and **`18`** are a witness the policy never names and a policy naming a witness the file does not list, each otherwise perfectly valid |
+| §9 trust file, fingerprint | `trust.cbor` | **48 rejected anchors** in `trust-bad/`. **`15`** and **`16`** parse cleanly as verifier keys and are refused by the algorithm rule — the trust file's, and the policy grammar's again once the key enters the policy, so neither isolates the trust-level rule alone (run 14, L4); **`17`** and **`18`** are a witness the policy never names and a policy naming a witness the file does not list, each otherwise perfectly valid |
 | §9.1 four rules that another rule used to decide | `trust.cbor` | `26-name-too-long` and `27-name-empty` (both ends of the 1–64 byte bound; `14` covers absent), `28-empty-log-urls` (present and empty, which is a different path from absent), `07-no-witnesses` — whose policy is `quorum none` and names no witnesses either, so only the explicit witness minimum can refuse it — and `08-duplicate-witness-name`, which lists all three witnesses *and* a byte-identical second `pi`, so names and keys correspond exactly and only uniqueness is broken |
 | §9.1's three MUSTs about the **log key and origin** | `trust.cbor` | `11-log-key-name-mismatch` (the note name is not `origin`), `13-origin-only` (`origin` is the derived value plus one character, so a prefix check accepts it), and `16-log-key-is-a-cosignature-key`. Each carries its damaged key in its **policy** as well, so the `log`-line correspondence rule agrees and only the named rule can refuse it |
 | §9.1 D10's three isolated rules | `trust.cbor` | `13-origin-only` is the derived origin plus one character; `42-witness-key-mismatch` keeps every witness name aligned and changes only the key; `43-anchor-unknown-member` carries the three required members and one unknown. Each otherwise valid file is refused only by the named rule |
@@ -1828,7 +1834,8 @@ admits its holes, so:
   The Go agent and gossip tests exercise those node behaviours, including a
   healthy direct log that serves a branch different from a proven peer's.
 - §13's interface reconciliation and `proven.json` publication cannot be
-  demonstrated by the static protocol vectors. `detect/staleness.json` pins
+  demonstrated by the static protocol vectors, §13.1's intersection of a
+  peer's allowed-ips with its grant included. `detect/staleness.json` pins
   the §8.1 state labels and boundaries, while Go agent, reconciler and proven
   tests exercise owner, watchdog and observe behavior, failure semantics,
   and the published JSON shape.
@@ -1882,6 +1889,12 @@ admits its holes, so:
   Confirmed by rearranging four of the steps: every check stays green. §5.1
   now says so where the steps are listed, rather than leaving "in order" to
   imply the guarantee §5.2 gives.
+- **§3.1's canonical clauses.** "`y` below `p`" and "the sign bit is 0 when
+  `x` is 0" are implied by `[L]P = O ∧ P ≠ O` — checked by computation over
+  every `y` in [p, 2²⁵⁵) and both `x = 0` points — so a reader that skips them
+  and keeps the order clause is indistinguishable on every artifact,
+  `genesis/24-root-noncanonical` and `trust-bad/47-witness-noncanonical-point`
+  included, which pin item 1 as a whole (run 14, L3).
 - **A **blank line inside a note's text**, as distinct from the one that ends
   it.** §7 says the first blank line ends the text because text lines are
   non-empty; a reader that took the *last* one would sign a different string.

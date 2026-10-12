@@ -168,7 +168,7 @@ func writeBadServed(root, served string, size int64) error {
 		// taken away. A reader that skips a tile it cannot fetch, or reports
 		// a missing checkpoint as a malformed one, passed.
 		{"name": "missing-hash-tile", "path": tilePath, "remove": true,
-			"says": "step 11 needs the hash tile to check the served tree, and it is " +
+			"says": "step 12 needs the hash tile to check the served tree, and it is " +
 				"not served: refused, not skipped"},
 		{"name": "missing-checkpoint", "path": "checkpoint", "remove": true,
 			"says": "no checkpoint is served, so there is nothing to verify: " +

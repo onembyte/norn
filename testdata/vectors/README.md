@@ -90,9 +90,10 @@ half most implementations get wrong: each is a file that **must be refused**,
 and for the stated reason.
 
 **`cases.json`'''s `says` field is a semantic hint**, not the bytes your
-implementation must produce. §5.2 gives replay a closed list of reason codes and
-no other layer has one, so outside replay there is nothing to compare: map each
-`says` onto your own error by hand, once. What it is for is the discipline it
+implementation must produce. §5.2, §7, §10.1 and §11.1 each give their layer a
+closed list of codes, and a manifest's `codes` map is what to compare against
+(§12); `says` is for the rules that have none: map each onto your own error by
+hand, once. What it is for is the discipline it
 enforces here — a negative must be refused for its own rule and nothing else,
 and a phrase naming that rule is how the generators check it.
 
