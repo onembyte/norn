@@ -135,6 +135,7 @@ been reviewed by anyone who has run two of these in anger; that gate is open.
 | `KEYTRANS-MAPPING.md` | every Norn concept against IETF Key Transparency: equivalent, partial or none, and what that decides |
 | `KEYTRANS-LAST-CALL.md` | the KEYTRANS architecture's IETF Last Call (ends 2026-10-23) reviewed against Norn's security model, with a draft comment nobody has sent |
 | `ACTION-PLAN.md` | how to test Norn on your own mesh, step by step, and the two first messages — to the WireGuard team and to the KEYTRANS working group — as drafts nobody has sent, with the pre-send checklist |
+| `standards/draft-michetti-wireguard-peer-authz-problem.md` | the IETF problem statement, in kramdown-rfc Markdown: the problem, a threat model and twelve requirements, its relationship to Key Transparency — a draft nobody has submitted |
 | `THREAT-MODEL.md` | 12 adversaries, 7 guarantees, what Norn does *not* defend |
 | `SECURITY.md` | how to report a vulnerability, and what is in scope |
 | `CONTRIBUTING.md` | the gate, how a change is made, and why `SPEC.md` changes only by decision |
