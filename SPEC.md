@@ -792,10 +792,10 @@ Three things that decision needs and the rest of this document does not supply:
   nothing.
 
 A device is expired exactly when `expires != 0 && expires <= T`; an `expires`
-equal to `T` **has** passed. When the policy is satisfied at no instant — which
-includes `quorum none`, where nobody vouches for the time either — there is **no
-clock**, and expiry is not judged at all: the device keeps the status replay gave
-it. Norn fails towards the last state a quorum vouched for, rather than dropping
+equal to `T` **has** passed. When no instant satisfies a policy that requires
+witnesses, or the policy is `quorum none` and requires nobody (the bullet above),
+there is **no clock**, and expiry is not judged at all: the device keeps the
+status replay gave it. Norn fails towards the last state a quorum vouched for, rather than dropping
 devices on a number nobody signed.
 
 ## 6. The log
@@ -1488,9 +1488,8 @@ branch has at `at`, *recomputed from the served entries*. If those entries do
 not even hash to the checkpoint they were served with, the comparison is
 between this node's history and a pile of bytes nobody signed — and a
 disagreement there would raise a fork against a log that did not sign two
-histories, only served a broken one. Step 9 rules that out first. The pseudocode
-above lists fetching the entries after the fork block for readability; the
-check that uses them cannot run before they are fetched and found consistent.
+histories, only served a broken one. Step 9 rules that out first, which is why
+§10's outline fetches, frames and hashes the entries before its fork block.
 
 **Why the genesis comes after the fork.** To a verifier that holds a head,
 another history signed by the same log under the same origin is equivocation,
