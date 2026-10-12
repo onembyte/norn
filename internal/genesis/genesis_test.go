@@ -69,7 +69,7 @@ func TestBuildProducesAGenesisThatReplays(t *testing.T) {
 	// The strongest check available: replay the entry it just produced under
 	// the anchor it just produced. A ceremony whose output does not replay has
 	// created a network nobody can join.
-	st := replay.Replay(replay.Anchor{Net: got.Trust.Net, GenesisHash: got.Trust.GenesisHash},
+	st := replay.Replay(replay.FromTrust(got.Trust),
 		[][]byte{got.Entry})
 	if len(st.Rejected) != 0 {
 		t.Fatalf("the genesis it built does not replay: %+v", st.Rejected)
@@ -271,7 +271,7 @@ func TestParamsReachTheState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	st := replay.Replay(replay.Anchor{Net: got.Trust.Net, GenesisHash: got.Trust.GenesisHash},
+	st := replay.Replay(replay.FromTrust(got.Trust),
 		[][]byte{got.Entry})
 	if st.Params["mmd"] != uint64(45) {
 		t.Errorf("mmd = %v, want 45", st.Params["mmd"])

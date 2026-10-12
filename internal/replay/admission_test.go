@@ -50,6 +50,13 @@ func publicOf(t *testing.T, name string) []byte {
 // signAs signs env with every fixture key that holds role in st.
 func signAs(t *testing.T, env *entry.Envelope, st *state.State, role string, names ...string) {
 	t.Helper()
+	id, _ := env.Body["device_id"].(string)
+	if env.T == "enroll" {
+		if req, err := enrollreq.Decode(env.Body["request"].([]byte)); err == nil {
+			id = req.DeviceID
+		}
+	}
+	env.Prev = st.Previous(env.T, id)
 	held := st.Roots
 	if role == "signer" {
 		held = st.Signers
@@ -234,6 +241,7 @@ func TestARotateAdmitsOnlyAValidIncomingPointBeforeDeviceLookup(t *testing.T) {
 		for _, id := range []string{"pi-cam", "unknown"} {
 			t.Run(kind+"/"+id, func(t *testing.T) {
 				env := &entry.Envelope{V: entry.Version, T: "rotate", Net: anchor.Net, TS: 1_760_700_001, Body: map[string]any{"device_id": id, "wg_pk": bytes.Repeat([]byte{0x6a}, 32), "device_pk": pk}}
+				env.Prev = before.Previous("rotate", id)
 				for _, key := range []ed25519.PrivateKey{current, incoming} {
 					if err := entry.Sign(env, key, "device"); err != nil {
 						t.Fatal(err)

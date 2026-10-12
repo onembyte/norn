@@ -47,6 +47,7 @@ type Device struct {
 	WgPk       string            `json:"wg_pk"`
 	Status     string            `json:"status"`
 	SinceIndex uint64            `json:"since_index"`
+	Version    uint64            `json:"version"`
 	Labels     map[string]string `json:"labels"`
 	Expires    uint64            `json:"expires"`
 }
@@ -82,6 +83,7 @@ type State struct {
 	Devices   map[string]Device
 	ActiveWg  map[string]string // hex wg key -> device id
 	Rejected  []Rejection
+	Versions  map[string]uint64
 }
 
 // New returns the zero state for a network, before any entry is applied.
@@ -95,6 +97,7 @@ func New(net []byte) *State {
 		Devices:  map[string]Device{},
 		ActiveWg: map[string]string{},
 		Rejected: []Rejection{},
+		Versions: map[string]uint64{"signers": 0, "roots": 0, "params": 0, "policy": 0, "log_key": 0},
 	}
 }
 
@@ -110,6 +113,10 @@ func (s *State) Clone() *State {
 		Devices:  make(map[string]Device, len(s.Devices)),
 		ActiveWg: copyStrings(s.ActiveWg),
 		Rejected: append([]Rejection{}, s.Rejected...),
+		Versions: make(map[string]uint64, len(s.Versions)),
+	}
+	for k, v := range s.Versions {
+		out.Versions[k] = v
 	}
 	for k, v := range s.Params {
 		out.Params[k] = v // scalars only (§4.5)
@@ -143,7 +150,7 @@ func (s *State) MarshalCanonical() ([]byte, error) {
 		}
 		devices[id] = map[string]any{
 			"device_pk": d.DevicePk, "wg_pk": d.WgPk, "status": d.Status,
-			"since_index": d.SinceIndex, "labels": labels, "expires": d.Expires,
+			"since_index": d.SinceIndex, "version": d.Version, "labels": labels, "expires": d.Expires,
 		}
 	}
 	logKeys := make([]any, 0, len(s.LogKeys))
@@ -155,13 +162,17 @@ func (s *State) MarshalCanonical() ([]byte, error) {
 	for _, r := range s.Rejected {
 		rejected = append(rejected, map[string]any{"index": r.Index, "reason": r.Reason})
 	}
+	versions := make(map[string]any, len(s.Versions))
+	for k, v := range s.Versions {
+		versions[k] = v
+	}
 	doc := map[string]any{
 		"name": s.Name, "net": s.Net, "size": s.Size,
 		"root_thr": s.RootThr, "signer_thr": s.SignerThr,
 		"roots": stringMap(s.Roots), "signers": stringMap(s.Signers),
 		"params": s.Params, "policy": s.Policy,
 		"log_keys": logKeys, "devices": devices,
-		"active_wg": stringMap(s.ActiveWg), "rejected": rejected,
+		"versions": versions, "active_wg": stringMap(s.ActiveWg), "rejected": rejected,
 	}
 	out, err := cjson.Marshal(doc)
 	if err != nil {
@@ -195,6 +206,7 @@ func Parse(raw []byte) (*State, error) {
 		Devices   map[string]Device `json:"devices"`
 		ActiveWg  map[string]string `json:"active_wg"`
 		Rejected  []Rejection       `json:"rejected"`
+		Versions  map[string]uint64 `json:"versions"`
 	}
 	if err := json.Unmarshal(raw, &doc); err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrState, err)
@@ -221,7 +233,7 @@ func Parse(raw []byte) (*State, error) {
 		Name: doc.Name, Net: net, Size: doc.Size,
 		RootThr: doc.RootThr, SignerThr: doc.SignerThr,
 		Roots: orEmptyStrings(doc.Roots), Signers: orEmptyStrings(doc.Signers),
-		Params: params, Policy: doc.Policy,
+		Params: params, Policy: doc.Policy, Versions: doc.Versions,
 		LogKeys: orEmptyLogKeys(doc.LogKeys), Devices: orEmptyDevices(doc.Devices),
 		ActiveWg: orEmptyStrings(doc.ActiveWg), Rejected: orEmptyRejections(doc.Rejected),
 	}
@@ -260,4 +272,27 @@ func orEmptyRejections(s []Rejection) []Rejection {
 		return []Rejection{}
 	}
 	return s
+}
+
+// Previous returns the version a fresh state-changing entry must carry (§4.4).
+// A never-named enrollment and a note have no predecessor.
+func (s *State) Previous(typ, deviceID string) *uint64 {
+	var version uint64
+	switch typ {
+	case "enroll", "rotate", "revoke":
+		d, exists := s.Devices[deviceID]
+		if !exists {
+			return nil
+		}
+		version = d.Version
+	case "signer_add", "signer_remove", "signer_thr":
+		version = s.Versions["signers"]
+	case "root_add", "root_remove", "root_thr":
+		version = s.Versions["roots"]
+	case "params", "policy", "log_key":
+		version = s.Versions[typ]
+	default:
+		return nil
+	}
+	return &version
 }

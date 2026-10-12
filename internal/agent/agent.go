@@ -620,7 +620,7 @@ func (a *Agent) verifyLog(f logclient.Fetcher, anchor logclient.Anchor) (*logcli
 
 // replayAnchor is the genesis this node's trust file pins.
 func (a *Agent) replayAnchor() replay.Anchor {
-	return replay.Anchor{Net: a.cfg.Anchor.Net, GenesisHash: a.cfg.Anchor.GenesisHash}
+	return replay.FromTrust(a.cfg.Anchor)
 }
 
 // Once verifies the log and reconciles the interface with it.

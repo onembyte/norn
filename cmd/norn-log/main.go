@@ -130,7 +130,7 @@ func run(args []string) error {
 	}
 	proofs.store = store
 	server, err := logserver.New(store, *dir, anchor.Origin, key,
-		replay.Anchor{Net: anchor.Net, GenesisHash: anchor.GenesisHash})
+		replay.FromTrust(anchor))
 	if err != nil {
 		return err
 	}

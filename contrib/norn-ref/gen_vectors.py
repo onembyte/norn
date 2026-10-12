@@ -35,7 +35,7 @@ OWNED = frozenset({
     "keys.json", "entries", "log", "genesis", "state.json",
     "trust.cbor", "trust.toml", "trust.fingerprint", "trust-bad", "trust-good",
     "receipt.note", "receipt.json", "receipt-bad", "requests", "requests-bad", "policies",
-    "entries-hostile", "proven", "log-empty", "log-admission", "genesis-good",
+    "entries-hostile", "proven", "log-empty", "log-admission", "log-cas", "genesis-good",
     "receipt-rotated",
 })
 
@@ -127,9 +127,9 @@ def write_log(out: pathlib.Path) -> None:
         if item.reason:
             write(out / "log" / f"{item.name}.reason", item.reason + "\n")
 
-    anchor = replay.Anchor(net=fixture.NET, genesis_hash=entry.leaf_hash(raw[0]))
+    anchor = fixture.anchor_for(raw)
     write(out / "log" / "manifest.json", canonjson.dumps({
-        "anchor": {"net": anchor.net, "genesis_hash": anchor.genesis_hash},
+        "anchor": {"net": anchor.net, "genesis_hash": anchor.genesis_hash, "log_key": anchor.log_key, "policy": anchor.policy},
         "entries": [{"index": i, "name": it.name, "reason": it.reason or ""}
                     for i, it in enumerate(items)],
     }) + "\n")
@@ -249,7 +249,7 @@ def write_genesis_aborts(out: pathlib.Path) -> None:
         folder = out / "genesis" / name
         write(folder / "00-genesis.cbor", raw)
         write(folder / "manifest.json", canonjson.dumps({
-            "anchor": {"net": anchor.net, "genesis_hash": anchor.genesis_hash},
+            "anchor": {"net": anchor.net, "genesis_hash": anchor.genesis_hash, "log_key": anchor.log_key, "policy": anchor.policy},
             "entries": [{"index": 0, "name": "00-genesis", "reason": "bad-genesis"}],
         }) + "\n")
         write(folder / "state.json", replay.replay(anchor, [raw]).to_json() + "\n")
@@ -264,6 +264,7 @@ def write_genesis_aborts(out: pathlib.Path) -> None:
     step7 = {"section": "5.1", "says": "genesis signatures are counted against the `roots`"}
     genesis_rules = {
         "01-hash-mismatch": step4, "02-not-genesis": step3, "03-wrong-net": step3,
+        "25-prev-present": {"section":"5.1", "says":"`prev` MUST be absent"},
         "04-after-nonzero": step5, "05-root-thr-above-set": step6,
         "06-under-root-threshold": step7, "07-undecodable": step2,
         "08-duplicate-root": step6, "09-role-overlap": step6,
@@ -300,7 +301,7 @@ def write_genesis_accepts(out: pathlib.Path) -> None:
         folder = out / "genesis-good" / name
         write(folder / "00-genesis.cbor", raw)
         write(folder / "manifest.json", canonjson.dumps({
-            "anchor": {"net": anchor.net, "genesis_hash": anchor.genesis_hash},
+            "anchor": {"net": anchor.net, "genesis_hash": anchor.genesis_hash, "log_key": anchor.log_key, "policy": anchor.policy},
             "entries": [{"index": 0, "name": "00-genesis", "reason": ""}],
         }) + "\n")
         state = replay.replay(anchor, [raw])
@@ -350,6 +351,7 @@ def write_trust_rejections(out: pathlib.Path) -> None:
     mode = {"section": "9.1", "says": "`mode` MUST be"}
     size = {"section": "9.1", "says": "MAX_TRUST_BYTES"}
     trust_rules = {
+        "51-witness-key-is-log-key": {"section":"9.1", "says":"no witness `key`'s public key equals `log_key`'s"},
         "01-unknown-key": closed, "02-wrong-version": version, "03-short-net": net,
         "04-origin-mismatch": origin, "05-short-genesis-hash": ghash,
         "06-bad-log-key": logkey, "07-no-witnesses": witnesses,
@@ -423,17 +425,43 @@ def write_admission_log(out: pathlib.Path) -> None:
     """Use the same manifest/state contract as log-empty for key admission."""
     items = fixture.admission_log()
     raw = [item.raw for item in items]
-    anchor = replay.Anchor(fixture.NET, entry.leaf_hash(raw[0]))
+    anchor = fixture.anchor_for(raw)
     for item in items:
         write(out / "log-admission" / f"{item.name}.cbor", item.raw)
         if item.reason:
             write(out / "log-admission" / f"{item.name}.reason", item.reason + "\n")
     write(out / "log-admission" / "manifest.json", canonjson.dumps({
-        "anchor": {"net": anchor.net, "genesis_hash": anchor.genesis_hash},
+        "anchor": {"net": anchor.net, "genesis_hash": anchor.genesis_hash, "log_key": anchor.log_key, "policy": anchor.policy},
         "entries": [{"index": i, "name": item.name, "reason": item.reason or ""}
                     for i, item in enumerate(items)],
     }) + "\n")
     write(out / "log-admission" / "state.json", replay.replay(anchor, raw).to_json() + "\n")
+
+
+def write_cas_log(out: pathlib.Path) -> None:
+    """Ship D-077 using the same replay contract as the admission log."""
+    items = fixture.cas_log()
+    raw = [it.raw for it in items]
+    anchor = fixture.anchor_for(raw)
+    stale = {"section":"5.2", "says":"`prev` is not the current version of the object the entry changes"}
+    invariant = {"section":"5.2", "says":"a key entering a role whose set must stay disjoint from another"}
+    phrases = {
+        "decode": {"section":"5.1", "says":"`prev` absent (`decode`)"},
+        "threshold": {"section":"5.1", "says":"fewer than `root_thr` valid"},
+        "no-device-sig": {"section":"5.1", "says":"valid `device` signature by the device's **current** `device_pk`"},
+        "stale-state": stale, "dup-key": invariant,
+    }
+    for it in items:
+        write(out / "log-cas" / (it.name+".cbor"), it.raw)
+        if it.reason:
+            write(out / "log-cas" / (it.name+".reason"), it.reason+"\n")
+    write(out / "log-cas" / "manifest.json", canonjson.dumps({
+        "anchor":{"net":anchor.net,"genesis_hash":anchor.genesis_hash,"log_key":anchor.log_key,"policy":anchor.policy},
+        "entries":[{"index":i,"name":it.name,"reason":it.reason or ""} for i,it in enumerate(items)],
+        "codes":{it.name:it.reason for it in items if it.reason},
+        "rules":{it.name:phrases[it.reason] for it in items if it.reason},
+    })+"\n")
+    write(out / "log-cas" / "state.json", replay.replay(anchor,raw).to_json()+"\n")
 
 
 def write_trust_acceptances(out: pathlib.Path) -> None:
@@ -968,6 +996,7 @@ def main(argv: list[str]) -> int:
     write_trust_acceptances(out)
     write_empty_log(out)
     write_admission_log(out)
+    write_cas_log(out)
     write_trust(out)
     write_receipt_rotated(out)
     write_policies(out)

@@ -927,7 +927,24 @@ func newFixture(t *testing.T) *fixture {
 func (f *fixture) append(t *testing.T, typ string, body map[string]any, role string, names ...string) {
 	t.Helper()
 	after := uint64(f.store.Checkpoint().Size)
-	env := &entry.Envelope{V: entry.Version, T: typ, Net: f.doc.Net, TS: cosignedAt, After: &after, Body: body}
+	var prefix [][]byte
+	for i := int64(0); i < f.store.Size(); i++ {
+		raw, err := f.store.Entry(i)
+		if err != nil {
+			t.Fatal(err)
+		}
+		prefix = append(prefix, raw)
+	}
+	observed := replay.Replay(replay.FromTrust(f.doc), prefix)
+	id, _ := body["device_id"].(string)
+	if typ == "enroll" {
+		request, err := enrollreq.Decode(body["request"].([]byte))
+		if err != nil {
+			t.Fatal(err)
+		}
+		id = request.DeviceID
+	}
+	env := &entry.Envelope{Prev: observed.Previous(typ, id), V: entry.Version, T: typ, Net: f.doc.Net, TS: cosignedAt, After: &after, Body: body}
 	for _, name := range names {
 		if err := entry.Sign(env, key(t, name), role); err != nil {
 			t.Fatal(err)
@@ -948,7 +965,7 @@ func (f *fixture) params(t *testing.T, body map[string]any) {
 }
 
 func (f *fixture) anchor() logclient.Anchor {
-	return logclient.Anchor{Anchor: replay.Anchor{Net: f.doc.Net, GenesisHash: f.doc.GenesisHash}, Origin: f.doc.Origin, LogKeys: []string{f.doc.LogKey}, Policy: f.doc.Policy}
+	return logclient.Anchor{Anchor: replay.FromTrust(f.doc), Origin: f.doc.Origin, LogKeys: []string{f.doc.LogKey}, Policy: f.doc.Policy}
 }
 
 func (f *fixture) snapshot(t *testing.T) string {

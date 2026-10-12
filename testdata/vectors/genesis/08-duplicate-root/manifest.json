@@ -1,1 +1,1 @@
-{"anchor":{"genesis_hash":"279531c900a7db873ac4fff0206a15a043605c9fcff5e01bda25fce1b7f08aca","net":"6e6f726e2d746573746e65742d303031"},"entries":[{"index":0,"name":"00-genesis","reason":"bad-genesis"}]}
+{"anchor":{"genesis_hash":"279531c900a7db873ac4fff0206a15a043605c9fcff5e01bda25fce1b7f08aca","log_key":"","net":"6e6f726e2d746573746e65742d303031","policy":""},"entries":[{"index":0,"name":"00-genesis","reason":"bad-genesis"}]}

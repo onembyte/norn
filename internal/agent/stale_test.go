@@ -255,7 +255,7 @@ func TestANodeMirrorsTheLogItVerified(t *testing.T) {
 	doc := anchor(t)
 	result, err := logclient.Verify(logclient.Dir(filepath.Join(runDir, proven.MirrorDir)),
 		logclient.Anchor{
-			Anchor:  replay.Anchor{Net: doc.Net, GenesisHash: doc.GenesisHash},
+			Anchor:  replay.FromTrust(doc),
 			LogKeys: []string{doc.LogKey}, Policy: doc.Policy,
 		})
 	if err != nil {

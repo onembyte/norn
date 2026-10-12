@@ -136,6 +136,8 @@ def validate(doc: dict[str, Any]) -> None:
         # two verifiers could disagree about the cosignature it contributes.
         if not keys.valid_point(witness_key.public):
             raise TrustError(f"witness {witness['name']}: key must be a valid Ed25519 point")
+        if witness_key.public == log_key.public:
+            raise TrustError("a witness holds the log public key")
         if not 1 <= len(witness["name"].encode()) <= 64:
             # Bounded like the network name. Neither implementation capped this
             # and no file in the suite was long enough to tell (run 8, D22).

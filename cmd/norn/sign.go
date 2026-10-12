@@ -6,6 +6,7 @@ import (
 	"crypto/ed25519"
 	"encoding/hex"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -29,6 +30,7 @@ func signCmd(args []string) error {
 	agentKid := fs.String("agent-kid", "", "sign with this `kid` from the ssh-agent")
 	logLocation := fs.String("log", "", "log URL or directory; defaults to the anchor's log_urls")
 	after := fs.Int64("after", -1, "the log size this signature assumes (§4.4)")
+	prev := fs.Int64("prev", -1, "the object version this signature assumes (§4.4)")
 	noAfter := fs.Bool("no-after", false, "sign without an `after` guard, and say why in the summary")
 	role := fs.String("role", "signer", "the role to sign as: signer or root")
 	out := fs.String("o", "", "write the entry here instead of stdout")
@@ -36,6 +38,12 @@ func signCmd(args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
+	prevGiven := false
+	fs.Visit(func(f *flag.Flag) { prevGiven = prevGiven || f.Name == "prev" })
+	if prevGiven && *prev < 0 {
+		return errors.New("-prev must be a non-negative object version")
+	}
+
 	// §16.3: `--yes` MUST NOT exist for the root role. A root's authority is
 	// the one thing in this protocol that cannot be scripted away, because a
 	// script that can mint it is indistinguishable from a stolen signer with
@@ -89,6 +97,10 @@ func signCmd(args []string) error {
 
 	env, request, fresh, err := buildOrExtend(input, anchor, size, *after, *noAfter)
 	if err != nil {
+		return err
+	}
+
+	if err := applyPrevFlag(env, fresh, *prev, prevGiven); err != nil {
 		return err
 	}
 
@@ -164,6 +176,9 @@ func buildOrExtend(input []byte, anchor *trust.Trust, observed observation,
 		case !noAfter:
 			value := observed.Size
 			env.After = &value
+		}
+		if observed.State != nil {
+			env.Prev = observed.State.Previous("enroll", request.DeviceID)
 		}
 		return env, request, true, nil
 	}
@@ -362,6 +377,7 @@ func printSignSummary(env *entry.Envelope, request *enrollreq.Request, anchor *t
 	if public, ok := signer.Public().(ed25519.PublicKey); ok {
 		fmt.Fprintf(w, "  signing as %s  (%s)\n", entry.Kid(public), keySource)
 	}
+	printPrevSummary(w, env)
 	if raw, err := entry.Encode(env); err == nil {
 		fmt.Fprintf(w, "  entry hash %s\n", hex.EncodeToString(entry.EntryHash(raw)))
 	}

@@ -16,6 +16,10 @@ def state_with(extra_raw):
 
 def build(kind, body, signers, after, ts=None):
     env = entry.new(kind, fixture.NET, ts=ts or fixture.T0 + 9000, after=after, body=body)
+    prefix = tuple(it.raw for it in fixture.log())
+    prev = fixture.previous_for(fixture._replay_prefix(prefix), kind, body)
+    if prev is not None:
+        env["prev"] = prev
     for name, role in signers:
         entry.sign(env, fixture.KEYS[name], role)
     return entry.encode(env)

@@ -1217,7 +1217,7 @@ func shippedLogAnchor(t *testing.T) Anchor {
 		t.Fatal(err)
 	}
 	return Anchor{
-		Anchor:  replay.Anchor{Net: doc.Net, GenesisHash: doc.GenesisHash},
+		Anchor:  replay.FromTrust(doc),
 		LogKeys: []string{doc.LogKey},
 		Origin:  doc.Origin,
 		Policy:  doc.Policy,

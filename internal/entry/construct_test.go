@@ -109,6 +109,10 @@ func rebuild(m map[string]any) (*Envelope, []string, error) {
 		v := uint64(after)
 		env.After = &v
 	}
+	if prev, present := m["prev"].(float64); present {
+		n := uint64(prev)
+		env.Prev = &n
+	}
 	body, ok := m["body"].(map[string]any)
 	if !ok {
 		return nil, nil, errMissing("body")

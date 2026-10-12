@@ -1361,17 +1361,25 @@ func TestEveryNegativeDeclaresTheSectionThatStatesItsRule(t *testing.T) {
 	for _, dir := range []string{
 		"checkpoints-bad", "proofs-bad", "served-bad", "fork",
 		"entries-hostile", "policies", "genesis", "trust-bad", "receipt-bad", "requests-bad",
-		"served-genesis",
+		"served-genesis", "log-cas",
 	} {
 		t.Run(dir, func(t *testing.T) {
 			var manifest struct {
-				Cases json.RawMessage `json:"cases"`
+				Cases   json.RawMessage `json:"cases"`
+				Entries []struct {
+					Name   string
+					Reason string
+				} `json:"entries"`
 				Rules map[string]struct {
 					Section string `json:"section"`
 					Says    string `json:"says"`
 				} `json:"rules"`
 			}
-			readJSON(t, filepath.Join(root, dir, "cases.json"), &manifest)
+			file := "cases.json"
+			if dir == "log-cas" {
+				file = "manifest.json"
+			}
+			readJSON(t, filepath.Join(root, dir, file), &manifest)
 			if len(manifest.Rules) == 0 {
 				t.Fatalf("%s/cases.json carries no `rules` map. Every negative must "+
 					"name the section that states the rule it is about, or the rule "+
@@ -1398,7 +1406,13 @@ func TestEveryNegativeDeclaresTheSectionThatStatesItsRule(t *testing.T) {
 			// others. A failed unmarshal into []string leaves the slice
 			// populated with empties, so the fallback starts from nil.
 			var names []string
-			if err := json.Unmarshal(manifest.Cases, &names); err != nil {
+			if dir == "log-cas" {
+				for _, e := range manifest.Entries {
+					if e.Reason != "" {
+						names = append(names, e.Name)
+					}
+				}
+			} else if err := json.Unmarshal(manifest.Cases, &names); err != nil {
 				names = nil
 				var objs []struct{ Name string }
 				if err := json.Unmarshal(manifest.Cases, &objs); err != nil {

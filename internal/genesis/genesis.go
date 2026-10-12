@@ -199,7 +199,7 @@ func Build(c Ceremony, signers []crypto.Signer) (*Result, error) {
 
 	// Check the work: replay the entry under the anchor just built. A ceremony
 	// whose output does not replay has created a network nobody can join.
-	st := replay.Replay(replay.Anchor{Net: net, GenesisHash: anchor.GenesisHash}, [][]byte{raw})
+	st := replay.Replay(replay.FromTrust(anchor), [][]byte{raw})
 	if len(st.Rejected) > 0 {
 		return nil, ceremonyErrorf("the genesis this ceremony produced does not replay: %s",
 			st.Rejected[0].Reason)

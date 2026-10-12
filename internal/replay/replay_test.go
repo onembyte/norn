@@ -25,6 +25,8 @@ type manifest struct {
 	Anchor struct {
 		Net         string `json:"net"`
 		GenesisHash string `json:"genesis_hash"`
+		LogKey      string `json:"log_key"`
+		Policy      string `json:"policy"`
 	} `json:"anchor"`
 	Entries []struct {
 		Index  int    `json:"index"`
@@ -61,7 +63,7 @@ func loadCase(t *testing.T, dir string) (Anchor, [][]byte, manifest) {
 		}
 		entries = append(entries, b)
 	}
-	return Anchor{Net: net, GenesisHash: genesis}, entries, m
+	return Anchor{Net: net, GenesisHash: genesis, LogKey: m.Anchor.LogKey, Policy: m.Anchor.Policy}, entries, m
 }
 
 func TestEveryOutcomeInTheLogManifestMatches(t *testing.T) {

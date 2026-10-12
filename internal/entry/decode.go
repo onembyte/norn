@@ -2,10 +2,10 @@ package entry
 
 import "github.com/onembyte/norn/internal/cbor"
 
-// envelopeKeys is the closed schema of §4.1: exactly these, and `after` alone
+// envelopeKeys is the closed schema of §4.1: exactly these, and `after` and `prev`
 // is optional.
 var (
-	envelopeKeys  = map[string]bool{"v": true, "t": true, "net": true, "ts": true, "after": true, "body": true, "sigs": true}
+	envelopeKeys  = map[string]bool{"v": true, "t": true, "net": true, "ts": true, "after": true, "prev": true, "body": true, "sigs": true}
 	requiredKeys  = []string{"v", "t", "net", "ts", "body", "sigs"}
 	signatureKeys = map[string]bool{"kid": true, "role": true, "sig": true}
 )
@@ -52,6 +52,13 @@ func Decode(raw []byte) (*Envelope, error) {
 			return nil, schemaErrorf("after must be an unsigned integer")
 		}
 		env.After = &after
+	}
+	if raw, present := m["prev"]; present {
+		prev, ok := raw.(uint64)
+		if !ok {
+			return nil, schemaErrorf("prev must be an unsigned integer")
+		}
+		env.Prev = &prev
 	}
 	if env.Body, ok = m["body"].(map[string]any); !ok {
 		return nil, schemaErrorf("body must be a map")

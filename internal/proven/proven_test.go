@@ -41,7 +41,7 @@ func verified(t *testing.T) (*logclient.Result, *trust.Trust) {
 	result, err := logclient.Verify(
 		logclient.Dir(filepath.Join(vectorRoot(), "served")),
 		logclient.Anchor{
-			Anchor:  replay.Anchor{Net: doc.Net, GenesisHash: doc.GenesisHash},
+			Anchor:  replay.FromTrust(doc),
 			LogKeys: []string{doc.LogKey},
 			Policy:  doc.Policy,
 		})

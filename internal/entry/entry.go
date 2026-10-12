@@ -60,7 +60,7 @@ type Signature struct {
 	Sig  []byte
 }
 
-// Envelope is a decoded entry. After is nil when the optional field is absent,
+// Envelope is a decoded entry. After and Prev are nil when their fields are absent,
 // which is distinct from it being zero (SPEC §4.0: absent, never null).
 type Envelope struct {
 	V     uint64
@@ -68,6 +68,7 @@ type Envelope struct {
 	Net   []byte
 	TS    uint64
 	After *uint64
+	Prev  *uint64
 	Body  map[string]any
 	Sigs  []Signature
 }
@@ -106,6 +107,9 @@ func (e *Envelope) toMap(withSigs bool) (map[string]any, error) {
 	}
 	if e.After != nil {
 		out["after"] = *e.After
+	}
+	if e.Prev != nil {
+		out["prev"] = *e.Prev
 	}
 	if withSigs {
 		sigs := make([]any, 0, len(e.Sigs))

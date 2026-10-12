@@ -254,7 +254,7 @@ func TestGenesisAndTrustFileAgree(t *testing.T) {
 	if string(anchor.GenesisHash) != string(entry.LeafHash(raw)) {
 		t.Fatal("genesis_hash is not the leaf hash of genesis.cbor")
 	}
-	st := replay.Replay(replay.Anchor{Net: anchor.Net, GenesisHash: anchor.GenesisHash},
+	st := replay.Replay(replay.FromTrust(anchor),
 		[][]byte{raw})
 	if len(st.Rejected) != 0 {
 		t.Fatalf("the genesis does not replay under its own trust file: %+v", st.Rejected)

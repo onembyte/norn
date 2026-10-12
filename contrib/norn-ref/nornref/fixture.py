@@ -7,6 +7,7 @@ writing files.
 from __future__ import annotations
 
 import hashlib
+from functools import lru_cache
 
 from typing import Any
 
@@ -189,8 +190,23 @@ def catalogue() -> list[tuple[str, dict[str, Any]]]:
         ("15-note", _signed(entry.new("note", NET, ts=T0 + 900, after=15, body={
             "text": "quarterly key review completed"}), [("signer1", "signer")])),
     ]
+    # Catalogue entries form their own prefix: their predecessor comes from
+    # that prefix, not from the independently indexed replay fixture.
+    prefix = []
+    from . import replay
+    for _, env in out:
+        if prefix:
+            st = replay.replay(anchor_for(prefix), prefix)
+            prev = previous_for(st, env["t"], env["body"])
+            if prev is not None:
+                env["prev"] = prev
+            sigs = list(env["sigs"])
+            env["sigs"] = []
+            for sig in sigs:
+                key = next(k for k in KEYS.values() if k.id == sig["kid"])
+                entry.sign(env, key, sig["role"])
+        prefix.append(entry.encode(env))
     return out
-
 
 
 # -- byte-level patches that violate exactly one encoding-profile rule --------
@@ -254,6 +270,31 @@ def _first_undecodable(builder: "_Builder") -> bytes:
         "no undecodable entry to copy: the seen-set timing would pin nothing")
 
 
+_AUTO_PREV = object()
+
+
+def anchor_for(raw: list[bytes]):
+    from . import replay
+    return replay.Anchor(NET, entry.leaf_hash(raw[0]) if raw else bytes(32), log_vkey(), policy_text())
+
+
+def previous_for(st, kind: str, body: Any) -> int | None:
+    device_id = body.get("device_id") if isinstance(body, dict) else None
+    if kind == "enroll" and isinstance(body, dict):
+        try:
+            request = cbor.decode(body.get("request", b""))
+            device_id = request.get("device_id") if isinstance(request, dict) else None
+        except cbor.ProfileError:
+            pass
+    return st.previous(kind, device_id)
+
+
+@lru_cache(maxsize=512)
+def _replay_prefix(raw: tuple[bytes, ...]):
+    from . import replay
+    return replay.replay(anchor_for(list(raw)), list(raw))
+
+
 class _Builder:
     """Accumulates a log, assigning each entry `after` = its own index.
 
@@ -262,6 +303,8 @@ class _Builder:
     """
 
     def __init__(self) -> None:
+        self._observed_at = -1
+        self._observed = None
         self.items: list[LogItem] = []
 
     @property
@@ -275,10 +318,24 @@ class _Builder:
         self.items.append(LogItem(name, raw, reason))
 
     def build(self, kind: str, body: dict[str, Any], signers: list[tuple[str, str]],
-              after: int | None = None, ts_offset: int | None = None) -> dict[str, Any]:
+              after: int | None = None, ts_offset: int | None = None,
+              prev: int | None | object = _AUTO_PREV) -> dict[str, Any]:
+        if prev is _AUTO_PREV:
+            prev = self.previous(kind, body)
         env = entry.new(kind, NET, ts=T0 + (ts_offset if ts_offset is not None else self.index * 60),
-                        after=self.index if after is None else after, body=body)
+                        after=self.index if after is None else after, prev=prev, body=body)
         return _signed(env, signers)
+
+    def observed(self):
+        from . import replay
+        if self._observed_at != self.index:
+            raw = [it.raw for it in self.items]
+            self._observed = _replay_prefix(tuple(raw))
+            self._observed_at = self.index
+        return self._observed
+
+    def previous(self, kind: str, body: Any) -> int | None:
+        return previous_for(self.observed(), kind, body)
 
 
 def _enroll_body(device: str, wg: str | None = None, signer: str | None = None,
@@ -938,7 +995,7 @@ def log() -> list[LogItem]:
     # step and answers differently, or accepts.
     def wrong_type(kind: str, body: Any, signers: list[tuple[str, str]],
                    **members: Any) -> dict[str, Any]:
-        env = entry.new(kind, NET, ts=T0 + b.index * 60, after=b.index, body=body)
+        env = entry.new(kind, NET, ts=T0 + b.index * 60, after=b.index, prev=b.previous(kind, body), body=body)
         env.update(members)
         return _signed(env, signers)
 
@@ -1048,7 +1105,7 @@ def log() -> list[LogItem]:
     # Step 3 before step 7: an unsigned `signer_add` for another network --
     # `decode`, not `threshold`. `bad-decode-net` is signed, so a reader that
     # judged `net` after authorisation still called it `decode`.
-    foreign = entry.new("signer_add", b"\xff" * 16, ts=T0 + b.index * 60, after=b.index,
+    foreign = entry.new("signer_add", b"\xff" * 16, ts=T0 + b.index * 60, after=b.index, prev=b.previous("signer_add", {}),
                         body={"pk": KEYS["stranger"].public})
     b.add_raw(f"{b.index}-bad-precedence-net-before-threshold", entry.encode(foreign), "decode")
 
@@ -1217,6 +1274,13 @@ def genesis_aborts() -> list[tuple[str, bytes, "replay.Anchor"]]:
     for name, public in (("23-root-order-eight", ORDER_EIGHT),
                          ("24-root-noncanonical", NONCANONICAL_POINT)):
         bad_body(name, roots=[KEYS[n].public for n in ROOTS] + [public])
+
+    carrying_prev = genesis()
+    carrying_prev["prev"] = 0
+    carrying_prev["sigs"] = []
+    _signed(carrying_prev, [("root1", "root"), ("root2", "root")])
+    raw = entry.encode(carrying_prev)
+    cases.append(("25-prev-present", raw, anchor_for([raw])))
 
     assert good_anchor  # the good anchor is exercised by the log fixture
     return cases
@@ -1582,7 +1646,10 @@ def trust_rejections() -> list[tuple[str, dict[str, Any]]]:
     # characters, and base32's first character here is a letter, not a digit.
     cased = ORIGIN[:5] + ORIGIN[5].upper() + ORIGIN[6:]
     noncanonical_witness = note.vkey("norn-witness/pi", NONCANONICAL_POINT, note.ALG_COSIGNATURE)
-    return [
+    reuse = note.vkey("different-name", KEYS["logkey"].public, note.ALG_COSIGNATURE)
+    reused_log = dict(base, witnesses=[{"name":"w", "key":reuse}],
+                      policy=f"witness w {reuse}\nquorum w\n")
+    return [("51-witness-key-is-log-key", reused_log),
         # The key ID and policy name the very same damaged point, so only
         # §3.1 refuses it, not correspondence or verifier-key framing.
         ("47-witness-noncanonical-point", damaged(
@@ -2686,3 +2753,67 @@ def _mixed_case(text: str) -> str:
 def _corrupt(text: str) -> str:
     other = "q" if text[10] != "q" else "p"
     return text[:10] + other + text[11:]
+
+
+def cas_log() -> list[LogItem]:
+    """D-077's withheld authorisations, role invariant and deciding order.
+
+    Each stale story includes the accepted transitions that made its signed
+    predecessor obsolete. This log is separate so §6's fixture size stays fixed.
+    """
+    b = _Builder()
+    roots = [("root1", "root"), ("root2", "root")]
+    signer = [("signer1", "signer")]
+    device = [("nas", "device")]
+
+    def add(name, kind, body, signatures, reason=None, **overrides):
+        b.add(f"{b.index:02d}-{name}", b.build(kind, body, signatures, **overrides), reason)
+
+    b.add("00-genesis", genesis())
+    add("enroll-nas", "enroll", _enroll_body("nas"), signer)
+    add("rotate-nas", "rotate", {"device_id":"nas", "wg_pk":WG["nas2"]}, device)
+    add("stale-withheld-rotate", "rotate", {"device_id":"nas", "wg_pk":WG["nas"]},
+        device, "stale-state", prev=1)
+    add("signer-add-spare", "signer_add", {"pk":KEYS["spare"].public}, roots)
+    add("signer-remove-spare", "signer_remove", {"kid":KEYS["spare"].id}, roots)
+    add("stale-reinstated-signer", "signer_add", {"pk":KEYS["spare"].public},
+        roots, "stale-state", prev=0)
+    add("log-key-two", "log_key", {"pk":KEYS["logkey2"].public, "overlap":60}, roots)
+    add("log-key-three", "log_key", {"pk":KEYS["logkey3"].public, "overlap":60}, roots)
+    add("stale-superseded-log-key", "log_key", {"pk":KEYS["logkey2"].public,"overlap":60},
+        roots, "stale-state", prev=0)
+    add("revoke-nas", "revoke", {"device_id":"nas"}, signer)
+    add("reenroll-nas", "enroll", _enroll_body("nas"), signer)
+    add("stale-revoke-reenrolled-device", "revoke", {"device_id":"nas"},
+        signer, "stale-state", prev=1)
+    add("revoke-nas-again", "revoke", {"device_id":"nas"}, signer)
+    add("reenroll-nas-again", "enroll", _enroll_body("nas"), signer)
+    add("revoke-nas-third-time", "revoke", {"device_id":"nas"}, signer)
+    add("stale-enroll-after-second-revocation", "enroll", _enroll_body("nas"),
+        signer, "stale-state", prev=13)
+    add("never-named-enroll-with-prev", "enroll", _enroll_body("spare"),
+        signer, "stale-state", prev=0)
+    add("revoked-enroll-without-prev", "enroll", _enroll_body("nas"),
+        signer, "stale-state", prev=None)
+    add("note-with-prev", "note", {"text":"no object to change"}, signer, "decode", prev=0)
+
+    def witness_policy(public):
+        return "witness w " + note.vkey("different-name",public,note.ALG_COSIGNATURE) + "\nquorum w\n"
+
+    add("policy-witness-is-anchor-log-key", "policy", {"text":witness_policy(KEYS["logkey"].public)}, roots, "dup-key")
+    add("policy-witness-is-learned-log-key", "policy", {"text":witness_policy(KEYS["logkey2"].public)}, roots, "dup-key")
+    add("log-key-is-trust-witness", "log_key", {"pk":KEYS["witness-pi"].public,"overlap":60}, roots, "dup-key")
+    add("policy-spare-witness", "policy", {"text":witness_policy(KEYS["spare"].public)}, roots)
+    add("log-key-is-replayed-witness", "log_key", {"pk":KEYS["spare"].public,"overlap":60}, roots, "dup-key")
+    add("threshold-before-stale", "signer_add", {"pk":KEYS["stranger"].public},
+        [("root1","root")], "threshold", prev=0)
+    add("reenroll-nas-for-precedence", "enroll", _enroll_body("nas"), signer)
+    add("enroll-laptop", "enroll", _enroll_body("laptop"), signer)
+    add("current-signature-before-stale", "rotate", {"device_id":"nas","wg_pk":WG["nas2"]},
+        signer, "no-device-sig", prev=0)
+    add("stale-before-incoming-proof", "rotate", {"device_id":"nas","wg_pk":WG["nas2"],"device_pk":KEYS["spare"].public},
+        device, "stale-state", prev=0)
+    add("stale-before-dup-key", "signer_add", {"pk":KEYS["signer1"].public}, roots, "stale-state", prev=0)
+    add("stale-before-dup-wg", "rotate", {"device_id":"nas","wg_pk":WG["laptop"]}, device, "stale-state", prev=0)
+    add("rotate-same-device-key-one-signature", "rotate", {"device_id":"nas","wg_pk":WG["nas2"],"device_pk":KEYS["nas"].public}, device)
+    return b.items

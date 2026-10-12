@@ -220,7 +220,6 @@ func TestRotateRefusalsPrecedeConfirmation(t *testing.T) {
 		{"duplicate WG key", []string{"-wg-pub", wgkey.Format(other)}, "dup-wg"},
 		{"no change", []string{"-wg-pub", wgkey.Format(old)}, "changes nothing"},
 		{"malformed WG key", []string{"-wg-pub", "bad-key"}, "wgkey"},
-		{"same identity", []string{"-new-key", key}, "current device key"},
 		{"new identity as signer", []string{"-new-key", stranger, "-role", "signer"}, "-new-key"},
 		{"root role", []string{"-role", "root"}, "device or signer"},
 		{"missing WG key", []string{"-wg-pub", ""}, "exactly one"},

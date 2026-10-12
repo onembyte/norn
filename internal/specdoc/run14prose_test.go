@@ -1,6 +1,7 @@
 package specdoc
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,7 +20,6 @@ func TestRunFourteensProseFindingsAreFixed(t *testing.T) {
 		{"10.1", "Missing hash tiles are reported at step 12", "an entry bundle (step 8), a hash tile (step 12) — reported at that step |", "an entry bundle (step 8), a hash tile (step 11) — reported at that step |"},
 		{"3.1", "Canonical clauses are implied by the order clause", "2, 4 or 8 — `[L]P = O` and `P ≠ O`. The two canonical clauses are implied by the order clause — every `y` at or above `p` decodes, read leniently, off the curve or to a point of non-prime order, and `x` is 0 only at the identity and the point of order 2 — and are stated because libraries decode differently; no artifact can isolate them, so `genesis/24-root-noncanonical` and `trust-bad/47-witness-noncanonical-point` pin this item, not the clause they were named for (run 14, L3). An honest key `[s]B` and an honest", "2, 4 or 8 — `[L]P = O` and `P ≠ O`. An honest key `[s]B` and an honest"},
 		{"12.1", "Trust algorithm vectors also exercise the policy rule", "**`15`** and **`16`** parse cleanly as verifier keys and are refused by the algorithm rule — the trust file's, and the policy grammar's again once the key enters the policy, so neither isolates the trust-level rule alone (run 14, L4);", "**`15`** and **`16`** parse cleanly as verifier keys and are refused only by the algorithm rule;"},
-		{"12", "The trust file count matches the suite", "| 48 trust files, including `47-witness-noncanonical-point`,", "| 45 trust files, including `47-witness-noncanonical-point`,"},
 		{"12.1", "Allowed IP intersection needs a live reconciliation test", "- §13's interface reconciliation and `proven.json` publication cannot be\n  demonstrated by the static protocol vectors, §13.1's intersection of a\n  peer's allowed-ips with its grant included.", "- §13's interface reconciliation and `proven.json` publication cannot be\n  demonstrated by the static protocol vectors."},
 		{"12.1", "Canonical clauses are admitted as unvectorable", "  imply the guarantee §5.2 gives.\n- **§3.1's canonical clauses.** \"`y` below `p`\" and \"the sign bit is 0 when\n  `x` is 0\" are implied by `[L]P = O ∧ P ≠ O` — checked by computation over\n  every `y` in [p, 2²⁵⁵) and both `x = 0` points — so a reader that skips them\n  and keeps the order clause is indistinguishable on every artifact,\n  `genesis/24-root-noncanonical` and `trust-bad/47-witness-noncanonical-point`\n  included, which pin item 1 as a whole (run 14, L3).\n", ""},
 	} {
@@ -37,6 +37,23 @@ func TestRunFourteensProseFindingsAreFixed(t *testing.T) {
 			}
 		})
 	}
+	// §12's trust-bad count is read from the suite rather than pinned: run 14
+	// found it stale (L5), and a pinned number goes stale the next time a
+	// trust file is added, which D-077 did the same day.
+	t.Run("The trust file count matches the suite", func(t *testing.T) {
+		var manifest struct {
+			Cases []string `json:"cases"`
+		}
+		readJSON(t, filepath.Join(vectorRoot(t), "trust-bad", "cases.json"), &manifest)
+		section, ok := doc.Section("12")
+		if !ok {
+			t.Fatal("§12 is missing")
+		}
+		want := fmt.Sprintf("| %d trust files, including `47-witness-noncanonical-point`,", len(manifest.Cases))
+		if !strings.Contains(section.Body, want) {
+			t.Errorf("§12 does not say %q: trust-bad ships %d cases", want, len(manifest.Cases))
+		}
+	})
 	t.Run("The vectors README names every closed code list", func(t *testing.T) {
 		path := filepath.Join(vectorRoot(t), "README.md")
 		raw, err := os.ReadFile(path)

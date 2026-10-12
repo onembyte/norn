@@ -17,7 +17,7 @@ class RejectedParamsChangeNothing(unittest.TestCase):
         before, n = _state([])
         self.assertNotEqual(before.params["mmd"], 60)
         env = entry.new("params", fixture.NET, ts=fixture.T0 + 9000, after=None,
-                        body={"mmd": 60, "staleness": True})
+                        body={"mmd": 60, "staleness": True}, prev=before.versions["params"])
         for name in ("root1", "root2", "root3"):
             entry.sign(env, fixture.KEYS[name], "root")
         after, _ = _state([entry.encode(env)])

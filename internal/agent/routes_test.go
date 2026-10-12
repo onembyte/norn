@@ -18,7 +18,7 @@ func appendParams(t *testing.T, store *tlogstore.Store, body map[string]any, aft
 	t.Helper()
 	doc := anchor(t)
 	env := &entry.Envelope{
-		V: entry.Version, T: "params", Net: doc.Net, TS: 1_760_500_000, After: &after, Body: body,
+		Prev: storePrev(t, store, "params", ""), V: entry.Version, T: "params", Net: doc.Net, TS: 1_760_500_000, After: &after, Body: body,
 	}
 	for _, name := range []string{"root1", "root2", "root3"} {
 		if err := entry.Sign(env, fixtureKey(t, name), "root"); err != nil {

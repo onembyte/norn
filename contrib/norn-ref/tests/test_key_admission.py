@@ -55,7 +55,7 @@ class Admission(unittest.TestCase):
                 body = {"pk": public}
                 if entry_type == "log_key":
                     body["overlap"] = 60
-                env = entry.new(entry_type, fixture.NET, fixture.T0 + 1, body)
+                env = entry.new(entry_type, fixture.NET, fixture.T0 + 1, body, prev=0)
                 state = replay_with(genesis, [root_sign(env)])
                 if admitted:
                     self.assertEqual(state.rejected, [])
@@ -180,7 +180,7 @@ class RemainingAdmission(unittest.TestCase):
                 with self.subTest(key=kind, device=device_id):
                     env = entry.new("rotate", fixture.NET, fixture.T0 + 2,
                                     {"device_id": device_id, "wg_pk": fixture.WG["spare"],
-                                     "device_pk": public})
+                                     "device_pk": public}, prev=before.previous("rotate", device_id))
                     for name in ("pi-cam", "spare"):
                         entry.sign(env, fixture.KEYS[name], "device")
                     state = replay.replay(anchor, [*raw, entry.encode(env)])
@@ -204,7 +204,7 @@ class RemainingAdmission(unittest.TestCase):
                     else:
                         with self.assertRaises(policy.PolicyError):
                             policy.parse(text)
-                    env = entry.new("policy", fixture.NET, fixture.T0 + 1, {"text": text})
+                    env = entry.new("policy", fixture.NET, fixture.T0 + 1, {"text": text}, prev=0)
                     state = replay_with(genesis, [root_sign(env)])
                     self.assertEqual(state.rejected, [] if admitted else [{"index": 1, "reason": "decode"}])
                     self.assertEqual(state.policy, text if admitted else "")

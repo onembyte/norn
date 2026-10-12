@@ -13,13 +13,13 @@ import hashlib
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from . import cbor, enrollreq, entry, fields, keys, policy
+from . import cbor, enrollreq, entry, fields, keys, policy, note
 from .state import DEFAULT_PARAMS, PARAM_KEYS, ROUTES_VALUES, State
 
 REASONS = (
     "decode", "unknown-type", "bad-genesis", "dup-genesis", "dup-entry", "after",
     "threshold", "no-device-sig", "dup-id", "dup-wg", "unknown-device", "not-active",
-    "dup-key", "unknown-key", "root-invariant", "bad-thr",
+    "dup-key", "unknown-key", "root-invariant", "bad-thr", "stale-state",
 )
 
 
@@ -39,6 +39,8 @@ class Anchor:
 
     net: bytes
     genesis_hash: bytes
+    log_key: str = ""
+    policy: str = ""
 
 
 # -- signature counting ---------------------------------------------------
@@ -73,7 +75,7 @@ KID_LEN = 16
 def _is_kid(value: Any) -> bool:
     """A key id is exactly 16 lowercase hex characters (SPEC §4.0)."""
     return isinstance(value, str) and len(value) == KID_LEN and set(value) <= _HEX
-_ENVELOPE_KEYS = {"v", "t", "net", "ts", "after", "body", "sigs"}
+_ENVELOPE_KEYS = {"v", "t", "net", "ts", "after", "prev", "body", "sigs"}
 _REQUIRED_KEYS = {"v", "t", "net", "ts", "body", "sigs"}
 
 
@@ -95,6 +97,8 @@ def _check_envelope(env: Any, net: bytes) -> None:
     if type(env["ts"]) is not int or not isinstance(env["body"], dict):
         raise Reject("decode")
     if "after" in env and type(env["after"]) is not int:
+        raise Reject("decode")
+    if "prev" in env and type(env["prev"]) is not int:
         raise Reject("decode")
     if not isinstance(env["sigs"], list):
         raise Reject("decode")
@@ -183,6 +187,23 @@ def _key(body: dict[str, Any], key: str) -> bytes:
     return public
 
 
+def _check_prev(env: dict[str, Any], version: int | None) -> None:
+    """Only a never-named enrollment has no predecessor (SPEC 4.4)."""
+    if version is None:
+        if "prev" not in env:
+            return
+    elif env.get("prev") == version:
+        return
+    raise Reject("stale-state")
+
+
+def _witness_holds(text: str, public: bytes) -> bool:
+    """Names and algorithm-dependent ids do not separate signing roles."""
+    return any(note.parse_vkey(parts[2]).public == public
+               for parts in (policy.SEPARATORS.split(line.strip(" \t")) for line in text.split("\n"))
+               if parts[0] == "witness")
+
+
 # -- handlers -------------------------------------------------------------
 
 def _h_enroll(state: State, env: dict[str, Any], index: int) -> None:
@@ -211,6 +232,8 @@ def _h_enroll(state: State, env: dict[str, Any], index: int) -> None:
     expires = request.get("expires")
 
     _require(len(_valid_kids(env, "signer", state.signers)), state.signer_thr)
+    record = state.devices.get(device_id)
+    _check_prev(env, record["version"] if record else None)
     if state.active_device(device_id):
         raise Reject("dup-id")
     if wg_pk in state.active_wg:
@@ -232,6 +255,7 @@ def _h_rotate(state: State, env: dict[str, Any], index: int) -> None:
         raise Reject("no-device-sig")
     if state.params["rotate_needs_signer"]:
         _require(len(_valid_kids(env, "signer", state.signers)), state.signer_thr)
+    _check_prev(env, device["version"])
     if wg_pk in state.active_wg and state.active_wg[wg_pk] != device_id:
         raise Reject("dup-wg")
     # Proof of possession of the incoming identity key (D-032): a device that
@@ -240,7 +264,7 @@ def _h_rotate(state: State, env: dict[str, Any], index: int) -> None:
     # requiring both signatures costs nothing.
     if new_device_pk is not None and not _device_signed(env, new_device_pk):
         raise Reject("no-device-sig")
-    state.rotate_device(device_id, wg_pk, new_device_pk)
+    state.rotate_device(device_id, wg_pk, new_device_pk, index)
 
 
 def _h_revoke(state: State, env: dict[str, Any], index: int) -> None:
@@ -265,15 +289,18 @@ def _h_revoke(state: State, env: dict[str, Any], index: int) -> None:
     )
     if not authorised:
         raise Reject("threshold")
+    _check_prev(env, device["version"])
     state.revoke_device(device_id, index)
 
 
 def _h_signer_add(state: State, env: dict[str, Any], index: int) -> None:
     public = _key(env["body"], "pk")
+    _check_prev(env, state.versions["signers"])
     kid = keys.kid(public)
     if kid in state.signers or kid in state.roots:
         raise Reject("dup-key")
     state.signers[kid] = public
+    state.versions["signers"] = index
 
 
 def _kid_field(body: dict[str, Any]) -> str:
@@ -285,6 +312,7 @@ def _kid_field(body: dict[str, Any]) -> str:
 
 def _h_signer_remove(state: State, env: dict[str, Any], index: int) -> None:
     kid = _kid_field(env["body"])
+    _check_prev(env, state.versions["signers"])
     if kid not in state.signers:
         raise Reject("unknown-key")
     # Deliberately no quorum invariant here (D-028): removing a compromised
@@ -292,6 +320,7 @@ def _h_signer_remove(state: State, env: dict[str, Any], index: int) -> None:
     # then cannot enrol until roots add a signer, which is recoverable; an
     # unremovable stolen key is not.
     del state.signers[kid]
+    state.versions["signers"] = index
 
 
 def _h_signer_thr(state: State, env: dict[str, Any], index: int) -> None:
@@ -299,27 +328,33 @@ def _h_signer_thr(state: State, env: dict[str, Any], index: int) -> None:
         thr = fields.uint(env["body"].get("thr"), "thr")
     except fields.FieldError:
         raise Reject("decode") from None
+    _check_prev(env, state.versions["signers"])
     if thr < 1 or thr > len(state.signers):
         raise Reject("bad-thr")
     state.signer_thr = thr
+    state.versions["signers"] = index
 
 
 def _h_root_add(state: State, env: dict[str, Any], index: int) -> None:
     public = _key(env["body"], "pk")
+    _check_prev(env, state.versions["roots"])
     kid = keys.kid(public)
     if kid in state.roots or kid in state.signers:
         raise Reject("dup-key")
     state.roots[kid] = public
+    state.versions["roots"] = index
 
 
 def _h_root_remove(state: State, env: dict[str, Any], index: int) -> None:
     kid = _kid_field(env["body"])
+    _check_prev(env, state.versions["roots"])
     if kid not in state.roots:
         raise Reject("unknown-key")
     remaining = len(state.roots) - 1
     if remaining < state.root_thr or remaining < 1:
         raise Reject("root-invariant")
     del state.roots[kid]
+    state.versions["roots"] = index
 
 
 def _h_root_thr(state: State, env: dict[str, Any], index: int) -> None:
@@ -327,21 +362,28 @@ def _h_root_thr(state: State, env: dict[str, Any], index: int) -> None:
         thr = fields.uint(env["body"].get("thr"), "thr")
     except fields.FieldError:
         raise Reject("decode") from None
+    _check_prev(env, state.versions["roots"])
     if thr < 1 or thr > len(state.roots):
         raise Reject("bad-thr")
     state.root_thr = thr
+    state.versions["roots"] = index
 
 
-def _h_log_key(state: State, env: dict[str, Any], index: int) -> None:
+def _h_log_key(state: State, env: dict[str, Any], index: int, anchor: Anchor | None = None) -> None:
     public = _key(env["body"], "pk")
     try:
         overlap = fields.uint(env["body"].get("overlap"), "overlap")
     except fields.FieldError:
         raise Reject("decode") from None
+    _check_prev(env, state.versions["log_key"])
+    text = state.policy or (anchor.policy if anchor else "")
+    if text and _witness_holds(text, public):
+        raise Reject("dup-key")
     state.log_keys.append({"pk": public, "overlap": overlap, "since_index": index})
+    state.versions["log_key"] = index
 
 
-def _h_policy(state: State, env: dict[str, Any], index: int) -> None:
+def _h_policy(state: State, env: dict[str, Any], index: int, anchor: Anchor | None = None) -> None:
     text = env["body"].get("text")
     if not isinstance(text, str) or len(text.encode("utf-8")) > 4096:
         raise Reject("decode")
@@ -352,7 +394,13 @@ def _h_policy(state: State, env: dict[str, Any], index: int) -> None:
         policy.parse(text)
     except policy.PolicyError:
         raise Reject("decode")
+    _check_prev(env, state.versions["policy"])
+    if anchor and anchor.log_key and _witness_holds(text, note.parse_vkey(anchor.log_key).public):
+        raise Reject("dup-key")
+    if any(_witness_holds(text, key["pk"]) for key in state.log_keys):
+        raise Reject("dup-key")
     state.policy = text
+    state.versions["policy"] = index
 
 
 def _h_params(state: State, env: dict[str, Any], index: int) -> None:
@@ -379,12 +427,17 @@ def _h_params(state: State, env: dict[str, Any], index: int) -> None:
         if key == "routes" and value not in ROUTES_VALUES:
             raise Reject("decode")
         checked[key] = value
+    _check_prev(env, state.versions["params"])
     state.params.update(checked)
+    state.versions["params"] = index
 
 
 def _h_note(state: State, env: dict[str, Any], index: int) -> None:
     text = env["body"].get("text")
     if not isinstance(text, str) or len(text.encode("utf-8")) > 4096:
+        raise Reject("decode")
+
+    if "prev" in env:
         raise Reject("decode")
 
 
@@ -499,7 +552,7 @@ def replay(anchor: Anchor, raw_entries: list[bytes]) -> State:
             raise Reject("bad-genesis")
         if entry.leaf_hash(raw_entries[0]) != anchor.genesis_hash:
             raise Reject("bad-genesis")
-        if "after" in env and env["after"] > 0:
+        if "prev" in env or "after" in env and env["after"] > 0:
             raise Reject("bad-genesis")
         state = _apply_genesis(anchor, env)
     except (cbor.ProfileError, Reject):
@@ -534,7 +587,10 @@ def replay(anchor: Anchor, raw_entries: list[bytes]) -> State:
                         or _valid_kids(env, "root", state.roots)):
                     raise Reject("threshold")
             _check_body(env["t"], env["body"])
-            HANDLERS[env["t"]](state, env, index)
+            if env["t"] in ("log_key", "policy"):
+                HANDLERS[env["t"]](state, env, index, anchor)
+            else:
+                HANDLERS[env["t"]](state, env, index)
         except cbor.ProfileError:
             state.rejected.append({"index": index, "reason": "decode"})
         except Reject as exc:

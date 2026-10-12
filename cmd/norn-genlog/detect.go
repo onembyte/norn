@@ -42,7 +42,7 @@ func writeDetectCases(root, origin string, key ed25519.PrivateKey, entries [][]b
 		return err
 	}
 
-	divergent, err := forkEntry(root)
+	divergent, err := forkEntry(root, entries[:forkAt])
 	if err != nil {
 		return err
 	}
@@ -54,7 +54,11 @@ func writeDetectCases(root, origin string, key ed25519.PrivateKey, entries [][]b
 		return err
 	}
 	// A branch that diverges at the same size as that earlier view.
-	sameSize := append(append([][]byte(nil), entries[:forkAt-1]...), divergent)
+	sameEntry, err := forkEntry(root, entries[:forkAt-1])
+	if err != nil {
+		return err
+	}
+	sameSize := append(append([][]byte(nil), entries[:forkAt-1]...), sameEntry)
 	if _, err := serveInto(filepath.Join(dir, "fork-same-size"), origin, key,
 		sameSize, signers); err != nil {
 		return err

@@ -25,7 +25,9 @@ class HappyPath(unittest.TestCase):
         self.assertEqual([(r["index"], r["reason"]) for r in self.state.rejected], expected)
 
     def test_covers_every_reason_code_except_bad_genesis(self):
-        seen = {r["reason"] for r in self.state.rejected}
+        cas = fixture.cas_log()
+        extra = replay.replay(fixture.anchor_for([it.raw for it in cas]), [it.raw for it in cas])
+        seen = {r["reason"] for r in self.state.rejected + extra.rejected}
         self.assertEqual(seen, set(replay.REASONS) - {"bad-genesis"})
 
     def test_governance_applied(self):

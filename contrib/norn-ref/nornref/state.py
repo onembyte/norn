@@ -50,6 +50,8 @@ class State:
     name: str = ""
     rejected: list[dict[str, Any]] = field(default_factory=list)
     size: int = 0
+    versions: dict[str, int] = field(default_factory=lambda: dict.fromkeys(
+        ("signers", "roots", "params", "policy", "log_key"), 0))
 
     # -- device helpers ---------------------------------------------------
 
@@ -64,14 +66,16 @@ class State:
             "wg_pk": wg_pk,
             "status": ACTIVE,
             "since_index": index,
+            "version": index,
             "labels": dict(labels or {}),
             "expires": expires or 0,
         }
         self.active_wg[wg_pk] = device_id
 
-    def rotate_device(self, device_id: str, wg_pk: bytes, device_pk: bytes | None) -> None:
+    def rotate_device(self, device_id: str, wg_pk: bytes, device_pk: bytes | None, index: int) -> None:
         device = self.devices[device_id]
         self.active_wg.pop(device["wg_pk"], None)
+        device["version"] = index
         device["wg_pk"] = wg_pk
         if device_pk is not None:
             device["device_pk"] = device_pk
@@ -79,6 +83,7 @@ class State:
 
     def revoke_device(self, device_id: str, index: int) -> None:
         device = self.devices[device_id]
+        device["version"] = index
         device["status"] = REVOKED
         device["since_index"] = index
         self.active_wg.pop(device["wg_pk"], None)
@@ -146,8 +151,20 @@ class State:
                 for device_id, device in sorted(self.devices.items())
             },
             "active_wg": {pk.hex(): device_id for pk, device_id in sorted(self.active_wg.items())},
+            "versions": self.versions,
             "rejected": self.rejected,
         }
 
     def to_json(self) -> str:
         return canonjson.dumps(self.to_dict())
+
+    def previous(self, kind: str, device_id: str | None = None) -> int | None:
+        """The predecessor of the object a fresh entry changes (SPEC 4.4)."""
+        if kind in ("enroll", "rotate", "revoke"):
+            device = self.devices.get(device_id)
+            return device["version"] if device else None
+        if kind.startswith("signer_"):
+            return self.versions["signers"]
+        if kind.startswith("root_"):
+            return self.versions["roots"]
+        return self.versions.get(kind)

@@ -7,6 +7,7 @@ import (
 	"github.com/onembyte/norn/internal/enrollreq"
 	"github.com/onembyte/norn/internal/entry"
 	"github.com/onembyte/norn/internal/fields"
+	"github.com/onembyte/norn/internal/note"
 	"github.com/onembyte/norn/internal/policy"
 	"github.com/onembyte/norn/internal/state"
 )
@@ -115,6 +116,10 @@ func hEnroll(r *replayer, st *state.State, env *entry.Envelope, index uint64) er
 	if r.countRole(st, env, "signer") < st.SignerThr {
 		return rejectWith(ReasonThreshold)
 	}
+	device, known := st.Devices[request.DeviceID]
+	if err := checkPrev(env, device.Version, known); err != nil {
+		return err
+	}
 	if d, ok := st.Devices[request.DeviceID]; ok && d.Status == state.StatusActive {
 		return rejectWith(ReasonDupID)
 	}
@@ -132,7 +137,7 @@ func hEnroll(r *replayer, st *state.State, env *entry.Envelope, index uint64) er
 	}
 	st.Devices[request.DeviceID] = state.Device{
 		DevicePk: hexOf(request.DevicePK), WgPk: hexOf(request.WGPK),
-		Status: state.StatusActive, SinceIndex: index, Labels: labels, Expires: expires,
+		Status: state.StatusActive, SinceIndex: index, Version: index, Labels: labels, Expires: expires,
 	}
 	st.ActiveWg[hexOf(request.WGPK)] = request.DeviceID
 	return nil
@@ -173,6 +178,9 @@ func hRotate(r *replayer, st *state.State, env *entry.Envelope, index uint64) er
 			return rejectWith(ReasonThreshold)
 		}
 	}
+	if err := checkPrev(env, device.Version, true); err != nil {
+		return err
+	}
 	if owner, taken := st.ActiveWg[hexOf(wgPk)]; taken && owner != id {
 		return rejectWith(ReasonDupWg)
 	}
@@ -183,6 +191,7 @@ func hRotate(r *replayer, st *state.State, env *entry.Envelope, index uint64) er
 		}
 	}
 	delete(st.ActiveWg, device.WgPk)
+	device.Version = index
 	device.WgPk = hexOf(wgPk)
 	if incoming != nil {
 		device.DevicePk = hexOf(incoming)
@@ -219,6 +228,10 @@ func hRevoke(r *replayer, st *state.State, env *entry.Envelope, index uint64) er
 	if !authorised {
 		return rejectWith(ReasonThreshold)
 	}
+	if err := checkPrev(env, device.Version, true); err != nil {
+		return err
+	}
+	device.Version = index
 	device.Status = state.StatusRevoked
 	device.SinceIndex = index
 	st.Devices[id] = device
@@ -226,9 +239,12 @@ func hRevoke(r *replayer, st *state.State, env *entry.Envelope, index uint64) er
 	return nil
 }
 
-func addKey(st *state.State, into map[string]string, body map[string]any) error {
-	pk, err := fieldKey(body, "pk")
+func addKey(st *state.State, into map[string]string, env *entry.Envelope, object string, index uint64) error {
+	pk, err := fieldKey(env.Body, "pk")
 	if err != nil {
+		return err
+	}
+	if err := checkPrev(env, st.Versions[object], true); err != nil {
 		return err
 	}
 	kid := entry.Kid(pk)
@@ -239,15 +255,16 @@ func addKey(st *state.State, into map[string]string, body map[string]any) error 
 		return rejectWith(ReasonDupKey)
 	}
 	into[kid] = hexOf(pk)
+	st.Versions[object] = index
 	return nil
 }
 
-func hSignerAdd(_ *replayer, st *state.State, env *entry.Envelope, _ uint64) error {
-	return addKey(st, st.Signers, env.Body)
+func hSignerAdd(_ *replayer, st *state.State, env *entry.Envelope, index uint64) error {
+	return addKey(st, st.Signers, env, "signers", index)
 }
 
-func hRootAdd(_ *replayer, st *state.State, env *entry.Envelope, _ uint64) error {
-	return addKey(st, st.Roots, env.Body)
+func hRootAdd(_ *replayer, st *state.State, env *entry.Envelope, index uint64) error {
+	return addKey(st, st.Roots, env, "roots", index)
 }
 
 func kidField(body map[string]any) (string, error) {
@@ -263,9 +280,12 @@ func kidField(body map[string]any) (string, error) {
 	return kid, nil
 }
 
-func hSignerRemove(_ *replayer, st *state.State, env *entry.Envelope, _ uint64) error {
+func hSignerRemove(_ *replayer, st *state.State, env *entry.Envelope, index uint64) error {
 	kid, err := kidField(env.Body)
 	if err != nil {
+		return err
+	}
+	if err := checkPrev(env, st.Versions["signers"], true); err != nil {
 		return err
 	}
 	if _, ok := st.Signers[kid]; !ok {
@@ -274,12 +294,16 @@ func hSignerRemove(_ *replayer, st *state.State, env *entry.Envelope, _ uint64) 
 	// No quorum invariant: removing a compromised signer key must always be
 	// possible, including the last one (D-028).
 	delete(st.Signers, kid)
+	st.Versions["signers"] = index
 	return nil
 }
 
-func hRootRemove(_ *replayer, st *state.State, env *entry.Envelope, _ uint64) error {
+func hRootRemove(_ *replayer, st *state.State, env *entry.Envelope, index uint64) error {
 	kid, err := kidField(env.Body)
 	if err != nil {
+		return err
+	}
+	if err := checkPrev(env, st.Versions["roots"], true); err != nil {
 		return err
 	}
 	if _, ok := st.Roots[kid]; !ok {
@@ -290,40 +314,45 @@ func hRootRemove(_ *replayer, st *state.State, env *entry.Envelope, _ uint64) er
 		return rejectWith(ReasonRootInvariant)
 	}
 	delete(st.Roots, kid)
+	st.Versions["roots"] = index
 	return nil
 }
 
-func threshold(body map[string]any, size int) (uint64, error) {
-	thr, err := fieldUint(body, "thr")
+func hSignerThr(_ *replayer, st *state.State, env *entry.Envelope, index uint64) error {
+	thr, err := fieldUint(env.Body, "thr")
 	if err != nil {
-		return 0, err
+		return err
+	}
+	if err := checkPrev(env, st.Versions["signers"], true); err != nil {
+		return err
 	}
 	// A well-formed uint out of range is `bad-thr`, never `decode` (D-039).
-	if thr < 1 || thr > uint64(size) {
-		return 0, rejectWith(ReasonBadThr)
-	}
-	return thr, nil
-}
-
-func hSignerThr(_ *replayer, st *state.State, env *entry.Envelope, _ uint64) error {
-	thr, err := threshold(env.Body, len(st.Signers))
-	if err != nil {
-		return err
+	if thr < 1 || thr > uint64(len(st.Signers)) {
+		return rejectWith(ReasonBadThr)
 	}
 	st.SignerThr = thr
+	st.Versions["signers"] = index
 	return nil
 }
 
-func hRootThr(_ *replayer, st *state.State, env *entry.Envelope, _ uint64) error {
-	thr, err := threshold(env.Body, len(st.Roots))
+func hRootThr(_ *replayer, st *state.State, env *entry.Envelope, index uint64) error {
+	thr, err := fieldUint(env.Body, "thr")
 	if err != nil {
 		return err
 	}
+	if err := checkPrev(env, st.Versions["roots"], true); err != nil {
+		return err
+	}
+	// A well-formed uint out of range is `bad-thr`, never `decode` (D-039).
+	if thr < 1 || thr > uint64(len(st.Roots)) {
+		return rejectWith(ReasonBadThr)
+	}
 	st.RootThr = thr
+	st.Versions["roots"] = index
 	return nil
 }
 
-func hLogKey(_ *replayer, st *state.State, env *entry.Envelope, index uint64) error {
+func hLogKey(r *replayer, st *state.State, env *entry.Envelope, index uint64) error {
 	pk, err := fieldKey(env.Body, "pk")
 	if err != nil {
 		return err
@@ -332,13 +361,30 @@ func hLogKey(_ *replayer, st *state.State, env *entry.Envelope, index uint64) er
 	if err != nil {
 		return err
 	}
+	if err := checkPrev(env, st.Versions["log_key"], true); err != nil {
+		return err
+	}
+	text := st.Policy
+	if text == "" {
+		text = r.anchor.Policy
+	}
+	if text != "" {
+		p, err := policy.Parse(text)
+		if err != nil {
+			return rejectWith(ReasonDecode)
+		}
+		if witnessHolds(p, pk) {
+			return rejectWith(ReasonDupKey)
+		}
+	}
 	// Appends, never replaces (§5.3): SinceIndex is this entry's own index.
 	st.LogKeys = append(st.LogKeys, state.LogKey{
 		Overlap: overlap, Pk: hexOf(pk), SinceIndex: index})
+	st.Versions["log_key"] = index
 	return nil
 }
 
-func hPolicy(_ *replayer, st *state.State, env *entry.Envelope, _ uint64) error {
+func hPolicy(r *replayer, st *state.State, env *entry.Envelope, index uint64) error {
 	text, err := fieldText(env.Body, "text", maxText)
 	if err != nil {
 		return err
@@ -347,14 +393,37 @@ func hPolicy(_ *replayer, st *state.State, env *entry.Envelope, _ uint64) error 
 	// in-log policy turns out to govern. Without this the fixture published
 	// the canonical-JSON torture string as the network's policy for six
 	// phases, and §4.5 read literally made this network unverifiable.
-	if _, err := policy.Parse(text); err != nil {
+	p, err := policy.Parse(text)
+	if err != nil {
 		return rejectWith(ReasonDecode)
 	}
+	if err := checkPrev(env, st.Versions["policy"], true); err != nil {
+		return err
+	}
+	if r.anchor.LogKey != "" {
+		key, err := note.ParseVerifierKey(r.anchor.LogKey)
+		if err != nil {
+			return rejectWith(ReasonDecode)
+		}
+		if witnessHolds(p, key.Public) {
+			return rejectWith(ReasonDupKey)
+		}
+	}
+	for _, key := range st.LogKeys {
+		pk, err := hex.DecodeString(key.Pk)
+		if err != nil {
+			return rejectWith(ReasonDecode)
+		}
+		if witnessHolds(p, pk) {
+			return rejectWith(ReasonDupKey)
+		}
+	}
 	st.Policy = text
+	st.Versions["policy"] = index
 	return nil
 }
 
-func hParams(_ *replayer, st *state.State, env *entry.Envelope, _ uint64) error {
+func hParams(_ *replayer, st *state.State, env *entry.Envelope, index uint64) error {
 	if len(env.Body) == 0 {
 		return rejectWith(ReasonDecode)
 	}
@@ -372,9 +441,13 @@ func hParams(_ *replayer, st *state.State, env *entry.Envelope, _ uint64) error 
 		}
 		checked[key] = typed
 	}
+	if err := checkPrev(env, st.Versions["params"], true); err != nil {
+		return err
+	}
 	for key, value := range checked {
 		st.Params[key] = value
 	}
+	st.Versions["params"] = index
 	return nil
 }
 
@@ -397,6 +470,36 @@ func checkParam(key string, value any) (any, bool) {
 }
 
 func hNote(_ *replayer, _ *state.State, env *entry.Envelope, _ uint64) error {
-	_, err := fieldText(env.Body, "text", maxText)
-	return err
+	if _, err := fieldText(env.Body, "text", maxText); err != nil {
+		return err
+	}
+	if env.Prev != nil {
+		return rejectWith(ReasonDecode)
+	}
+	return nil
+}
+
+// checkPrev binds an authorised transition to the object it was signed against.
+// Only a never-named device has no version, and only enrollment can create it.
+func checkPrev(env *entry.Envelope, version uint64, exists bool) error {
+	if !exists {
+		if env.Prev == nil {
+			return nil
+		}
+	} else if env.Prev != nil && *env.Prev == version {
+		return nil
+	}
+	return rejectWith(ReasonStaleState)
+}
+
+// Names and algorithm-dependent ids do not separate the two signing roles.
+// The invariant compares the validated public keys themselves (§9.1).
+func witnessHolds(p *policy.Policy, public []byte) bool {
+	for _, w := range p.Witnesses {
+		key, err := note.ParseVerifierKey(w.Key)
+		if err == nil && bytes.Equal(key.Public, public) {
+			return true
+		}
+	}
+	return false
 }

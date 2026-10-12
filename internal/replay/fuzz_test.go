@@ -93,7 +93,7 @@ func replayFuzzCorpus(tb testing.TB) (Anchor, [][]byte) {
 	if err != nil {
 		tb.Fatal(err)
 	}
-	anchor := Anchor{Net: tr.Net, GenesisHash: tr.GenesisHash}
+	anchor := FromTrust(tr)
 	root := filepath.Join(vectorRoot(), "log")
 	raw, err = os.ReadFile(filepath.Join(root, "manifest.json"))
 	if err != nil {

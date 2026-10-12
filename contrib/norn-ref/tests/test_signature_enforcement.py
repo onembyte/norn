@@ -12,12 +12,12 @@ from nornref import entry, fixture, keys, replay
 
 def replay_log(verify=None):
     """Replay the fixture, optionally with signature verification replaced."""
+    items = fixture.log()
     real = keys.verify
     if verify is not None:
         keys.verify = verify
         entry.keys.verify = verify
     try:
-        items = fixture.log()
         raw = [i.raw for i in items]
         state = replay.replay(replay.Anchor(fixture.NET, entry.leaf_hash(raw[0])), raw)
         expected = [(i, it.reason) for i, it in enumerate(items) if it.reason]
@@ -41,7 +41,13 @@ class SignatureVerificationIsLoadBearing(unittest.TestCase):
 
     def test_the_difference_is_a_forged_signature_being_admitted(self):
         blind, expected = replay_log(verify=lambda pk, msg, sig: True)
-        missed = [e for e in expected if e not in blind]
+        blind_reasons = dict(blind)
+        # Admitting a forged governance entry moves an object's version on, so
+        # later entries signed against the honest version cascade into
+        # `stale-state` (D-077). That cascade is the forgery's effect, not a
+        # second blind spot; every other difference must be a signature check.
+        missed = [e for e in expected
+                  if e not in blind and blind_reasons.get(e[0]) != "stale-state"]
         self.assertTrue(missed, "no vector distinguishes a valid signature from a forged one")
         for index, reason in missed:
             self.assertIn(reason, {"threshold", "no-device-sig"})

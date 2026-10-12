@@ -29,7 +29,7 @@ class SchemaError(ValueError):
 
 
 def new(entry_type: str, net: bytes, ts: int, body: dict[str, Any],
-        after: int | None = None) -> dict[str, Any]:
+        after: int | None = None, prev: int | None = None) -> dict[str, Any]:
     """Build an unsigned envelope. Raises SchemaError for an unknown type."""
     if entry_type not in TYPES:
         raise SchemaError(f"unknown entry type: {entry_type}")
@@ -38,6 +38,8 @@ def new(entry_type: str, net: bytes, ts: int, body: dict[str, Any],
     env: dict[str, Any] = {"v": VERSION, "t": entry_type, "net": net, "ts": ts}
     if after is not None:
         env["after"] = after
+    if prev is not None:
+        env["prev"] = prev
     env["body"] = body
     env["sigs"] = []
     return env

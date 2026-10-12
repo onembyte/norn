@@ -356,7 +356,7 @@ func (w *Watcher) witnessPolicy() string {
 
 func (w *Watcher) logAnchor() logclient.Anchor {
 	return logclient.Anchor{
-		Anchor:  replay.Anchor{Net: w.anchor.Net, GenesisHash: w.anchor.GenesisHash},
+		Anchor:  replay.FromTrust(w.anchor),
 		LogKeys: w.logKeys(), Origin: w.anchor.Origin, Policy: w.witnessPolicy(),
 	}
 }

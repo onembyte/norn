@@ -103,6 +103,10 @@ func seededServer(t *testing.T, opts ...Option) (*Server, replay.Anchor, string)
 			// case-insensitively but does not ignore underscores, so
 			// `genesis_hash` never reaches `GenesisHash`.
 			GenesisHash string `json:"genesis_hash"`
+			// §5's anchor also carries the trust file's log key and policy
+			// (D-077), which a `policy` or `log_key` entry is checked against.
+			LogKey string `json:"log_key"`
+			Policy string `json:"policy"`
 		} `json:"anchor"`
 		Entries []struct{ Name string } `json:"entries"`
 	}
@@ -111,7 +115,8 @@ func seededServer(t *testing.T, opts ...Option) (*Server, replay.Anchor, string)
 	}
 	net, _ := hex.DecodeString(manifest.Anchor.Net)
 	genesis, _ := hex.DecodeString(manifest.Anchor.GenesisHash)
-	anchor := replay.Anchor{Net: net, GenesisHash: genesis}
+	anchor := replay.Anchor{Net: net, GenesisHash: genesis,
+		LogKey: manifest.Anchor.LogKey, Policy: manifest.Anchor.Policy}
 
 	origin := "norn/logserver-test"
 	dir := t.TempDir()
@@ -147,6 +152,13 @@ func seededServer(t *testing.T, opts ...Option) (*Server, replay.Anchor, string)
 // key, wrapped in an entry signed by the fixture's two active signers.
 func anEnroll(t *testing.T, anchor replay.Anchor, id string, after uint64) []byte {
 	t.Helper()
+	return anEnrollAt(t, anchor, id, after, nil)
+}
+
+// anEnrollAt is anEnroll carrying `prev`: an id the log has named before is
+// enrolled against its record's version (§4.4), or it is `stale-state`.
+func anEnrollAt(t *testing.T, anchor replay.Anchor, id string, after uint64, prev *uint64) []byte {
+	t.Helper()
 	devicePub, devicePriv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatal(err)
@@ -168,7 +180,7 @@ func anEnroll(t *testing.T, anchor replay.Anchor, id string, after uint64) []byt
 	}
 
 	env := &entry.Envelope{V: entry.Version, T: "enroll", Net: anchor.Net,
-		TS: 1_760_100_000, After: &after, Body: map[string]any{"request": body}}
+		TS: 1_760_100_000, After: &after, Prev: prev, Body: map[string]any{"request": body}}
 	for _, name := range []string{"signer1", "signer3"} {
 		if err := entry.Sign(env, fixtureSeed(t, name), "signer"); err != nil {
 			t.Fatal(err)
@@ -280,10 +292,13 @@ func TestResubmittingIsIdempotent(t *testing.T) {
 }
 
 func TestRejectedEntriesAreRefusedWithTheirReason(t *testing.T) {
-	_, ts, anchor, _ := theLog(t)
+	server, ts, anchor, _ := theLog(t)
 
-	// `nas` is active in the fixture, so enrolling it again is `dup-id`.
-	resp := post(t, ts.URL, anEnroll(t, anchor, "nas", 90), ContentType)
+	// `nas` is active in the fixture, so enrolling it again is `dup-id` -- once
+	// the entry names the record's current version. Without it the entry is
+	// `stale-state`, which §5.1 checks first (D-077).
+	prev := server.fold.State().Previous("enroll", "nas")
+	resp := post(t, ts.URL, anEnrollAt(t, anchor, "nas", 90, prev), ContentType)
 	if resp.StatusCode != http.StatusConflict {
 		t.Fatalf("status = %d, want 409", resp.StatusCode)
 	}

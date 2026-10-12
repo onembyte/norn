@@ -197,7 +197,7 @@ func tailscaleCycle(t *testing.T) (*agent.Agent, *localAPIHandler, <-chan agent.
 		t.Fatal(err)
 	}
 	fetcher := logclient.Dir(filepath.Join(vectors(), "served"))
-	result, err := logclient.Verify(fetcher, logclient.Anchor{Anchor: replay.Anchor{Net: anchor.Net, GenesisHash: anchor.GenesisHash}, LogKeys: []string{anchor.LogKey}, Policy: anchor.Policy})
+	result, err := logclient.Verify(fetcher, logclient.Anchor{Anchor: replay.FromTrust(anchor), LogKeys: []string{anchor.LogKey}, Policy: anchor.Policy})
 	if err != nil {
 		t.Fatal(err)
 	}

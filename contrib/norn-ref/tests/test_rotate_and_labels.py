@@ -17,6 +17,10 @@ def rotate(index, device, wg_name, device_pk=None, signers=None):
     if device_pk is not None:
         body["device_pk"] = device_pk
     env = entry.new("rotate", fixture.NET, ts=fixture.T0 + 9000, after=index, body=body)
+    prefix = tuple(it.raw for it in fixture.log())
+    prev = fixture.previous_for(fixture._replay_prefix(prefix), "rotate", body)
+    if prev is not None:
+        env["prev"] = prev
     for name, role in (signers or []):
         entry.sign(env, fixture.KEYS[name], role)
     return env

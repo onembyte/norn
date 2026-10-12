@@ -18,7 +18,7 @@ IDENTITY = b"\x01" + bytes(31)
 
 def replay_case(directory):
     manifest = json.loads((directory / "manifest.json").read_text())
-    anchor = replay.Anchor(**{k: bytes.fromhex(v) for k, v in manifest["anchor"].items()})
+    anchor = replay.Anchor(**{k: bytes.fromhex(v) if k in ("net","genesis_hash") else v for k, v in manifest["anchor"].items()})
     raw = [(directory / (e["name"] + ".cbor")).read_bytes() for e in manifest["entries"]]
     state = replay.replay(anchor, raw)
     return manifest, raw, state

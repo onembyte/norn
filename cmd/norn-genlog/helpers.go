@@ -16,6 +16,8 @@ import (
 	"github.com/onembyte/norn/internal/cbor"
 	cosignpkg "github.com/onembyte/norn/internal/cosign"
 	"github.com/onembyte/norn/internal/entry"
+	"github.com/onembyte/norn/internal/replay"
+	"github.com/onembyte/norn/internal/state"
 	"github.com/onembyte/norn/internal/tlogstore"
 	"github.com/onembyte/norn/internal/trust"
 )
@@ -204,7 +206,7 @@ func signedHeadOver(root, origin string, key ed25519.PrivateKey,
 // network never issued, signed by the fixture's own signers so that every
 // signature on the forked branch checks out. That is the difficulty a fork
 // presents -- nothing about either head looks wrong on its own.
-func forkEntry(root string) ([]byte, error) {
+func forkEntry(root string, prefix [][]byte) ([]byte, error) {
 	raw, err := os.ReadFile(filepath.Join(root, "trust.cbor"))
 	if err != nil {
 		return nil, err
@@ -213,20 +215,48 @@ func forkEntry(root string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	st := replay.Replay(replay.FromTrust(doc), prefix)
 	env := &entry.Envelope{
-		V: entry.Version, T: "revoke", Net: doc.Net, TS: CosignedAt - 100,
+		Prev: st.Previous("revoke", "nas"),
+		V:    entry.Version, T: "revoke", Net: doc.Net, TS: CosignedAt - 100,
 		Body: map[string]any{"device_id": "nas", "reason": "the fork's own idea"},
 	}
-	for _, name := range []string{"signer1", "signer2"} {
+	for _, name := range []string{"signer1", "signer2", "signer3"} {
 		key, err := seedKey(root, name)
 		if err != nil {
 			return nil, err
+		}
+		if st.Signers[entry.Kid(key.Public().(ed25519.PublicKey))] == "" {
+			continue
 		}
 		if err := entry.Sign(env, key, "signer"); err != nil {
 			return nil, err
 		}
 	}
-	return entry.Encode(env)
+	// At the 64-entry fork the honest branch has just removed a signer and
+	// has not yet recovered. Roots can still authorise a revoke (§5.1).
+	if uint64(len(st.Signers)) < st.SignerThr {
+		for _, name := range []string{"root1", "root2", "root3"} {
+			key, err := seedKey(root, name)
+			if err != nil {
+				return nil, err
+			}
+			if st.Roots[entry.Kid(key.Public().(ed25519.PublicKey))] != "" {
+				if err := entry.Sign(env, key, "root"); err != nil {
+					return nil, err
+				}
+			}
+		}
+	}
+	rawEntry, err := entry.Encode(env)
+	if err != nil {
+		return nil, err
+	}
+	next := replay.Replay(replay.FromTrust(doc), append(append([][]byte(nil), prefix...), rawEntry))
+	if len(next.Rejected) != len(st.Rejected) || next.Devices["nas"].Status != state.StatusRevoked {
+		return nil, fmt.Errorf("fork revoke at %d was not accepted on its branch: before %d rejections, after %+v", len(prefix), len(st.Rejected), next.Rejected)
+	}
+	return rawEntry, nil
 }
 
 // forkAt is where the fixture's second branch diverges: far enough in that the

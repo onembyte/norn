@@ -160,7 +160,7 @@ func anchorOf(t *testing.T) logclient.Anchor {
 		t.Fatal(err)
 	}
 	return logclient.Anchor{
-		Anchor:  replay.Anchor{Net: doc.Net, GenesisHash: doc.GenesisHash},
+		Anchor:  replay.FromTrust(doc),
 		LogKeys: []string{doc.LogKey}, Policy: doc.Policy,
 	}
 }

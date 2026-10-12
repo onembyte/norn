@@ -7,6 +7,7 @@
 package trust
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/base32"
 	"encoding/hex"
@@ -279,6 +280,9 @@ func (t *Trust) Validate() error {
 		if !ed25519v1.ValidPoint(witnessKey.Public) {
 			return trustErrorf("witness %s's key is not a valid point (SPEC §3.1)", w.Name)
 		}
+		if bytes.Equal(witnessKey.Public, logKey.Public) {
+			return trustErrorf("witness %s holds the log public key", w.Name)
+		}
 		if !witnessKey.IsCosigner() {
 			return trustErrorf("witness %s publishes a note key; a witness key is a "+
 				"cosignature key (c2sp.org/tlog-cosignature)", w.Name)
@@ -517,4 +521,10 @@ func tomlString(s string) string {
 	}
 	b.WriteByte('"')
 	return b.String()
+}
+
+// ReplayAnchorFields supplies every trust input to replay without making the
+// state machine depend on the trust file's TOML rendering.
+func (t *Trust) ReplayAnchorFields() ([]byte, []byte, string, string) {
+	return t.Net, t.GenesisHash, t.LogKey, t.Policy
 }

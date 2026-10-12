@@ -30,6 +30,7 @@ func revokeCmd(args []string) error {
 	role := fs.String("role", "signer", "the role to sign as: signer, root or device")
 	logLocation := fs.String("log", "", "log URL or directory; defaults to the anchor's log_urls")
 	after := fs.Int64("after", -1, "the log size this signature assumes (§4.4)")
+	prev := fs.Int64("prev", -1, "the object version this signature assumes (§4.4)")
 	noAfter := fs.Bool("no-after", false, "sign without an `after` guard, and say why in the summary")
 	in := fs.String("in", "", "an existing revoke entry to extend (or - for stdin)")
 	out := fs.String("o", "", "write the entry here instead of stdout")
@@ -37,6 +38,12 @@ func revokeCmd(args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
+	prevGiven := false
+	fs.Visit(func(f *flag.Flag) { prevGiven = prevGiven || f.Name == "prev" })
+	if prevGiven && *prev < 0 {
+		return errors.New("-prev must be a non-negative object version")
+	}
+
 	// As with sign, refuse scripted root authority before reading any input.
 	if *yes && *role == "root" {
 		return errors.New("--yes cannot be combined with --role root: a root's " +
@@ -109,6 +116,7 @@ func revokeCmd(args []string) error {
 		}
 		env = &entry.Envelope{V: entry.Version, T: "revoke", Net: anchor.Net,
 			TS: uint64(time.Now().Unix()), Body: body}
+		env.Prev = observed.State.Previous(env.T, *deviceID)
 		switch {
 		case *after >= 0:
 			value := uint64(*after)
@@ -155,6 +163,10 @@ func revokeCmd(args []string) error {
 			return errors.New("the entry's reason does not match -reason; existing signed fields cannot be changed")
 		}
 		*reason = entryReason
+	}
+
+	if err := applyPrevFlag(env, fresh, *prev, prevGiven); err != nil {
+		return err
 	}
 
 	// Verify before the summary, then again after signing. Adding a signature
@@ -251,6 +263,7 @@ func printRevokeSummary(env *entry.Envelope, anchor *trust.Trust, d state.Device
 	} else {
 		fmt.Fprintln(w, "  after      (none — no ordering guard; the log may place this entry anywhere)")
 	}
+	printPrevSummary(w, env)
 	if raw, err := entry.Encode(env); err == nil {
 		fmt.Fprintf(w, "  entry hash %x\n", entry.EntryHash(raw))
 	}

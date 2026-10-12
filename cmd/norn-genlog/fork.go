@@ -124,7 +124,7 @@ func forkedBranch(root, origin string, key ed25519.PrivateKey, entries [][]byte,
 			size, len(entries))
 	}
 	branch := append([][]byte(nil), entries[:size-1]...)
-	divergent, err := forkEntry(root)
+	divergent, err := forkEntry(root, branch)
 	if err != nil {
 		return "", nil, tlog.Checkpoint{}, err
 	}
@@ -227,7 +227,7 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 	// on behalf of a log it is not about.
 	elsewhere := "norn/elsewhere"
 	elsewhereEntries := append([][]byte(nil), entries[:forkAt]...)
-	divergent, err := forkEntry(root)
+	divergent, err := forkEntry(root, entries[:forkAt])
 	if err != nil {
 		return err
 	}

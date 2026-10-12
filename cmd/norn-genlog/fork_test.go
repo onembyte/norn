@@ -27,13 +27,9 @@ func TestTheVectorsSplitIsRebuiltFromBothBranches(t *testing.T) {
 		t.Fatal(err)
 	}
 	held, err := logclient.Verify(logclient.Dir(filepath.Join(root, "served")), logclient.Anchor{
-		Anchor: replay.Anchor{Net: anchor.Net, GenesisHash: anchor.GenesisHash},
+		Anchor: replay.FromTrust(anchor),
 		Origin: anchor.Origin, LogKeys: []string{anchor.LogKey}, Policy: anchor.Policy,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	divergent, err := forkEntry(root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,6 +40,10 @@ func TestTheVectorsSplitIsRebuiltFromBothBranches(t *testing.T) {
 				t.Fatal(err)
 			}
 			ev, err := forkevidence.Parse(raw)
+			if err != nil {
+				t.Fatal(err)
+			}
+			divergent, err := forkEntry(root, held.Served[:ev.Size-1])
 			if err != nil {
 				t.Fatal(err)
 			}

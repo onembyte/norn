@@ -60,7 +60,7 @@ func TestAnEnforcingNodeDoesNotStartOnNoQuorum(t *testing.T) {
 // leaves in place.
 func appendPolicy(t *testing.T, store *tlogstore.Store, text string) {
 	t.Helper()
-	env := &entry.Envelope{V: entry.Version, T: "policy", Net: anchor(t).Net, TS: 1_760_600_000,
+	env := &entry.Envelope{Prev: storePrev(t, store, "policy", ""), V: entry.Version, T: "policy", Net: anchor(t).Net, TS: 1_760_600_000,
 		Body: map[string]any{"text": text}}
 	for _, name := range []string{"root1", "root2", "root3", "root4"} {
 		if err := entry.Sign(env, fixtureKey(t, name), "root"); err != nil {

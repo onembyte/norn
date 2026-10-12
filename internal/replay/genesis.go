@@ -29,7 +29,7 @@ func (r *replayer) applyGenesis(st *state.State, raw []byte) error {
 	if !bytes.Equal(entry.LeafHash(raw), r.anchor.GenesisHash) {
 		return rejectWith(ReasonBadGenesis)
 	}
-	if env.After != nil && *env.After != 0 {
+	if env.Prev != nil || env.After != nil && *env.After != 0 {
 		return rejectWith(ReasonBadGenesis)
 	}
 	if err := checkBody("genesis", env.Body); err != nil {

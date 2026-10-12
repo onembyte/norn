@@ -47,7 +47,7 @@ func TestARejectedParamsEntryChangesNothingEveryTime(t *testing.T) {
 		t.Fatal("the fixture already has mmd = 60; nothing here is tested")
 	}
 	env := &entry.Envelope{V: entry.Version, T: "params", Net: anchor.Net, TS: 1_760_700_000,
-		Body: map[string]any{"mmd": uint64(60), "staleness": true}}
+		Prev: before.Previous("params", ""), Body: map[string]any{"mmd": uint64(60), "staleness": true}}
 	for _, name := range []string{"root1", "root2", "root3", "root4"} {
 		key := privateKey(t, name)
 		if _, ok := before.Roots[entry.Kid(key.Public().(ed25519.PublicKey))]; ok {

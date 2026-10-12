@@ -42,6 +42,7 @@ func governCmd(args []string) error {
 	role := fs.String("role", "root", "the role to sign as: root only")
 	logLocation := fs.String("log", "", "log URL or directory; defaults to the anchor's log_urls")
 	after := fs.Int64("after", -1, "the log size this signature assumes (§4.4)")
+	prev := fs.Int64("prev", -1, "the object version this signature assumes (§4.4)")
 	noAfter := fs.Bool("no-after", false, "sign without an `after` guard, and say why in the summary")
 	in := fs.String("in", "", "an existing entry to extend (or - for stdin; confirmation then uses the terminal)")
 	out := fs.String("o", "", "write the entry here instead of stdout")
@@ -49,6 +50,12 @@ func governCmd(args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
+	prevGiven := false
+	fs.Visit(func(f *flag.Flag) { prevGiven = prevGiven || f.Name == "prev" })
+	if prevGiven && *prev < 0 {
+		return errors.New("-prev must be a non-negative object version")
+	}
+
 	// Refuse scripted root authority before reading a trust file, key or entry.
 	if *yes {
 		return errors.New("--yes cannot be used for governance: a root's authority is never exercised by a script")
@@ -169,6 +176,7 @@ func governCmd(args []string) error {
 	var env *entry.Envelope
 	if fresh {
 		env = &entry.Envelope{V: entry.Version, T: *typ, Net: anchor.Net, TS: uint64(time.Now().Unix()), Body: proposed}
+		env.Prev = observed.State.Previous(env.T, "")
 		switch {
 		case *after >= 0:
 			value := uint64(*after)
@@ -201,6 +209,10 @@ func governCmd(args []string) error {
 			return errors.New("the entry's after guard does not match the given flag; existing signed fields cannot be changed")
 		}
 	}
+	if err := applyPrevFlag(env, fresh, *prev, prevGiven); err != nil {
+		return err
+	}
+
 	// These are CLI pre-checks, not replay. D-046 still makes replay count the
 	// root quorum before checking a governance body, including malformed ones.
 	if err := checkGovernBody(env, observed.State); err != nil {
@@ -501,6 +513,7 @@ func printGovernSummary(env *entry.Envelope, anchor *trust.Trust, st *state.Stat
 	} else {
 		fmt.Fprintln(w, "  after      (none — no ordering guard; the log may place this entry anywhere)")
 	}
+	printPrevSummary(w, env)
 	if raw, err := entry.Encode(env); err == nil {
 		fmt.Fprintf(w, "  entry hash %x\n", entry.EntryHash(raw))
 	}

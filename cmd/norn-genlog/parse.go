@@ -15,10 +15,3 @@ func cutPrefix(line, key string) (string, bool) {
 	}
 	return strings.TrimSpace(strings.TrimPrefix(rest, "=")), true
 }
-
-func trimQuoted(s string) string {
-	if i := strings.Index(s, "#"); i >= 0 {
-		s = strings.TrimSpace(s[:i])
-	}
-	return strings.Trim(s, `"`)
-}

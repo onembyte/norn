@@ -105,13 +105,27 @@ func writableLog(t *testing.T) (dir string, store *tlogstore.Store, entries [][]
 	return dir, store, entries
 }
 
+// storePrev reads the actual branch being extended, including prior appends.
+func storePrev(t *testing.T, store *tlogstore.Store, typ, id string) *uint64 {
+	t.Helper()
+	var raw [][]byte
+	for i := int64(0); i < store.Size(); i++ {
+		b, err := store.Entry(i)
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw = append(raw, b)
+	}
+	return replay.Replay(replay.FromTrust(anchor(t)), raw).Previous(typ, id)
+}
+
 // appendRevoke writes a real `revoke` entry, signed by the two signers the
 // fixture leaves active.
 func appendRevoke(t *testing.T, store *tlogstore.Store, deviceID string, after uint64) {
 	t.Helper()
 	doc := anchor(t)
 	env := &entry.Envelope{
-		V: entry.Version, T: "revoke", Net: doc.Net, TS: 1_760_500_000, After: &after,
+		Prev: storePrev(t, store, "revoke", deviceID), V: entry.Version, T: "revoke", Net: doc.Net, TS: 1_760_500_000, After: &after,
 		Body: map[string]any{"device_id": deviceID, "reason": "lost"},
 	}
 	for _, name := range []string{"signer1", "signer3"} {
@@ -183,7 +197,7 @@ func keyOfDevice(t *testing.T, id string) peertable.Key {
 	t.Helper()
 	doc := anchor(t)
 	result, err := logclient.Verify(logclient.Dir(filepath.Join(vectors(), "served")),
-		logclient.Anchor{Anchor: replay.Anchor{Net: doc.Net, GenesisHash: doc.GenesisHash}, LogKeys: []string{doc.LogKey}, Policy: doc.Policy})
+		logclient.Anchor{Anchor: replay.FromTrust(doc), LogKeys: []string{doc.LogKey}, Policy: doc.Policy})
 	if err != nil {
 		t.Fatal(err)
 	}

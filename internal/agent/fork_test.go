@@ -476,14 +476,14 @@ func TestFabricatedEvidenceFromAPeerIsIgnored(t *testing.T) {
 func writeEvidenceFor(t *testing.T, dir, logDir string, entries [][]byte) {
 	t.Helper()
 	held, err := logclient.Verify(logclient.Dir(logDir), logclient.Anchor{
-		Anchor:  replay.Anchor{Net: anchor(t).Net, GenesisHash: anchor(t).GenesisHash},
+		Anchor:  replay.FromTrust(anchor(t)),
 		LogKeys: []string{anchor(t).LogKey}, Policy: anchor(t).Policy,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	other, err := logclient.Verify(logclient.Dir(forkedLog(t, entries, 40)), logclient.Anchor{
-		Anchor:  replay.Anchor{Net: anchor(t).Net, GenesisHash: anchor(t).GenesisHash},
+		Anchor:  replay.FromTrust(anchor(t)),
 		LogKeys: []string{anchor(t).LogKey}, Policy: anchor(t).Policy,
 	})
 	if err != nil {

@@ -19,7 +19,7 @@ import (
 // checkpoint it will accept (§9, §10).
 func anchorFor(t *trust.Trust) logclient.Anchor {
 	return logclient.Anchor{
-		Anchor:  replay.Anchor{Net: t.Net, GenesisHash: t.GenesisHash},
+		Anchor:  replay.FromTrust(t),
 		LogKeys: []string{t.LogKey},
 		Origin:  t.Origin,
 		Policy:  t.Policy,

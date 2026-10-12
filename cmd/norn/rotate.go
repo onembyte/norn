@@ -29,6 +29,7 @@ func rotateCmd(args []string) error {
 	role := fs.String("role", "device", "the role to sign as: device or signer")
 	logLocation := fs.String("log", "", "log URL or directory; defaults to the anchor's log_urls")
 	after := fs.Int64("after", -1, "the log size this signature assumes (§4.4)")
+	prev := fs.Int64("prev", -1, "the object version this signature assumes (§4.4)")
 	noAfter := fs.Bool("no-after", false, "sign without an `after` guard, and say why in the summary")
 	in := fs.String("in", "", "an existing rotate entry to extend (or - for stdin)")
 	out := fs.String("o", "", "write the entry here instead of stdout")
@@ -36,6 +37,12 @@ func rotateCmd(args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
+	prevGiven := false
+	fs.Visit(func(f *flag.Flag) { prevGiven = prevGiven || f.Name == "prev" })
+	if prevGiven && *prev < 0 {
+		return errors.New("-prev must be a non-negative object version")
+	}
+
 	if *trustPath == "" {
 		return errors.New("-trust is required: signing means deciding for a network, and the anchor is what names it")
 	}
@@ -137,6 +144,7 @@ func rotateCmd(args []string) error {
 		}
 		env = &entry.Envelope{V: entry.Version, T: "rotate", Net: anchor.Net,
 			TS: uint64(time.Now().Unix()), Body: body}
+		env.Prev = observed.State.Previous(env.T, *deviceID)
 		switch {
 		case *after >= 0:
 			value := uint64(*after)
@@ -178,14 +186,15 @@ func rotateCmd(args []string) error {
 		}
 		wg = bodyWG
 	}
+	if err := applyPrevFlag(env, fresh, *prev, prevGiven); err != nil {
+		return err
+	}
+
 	var incomingPublic []byte
 	if value, present := env.Body["device_pk"]; present {
 		incomingPublic, err = fields.PublicKey(value, "device_pk")
 		if err != nil {
 			return err
-		}
-		if hex.EncodeToString(incomingPublic) == d.DevicePk {
-			return errors.New("the incoming identity key equals the current device key; it does not rotate device_pk")
 		}
 	}
 	// These are CLI refusals, not new replay rules. A signer should learn why
@@ -337,6 +346,7 @@ func printRotateSummary(env *entry.Envelope, anchor *trust.Trust, st *state.Stat
 	} else {
 		fmt.Fprintln(w, "  after      (none — no ordering guard; the log may place this entry anywhere)")
 	}
+	printPrevSummary(w, env)
 	if raw, err := entry.Encode(env); err == nil {
 		fmt.Fprintf(w, "  entry hash %x\n", entry.EntryHash(raw))
 	}

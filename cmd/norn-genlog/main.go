@@ -11,17 +11,20 @@
 package main
 
 import (
+	"bytes"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 
 	"github.com/onembyte/norn/internal/proof"
 	"github.com/onembyte/norn/internal/replay"
 	"github.com/onembyte/norn/internal/state"
 	"github.com/onembyte/norn/internal/tlogstore"
+	"github.com/onembyte/norn/internal/trust"
 )
 
 // QuorumTimeOf is the instant §5.3 derives from a set of cosignature
@@ -282,15 +285,35 @@ func loadFixture(root string) (replay.Anchor, [][]byte, string, error) {
 	if err != nil {
 		return replay.Anchor{}, nil, "", err
 	}
-	origin := ""
+	doc := &trust.Trust{}
+	var netText, genesisText string
 	for _, line := range splitLines(string(trustRaw)) {
-		if after, ok := cutPrefix(line, "origin"); ok {
-			origin = trimQuoted(after)
-			break
+		for _, field := range []struct {
+			name string
+			into *string
+		}{{"net", &netText}, {"genesis_hash", &genesisText}, {"origin", &doc.Origin}, {"log_key", &doc.LogKey}, {"policy", &doc.Policy}} {
+			if value, ok := cutPrefix(line, field.name); ok {
+				parsed, err := strconv.Unquote(value)
+				if err != nil {
+					return replay.Anchor{}, nil, "", err
+				}
+				*field.into = parsed
+			}
 		}
 	}
-	if origin == "" {
-		return replay.Anchor{}, nil, "", fmt.Errorf("no origin in trust.toml")
+	doc.Net, err = hex.DecodeString(netText)
+	if err != nil {
+		return replay.Anchor{}, nil, "", err
 	}
-	return replay.Anchor{Net: net, GenesisHash: genesis}, entries, origin, nil
+	doc.GenesisHash, err = hex.DecodeString(genesisText)
+	if err != nil {
+		return replay.Anchor{}, nil, "", err
+	}
+	if !bytes.Equal(net, doc.Net) || !bytes.Equal(genesis, doc.GenesisHash) {
+		return replay.Anchor{}, nil, "", fmt.Errorf("manifest and trust file anchors differ")
+	}
+	if doc.Origin == "" || doc.LogKey == "" || doc.Policy == "" {
+		return replay.Anchor{}, nil, "", fmt.Errorf("trust.toml is missing origin, log_key or policy")
+	}
+	return replay.FromTrust(doc), entries, doc.Origin, nil
 }

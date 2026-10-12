@@ -22,6 +22,8 @@ import (
 type Anchor struct {
 	Net         []byte
 	GenesisHash []byte
+	LogKey      string
+	Policy      string
 }
 
 // Reason codes, the closed list of §5.2.
@@ -42,6 +44,7 @@ const (
 	ReasonUnknownKey    = "unknown-key"
 	ReasonRootInvariant = "root-invariant"
 	ReasonBadThr        = "bad-thr"
+	ReasonStaleState    = "stale-state"
 )
 
 // reject carries a reason code out of a handler.
@@ -316,4 +319,13 @@ func fieldText(body map[string]any, key string, maxBytes int) (string, error) {
 		return "", rejectWith(ReasonDecode)
 	}
 	return v, nil
+}
+
+// FromTrust constructs the complete replay anchor from a parsed trust file.
+// The structural interface keeps the pure fold independent of TOML parsing.
+func FromTrust(t interface {
+	ReplayAnchorFields() ([]byte, []byte, string, string)
+}) Anchor {
+	net, genesis, logKey, policy := t.ReplayAnchorFields()
+	return Anchor{Net: append([]byte(nil), net...), GenesisHash: append([]byte(nil), genesis...), LogKey: logKey, Policy: policy}
 }

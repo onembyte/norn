@@ -14,6 +14,7 @@ import (
 	"github.com/onembyte/norn/internal/logclient"
 	"github.com/onembyte/norn/internal/peertable"
 	"github.com/onembyte/norn/internal/reconcile"
+	"github.com/onembyte/norn/internal/replay"
 	"github.com/onembyte/norn/internal/tlogstore"
 
 	"net/http/httptest"
@@ -26,7 +27,7 @@ func forkedLogUnder(t *testing.T, entries [][]byte, common int, key string, witn
 	doc := anchor(t)
 	branch := append([][]byte(nil), entries[:common]...)
 	env := &entry.Envelope{
-		V: entry.Version, T: "revoke", Net: doc.Net, TS: 1_760_600_000,
+		Prev: replay.Replay(replay.FromTrust(doc), branch).Previous("revoke", "nas"), V: entry.Version, T: "revoke", Net: doc.Net, TS: 1_760_600_000,
 		Body: map[string]any{"device_id": "nas", "reason": "the fork's own idea"},
 	}
 	for _, name := range []string{"signer1", "signer2"} {

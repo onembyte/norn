@@ -122,13 +122,20 @@ Threshold signing (`signer_thr > 1`): each `norn sign` appends one signature to 
 entry; the pending inbox (or a pasted blob) carries partials; `norn submit` refuses
 until the threshold is met. Appending is safe because the preimage excludes `sigs`
 (`SPEC.md` §4.2), so a second signer changes nothing the first one signed — and
-`norn sign` never rewrites `ts` or `after` on an entry that already carries
+`norn sign` never rewrites `ts`, `after` or `prev` on an entry that already carries
 signatures, which would invalidate them. It reports progress after every run
 ("2 of 2 signer signatures. Ready for `norn submit`"), because a signer who stops
 one signature short has done nothing at all. Every prompt shows the entry hash and the human summary;
 `--yes` exists for signer entries in scripts and **does not exist** for root
 entries — `norn sign` refuses the combination outright, and the rule is
 normative in `SPEC.md` §16.3.
+
+Fresh `sign`, `rotate`, `revoke` and `govern` entries take `prev` from the
+verified object's current version (§4.4), as they take `after` from the
+verified log size. `-prev N` overrides it; only an enrolment of a `device_id`
+no entry has named carries none. An entry signed against a version that has
+since moved is refused as `stale-state` — the guard against a withheld
+authorisation landing late — so re-sign against the state you can see.
 
 ## 4. Rotation, revocation, expiry
 
