@@ -81,6 +81,12 @@ class UintFieldsRefuseBooleans(unittest.TestCase):
         # The uint 1 is accepted with the same body and quorum, so the bool
         # is the only fault and cannot hide behind a range or signature check.
         env["body"][field] = 1
+        if env["t"] == "log_key":
+            # The shipped entry names `logkey3`, learned at entry 90, so since
+            # D-078 it also re-publishes an active key; its code is still
+            # `decode`, the body check coming first. The positive case names a
+            # key no role holds.
+            env["body"]["pk"] = fixture.KEYS["stranger"].public
         env["sigs"] = []
         for name in fixture.ROOTS:
             entry.sign(env, fixture.KEYS[name], "root")

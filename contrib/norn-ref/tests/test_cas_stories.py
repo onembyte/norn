@@ -63,10 +63,15 @@ class EachStaleVectorIsTheAttackItNames(unittest.TestCase):
                       "without prev the removed signer does not come back")
 
     def test_a_withheld_log_key_would_supersede_its_own_successor(self):
+        # Before D-078 a reader without prev made the superseded key the newest
+        # again. Learned keys are never retired, so that key is still active,
+        # and since D-078 (3) re-publishing it is `dup-key` for any reader: the
+        # story is closed twice, and the vector's code stays `stale-state`.
         guarded, unguarded = self.story("09-stale-superseded-log-key")
         self.assertEqual(guarded.log_keys[-1]["pk"], fixture.KEYS["logkey3"].public)
-        self.assertEqual(unguarded.log_keys[-1]["pk"], fixture.KEYS["logkey2"].public,
-                         "without prev the superseded log key is not the newest again")
+        self.assertEqual(unguarded.log_keys[-1]["pk"], fixture.KEYS["logkey3"].public)
+        self.assertEqual({r["index"]: r["reason"] for r in unguarded.rejected}[self.index["09-stale-superseded-log-key"]],
+                         "dup-key", "without prev the re-published log key is not dup-key")
 
     def test_a_withheld_revoke_would_revoke_the_re_enrolled_device(self):
         guarded, unguarded = self.story("12-stale-revoke-reenrolled-device")

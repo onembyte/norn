@@ -377,6 +377,24 @@ func hLogKey(r *replayer, st *state.State, env *entry.Envelope, index uint64) er
 			return rejectWith(ReasonDupKey)
 		}
 	}
+	// A key that is already an active log key -- the anchor's, or one a
+	// `log_key` entry taught, never retired (§9.4) -- is not a new one
+	// (D-078, cold gate run 15's M3): a second row would give a key every node
+	// already trusts a second `since_index` and `overlap`.
+	if r.anchor.LogKey != "" {
+		key, err := note.ParseVerifierKey(r.anchor.LogKey)
+		if err != nil {
+			return rejectWith(ReasonDecode)
+		}
+		if bytes.Equal(key.Public, pk) {
+			return rejectWith(ReasonDupKey)
+		}
+	}
+	for _, key := range st.LogKeys {
+		if key.Pk == hexOf(pk) {
+			return rejectWith(ReasonDupKey)
+		}
+	}
 	// Appends, never replaces (§5.3): SinceIndex is this entry's own index.
 	st.LogKeys = append(st.LogKeys, state.LogKey{
 		Overlap: overlap, Pk: hexOf(pk), SinceIndex: index})

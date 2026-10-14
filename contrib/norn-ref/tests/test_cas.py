@@ -145,6 +145,9 @@ class CAS(unittest.TestCase):
                     if env['t']=='log_key':env['body']['pk']=f.KEYS['stranger'].public
                     else:env['body']['text']='witness w '+note.vkey('repaired',f.KEYS['stranger'].public,note.ALG_COSIGNATURE)+'\nquorum w\n'
                 if 'stale-before-dup-key' in it['name']:env['body']['pk']=f.KEYS['root4'].public
+                # D-078 (3): the superseded key is still active (never retired), so
+                # re-publishing it is dup-key too; the repair publishes a new key.
+                if 'superseded-log-key' in it['name']:env['body']['pk']=f.KEYS['stranger'].public
                 if 'stale-before-dup-wg' in it['name']:env['body']['wg_pk']=bytes([4])*32
                 env['sigs']=[]
                 signatures=[('root1','root'),('root2','root')]

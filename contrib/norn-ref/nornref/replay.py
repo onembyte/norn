@@ -379,6 +379,13 @@ def _h_log_key(state: State, env: dict[str, Any], index: int, anchor: Anchor | N
     text = state.policy or (anchor.policy if anchor else "")
     if text and _witness_holds(text, public):
         raise Reject("dup-key")
+    # A key already active as a log key -- the anchor's, or one a `log_key`
+    # entry taught, never retired (SPEC 9.4) -- is not a new one (D-078, cold
+    # gate run 15's M3).
+    if anchor and anchor.log_key and note.parse_vkey(anchor.log_key).public == public:
+        raise Reject("dup-key")
+    if any(key["pk"] == public for key in state.log_keys):
+        raise Reject("dup-key")
     state.log_keys.append({"pk": public, "overlap": overlap, "since_index": index})
     state.versions["log_key"] = index
 

@@ -275,6 +275,12 @@ func TestEveryCASNegativeAcceptsAfterItsFaultsAreRepaired(t *testing.T) {
 			if strings.Contains(it.Name, "stale-before-dup-key") {
 				e.Body["pk"] = publicOf(t, "root4")
 			}
+			// D-078 (3): the superseded key is still an active log key -- learned
+			// keys are never retired (§9.4) -- so re-publishing it is `dup-key`
+			// too, behind the stale `prev`. The repair publishes a new key.
+			if strings.Contains(it.Name, "superseded-log-key") {
+				e.Body["pk"] = publicOf(t, "stranger")
+			}
 			if strings.Contains(it.Name, "stale-before-dup-wg") {
 				e.Body["wg_pk"] = bytes.Repeat([]byte{4}, 32)
 			}
