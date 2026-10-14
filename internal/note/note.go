@@ -167,6 +167,9 @@ func Sign(text, name string, key ed25519.PrivateKey) (string, error) {
 	if text == "" || !strings.HasSuffix(text, "\n") {
 		return "", noteErrorf("note text must be non-empty and end with a newline")
 	}
+	if strings.HasPrefix(text, "\n") {
+		return "", noteErrorf("the note's first line is blank")
+	}
 	public := key.Public().(ed25519.PublicKey)
 	blob := append(KeyID(name, public), ed25519.Sign(key, []byte(text))...)
 	return fmt.Sprintf("%s\n%s%s %s\n", text, SigPrefix, name,
@@ -199,6 +202,13 @@ func Split(signed string) (string, []Signature, error) {
 		if signed[i] < 0x20 && signed[i] != '\n' {
 			return "", nil, noteErrorf("the note contains an ASCII control character")
 		}
+	}
+	// A note's text lines are non-empty (§7), so a blank first line is not a
+	// text that fails its signature later: it is malformed framing (D-078,
+	// cold gate run 15's L2). Go answered `log-signature` and a reader that
+	// checked the text first answered `note`.
+	if strings.HasPrefix(signed, "\n") {
+		return "", nil, noteErrorf("the note's first line is blank")
 	}
 	text, block, found := strings.Cut(signed, "\n\n")
 	if !found {

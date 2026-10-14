@@ -854,7 +854,9 @@ below), and the two answer differently only for a note with a second blank line.
 - The **signed text** is everything up to **and including** the newline that ends
   the last text line. It does **not** include the blank separator line. A note's
   text lines are non-empty, so **the **first** blank line ends the text**, and
-  every line after it belongs to the signature block. A reader that ends the text
+  every line after it belongs to the signature block. The text is at least one
+  line: a note whose first line is blank has an empty first text line and is
+  `note`, refused before any signature is checked (D-078). A reader that ends the text
   at the *last* blank line, as `golang.org/x/mod/sumdb/note` does, reads the same
   text from every note without a second blank line. A note with one between two
   signature lines tells them apart, by code: here it carries an empty signature

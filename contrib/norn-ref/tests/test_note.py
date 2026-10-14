@@ -84,6 +84,17 @@ class SignAndVerify(unittest.TestCase):
         self.assertTrue(sigblock.startswith(note.SIG_PREFIX))
         self.assertTrue(sigblock.endswith("\n"))
 
+    def test_a_note_whose_first_line_is_blank_is_refused(self):
+        # D-078 (4), run 15's L2: a note's text lines are non-empty (SPEC 7),
+        # so a blank first line is malformed framing, as in Go.
+        signed = note.sign(self.TEXT, self.name, self.key)
+        note.split(signed)
+        for bad in ("\n" + signed, "\n\n" + signed.partition("\n\n")[2]):
+            with self.assertRaises(note.NoteError):
+                note.split(bad)
+        with self.assertRaises(note.NoteError):
+            note.sign("\n" + self.TEXT, self.name, self.key)
+
     def test_signature_block_requires_exactly_one_final_newline(self):
         signed = note.sign(self.TEXT, self.name, self.key)
         with self.assertRaises(note.NoteError):

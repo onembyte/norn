@@ -1271,9 +1271,14 @@ active; the roots have no use for a second row, and one would carry a second
 `signer_add`'s rule. Rejected: accept and append, stated. v1.1's retirement
 (D-072 (d)) can lift it for a retired key.
 **(4)** §7: a note's text is at least one line, and a note whose first line is
-blank is `note` (L2; the reference's answer, Go's was `log-signature`). §16.1:
+blank is `note` (L2; Go answered `log-signature`). §16.1:
 a consumer MUST refuse a request whose `net` is not the network it serves,
 before showing it to anyone (L7; `norn sign` already does, through
-`enrollreq.Check`).
+`enrollreq.Check`). *Corrected 2026-10-14, row 6.5l-xiii-g-a:* part (4)
+first called `note` the reference's answer. The reference refused run 15's
+G08 for its 76-byte cosignature lines, which its note `split` does not frame,
+not for its text: on a note whose only signature line is a 68-byte one it
+split the blank first line into the text. Neither implementation had the
+rule; the row gave it to both.
 Rows: 6.5l-xiii-e (1), 6.5l-xiii-f (2, 3), 6.5l-xiii-g (4), 6.5l-xiii-h (the
 vectors), then run 16.

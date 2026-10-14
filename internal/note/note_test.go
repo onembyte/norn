@@ -240,3 +240,24 @@ func withNonzeroPadBits(t *testing.T, encoded string) string {
 	mutated[position] = alphabet[(value&^mask)|1]
 	return string(mutated)
 }
+
+// D-078 (4), cold gate run 15's L2. A note's text lines are non-empty (§7),
+// so a note whose first line is blank has an empty first text line: it is
+// malformed framing, refused here, not a text that fails a signature later.
+func TestSplitRefusesANoteWhoseFirstLineIsBlank(t *testing.T) {
+	signed, err := Sign("hello\nworld\n", "norn/test", ed25519.NewKeyFromSeed(make([]byte, 32)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := Split(signed); err != nil {
+		t.Fatalf("the honest note does not split: %v", err)
+	}
+	for _, bad := range []string{"\n" + signed, "\n\n" + signed[strings.Index(signed, "\n\n")+2:]} {
+		if text, _, err := Split(bad); err == nil {
+			t.Errorf("a note whose first line is blank split, text %q", text)
+		}
+	}
+	if _, err := Sign("\nhello\n", "norn/test", ed25519.NewKeyFromSeed(make([]byte, 32))); err == nil {
+		t.Error("a text whose first line is blank was signed")
+	}
+}

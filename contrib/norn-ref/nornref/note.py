@@ -108,6 +108,10 @@ def _check_text(text: str) -> None:
         raise NoteError("the note contains an ASCII control character")
     if not text or not text.endswith("\n"):
         raise NoteError("note text must be non-empty and end with a newline")
+    # A note's text lines are non-empty (SPEC 7): a blank first line is
+    # malformed framing (D-078, cold gate run 15's L2).
+    if text.startswith("\n"):
+        raise NoteError("the note's first line is blank")
 
 
 def sign(text: str, name: str, key: keys.Ed25519) -> str:

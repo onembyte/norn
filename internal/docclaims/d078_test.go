@@ -45,6 +45,12 @@ func TestTheDuplicateRuleDecisionIsRecorded(t *testing.T) {
 	if !strings.Contains(d078, "indexes only the content its held fold applied") {
 		t.Error("DECISIONS.md D-078 does not say what norn-log's content index holds")
 	}
+	// D-078 (4) said a blank first line was `note` as the reference already
+	// answered. The reference refused that note for its 76-byte cosignature
+	// lines, not its text; row 6.5l-xiii-g-a gave both the rule.
+	if strings.Contains(d078, "the reference's answer, Go's was") {
+		t.Error("DECISIONS.md D-078 still credits the reference with the blank-first-line answer")
+	}
 	for _, c := range []struct{ file, want, stale string }{
 		{"HARDENING-PLAN.md", "D-078 (taken 2026-10-14", ""},
 		{"THREAT-MODEL.md", "**Harmless** since 6.5l-xiii-e-a (D-078", "Open until 6.5l-xiii-e lands"},
