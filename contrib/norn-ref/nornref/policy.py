@@ -32,6 +32,11 @@ def _read_vkey(text: str, algorithm: int, number: int, keys: set[bytes]) -> None
 def _check_name(name: str, number: int, kind: str) -> None:
     if name == "none":
         raise PolicyError(f"line {number}: none is predefined and cannot be a {kind} name")
+    # SPEC 7's key-name grammar, at most 64 bytes (D-078, cold gate run 15's
+    # M1): the grammar never said which bytes a name may hold, and a refused
+    # `policy` entry leaves two readers with different quorums.
+    if not name or len(name) > 64 or any(not 0x21 <= ord(char) <= 0x7E or char == "+" for char in name):
+        raise PolicyError(f"line {number}: {name!r} is not a policy name")
 
 
 def parse(text: str) -> None:

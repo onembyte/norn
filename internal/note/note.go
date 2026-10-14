@@ -105,7 +105,7 @@ func ParseVerifierKey(text string) (Verifier, error) {
 	if len(parts) != 3 || parts[0] == "" || parts[1] == "" || parts[2] == "" {
 		return Verifier{}, noteErrorf("verifier key must be name+keyid+keydata")
 	}
-	if !validKeyName(parts[0]) {
+	if !ValidKeyName(parts[0]) {
 		return Verifier{}, noteErrorf("verifier key name %q is not one or more ASCII bytes 0x21-0x7E without '+'", parts[0])
 	}
 	raw, err := base64.StdEncoding.Strict().DecodeString(parts[2])
@@ -124,12 +124,13 @@ func ParseVerifierKey(text string) (Verifier, error) {
 	return v, nil
 }
 
-// validKeyName is §7's key-name grammar (D-074 f): one or more ASCII bytes
+// ValidKeyName is §7's key-name grammar (D-074 f): one or more ASCII bytes
 // from 0x21 to 0x7E, '+' excluded. It was unicode.IsSpace, and the Unicode
 // tables behind that and Python's str.isspace disagree on U+001C-U+001F, so
 // a trust file loaded in one implementation and not the other. A grammar has
 // no table to disagree about; every name Norn issues is already inside it.
-func validKeyName(name string) bool {
+// A policy's witness and group names follow it too (D-078).
+func ValidKeyName(name string) bool {
 	if name == "" {
 		return false
 	}

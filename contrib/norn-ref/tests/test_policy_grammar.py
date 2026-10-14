@@ -144,3 +144,25 @@ class OnlyTabAndLineFeedAreAllowedASCIIControls(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class APolicyNameFollowsTheKeyNameGrammar(unittest.TestCase):
+    """D-078 (2), run 15's M1: a witness or group name is one or more bytes
+    0x21-0x7E, '+' excluded, and at most 64 bytes, in every policy."""
+
+    def _texts(self, name):
+        return {"witness": f"witness {name} {KEY}\nquorum {name}\n",
+                "group": f"witness member {KEY}\ngroup {name} 1 member\nquorum {name}\n"}
+
+    def test_names_inside_the_grammar_parse(self):
+        for name in ("pi", "a", "norn-witness/pi", "!~", "a" * 64):
+            for kind, text in self._texts(name).items():
+                with self.subTest(kind=kind, name=name):
+                    policy.parse(text)
+
+    def test_names_outside_it_are_refused(self):
+        for name in ("zürich", "a+b", "a" * 65, "pi "):
+            for kind, text in self._texts(name).items():
+                with self.subTest(kind=kind, name=name):
+                    with self.assertRaises(policy.PolicyError):
+                        policy.parse(text)

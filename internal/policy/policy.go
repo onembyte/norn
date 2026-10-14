@@ -33,6 +33,10 @@ func policyErrorf(format string, args ...any) error {
 // NoQuorum is the special name that disables the cosignature requirement.
 const NoQuorum = "none"
 
+// maxNameLen bounds a witness or group name, as §9.1 bounds a trust file's
+// witness name.
+const maxNameLen = 64
+
 // Witness is one cosigner the policy names.
 type Witness struct {
 	Name string
@@ -131,6 +135,9 @@ func Parse(text string) (*Policy, error) {
 			if name == NoQuorum {
 				return nil, policyErrorf("%s: %q is predefined and cannot be a witness name", where, name)
 			}
+			if !validName(name) {
+				return nil, policyErrorf("%s: %q is not a policy name", where, name)
+			}
 			if p.names[name] {
 				return nil, policyErrorf("%s: %q is already defined", where, name)
 			}
@@ -156,6 +163,9 @@ func Parse(text string) (*Policy, error) {
 			name, keyword, members := fields[1], fields[2], fields[3:]
 			if name == NoQuorum {
 				return nil, policyErrorf("%s: %q is predefined and cannot be a group name", where, name)
+			}
+			if !validName(name) {
+				return nil, policyErrorf("%s: %q is not a policy name", where, name)
 			}
 			if p.names[name] {
 				return nil, policyErrorf("%s: %q is already defined", where, name)
@@ -205,6 +215,16 @@ func Parse(text string) (*Policy, error) {
 
 func forbiddenControl(r rune) bool {
 	return r < 0x20 && r != '\t' && r != '\n' || r == 0x7f
+}
+
+// validName is a witness or group name (D-078, cold gate run 15's M1): §7's
+// key-name grammar, at most 64 bytes, the bound a trust file already put on a
+// witness name. The grammar never said which bytes a name may hold; both
+// implementations took `zürich`, a reader applying the key-name sentence
+// refused it, and a refused `policy` entry leaves two readers with different
+// quorums.
+func validName(name string) bool {
+	return len(name) <= maxNameLen && note.ValidKeyName(name)
 }
 
 func parsePolicyVKey(text string, wantAlg byte) (note.Verifier, error) {
