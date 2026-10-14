@@ -312,7 +312,7 @@ every failure is `bad-genesis` and aborts replay, per §5.1's entry-0 list):
 | `device_id` | matches `^[a-z0-9][a-z0-9.-]{0,63}$` **as a whole** — `\A…\z`, every byte of the string. An engine whose `$` also matches before a final newline accepts `nas2\n`; §2's rule is over the string, and both implementations here refuse it (cold gate run 14, H2) |
 | `name`, `reason` | UTF-8, 1–64 / 0–256 bytes |
 | `text` (`note`, `policy`) | UTF-8, ≤ 4096 bytes |
-| `labels` | map text→text; ≤ 32 entries; keys 1–23 bytes (the map-key cap above — a longer key is unencodable); values ≤ 256 bytes; a `labels` map, when present, MUST carry at least one pair; `labels: {}` is refused as a schema fault; absence is the one encoding of "no labels" |
+| `labels` | map text→text; ≤ 32 entries; keys 1–23 bytes (the map-key cap above — a longer key is unencodable); values ≤ 256 bytes, the empty value included; a `labels` map, when present, MUST carry at least one pair; `labels: {}` is refused as a schema fault; absence is the one encoding of "no labels" |
 | `roots`, `signers` at genesis | arrays of 32-byte `pk`, no duplicates, no key in both; `len(roots) ≥ root_thr ≥ 1`; `len(signers) ≥ signer_thr ≥ 1` |
 | `kid` (in `sigs`, and in `signer_remove`/`root_remove` bodies) | exactly 16 characters matching `^[0-9a-f]{16}$`. A malformed `kid` is a schema violation (`decode`), **not** a `kid` that merely fails to resolve — that distinction matters because the two produce different reason codes. |
 | `sigs` array | sorted by `kid` and free of repeats (§4.0); an unsorted or repeating array is `decode` |
@@ -837,21 +837,27 @@ The note framing is `c2sp.org/signed-note`, restated here so an implementer need
 nothing else (D22). These rules are **verified against `golang.org/x/mod/sumdb/note`**,
 the canonical implementation the transparency ecosystem uses: it accepts the
 verifier keys and the receipt this suite ships, unchanged, and opens notes this
-spec's rules produce.
+spec's rules produce. They differ in one place, where the text ends: that library
+ends it at the *last* blank line, this document at the first (the first bullet
+below), and the two answer differently only for a note with a second blank line.
 
 - The **signed text** is everything up to **and including** the newline that ends
   the last text line. It does **not** include the blank separator line. A note's
-  text lines are non-empty, so **the **first** blank line ends the text** — there
-  is no second one to choose between. A reader that ends the text at the *last*
-  blank line signs a different string, and the two readings are told apart by no
-  Norn artifact only because every note text here has a fixed line count (§12.1).
+  text lines are non-empty, so **the **first** blank line ends the text**, and
+  every line after it belongs to the signature block. A reader that ends the text
+  at the *last* blank line, as `golang.org/x/mod/sumdb/note` does, reads the same
+  text from every note without a second blank line. A note with one between two
+  signature lines tells them apart, by code: here it carries an empty signature
+  line and is `note`; there the lines before it join the text, no trusted line
+  verifies, and it is `log-signature` (§12.1).
 - The text is followed by one blank line, then one signature line per signer. **Every signature line, including the last, ends in one `0x0A`—exactly one**. A block that stops is unterminated; a second `0x0A` after the final signature creates a forbidden blank line (`checkpoints-bad/23-extra-final-newline`). Neither may be repaired by trimming trailing newlines.
 - A signature line is `\u2014 ` (em dash U+2014, then one space), the key name, one
   space, then base64 of a payload that begins with a 4-byte `key_id`. A key name
   **contains no space**, so the line splits at its **first** space and everything
-  after it is the payload — split at the *last* one instead and a line carrying
-  two spaces parses as a signature from a name nobody lists, which §10 ignores
-  rather than refuses. The payload is **standard base64 **with padding****
+  after it is the payload. A reader that split at the *last* space would refuse
+  the same lines, as `note`: a name holding a space does not frame (the name rule
+  below), so the first space is where the name ends, not a choice between two
+  answers. The payload is **standard base64 **with padding****
   (RFC 4648 §4, the `+/` alphabet, `=` to a multiple of four); unpadded base64
   decodes to the same bytes and is not this encoding. The payload MUST use
   canonical RFC 4648 §3.5 encoding: unused pad bits MUST be zero, and decoding
@@ -1137,9 +1143,12 @@ peer, so a log unreachable over a weekend must not take a network down by
 itself. It is a local decision for the same reason the witness policy is not a
 `params` key (D-034).
 
-**And what the bundle's own entry proves.** It proves that this device was
-enrolled — or rotated, or whatever its type is — at that index, in a tree this
-checkpoint commits to. It does **not** prove the device's *current* key. §5.3
+**And what the bundle's own entry proves.** It proves that this entry — an
+enrolment, a rotation, or whatever its type is — is in the log at that index, in
+a tree this checkpoint commits to. It does **not** prove that replay accepted that
+entry: §10.1's bundle steps never replay, so a bundle around an entry replay
+rejected passes them, and only the log through `index` says which. It does
+**not** prove the device's *current* key. §5.3
 leaves `since_index` on the entry that made the device active, so a `rotate`
 does not move it: for any device that has ever rotated, the bundle that proves
 it is older than its key, and that is the normal case rather than an edge one.
@@ -1174,7 +1183,7 @@ below exists for humans.
 | `log_key` | text | signed-note verifier key for the log (algorithm `0x01`); MUST parse as one, MUST NOT be a cosignature key, and its note name MUST equal `origin` |
 | `log_urls` | array of text, ≥ 1 | where to fetch checkpoint and tiles. **Each URL is non-empty**: an array holding `""` satisfies "≥ 1" and names nowhere. Norn does not parse URL syntax here; the values are passed to the application that fetches the log |
 | `witnesses` | array of `{name, key, url?}`, **≥ 1** | `url`, when present, is text; empty text is allowed. It is not URI-validated. `key` is a **cosignature** verifier key — `c2sp.org/tlog-cosignature` algorithm `0x04`, not a note key's `0x01` — and MUST parse as one; **a witness `name` is 1–64 bytes** and unique within the file — bounded like the network `name` above, and for the same reason: it is a label an operator reads. A verifier key **declares** its own id, so a reader MUST **recompute** `SHA-256(name ‖ 0x0A ‖ alg ‖ pk)[0:4]` and refuse the file when the declared id differs: an id taken on trust binds nothing, and everything below rests on it binding. The algorithm is part of the key id, so the same public key published under the two algorithms is **two different verifiers**: a file naming a witness with a note key names a key no witness will ever sign with. And no witness `key`'s public key equals `log_key`'s (D-077 (6)): active log keys and active witness keys are disjoint at every state, so that the log can never be its own witness and a quorum is never met by the log alone; the comparison is on the validated public-key bytes, never on names, ids or text, it runs again at every `policy` and `log_key` entry (§5.1), and a trust file that fails it is invalid. A file with no witnesses MUST be rejected: with nothing to cosign, the policy's quorum can never be met, so the anchor could never accept a checkpoint. |
-| `policy` | text | verbatim `c2sp.org/tlog-policy`; MUST parse, and MUST name **exactly** the witnesses `witnesses` lists, with the same keys. **The same key** means the same verifier key — name, algorithm and public key — compared as canonical text, so a policy that names a listed witness's public key under another key name names a different key, and the file is refused (`trust-bad/48-policy-witness-key-renamed`, D-074 d): §10 matches a cosignature line by name **and** key id, so a node that took the policy's key would match none of that witness's real cosignatures. This is not the grammar's `keys` row below, which compares parsed public keys so that one key cannot count twice under two names: that row is about duplicates inside a policy, this one about whether the file's two halves describe one verifier. The two are not redundant: `witnesses` is where a node learns a witness's name and address, `policy` is where it learns whether that witness counts — so a file where they differ configures a quorum over parties the node cannot reach, or lists parties nothing requires, and either way the operator believes they set something they did not. A `log` line, if the policy carries one, is subject to the same argument: **it MUST be `norn.trust.log_key`**, and a `log` line is compared the same way, as verifier-key text. A file whose two halves name different logs is the same operator error, and the only one of the two a verifier ever uses is `log_key`. The correspondence is on the **set** of names: a witness listed twice is refused by the uniqueness rule above, not by this one, and an implementation that strikes each name off as it matches conflates the two — it then refuses a duplicate here and passes the suite without the uniqueness rule at all. Optional policy URLs have application-specific meaning under C2SP: Norn does not validate their URI syntax or require them to equal `log_urls` or `witnesses[].url` |
+| `policy` | text | verbatim `c2sp.org/tlog-policy`; MUST parse, and MUST name **exactly** the witnesses `witnesses` lists, with the same keys. **The same key** means the same verifier key — name, algorithm and public key — compared as canonical text, so a policy that names a listed witness's public key under another key name names a different key, and the file is refused (`trust-bad/48-policy-witness-key-renamed`, D-074 d): §10 matches a cosignature line by name **and** key id, so a node that took the policy's key would match none of that witness's real cosignatures. This is not the grammar's `keys` row below, which compares parsed public keys so that one key cannot count twice under two names: that row is about duplicates inside a policy, this one about whether the file's two halves describe one verifier. The two are not redundant: `witnesses` is where a node learns a witness's name and address, `policy` is where it learns whether that witness counts — so a file where they differ configures a quorum over parties the node cannot reach, or lists parties nothing requires, and either way the operator believes they set something they did not. Counting is not checking: a cosignature line whose name **and** key id match a witness the policy lists must verify whether or not its quorum reaches that witness (§10.1 step 6), so a listed witness's bad line refuses a head even when the quorum is met without it. A `log` line, if the policy carries one, is subject to the same argument: **it MUST be `norn.trust.log_key`**, and a `log` line is compared the same way, as verifier-key text. A file whose two halves name different logs is the same operator error, and the only one of the two a verifier ever uses is `log_key`. The correspondence is on the **set** of names: a witness listed twice is refused by the uniqueness rule above, not by this one, and an implementation that strikes each name off as it matches conflates the two — it then refuses a duplicate here and passes the suite without the uniqueness rule at all. Optional policy URLs have application-specific meaning under C2SP: Norn does not validate their URI syntax or require them to equal `log_urls` or `witnesses[].url` |
 | `anchor` | `{type, max_lag, mode}`, OPTIONAL | It is a closed map. All three members are required **when `anchor` is present**, and no other member is permitted. `max_lag` is **uint seconds**. The two text members are not symmetric: **an unknown `type` is ignored**, not refused — anchoring is advisory (D-009), so a reader that cannot check `"roughtime"` simply does not check it and the rest of the file stands — while **`mode` MUST be `"advisory"`**, because guessing what an unrecognised enforcement mode means is how a node enforces something nobody asked for. A reader that refuses an unknown `type`, or accepts an unknown `mode`, is wrong in opposite directions |
 
 Unknown keys MUST cause rejection. The fingerprint (§9.3) is taken over these
@@ -1965,8 +1974,10 @@ admits its holes, so:
   non-empty; a reader that took the *last* one would sign a different string.
   Every note text in Norn is a checkpoint body (three lines, §6) or a receipt
   (four, §7), so a text carrying a blank line has the wrong line count under
-  **both** readings and is refused either way. Separating them needs a note
-  whose text is valid with a blank line in it, which this protocol has none of.
+  **both** readings and is refused either way. A blank line placed **between two
+  signature lines** is another matter: the readings refuse it with different
+  codes, `note` and `log-signature` (§7), and no vector holds that yet (cold gate
+  run 15, L1).
 - **§10's "the root the SERVED branch has at `at` … recomputed from the
   entries, **never from a supplied proof**".** No shipped file supplies one: a
   `detect/` pair serves both branches with their own tiles, so a reader takes
