@@ -161,6 +161,15 @@ incident that produced it. Read that section before the first firing.
   — the preimage without `sigs` — for every entry, accepted or rejected
   (audit SEC-001, option A); per-device sequence numbers are recorded for
   v1.1.
+- **D-078 (taken 2026-10-14, the owner's answers to 6.5l-xiii-d): a refused
+  entry records only its bytes; the signed content of an **accepted** entry,
+  in a set of its own, is what a later copy is `dup-entry` against** (run 15's
+  H1 and H2: a stripped copy appended first no longer cancels the genuine
+  entry, and an entry after its own preimage is accepted). Policy names
+  follow §7's key-name grammar, at most 64 bytes; re-publishing an active log
+  key is `dup-key`; a note whose first line is blank is `note`; a consumer
+  refuses a request for another network. Rows 6.5l-xiii-e to -h;
+  `DECISIONS.md` D-078.
 - **D-072 (taken 2026-10-09, the owner's answers):** a proven fork freezes
   authorization at the common prefix both branches agree on and keeps
   enforcing it — the set shrinks, never grows, and fails closed when no split

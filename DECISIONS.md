@@ -198,7 +198,7 @@ the vectors rather than a placeholder string. Changed `entries/13-policy` and
 `log/28-policy` bytes; no other entry moved.
 
 ## D-031 · An exact entry is usable at most once, accepted or rejected (2026-09-19, 0.7a)
-*Key superseded by D-070 (2026-10-07): "exact" is the signed content for an entry that decodes, the bytes otherwise. The intent stands.*
+*Key superseded by D-070 (2026-10-07): "exact" is the signed content for an entry that decodes, the bytes otherwise. D-078 (2026-10-14) keeps the bytes of every entry and the signed content of an accepted one only. The intent stands.*
 
 Raised by the cold-model gate as an undecided question (D15). Entry hashes enter
 the `dup-entry` seen-set **before** validation, so a rejected entry cannot be
@@ -826,6 +826,7 @@ name a file the disk never received, and the node reports it unusable and holds
 nothing. That is `HARDENING-PLAN.md` H4-f. The freeze does survive one.
 
 ## D-070 · Two entries are the same entry when their signed content is the same (2026-10-07)
+*"Accepted or rejected" superseded by D-078 (2026-10-14): a refused entry records only its bytes; the signed content of an **accepted** entry is what a later copy is `dup-entry` against. The identity stands.*
 `dup-entry` (§5.1 step 1) is keyed on SHA-256 of the entry's **signature
 preimage** — the envelope encoded without `sigs` (§4.2) — for every entry that
 decodes, and on the raw bytes for one that does not. Accepted or rejected, as
@@ -1215,3 +1216,58 @@ keys; `dup-key`, widened to a key entering a role whose set must be disjoint
 from another), a `log_key` entry (the incoming key against the current
 witnesses; `dup-key`).
 Rows: 6.5l-xi-c-iv (1, 2, 4, 5); 6.5l-xii (3, 6), then a third cold build.
+
+## D-078 · Cold run 15's findings that change what a reader accepts or refuses: a refused entry burns nothing, ASCII policy names, no re-published log key, an empty note text, a request's network (2026-10-14)
+The owner's answers of 2026-10-14 to the DECISION 6.5l-xiii-d wrote
+(`BUILD-LOG.md`, "DECISION TAKEN — 6.5l-xiii-d"): **1-A, 2-A, 3-A, 4-both**,
+weighed together in the session before anything was written (global rule 14a).
+**(1)** §5.1 step 1 keeps **two** seen sets. Every entry that reaches the step
+adds its `entry_hash` to the first; an entry replay **accepts** adds its
+`content_hash` to the second, when it is applied. An entry is `dup-entry` when
+its bytes were seen, or when it decodes (as the step already conditions) and
+its signed content is an accepted entry's. An `entry_hash` and a
+`content_hash` are never compared with each other. Supersedes D-070's
+"accepted or rejected" and what remained of D-031's key; keeps D-070's
+identity (the signed content) and D-031's purpose (a past entry is applied
+once). **Why.** Under D-070 a copy with its signatures stripped, appended
+before the genuine entry, is refused `threshold` and burns the content, so the
+genuine entry — appended on time, its receipt honoured — is `dup-entry`, and a
+revoke never applies (run 15, H2; its S1 reproduced in Go and the reference,
+the printer `active`). The log, or anyone holding a draft during §16.3's
+append-only threshold signing, can do it again on every re-sign; every
+conforming reader agrees, and no receipt proves it. The second set also ends
+H1: the preimage bytes of an entry, appended as an entry, never decode and
+hash to that entry's `content_hash`, so one shared set refused the genuine
+entry after its own preimage. D-070 rejected "accepted content only" because
+it reopens D-031's window, a rejected entry re-tried against a changed state.
+That was written before D-077 (3): with `prev`, an entry lands only against
+the object version its signers authorised, so what the window still holds is
+delay of an entry its own authors signed — §4.4's stated residual — and no
+refusal code flips to acceptance at an unchanged version except by the
+signers' own later acts. The six D-070 copy vectors are copies of accepted
+entries and stand; `bad-repeat-of-rejected`, `-undecodable` and `-genesis` are
+byte repeats and stand. `norn-log` never stores an entry its replay refuses,
+so its content index already holds accepted content only; the monitor's
+repeated-content alarm stays and now reports an attempt.
+**(2)** §9.1: a policy `<name>` — witness or group — follows §7's key-name
+grammar (one or more bytes `0x21`–`0x7E`, `+` excluded) and is at most 64
+bytes, in a trust file and in a `policy` entry alike. **Why.** The restated
+grammar never said which bytes a name may hold; both implementations took
+`zürich`, a reader applying the key-name sentence refused it, and a refused
+`policy` entry leaves two readers with different quorums (M1). One grammar
+for names and key names, for D-074 (f)'s reason. Rejected: any non-space
+bytes with a length bound — two grammars in one section.
+**(3)** §5.1 `log_key`: a `pk` that is already an active log key —
+`anchor.log_key` or any `pk` in `log_keys`, compared as public-key bytes — is
+`dup-key`. **Why.** Learned keys are never retired (§9.4), so every one is
+active; the roots have no use for a second row, and one would carry a second
+`since_index` and `overlap` for one key (M3). The same shape as
+`signer_add`'s rule. Rejected: accept and append, stated. v1.1's retirement
+(D-072 (d)) can lift it for a retired key.
+**(4)** §7: a note's text is at least one line, and a note whose first line is
+blank is `note` (L2; the reference's answer, Go's was `log-signature`). §16.1:
+a consumer MUST refuse a request whose `net` is not the network it serves,
+before showing it to anyone (L7; `norn sign` already does, through
+`enrollreq.Check`).
+Rows: 6.5l-xiii-e (1), 6.5l-xiii-f (2, 3), 6.5l-xiii-g (4), 6.5l-xiii-h (the
+vectors), then run 16.
