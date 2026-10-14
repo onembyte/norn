@@ -103,7 +103,7 @@ func New(anchor Anchor) *Replayer { return newWith(anchor, realVerify) }
 
 func newWith(anchor Anchor, verify verifier) *Replayer {
 	return &Replayer{
-		r:  &replayer{anchor: anchor, verify: verify, seen: map[string]bool{}},
+		r:  &replayer{anchor: anchor, verify: verify, seen: map[string]bool{}, accepted: map[string]bool{}},
 		st: state.New(anchor.Net),
 	}
 }
@@ -141,12 +141,16 @@ func (p *Replayer) Apply(entries ...[]byte) *state.State {
 // Clone is a copy of the fold that can be resumed without moving this one:
 // the state, the seen set and the abort travel together, as they must.
 func (p *Replayer) Clone() *Replayer {
-	seen := make(map[string]bool, len(p.r.seen))
-	for k := range p.r.seen {
-		seen[k] = true
+	copySet := func(from map[string]bool) map[string]bool {
+		out := make(map[string]bool, len(from))
+		for k := range from {
+			out[k] = true
+		}
+		return out
 	}
 	return &Replayer{
-		r:       &replayer{anchor: p.r.anchor, verify: p.r.verify, seen: seen},
+		r: &replayer{anchor: p.r.anchor, verify: p.r.verify,
+			seen: copySet(p.r.seen), accepted: copySet(p.r.accepted)},
 		st:      p.st.Clone(),
 		aborted: p.aborted,
 	}
@@ -158,40 +162,51 @@ func (p *Replayer) State() *state.State { return p.st }
 type replayer struct {
 	anchor Anchor
 	verify verifier
-	seen   map[string]bool
+	// seen holds the entry hash of every entry that reached §5.1 step 1, and
+	// accepted the content hash of every entry replay applied. The two are
+	// never compared with each other (D-078).
+	seen     map[string]bool
+	accepted map[string]bool
 }
 
-// remember records an entry's duplicate key (§5.1 step 1) and reports whether
-// it was new. The key is the content hash when the entry decodes and its
-// envelope passes §4.1, `net` included: the same signed content under any other
-// signature list is then the same entry, so a copy of a past entry with one
+// remember records an entry's bytes (§5.1 step 1) and reports whether it is
+// new, with its content hash when it decodes and its envelope passes §4.1,
+// `net` included. An entry is a duplicate when its bytes were seen -- so a copy
+// of one that never decoded is `dup-entry`, not a second `decode` -- or when
+// its signed content is an applied entry's: a copy of a past entry with one
 // unresolvable signature added, a surplus one dropped or a role relabelled is
-// `dup-entry` rather than a second application (D-070, audit SEC-001). For an
-// entry that does not decode the key is its bytes, so a copy of it is still
-// `dup-entry` and not a second `decode`.
-func (r *replayer) remember(raw []byte) bool {
-	key := string(entry.EntryHash(raw))
+// `dup-entry` rather than a second application (D-070, audit SEC-001). Only
+// applied content counts. A copy with its signatures stripped, appended first,
+// is refused and must not cancel the genuine entry after it; and an entry's
+// own preimage, appended as bytes, hashes to that entry's content (D-078,
+// cold gate run 15's H1 and H2).
+func (r *replayer) remember(raw []byte) (content string, fresh bool) {
 	if env, err := entry.Decode(raw); err == nil && bytes.Equal(env.Net, r.anchor.Net) {
 		if pre, err := entry.Preimage(env); err == nil {
 			sum := sha256.Sum256(pre)
-			key = string(sum[:])
+			content = string(sum[:])
 		}
 	}
-	if r.seen[key] {
-		return false
-	}
+	key := string(entry.EntryHash(raw))
+	fresh = !r.seen[key] && (content == "" || !r.accepted[content])
 	r.seen[key] = true
-	return true
+	return content, fresh
 }
 
 // apply runs the numbered procedure of §5.1 for one entry after genesis.
-func (r *replayer) apply(st *state.State, raw []byte, index uint64) error {
-	// 1. Duplicate check, before validation: an exact entry is usable at most
-	// once, accepted or not, so a rejected one cannot be re-inserted later
-	// against a changed state (D-031).
-	if !r.remember(raw) {
+func (r *replayer) apply(st *state.State, raw []byte, index uint64) (err error) {
+	// 1. Duplicate check, before validation: an applied entry is applied once,
+	// and a byte copy of any entry is refused (D-031, D-078). The content
+	// counts as seen only once the entry is applied.
+	content, fresh := r.remember(raw)
+	if !fresh {
 		return rejectWith(ReasonDupEntry)
 	}
+	defer func() {
+		if err == nil {
+			r.accepted[content] = true
+		}
+	}()
 	// 2-3. Decode and envelope schema.
 	env, err := entry.Decode(raw)
 	if err != nil {

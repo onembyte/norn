@@ -227,8 +227,8 @@ Derived values:
 |---|---|
 | `kid(pk)` | lowercase hex of `SHA-256(pk)[0:8]` — 16 ASCII chars, as a text string |
 | entry bytes | the full envelope **with** `sigs`, deterministically encoded |
-| `entry_hash` | `SHA-256` of the entry **as received**, byte for byte. The de-duplication identity of an entry that does **not** decode (§5.1 step 1), and the name an entry is found by (`norn-log`'s resubmission check, the entries mirror). Not of a re-encoded canonical form: an entry that never decodes must still have one |
-| `content_hash` | `SHA-256` of the signature preimage below — the de-duplication identity of every entry that **does** decode (D-070). `sigs` lies outside every signature, so an entry's bytes can change while its signed content, and every valid signature on it, stay the same: keyed on bytes, a copy of a past entry with one unresolvable signature added, a surplus one dropped or a role relabelled was a new entry whose original signatures still counted, and it applied again |
+| `entry_hash` | `SHA-256` of the entry **as received**, byte for byte. The byte key of every entry that reaches §5.1 step 1, accepted or not, and the name an entry is found by (`norn-log`'s resubmission check, the entries mirror). Not of a re-encoded canonical form: an entry that never decodes must still have one |
+| `content_hash` | `SHA-256` of the signature preimage below — the content key of an entry that **does** decode, recorded only once replay **applies** it (D-070, D-078). `sigs` lies outside every signature, so an entry's bytes can change while its signed content, and every valid signature on it, stay the same: keyed on bytes, a copy of a past entry with one unresolvable signature added, a surplus one dropped or a role relabelled was a new entry whose original signatures still counted, and it applied again. A refused entry records only its bytes: a copy with its signatures stripped, appended before the genuine entry, would otherwise cancel it (cold gate run 15, H2) |
 | leaf hash | `SHA-256(0x00 ‖ entry bytes)` (RFC 6962 §2.1) |
 | signature preimage | the 14-byte prefix `norn/entry/v1\n` (13 ASCII characters and one `0x0A`), then the envelope encoded **without** the `sigs` key |
 
@@ -494,8 +494,9 @@ device back to a stale key; a signed `signer_add` whose first copy was withheld
 reinstates a key the roots have since removed; a `log_key` entry reinstates a
 superseded log key; a signer-authorised `revoke` lands after the id was
 re-enrolled and revokes the new device; an `enroll` lands after a second
-revocation and re-admits it. `dup-entry` (§5.1 step 1) catches only identical
-bytes, and the current-key check only a device whose identity key changed.
+revocation and re-admits it. `dup-entry` (§5.1 step 1) catches only a byte
+copy or a copy of an applied entry, and the current-key check only a device
+whose identity key changed.
 With `prev`, a withheld entry is stale the moment anything else changes its
 object, and the submitter re-signs against the version it can see. An index is
 the version rather than a hash of the record: it is monotonic, it names the
@@ -599,14 +600,23 @@ unusable has nothing to verify later entries against.
 
 **Entries 1…n.** For each, in order:
 
-1. **Duplicate check** (D-070). The entry's duplicate key is its `content_hash`
-   if steps 2 and 3 would accept it — it decodes per §4.0 and its envelope
-   passes §4.1, `net` included — and its `entry_hash` otherwise. A key already
-   seen → reject (`dup-entry`). Every entry that reaches this step adds its key
-   to the seen set, **whether or not it is later rejected** (D-031): the first
-   appearance of a signed content is the only one replay will ever apply, so a
-   copy of a past entry under any other signature list is `dup-entry` here,
-   before any later rule can judge it.
+1. **Duplicate check** (D-070, D-078). Replay keeps two seen sets, and an
+   `entry_hash` and a `content_hash` are never compared with each other. Every
+   entry that reaches this step adds its `entry_hash` to the first, **whether
+   or not it is later rejected** (D-031). An entry that replay **applies** adds
+   its `content_hash` to the second when it is applied; the hash is the one of
+   an entry steps 2 and 3 accept — it decodes per §4.0 and its envelope passes
+   §4.1, `net` included. An entry whose `entry_hash` is in the first set, or
+   that decodes and whose `content_hash` is in the second → reject
+   (`dup-entry`). So an applied entry is applied once: a copy of it under any
+   other signature list is `dup-entry` here, before any later rule can judge
+   it, and so is a byte copy of any entry. But a **refused** entry burns
+   nothing but its bytes. A copy with its signatures stripped, appended before
+   the genuine entry, is refused, and the genuine entry is judged on its own
+   (cold gate run 15, H2); keyed on content whatever its outcome, the copy
+   cancelled it, and a revoke never applied. An entry's own preimage, appended
+   as an entry, never decodes and hashes to that entry's content, which is
+   why the two kinds of key stay apart (H1).
 2. Decode per §4.0 → on failure reject (`decode`).
 3. Envelope check per §4.1: exactly the permitted keys, **every member of the
    type §4.1 gives it** (`t` text, `ts`, `after` and `prev` uint, `body` a map), `v` = 1,
@@ -670,7 +680,7 @@ time** (§5.3), not at replay, so the state itself stays clock-independent.
 | `unknown-type` | `t` not in §4.3 |
 | `bad-genesis` | index 0 is not `genesis` or its leaf hash ≠ `trust.genesis_hash` (**aborts replay**) |
 | `dup-genesis` | `genesis` at index > 0 |
-| `dup-entry` | the duplicate key — `content_hash` for an entry that decodes, `entry_hash` otherwise (§5.1 step 1) — already seen |
+| `dup-entry` | the entry's `entry_hash` was already seen, or it decodes and its `content_hash` is an applied entry's (§5.1 step 1, D-078) |
 | `after` | `after` > index |
 | `threshold` | fewer valid signatures of the required role than the threshold |
 | `no-device-sig` | `enroll`/`rotate` lacks a required valid signature by a device key — for `enroll` that is the **embedded request's own** signature (§4.3), for `rotate` a signature on the envelope. **Not `revoke`** — a `revoke` may be authorised by signers, roots *or* the device, so a `revoke` carrying none of the three is `threshold` (§5.1). |
@@ -2000,8 +2010,8 @@ admits its holes, so:
   entry.** Unobservable: entry 0 aborts whenever the two differ, so no file can
   tell the two readings apart. Recorded here because a reader will look.
 - **`entry_hash` being over the bytes *as received* rather than a
-  re-canonicalised form**, for the entries that do not decode and so keep it
-  as their duplicate key (D-070). §5.1 step 1's *ordering* is vectored — a copy
+  re-canonicalised form**, the byte key every entry records (D-078), and the
+  only key of one that does not decode. §5.1 step 1's *ordering* is vectored — a copy
   of an entry that never decoded is `dup-entry` — but the received-versus-recanonical
   half cannot be: the only entry whose raw bytes differ from its canonical form
   violates §4.0, and is `decode` at step 2 before any hash of a canonical form

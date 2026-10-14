@@ -27,7 +27,8 @@ class AfterIsAFloorNotAnEquality(unittest.TestCase):
 
 
 class SeenSetIncludesRejected(unittest.TestCase):
-    """§5.1 step 1: recorded 'whether or not it is later rejected' (D-031)."""
+    """§5.1 step 1: the bytes are recorded 'whether or not it is later
+    rejected' (D-031); the content only once applied (D-078)."""
 
     def test_repeating_a_rejected_entry_is_dup_entry(self):
         got, _ = outcomes()

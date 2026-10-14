@@ -519,21 +519,23 @@ def _apply_genesis(anchor: Anchor, env: dict[str, Any]) -> State:
     return state
 
 
-def _dup_key(raw: bytes, net: bytes) -> bytes:
-    """The duplicate key of SPEC 5.1 step 1 (D-070).
+def _content_key(raw: bytes, net: bytes) -> bytes | None:
+    """The content hash of SPEC 5.1 step 1, or None for an entry that does not
+    decode or whose envelope fails 4.1, `net` included (D-070, D-078).
 
-    The content hash -- SHA-256 of the signature preimage -- when the entry
-    decodes and its envelope passes 4.1, `net` included: the same signed
-    content under any other signature list is the same entry, so a copy with
-    a junk signature added, a surplus one dropped or a role relabelled is
-    `dup-entry`, not a second application (audit SEC-001). The entry hash
-    otherwise, so a copy of an undecodable entry is still `dup-entry`.
+    The same signed content under any other signature list is the same entry,
+    so a copy of an applied entry with a junk signature added, a surplus one
+    dropped or a role relabelled is `dup-entry`, not a second application
+    (audit SEC-001). Only applied content counts: a copy with its signatures
+    stripped, appended first, is refused and must not cancel the genuine
+    entry after it, and an entry's own preimage appended as bytes hashes to
+    that entry's content (D-078, cold gate run 15's H1 and H2).
     """
     try:
         env = cbor.decode(raw)
         _check_envelope(env, net)
     except (cbor.ProfileError, Reject):
-        return entry.entry_hash(raw)
+        return None
     return hashlib.sha256(entry.preimage(env)).digest()
 
 
@@ -560,17 +562,21 @@ def replay(anchor: Anchor, raw_entries: list[bytes]) -> State:
         return state  # abort: without a genesis there is nothing to verify against
 
     state.size = 1
-    seen = {_dup_key(raw_entries[0], anchor.net)}
+    # Every entry's bytes, and the signed content of every applied one. The
+    # two kinds of key are never compared with each other (D-078).
+    seen = {entry.entry_hash(raw_entries[0])}
+    applied = {_content_key(raw_entries[0], anchor.net)}
 
     for index, raw in enumerate(raw_entries[1:], start=1):
         try:
-            digest = _dup_key(raw, anchor.net)
-            if digest in seen:
-                raise Reject("dup-entry")
-            # Recorded before validation: an exact entry is usable at most once,
-            # accepted or not, so a rejected one cannot be re-inserted later to
-            # take effect against a changed state (SPEC §5.1 step 1, D-031).
+            digest, content = entry.entry_hash(raw), _content_key(raw, anchor.net)
+            duplicate = digest in seen or (content is not None and content in applied)
+            # The bytes are recorded before validation, accepted or not, so a
+            # byte copy of a rejected entry is `dup-entry` (SPEC §5.1 step 1,
+            # D-031); the content only once the entry is applied (D-078).
             seen.add(digest)
+            if duplicate:
+                raise Reject("dup-entry")
             env = cbor.decode(raw)
             _check_envelope(env, anchor.net)
             if env["t"] == "genesis":
@@ -591,6 +597,7 @@ def replay(anchor: Anchor, raw_entries: list[bytes]) -> State:
                 HANDLERS[env["t"]](state, env, index, anchor)
             else:
                 HANDLERS[env["t"]](state, env, index)
+            applied.add(content)
         except cbor.ProfileError:
             state.rejected.append({"index": index, "reason": "decode"})
         except Reject as exc:

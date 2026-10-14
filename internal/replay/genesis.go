@@ -17,7 +17,11 @@ import (
 // body -- there is no earlier state to resolve them against. That bootstrap is
 // the one place where signature checking cannot consult existing state.
 func (r *replayer) applyGenesis(st *state.State, raw []byte) error {
-	r.remember(raw)
+	// Entry 0's keys are recorded first, its content as applied: a genesis
+	// that fails aborts replay, so nothing ever asks again.
+	if content, _ := r.remember(raw); content != "" {
+		r.accepted[content] = true
+	}
 
 	env, err := entry.Decode(raw)
 	if err != nil {

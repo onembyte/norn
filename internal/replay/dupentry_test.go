@@ -53,9 +53,10 @@ func copies(t *testing.T, raw []byte, drop bool) map[string][]byte {
 // passed a byte-keyed `dup-entry` and applied again. On this log, entry 37
 // re-enrolled a device revoked at 39 and entry 28 rolled the quorum back from
 // three of three to two of three. Duplicates are now keyed on the signed
-// content, so every such copy is `dup-entry` -- before any other rule, and
-// whatever the original's own outcome was.
-func TestAReSignedCopyOfAnyEntryIsADuplicate(t *testing.T) {
+// content of an applied entry, so every such copy is `dup-entry` -- before any
+// other rule. Every original here was applied; a refused one burns only its
+// bytes (D-078, refusedcopy_test.go).
+func TestAReSignedCopyOfAnAppliedEntryIsADuplicate(t *testing.T) {
 	anchor, entries, m := loadCase(t, filepath.Join(vectorRoot(), "log"))
 	indexOf := func(name string) int {
 		for i, e := range m.Entries {

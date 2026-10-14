@@ -12,10 +12,9 @@ import (
 // first, cancel the genuine entry: the revoke never applies, every conforming
 // reader agrees, and no receipt proves it. The decision keeps every entry's
 // bytes and only an accepted entry's content, in sets of their own, and
-// settles four smaller acceptance questions. Until the rows that apply it
-// land, it lives in four documents that must agree: the decision itself, the
-// note under the decision it amends, the plan's list, and the threat model's
-// open row.
+// settles four smaller acceptance questions. It lives in four documents that
+// must agree: the decision itself, the note under the decision it amends, the
+// plan's list, and the threat model's row, which row 6.5l-xiii-e-a closed.
 func TestTheDuplicateRuleDecisionIsRecorded(t *testing.T) {
 	read := func(name string) string {
 		raw, err := os.ReadFile(filepath.Join("..", "..", name))
@@ -36,12 +35,16 @@ func TestTheDuplicateRuleDecisionIsRecorded(t *testing.T) {
 	if !strings.Contains(decisions[start:end], "D-078") {
 		t.Error("DECISIONS.md D-070 does not say which part of it D-078 supersedes")
 	}
-	for _, c := range []struct{ file, want string }{
-		{"HARDENING-PLAN.md", "D-078 (taken 2026-10-14"},
-		{"THREAT-MODEL.md", "Open until 6.5l-xiii-e lands (D-078"},
+	for _, c := range []struct{ file, want, stale string }{
+		{"HARDENING-PLAN.md", "D-078 (taken 2026-10-14", ""},
+		{"THREAT-MODEL.md", "**Harmless** since 6.5l-xiii-e-a (D-078", "Open until 6.5l-xiii-e lands"},
 	} {
-		if !strings.Contains(read(c.file), c.want) {
+		doc := read(c.file)
+		if !strings.Contains(doc, c.want) {
 			t.Errorf("%s does not say %q", c.file, c.want)
+		}
+		if c.stale != "" && strings.Contains(doc, c.stale) {
+			t.Errorf("%s still says %q", c.file, c.stale)
 		}
 	}
 }
