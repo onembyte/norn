@@ -35,7 +35,7 @@ OWNED = frozenset({
     "keys.json", "entries", "log", "genesis", "state.json",
     "trust.cbor", "trust.toml", "trust.fingerprint", "trust-bad", "trust-good",
     "receipt.note", "receipt.json", "receipt-bad", "requests", "requests-bad", "policies",
-    "entries-hostile", "proven", "log-empty", "log-admission", "log-cas", "log-edges", "genesis-good",
+    "entries-hostile", "proven", "log-empty", "log-admission", "log-cas", "log-edges", "log-order", "genesis-good",
     "receipt-rotated",
 })
 
@@ -167,6 +167,9 @@ def write_proven(out: pathlib.Path, final: Any, entries: list[bytes]) -> None:
     space = "U+0020 is removed from both of its ends and nothing else is."
     canonical = "every group in lowercase hexadecimal (an embedded dotted quad is written as"
     forms = [
+        ("9.0.0.0/8, 10.0.0.0/8", ["10.0.0.0/8", "9.0.0.0/8"], "duplicates removed, sorted as text"),
+        ("2001:db8:0:1:1:1:1:1/128", ["2001:db8:0:1:1:1:1:1/128"], "IPv6 address in RFC 5952 form with"),
+        ("2001:db8:0:0:1:1:1:1/128", ["2001:db8::1:1:1:1/128"], "IPv6 address in RFC 5952 form with"),
         ("10.9.1.5", [], mask),
         ("10.9.1.0/024", [], zero),
         ("010.9.1.0/24", [], zero),
@@ -547,6 +550,41 @@ def write_edges_log(out: pathlib.Path) -> None:
         "rules": rules,
     }) + "\n")
     write(out / "log-edges" / "state.json", replay.replay(anchor, raw).to_json() + "\n")
+
+
+def write_order_log(out: pathlib.Path) -> None:
+    """Each deciding check cites the normative sentence on one raw SPEC line."""
+    # The first code is stated explicitly, never inferred from replay's output.
+    # These phrases were checked in §5.1's ordered rows and §3.1's point rule.
+    phrases = {
+        "02-rotate-incoming-only": ("5.1", "valid `device` signature by the device's **current** `device_pk` (`no-device-sig`)"),
+        "04-rotate-threshold-before-prev": ("5.1", "if `params.rotate_needs_signer`, signer count ≥ `signer_thr` (`threshold`) · `prev`"),
+        "05-enroll-threshold-before-prev": ("5.1", "valid `signer` count ≥ `signer_thr` (`threshold`) · `prev`"),
+        "06-enroll-prev-before-dup-id": ("5.1", "(`stale-state`) · `device_id` not currently `active` (`dup-id`)"),
+        "07-revoke-threshold-before-prev": ("5.1", "authorised by signers, roots **or** the device itself (`threshold`) · `prev`"),
+        "08-signer-add-after-before-threshold": ("5.1", "6. `after` present and > index → reject (`after`)."),
+        "09-params-body-before-prev": ("5.1", "non-empty, only §4.5 keys, each of the right type (`decode`) · `prev`"),
+        "10-policy-parse-before-prev": ("5.1", "`text` MUST parse as `c2sp.org/tlog-policy`, every verifier key it carries a valid point (§3.1) (`decode`) · `prev`"),
+        "11-policy-prev-before-dup-key": ("5.1", "`prev` is `versions.policy` (`stale-state`) · no witness the text names"),
+        "12-signer-remove-prev-before-unknown-key": ("5.1", "`prev` is `versions.signers` (`stale-state`) · `kid` is a signer (`unknown-key`)"),
+        "13-signer-thr-prev-before-bad-thr": ("5.1", "(`stale-state`) · `1 ≤ thr ≤ len(set)` (`bad-thr`)"),
+        "14-log-key-prev-before-dup-key": ("5.1", "`prev` is `versions.log_key` (`stale-state`) · `pk` is not the public key of any witness"),
+        "15-policy-log-identity": ("3.1", "every verifier key a `policy` entry's text carries (§5)"),
+    }
+    items = fixture.order_log()
+    raw = [it.raw for it in items]
+    anchor = fixture.anchor_for(raw)
+    for it in items:
+        write(out / "log-order" / (it.name + ".cbor"), it.raw)
+        if it.reason:
+            write(out / "log-order" / (it.name + ".reason"), it.reason + "\n")
+    write(out / "log-order" / "manifest.json", canonjson.dumps({
+        "anchor": {"net": anchor.net, "genesis_hash": anchor.genesis_hash, "log_key": anchor.log_key, "policy": anchor.policy},
+        "entries": [{"index": i, "name": it.name, "reason": it.reason or ""} for i, it in enumerate(items)],
+        "codes": {it.name: it.reason for it in items if it.reason},
+        "rules": {name: {"section": section, "says": says} for name, (section, says) in phrases.items()},
+    }) + "\n")
+    write(out / "log-order" / "state.json", replay.replay(anchor, raw).to_json() + "\n")
 
 
 def write_trust_acceptances(out: pathlib.Path) -> None:
@@ -1095,6 +1133,7 @@ def main(argv: list[str]) -> int:
     write_admission_log(out)
     write_cas_log(out)
     write_edges_log(out)
+    write_order_log(out)
     write_trust(out)
     write_receipt_rotated(out)
     write_policies(out)

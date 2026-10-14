@@ -76,7 +76,9 @@ class RunFourteen(unittest.TestCase):
         doc = json.loads((ROOT / 'proven/grant-labels.json').read_text())
         from nornref.state import grant_from_label
         self.assertTrue(doc['comment'])
-        self.assertGreaterEqual(len(doc['cases']), 36)
+        self.assertGreaterEqual(len(doc['cases']), 39)
+        self.assertTrue({'9.0.0.0/8, 10.0.0.0/8', '2001:db8:0:1:1:1:1:1/128',
+                         '2001:db8:0:0:1:1:1:1/128'} <= {c['label'] for c in doc['cases']})
         section = (ROOT.parents[1] / 'SPEC.md').read_text().split('### 4.0', 1)[1].split('### 4.1', 1)[0]
         for case in doc['cases']:
             with self.subTest(label=case['label']):

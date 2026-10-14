@@ -25,7 +25,7 @@ func checkGrantLabels(t *testing.T) {
 	if err := json.Unmarshal(raw, &doc); err != nil {
 		t.Fatal(err)
 	}
-	if doc.Comment == "" || len(doc.Cases) < 36 {
+	if doc.Comment == "" || len(doc.Cases) < 39 {
 		t.Fatal("grant label boundaries are missing")
 	}
 	spec, err := os.ReadFile(filepath.Join("..", "..", "SPEC.md"))
@@ -34,7 +34,10 @@ func checkGrantLabels(t *testing.T) {
 	}
 	_, section, _ := strings.Cut(string(spec), "### 4.0")
 	section, _, _ = strings.Cut(section, "### 4.1")
+	labels := map[string]bool{}
 	for _, c := range doc.Cases {
+		labels[c.Label] = true
+
 		t.Run(c.Label, func(t *testing.T) {
 			got := Grant(map[string]string{"ip": c.Label})
 			if strings.Join(got, ",") != strings.Join(c.Grant, ",") {
@@ -45,4 +48,10 @@ func checkGrantLabels(t *testing.T) {
 			}
 		})
 	}
+	for _, label := range []string{"9.0.0.0/8, 10.0.0.0/8", "2001:db8:0:1:1:1:1:1/128", "2001:db8:0:0:1:1:1:1/128"} {
+		if !labels[label] {
+			t.Errorf("missing grant form %q", label)
+		}
+	}
+
 }

@@ -2874,3 +2874,55 @@ def edges_log() -> list[LogItem]:
     b.add("11-policy-witness-note-key", b.build("policy", {"text": f"witness w {wrong}\nquorum w\n"}, [("root1", "root"), ("root2", "root")]), "decode")
     b.add("12-note-after-refusals", b.build("note", {"text": "replay continues"}, signer))
     return b.items
+
+
+def order_log() -> list[LogItem]:
+    """Run 15's adjacent checks, without changing the 162-entry served log.
+
+    Rejected entries leave the setup unchanged, so each case can be repaired
+    independently against its own prefix without hiding a third fault.
+    """
+    b = _Builder()
+    roots = [("root1", "root"), ("root2", "root")]
+    signer = [("signer1", "signer")]
+    device = [("nas", "device")]
+
+    def add(name, kind, body, signatures, reason=None, **overrides):
+        b.add(f"{b.index:02d}-{name}", b.build(kind, body, signatures, **overrides), reason)
+
+    b.add("00-genesis", genesis())
+    add("enroll-nas", "enroll", _enroll_body("nas"), signer)
+    # Before signer authorisation is enabled, the missing current signature is
+    # the only defect; the incoming signature proves possession, not consent.
+    add("rotate-incoming-only", "rotate", {
+        "device_id": "nas", "wg_pk": WG["nas2"], "device_pk": KEYS["spare"].public,
+    }, [("spare", "device")], "no-device-sig")
+    add("params-require-rotate-signer", "params", {"rotate_needs_signer": True}, roots)
+    add("rotate-threshold-before-prev", "rotate", {"device_id": "nas", "wg_pk": WG["nas2"]},
+        device, "threshold", prev=0)
+    add("enroll-threshold-before-prev", "enroll", _enroll_body("spare"),
+        [], "threshold", prev=0)
+    add("enroll-prev-before-dup-id", "enroll", _enroll_body("nas", wg="nas2"),
+        signer, "stale-state", prev=0)
+    add("revoke-threshold-before-prev", "revoke", {"device_id": "nas"},
+        [], "threshold", prev=0)
+    add("signer-add-after-before-threshold", "signer_add", {"pk": KEYS["signer3"].public},
+        [("root1", "root")], "after", after=b.index + 1)
+    add("params-body-before-prev", "params", {}, roots, "decode", prev=0)
+    add("policy-parse-before-prev", "policy", {"text": "not-a-policy\n"}, roots,
+        "decode", prev=1)
+    # This text parses: its sole witness conflicts with the anchor log key,
+    # not with another key inside the policy grammar.
+    text = "witness w " + note.vkey("order-witness", KEYS["logkey"].public, note.ALG_COSIGNATURE) + "\nquorum w\n"
+    add("policy-prev-before-dup-key", "policy", {"text": text}, roots,
+        "stale-state", prev=1)
+    add("signer-remove-prev-before-unknown-key", "signer_remove", {"kid": KEYS["spare"].id},
+        roots, "stale-state", prev=1)
+    add("signer-thr-prev-before-bad-thr", "signer_thr", {"thr": 0}, roots,
+        "stale-state", prev=1)
+    add("log-key-prev-before-dup-key", "log_key", {"pk": KEYS["witness-pi"].public, "overlap": 60},
+        roots, "stale-state", prev=1)
+    identity = note.vkey("order-log", b"\x01" + bytes(31))
+    add("policy-log-identity", "policy", {"text": f"log {identity}\nquorum none\n"},
+        roots, "decode")
+    return b.items

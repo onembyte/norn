@@ -14,8 +14,9 @@ import (
 // with different codes, which §7 and §12.1 denied. L3: a bundle proves an entry
 // is in the log, not that replay accepted it. L4: an empty label value is
 // accepted by both implementations and was nowhere stated. L5: the first-space
-// argument predates D-077's name rule. Keep each correction; refuse the old
-// words.
+// argument predates D-077's name rule. D1: §12.1 listed an invalid point on a
+// policy's `log` line as unvectored, and row 6.5l-xiii-c's `log-order/` holds
+// it. Keep each correction; refuse the old words.
 func TestRunFifteensProseFindingsAreFixed(t *testing.T) {
 	doc := load(t)
 	norm := func(s string) string { return strings.Join(strings.Fields(s), " ") }
@@ -43,6 +44,9 @@ func TestRunFifteensProseFindingsAreFixed(t *testing.T) {
 		{"L5 the first space", "7",
 			"A reader that split at the *last* space would refuse the same lines, as `note`",
 			"which §10 ignores rather than refuses"},
+		{"D1 the policy log line's point is vectored", "12.1",
+			"A policy's optional `log` line carries the same point check, and `log-order/15-policy-log-identity` holds it",
+			"an invalid point on that line is not a separate distributed vector"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			s, ok := doc.Section(c.section)
