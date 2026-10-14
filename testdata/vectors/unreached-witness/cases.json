@@ -1,0 +1,31 @@
+{
+  "cases": [
+    {
+      "file": "honest.checkpoint",
+      "name": "honest-head",
+      "says": "all three listed witnesses verify and pi and vps alone meet the quorum"
+    },
+    {
+      "file": "forged-friend.checkpoint",
+      "name": "forged-friend",
+      "says": "friend is listed but outside the quorum; its matching line does not verify"
+    }
+  ],
+  "codes": {
+    "forged-friend": "cosignature",
+    "honest-head": "accept"
+  },
+  "comment": "Serve each checkpoint over served's honest tiles under this directory's trust.cbor. The policy lists pi, vps and friend, but its quorum is 2 of pi and vps alone. Counting is not checking (SPEC 9.1, 10.1).",
+  "rules": {
+    "forged-friend": {
+      "says": "a cosignature line whose name **and** key id match a listed witness does not verify",
+      "section": "10.1"
+    },
+    "honest-head": {
+      "says": "MUST parse, and MUST name **exactly** the witnesses `witnesses` lists",
+      "section": "9.1"
+    }
+  },
+  "serve_over": "served",
+  "trust": "trust.cbor"
+}

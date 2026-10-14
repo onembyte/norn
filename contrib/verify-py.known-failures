@@ -6,3 +6,9 @@
 # added after the seal that this build cannot answer is recorded here, one
 # harness line each, as a debt the next cold build clears — never by editing
 # the verifier, which is kept exactly as written (PROVENANCE.md).
+
+# Row 6.5l-xiii-c (2026-10-14): a checkpoint served over `served/` under the
+# directory's own trust file, a shape this build never saw. Named outside
+# `served-*`, since this build's harness raises on a `served-*` shape it does
+# not know and then runs nothing after it.
+unreached-witness/cases.json#unhandled expected="handled" got="UNKNOWN CASE FORMAT"

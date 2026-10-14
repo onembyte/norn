@@ -43,7 +43,8 @@
     "41-signature-name-nbsp",
     "42-signature-name-plus",
     "43-signature-name-nul",
-    "44-carriage-return-in-signed-text"
+    "44-carriage-return-in-signed-text",
+    "45-blank-line-between-signatures"
   ],
   "codes": {
     "01-unsigned": "note",
@@ -89,7 +90,8 @@
     "41-signature-name-nbsp": "note",
     "42-signature-name-plus": "note",
     "43-signature-name-nul": "note",
-    "44-carriage-return-in-signed-text": "note"
+    "44-carriage-return-in-signed-text": "note",
+    "45-blank-line-between-signatures": "note"
   },
   "comment": "each file is served in place of served/checkpoint, over the honest tiles, under trust.cbor; every one MUST be refused, with the SPEC §10.1 code `codes` names for it. `signature_blind_accepts` lists the ones whose only defect is a signature that does not verify: a reader that never calls Ed25519 accepts exactly those, and nothing else here",
   "reasons": {
@@ -136,7 +138,8 @@
     "41-signature-name-nbsp": "an otherwise honest head with a malformed stranger name",
     "42-signature-name-plus": "an otherwise honest head with a malformed stranger name",
     "43-signature-name-nul": "an otherwise honest head with a malformed stranger name",
-    "44-carriage-return-in-signed-text": "the honest body with one CR before the root line's LF, signed and cosigned over those exact bytes"
+    "44-carriage-return-in-signed-text": "the honest body with one CR before the root line's LF, signed and cosigned over those exact bytes",
+    "45-blank-line-between-signatures": "one empty line between the honest head's first two signature lines"
   },
   "rules": {
     "01-unsigned": {
@@ -313,6 +316,10 @@
     },
     "44-carriage-return-in-signed-text": {
       "says": "MUST NOT contain an ASCII control character below U+0020",
+      "section": "7"
+    },
+    "45-blank-line-between-signatures": {
+      "says": "every line after it belongs to the signature block",
       "section": "7"
     }
   },
