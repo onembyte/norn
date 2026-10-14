@@ -433,6 +433,7 @@ func onlyFile(t *testing.T, root string) string {
 // `log-signature`.
 
 func TestEveryBadCheckpointIsRefusedWithItsCode(t *testing.T) {
+	checkBlankFirstLineCheckpoint(t)
 	checkRunFourteenCheckpointPairs(t)
 	var manifest struct {
 		Cases []string                `json:"cases"`

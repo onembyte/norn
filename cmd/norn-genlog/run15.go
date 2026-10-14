@@ -1,4 +1,4 @@
-// These vectors pin run 15's first blank separator and listed witness checks.
+// These vectors pin run 15's blank-line framing and listed witness checks.
 package main
 
 import (
@@ -24,6 +24,16 @@ func writeRunFifteen(root, signed string) error {
 		return err
 	}
 	if err := extendRunFourteenManifest(root, "checkpoints-bad", []map[string]string{{"name": name, "says": "one empty line between the honest head's first two signature lines"}}, map[string]string{name: "note"}, map[string]map[string]string{name: {"section": "7", "says": "every line after it belongs to the signature block"}}, true); err != nil {
+		return err
+	}
+
+	// D-078 requires at least one text line. Prepending only one LF leaves
+	// every honest byte intact, so removing it restores the accepted head.
+	const blankFirst = "46-blank-first-line"
+	if err := os.WriteFile(filepath.Join(root, "checkpoints-bad", blankFirst+".checkpoint"), []byte("\n"+signed), 0o644); err != nil {
+		return err
+	}
+	if err := extendRunFourteenManifest(root, "checkpoints-bad", []map[string]string{{"name": blankFirst, "says": "one line feed before the honest head's text makes its first line blank"}}, map[string]string{blankFirst: "note"}, map[string]map[string]string{blankFirst: {"section": "7", "says": "a note whose first line is blank has an empty first text line"}}, true); err != nil {
 		return err
 	}
 
