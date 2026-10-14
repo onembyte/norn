@@ -312,6 +312,11 @@ func TestSignRefusals(t *testing.T) {
 			if stdout != "" {
 				t.Errorf("a refused run wrote an entry to stdout")
 			}
+			// §16.1 (D-078): a request for another network is refused before
+			// it is shown, so nobody is asked to approve it.
+			if c.why == "another network's request" && strings.Contains(stderr, "ENROLL ENTRY") {
+				t.Errorf("the request for another network was shown before it was refused:\n%s", stderr)
+			}
 		})
 	}
 }

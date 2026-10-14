@@ -563,7 +563,9 @@ vectors that carry the weight are `log/99-bad-precedence-decode-before-unknown-t
 (step 3 before step 4), `log/100-bad-precedence-decode-before-after` (step 3
 before step 6 — a reader that decodes leniently, reads `after` and applies the
 envelope schema afterwards answers `after` where this document says `decode`),
-`log/101-bad-precedence-after-before-threshold` (step 6 before step 7),
+`log/101-bad-precedence-after-before-threshold` (step 6 before step 7, for a
+`note`; `log-order/08-signer-add-after-before-threshold` holds the same pair
+for a governance entry),
 `log/102-bad-precedence-threshold-before-dup-id` and
 `log/103-bad-precedence-threshold-before-dup-wg` (step 7 before step 8). An
 ordering with no such vector is still normative, merely untested: an
@@ -2392,7 +2394,11 @@ deliberately out of scope for v0.
 
 A consumer MUST validate structure **and** verify `sig` before showing a request
 to a human — *what you sign is what you see*, and a request displayed before its
-signature is checked is a request an attacker chooses the text of.
+signature is checked is a request an attacker chooses the text of. A consumer
+MUST also refuse a request whose `net` is not the network it serves, before
+showing it (D-078): the `enroll` that carried it would be refused as `decode`
+(§5.1), so a human shown it would be asked to approve something that cannot
+take effect here (cold gate run 15, L7).
 
 ### 16.2 Text form (normative)
 
