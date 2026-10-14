@@ -35,6 +35,16 @@ func TestTheDuplicateRuleDecisionIsRecorded(t *testing.T) {
 	if !strings.Contains(decisions[start:end], "D-078") {
 		t.Error("DECISIONS.md D-070 does not say which part of it D-078 supersedes")
 	}
+	// D-078 said the log's content index already held accepted content only.
+	// It indexed every stored entry at startup; row 6.5l-xiii-e-b made it true
+	// and corrected the sentence.
+	d078 := decisions[strings.Index(decisions, "## D-078"):]
+	if strings.Contains(d078, "its content index already holds accepted content only") {
+		t.Error("DECISIONS.md D-078 still says norn-log's content index already held accepted content only")
+	}
+	if !strings.Contains(d078, "indexes only the content its held fold applied") {
+		t.Error("DECISIONS.md D-078 does not say what norn-log's content index holds")
+	}
 	for _, c := range []struct{ file, want, stale string }{
 		{"HARDENING-PLAN.md", "D-078 (taken 2026-10-14", ""},
 		{"THREAT-MODEL.md", "**Harmless** since 6.5l-xiii-e-a (D-078", "Open until 6.5l-xiii-e lands"},

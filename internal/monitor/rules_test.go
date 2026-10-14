@@ -215,7 +215,7 @@ func firstOf(alert Alert, _ bool) Alert { return alert }
 // applies it again -- a revoked device may be back. Nothing in the log says
 // so except the monitor.
 func TestARepeatedSignedContentIsCritical(t *testing.T) {
-	alert, ok := Default().RepeatedEntry(89, 70, "enroll")
+	alert, ok := Default().RepeatedEntry(89, 70, "enroll", false)
 	if !ok {
 		t.Fatal("no alert")
 	}

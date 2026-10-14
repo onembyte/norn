@@ -92,6 +92,14 @@ func theLog(t *testing.T) (*Server, *httptest.Server, replay.Anchor, string) {
 // seededServer uses the fixture without a listener, so write-side tests need no sockets.
 func seededServer(t *testing.T, opts ...Option) (*Server, replay.Anchor, string) {
 	t.Helper()
+	return seededServerWith(t, nil, opts...)
+}
+
+// seededServerWith is seededServer over a stored history that goes on past the
+// fixture with extra, appended to the store before the server starts -- the
+// shape of a log restarted over entries it did not admit itself.
+func seededServerWith(t *testing.T, extra [][]byte, opts ...Option) (*Server, replay.Anchor, string) {
+	t.Helper()
 	raw, err := os.ReadFile(filepath.Join(vectorRoot(), "log", "manifest.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -136,6 +144,11 @@ func seededServer(t *testing.T, opts ...Option) (*Server, replay.Anchor, string)
 		if err != nil {
 			t.Fatal(err)
 		}
+		if _, err := store.Append(b); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, b := range extra {
 		if _, err := store.Append(b); err != nil {
 			t.Fatal(err)
 		}
@@ -487,4 +500,48 @@ func TestAReSignedCopyOfAnEntryIsRefusedNamingTheOriginal(t *testing.T) {
 		t.Errorf("the refusal should name the index that already holds this signed "+
 			"content: %q", body)
 	}
+}
+
+// D-078 (1) at the log's door. A log restarted over a history that holds a
+// refused copy of an entry -- the printer's revoke with its signatures
+// stripped, which replay refuses as `threshold` -- must still admit the genuine
+// entry: the copy was never applied, so replay judges the genuine one on its
+// own and applies it. Indexing the refused copy's content would refuse the
+// revocation here, at the log's own door, for every submitter.
+func TestARefusedCopyInTheLogDoesNotBlockTheGenuineEntry(t *testing.T) {
+	plain, anchor, _ := seededServer(t)
+	before := plain.fold.State()
+	genuine := &entry.Envelope{V: 1, T: "revoke", Net: anchor.Net, TS: 1790000000,
+		Prev: before.Previous("revoke", "printer"), Body: map[string]any{"device_id": "printer"}}
+	for _, name := range []string{"signer1", "signer2", "signer3"} {
+		key := fixtureSeed(t, name)
+		if _, ok := before.Signers[entry.Kid(key.Public().(ed25519.PublicKey))]; ok {
+			if err := entry.Sign(genuine, key, "signer"); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	stripped := *genuine
+	stripped.Sigs = nil
+	strippedRaw, err := entry.Encode(&stripped)
+	if err != nil {
+		t.Fatal(err)
+	}
+	genuineRaw, err := entry.Encode(genuine)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	server, _, _ := seededServerWith(t, [][]byte{strippedRaw})
+	held := server.fold.State()
+	if last := held.Rejected[len(held.Rejected)-1]; last.Index != uint64(held.Size-1) || last.Reason != "threshold" {
+		t.Fatalf("the stored stripped copy should be refused as threshold: %+v", last)
+	}
+	if w := submit(server, genuineRaw); w.Code != http.StatusOK {
+		t.Fatalf("the genuine revoke after its refused copy was answered %d: %s", w.Code, w.Body)
+	}
+	if server.fold.State().Devices["printer"].Status != state.StatusRevoked {
+		t.Fatal("the log's own fold did not revoke the printer")
+	}
+	sameFoldAsStore(t, server)
 }

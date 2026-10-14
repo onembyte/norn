@@ -248,7 +248,8 @@ func (w *Watcher) readLog(result *logclient.Result) []Alert {
 			case !seen:
 				w.preimages[string(sum[:])] = index
 			case !w.exact[hash]:
-				if alert, ok := w.rules.RepeatedEntry(index, first, env.T); ok {
+				_, firstRefused := rejected[first]
+				if alert, ok := w.rules.RepeatedEntry(index, first, env.T, firstRefused); ok {
 					alerts = append(alerts, alert)
 				}
 			}

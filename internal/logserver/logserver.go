@@ -92,8 +92,12 @@ func New(store *tlogstore.Store, dir, origin string, key ed25519.PrivateKey,
 	}
 	s.fold = replay.New(anchor)
 	s.apply(s.fold, entries...)
+	refused := map[int64]bool{}
+	for _, r := range s.fold.State().Rejected {
+		refused[int64(r.Index)] = true
+	}
 	for index, raw := range entries {
-		s.remember(raw, int64(index))
+		s.remember(raw, int64(index), !refused[int64(index)])
 	}
 	return s, nil
 }
@@ -170,13 +174,15 @@ func (s *Server) add(raw []byte) (receipt string, status int, err error) {
 		return text, http.StatusOK, err
 	}
 
-	// A different entry with the same signed content is not a resubmission:
-	// it is a re-signed copy, and a verifier that keys duplicates on bytes
-	// applies it again -- SEC-001, settled by D-070 as `dup-entry` on the
-	// signed content. The log refuses it by name whether the original was
-	// accepted or rejected, so the only way to re-apply an entry is to sign a
-	// new one. This is the log's own door; a verifier must not rely on it
-	// (§6), which is why D-070 changes replay as well.
+	// A different entry with the same signed content as an applied one is not
+	// a resubmission: it is a re-signed copy, and a verifier that keys
+	// duplicates on bytes applies it again -- SEC-001, settled by D-070 as
+	// `dup-entry` on the signed content. The log refuses it by name, so the
+	// only way to re-apply an entry is to sign a new one. A refused entry's
+	// content is not indexed: replay judges the genuine entry after a stripped
+	// copy on its own (D-078), and so does this door. It is the log's own; a
+	// verifier must not rely on it (§6), which is why D-070 and D-078 change
+	// replay as well.
 	if index, found, err := s.preimageIndexOf(env); err != nil {
 		return "", http.StatusInternalServerError, err
 	} else if found {
@@ -186,7 +192,7 @@ func (s *Server) add(raw []byte) (receipt string, status int, err error) {
 	}
 
 	// The courtesy check (§6) folds only the candidate. Clone carries the
-	// seen set as well as the state, so a refusal leaks neither into the log.
+	// seen sets as well as the state, so a refusal leaks neither into the log.
 	candidate := s.fold.Clone()
 	st := s.apply(candidate, raw)
 	index := s.store.Size()
@@ -204,13 +210,13 @@ func (s *Server) add(raw []byte) (receipt string, status int, err error) {
 		// either way, stop writing until reopening repairs the store.
 		if stored, readErr := s.store.Entry(index); readErr == nil && bytes.Equal(stored, raw) {
 			s.fold = candidate
-			s.remember(raw, index)
+			s.remember(raw, index, true)
 		}
 		s.storeErr = fmt.Errorf("logserver: append failed; reopen the store before writing again: %w", err)
 		return "", http.StatusInternalServerError, s.storeErr
 	}
 	s.fold = candidate
-	s.remember(raw, index)
+	s.remember(raw, index, true)
 	text, err := s.receiptFor(raw)
 	return text, http.StatusOK, err
 }
@@ -254,8 +260,8 @@ func (s *Server) indexOf(raw []byte) (int64, bool, error) {
 	return index, found, nil
 }
 
-// preimageIndexOf finds the first stored entry with the same signed content,
-// regardless of its signature list, including content rejected by replay.
+// preimageIndexOf finds the first applied entry with the same signed content,
+// regardless of its signature list.
 func (s *Server) preimageIndexOf(env *entry.Envelope) (int64, bool, error) {
 	preimage, err := entry.Preimage(env)
 	if err != nil {
@@ -267,10 +273,15 @@ func (s *Server) preimageIndexOf(env *entry.Envelope) (int64, bool, error) {
 
 // remember builds the duplicate indexes at startup and after an append. The
 // first occurrence wins, so a refusal still names the original log index.
-func (s *Server) remember(raw []byte, index int64) {
+// Every stored entry's bytes are indexed; its signed content only when the
+// held fold applied it (D-078).
+func (s *Server) remember(raw []byte, index int64, applied bool) {
 	hash := string(entry.EntryHash(raw))
 	if _, found := s.byEntry[hash]; !found {
 		s.byEntry[hash] = index
+	}
+	if !applied {
+		return
 	}
 	env, err := entry.Decode(raw)
 	if err != nil {

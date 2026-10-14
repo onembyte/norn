@@ -1246,9 +1246,15 @@ delay of an entry its own authors signed — §4.4's stated residual — and no
 refusal code flips to acceptance at an unchanged version except by the
 signers' own later acts. The six D-070 copy vectors are copies of accepted
 entries and stand; `bad-repeat-of-rejected`, `-undecodable` and `-genesis` are
-byte repeats and stand. `norn-log` never stores an entry its replay refuses,
-so its content index already holds accepted content only; the monitor's
-repeated-content alarm stays and now reports an attempt.
+byte repeats and stand. `norn-log` indexes only the content its held fold
+applied, so its door refuses a copy of an applied entry and admits the genuine
+entry after a refused copy; the monitor's repeated-content alarm stays, and
+reports an attempt when the first appearance was refused. *Corrected
+2026-10-14, row 6.5l-xiii-e-b:* this paragraph first said `norn-log` never
+stores an entry its replay refuses, so that its content index already held
+accepted content only. It indexed every stored entry at startup, refused ones
+included, so a log restarted over a history holding a stripped copy refused
+the genuine entry at its own door; the row changed the index.
 **(2)** §9.1: a policy `<name>` — witness or group — follows §7's key-name
 grammar (one or more bytes `0x21`–`0x7E`, `+` excluded) and is at most 64
 bytes, in a trust file and in a `policy` entry alike. **Why.** The restated

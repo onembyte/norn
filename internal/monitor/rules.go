@@ -183,8 +183,20 @@ func (r Rules) RejectedEntry(index int64, reason, summary string) (Alert, bool) 
 // earlier in the log: a re-signed copy. A verifier that counts duplicates by
 // bytes applies it again, which can bring a revoked device back or roll a
 // policy back (SEC-001, D-070), and nothing but the log's own history shows
-// it. Critical, because the thing it may have undone is a revocation.
-func (r Rules) RepeatedEntry(index, first int64, entryType string) (Alert, bool) {
+// it. When the first appearance was refused -- a copy with its signatures
+// stripped, appended before the genuine entry -- replay judges this one on its
+// own (D-078), and the copy was an attempt to cancel it. Critical either way,
+// because the thing at stake is a revocation.
+func (r Rules) RepeatedEntry(index, first int64, entryType string, firstRefused bool) (Alert, bool) {
+	if firstRefused {
+		return Alert{Rule: "repeated-entry", Level: Critical, Subject: entryType,
+			Message: fmt.Sprintf("the log published entry %d, a %s whose signed content "+
+				"first appeared at entry %d, which replay refused. Entry %d is judged on its "+
+				"own and the refused copy changed nothing (D-078), but under the earlier rule "+
+				"that copy cancelled it: a revocation that never applied. Someone appended "+
+				"this content before it was complete -- the log, or whoever held the draft. "+
+				"Check who submitted entry %d.", index, entryType, first, index, first)}, true
+	}
 	return Alert{Rule: "repeated-entry", Level: Critical, Subject: entryType,
 		Message: fmt.Sprintf("the log published entry %d, a %s whose signed content "+
 			"first appeared at entry %d under a different signature list. A verifier "+
