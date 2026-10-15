@@ -1282,3 +1282,56 @@ split the blank first line into the text. Neither implementation had the
 rule; the row gave it to both.
 Rows: 6.5l-xiii-e (1), 6.5l-xiii-f (2, 3), 6.5l-xiii-g (4), 6.5l-xiii-h (the
 vectors), then run 16.
+
+## D-079 · Cold run 16's three open readings: the keys a carried policy holds, a bundle's `device`, the full tile behind a deleted partial one (2026-10-15)
+The owner's answers of 2026-10-15 to the DECISION 6.5l-xiv-e (`BUILD-LOG.md`,
+"DECISION TAKEN — 6.5l-xiv-e"): **1-A, 2-A, 3-A**, weighed in the session
+before anything was written (global rule 14a); the third was read against
+`c2sp.org/tlog-tiles`' own text, fetched with his leave.
+**(1)** §11.1: the policy that fork evidence carries MUST parse as
+`c2sp.org/tlog-policy`, and every verifier key it carries is a valid point (§3.1),
+else the file is `policy`. §3.1 item 2 names it beside the admission points:
+its keys enter no state, but a policy parses one way everywhere. **Why.** One
+grammar, one parser: D-075 put the point check in the policy parser, and Go
+and the fourth cold build already refuse the file; run 16's M2 was only that
+§3.1's list left it unsaid, so a reader that checks keys where they enter
+state proves the fork while another refuses the file. The cost is nil: the
+field decides nothing (§11.1), and an accuser whose file is refused re-sends
+it with a sound policy. Rejected: syntax only, no point check — a second
+parser mode, a change in both readers that have the layer, and a malformed
+key riding in the one artifact strangers exchange.
+**(2)** §8.1: `device` follows §16.1's `device_id` grammar — a bundle whose
+label is not a `device_id` is malformed, `bundle` (step 1) — and "the
+`device_id` the entry names" is what its embedded request decodes to under
+§16.1 for an `enroll`, and the body's `device_id` for a `rotate` or `revoke`;
+an entry whose request does not decode, or whose body names none, names no
+device, so the bundle is `binding` (step 4). **Why.** A bundle proves
+inclusion, not acceptance (§8.1, run 15's L3), so a log may hold an `enroll`
+whose request does not decode (`log/79`'s uppercase id, `log/81`'s 31-byte
+key), and anyone can wrap it. Run 16 compared the label with the request's
+text and accepted; Go decoded the request and answered `binding`; the fourth
+cold build applied the grammar to the label and answered `bundle`. The two
+sentences give the three readers one answer each: the label's grammar first,
+then the entry's subject. `device` was the one `device_id` in the protocol
+without the grammar. Rejected: Go's reading alone (no grammar on `device`,
+everything `binding`) — a label no device could have refused at step 4 rather
+than step 1, and one field outside the grammar. Rejected: the run's reading
+(accept) — a consumer keying on `device` believes the log holds an enrolment
+no reader will ever apply.
+**(3)** §6 and §10.1: a verifier that cannot fetch `tile/<L>/<N>.p/<W>` MAY
+fetch `tile/<L>/<N>` and use its first W hashes, and likewise
+`tile/entries/<N>` for a missing `tile/entries/<N>.p/<W>`; `unserved` only
+when neither is served. Every hash it uses is still compared with the tree it
+rebuilt (§6), so nothing weakens. **Why.** `c2sp.org/tlog-tiles`, fetched
+2026-10-15: "Logs MUST serve partial tiles corresponding to tree sizes for
+which a checkpoint was produced, but MAY delete any partial tile once the
+corresponding full tile is available", and clients "MAY fetch the full tile in
+parallel as a fallback in case the partial tile is not available anymore".
+`tlogstore` deletes the superseded partial tile (D12), as the format allows,
+and `logclient` fell back for entry bundles and not for hash tiles, so a node
+holding an older head could not check it against a Norn log that had filled
+the tile (run 16's L3); the mirror kept one old generation as a workaround.
+Go's own `sumdb` client falls back the same way. Rejected: exact paths only —
+then `tlogstore` must keep every partial tile for ever, against the format's
+allowance, or older heads stay uncheckable.
+Rows: 6.5l-xiv-f (1, 2), 6.5l-xiv-g (3), 6.5l-xiv-h (the vectors), then run 17.

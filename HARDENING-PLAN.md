@@ -170,6 +170,12 @@ incident that produced it. Read that section before the first firing.
   key is `dup-key`; a note whose first line is blank is `note`; a consumer
   refuses a request for another network. Rows 6.5l-xiii-e to -h;
   `DECISIONS.md` D-078.
+- **D-079 (taken 2026-10-15, the owner's answers to 6.5l-xiv-e): the policy
+  fork evidence carries holds valid points or the file is `policy`; a bundle's
+  `device` follows §16.1's grammar (`bundle`), and an entry whose request does
+  not decode names no device (`binding`); a verifier may use the first W
+  hashes of the full tile where the partial one is gone, as
+  `c2sp.org/tlog-tiles` allows.** Rows 6.5l-xiv-f to -h; `DECISIONS.md` D-079.
 - **D-072 (taken 2026-10-09, the owner's answers):** a proven fork freezes
   authorization at the common prefix both branches agree on and keeps
   enforcing it — the set shrinks, never grows, and fails closed when no split
