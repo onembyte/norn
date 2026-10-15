@@ -48,3 +48,10 @@ log-republish/16-policy-text-at-the-cap.cbor expected="accept" got="stale-state"
 # (as `unreached-witness/` above). Named outside `served-*` for the same reason.
 # The padded proofs are refused by this build as written.
 dropped-witness/cases.json#unhandled expected="handled" got="UNKNOWN CASE FORMAT"
+
+# Row 6.5l-xiv-d, reference half (2026-10-15): `log-rules/`. The build answers
+# every rule as written but one, and that one is D-078 again: it records the
+# content of the refused `revoke` signed by another device, so the same revoke
+# signed by the device itself is dup-entry for it, and the state differs.
+log-rules/04-revoke-nas-by-self.cbor expected="accept" got="dup-entry"
+log-rules/state.json expected=sha256:091cf9a391c41260e48900690fb7f9285295c46719a62faf4d578e805b1235d5 got=sha256:02b15356e1f55a09a93ba1997719ee9916142e52f1f64c91f9aeb45f0e941381

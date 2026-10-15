@@ -35,7 +35,7 @@ OWNED = frozenset({
     "keys.json", "entries", "log", "genesis", "state.json",
     "trust.cbor", "trust.toml", "trust.fingerprint", "trust-bad", "trust-good",
     "receipt.note", "receipt.json", "receipt-bad", "requests", "requests-bad", "policies",
-    "entries-hostile", "proven", "log-empty", "log-admission", "log-cas", "log-edges", "log-order", "log-republish", "genesis-good",
+    "entries-hostile", "proven", "log-empty", "log-admission", "log-cas", "log-edges", "log-order", "log-republish", "log-rules", "genesis-good",
     "receipt-rotated",
 })
 
@@ -167,6 +167,8 @@ def write_proven(out: pathlib.Path, final: Any, entries: list[bytes]) -> None:
     space = "U+0020 is removed from both of its ends and nothing else is."
     canonical = "every group in lowercase hexadecimal (an embedded dotted quad is written as"
     forms = [
+        ("1:0:0:2:3:0:0:4/128", ["1::2:3:0:0:4/128"], "IPv6 address in RFC 5952 form with"),
+        ("10.0.0.1/8, 10.0.0.2/8", ["10.0.0.0/8"], "its prefix, duplicates removed, sorted as text"),
         ("9.0.0.0/8, 10.0.0.0/8", ["10.0.0.0/8", "9.0.0.0/8"], "duplicates removed, sorted as text"),
         ("2001:db8:0:1:1:1:1:1/128", ["2001:db8:0:1:1:1:1:1/128"], "IPv6 address in RFC 5952 form with"),
         ("2001:db8:0:0:1:1:1:1/128", ["2001:db8::1:1:1:1/128"], "IPv6 address in RFC 5952 form with"),
@@ -587,6 +589,48 @@ def write_order_log(out: pathlib.Path) -> None:
         "rules": {name: {"section": section, "says": says} for name, (section, says) in phrases.items()},
     }) + "\n")
     write(out / "log-order" / "state.json", replay.replay(anchor, raw).to_json() + "\n")
+
+
+def write_rules_log(out: pathlib.Path) -> None:
+    """Every outcome cites the deciding sentence on one raw normative line."""
+    items = fixture.rules_log()
+    raw = [it.raw for it in items]
+    anchor = fixture.anchor_for(raw)
+    phrases = [
+        ("5.1", "1. Its `entry_hash` joins §5.1 step 1's first seen set"),
+        ("5.1", "add the device `active`"),
+        ("5.1", "add the device `active`"),
+        ("4.3", "a device key counts only for its own `device_id`"),
+        ("5.1", "authorised by signers, roots **or** the device itself (`threshold`)"),
+        ("4.4", "the object's current version: **present and equal** where the object exists"),
+        ("4.4", "genesis sets every member of `versions` to 0"),
+        ("4.0", "are the only optional keys (§4.4). Omitting any mandatory key is `decode`."),
+        ("4.0", "`v`, `t`, `net`, `ts`, `body` and `sigs` are all **mandatory**"),
+        ("4.0", "values ≤ 256 bytes, the empty value included"),
+        ("9.1", "a `policy` entry (§5.1) has no such correspondence"),
+        ("5.1", "`pk` is not the public key of any witness the policy in force names"),
+        ("5.1", "an entry steps 2 and 3 accept — it decodes per §4.0 and its envelope passes"),
+        ("5.1", "it, and so is a byte copy of any entry."),
+        ("5.1", "`1 ≤ thr ≤ len(set)` (`bad-thr`)"),
+        ("5.1", "`kid` is a root (`unknown-key`) · removing it leaves"),
+        ("5.1", "removing it leaves ≥ `root_thr` roots and ≥ 1 root (`root-invariant`)"),
+        ("5.1", "set the threshold; that version becomes this index"),
+        ("5.1", "remove; `versions.roots` becomes this index"),
+    ]
+    for it in items:
+        write(out / "log-rules" / (it.name + ".cbor"), it.raw)
+        if it.reason:
+            write(out / "log-rules" / (it.name + ".reason"), it.reason + "\n")
+    write(out / "log-rules" / "manifest.json", canonjson.dumps({
+        "anchor": {"net": anchor.net, "genesis_hash": anchor.genesis_hash,
+                   "log_key": anchor.log_key, "policy": anchor.policy},
+        "entries": [{"index": i, "name": it.name, "reason": it.reason or ""}
+                    for i, it in enumerate(items)],
+        "codes": {it.name: it.reason for it in items if it.reason},
+        "rules": {it.name: {"section": section, "says": says}
+                  for it, (section, says) in zip(items, phrases)},
+    }) + "\n")
+    write(out / "log-rules" / "state.json", replay.replay(anchor, raw).to_json() + "\n")
 
 
 def write_republish_log(out: pathlib.Path) -> None:
@@ -1181,6 +1225,7 @@ def main(argv: list[str]) -> int:
     write_cas_log(out)
     write_edges_log(out)
     write_order_log(out)
+    write_rules_log(out)
     write_republish_log(out)
     write_trust(out)
     write_receipt_rotated(out)

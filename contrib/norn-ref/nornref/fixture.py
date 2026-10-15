@@ -2999,3 +2999,45 @@ def republish_log() -> list[LogItem]:
     b.add("17-policy-text-one-past-the-cap", b.build(
         "policy", {"text": text[:-1] + "x\n"}, roots), "decode")
     return b.items
+
+
+def rules_log() -> list[LogItem]:
+    """Run 16's explicit rules and repairs, separate from the served log.
+
+    Paired entries keep their original after floor, so the repair can also be
+    replayed instead of its refusal against exactly the same prefix.
+    """
+    b = _Builder()
+    roots = [("root1", "root"), ("root2", "root")]
+    all_roots = [(key, "root") for key in ROOTS]
+    signer = [("signer1", "signer")]
+    b.add("00-genesis", genesis())
+    enrolled = b.build("enroll", _enroll_body("nas"), signer + [("signer2", "signer")])
+    b.add("01-enroll-nas", enrolled)
+    b.add("02-enroll-laptop", b.build("enroll", _enroll_body("laptop"), signer))
+    revoke = b.build("revoke", {"device_id": "nas"}, [("laptop", "device")])
+    b.add("03-revoke-nas-by-laptop", revoke, "threshold")
+    b.add("04-revoke-nas-by-self", _signed(dict(revoke, sigs=[]), [("nas", "device")]))
+    addition = b.build("signer_add", {"pk": KEYS["signer3"].public}, roots, prev=None)
+    b.add("05-signer-add-without-prev", addition, "stale-state")
+    b.add("06-signer-add-prev-zero", _signed(dict(addition, prev=0, sigs=[]), roots))
+    complete = b.build("note", {"text": "the timestamp is mandatory"}, signer)
+    missing = dict(complete, sigs=[])
+    del missing["ts"]
+    b.add("07-note-without-ts", _signed(missing, signer), "decode")
+    b.add("08-note-with-ts", complete)
+    b.add("09-enroll-empty-label-value", b.build("enroll", _enroll_body("pi-cam", labels={"empty": ""}), signer))
+    text = "log " + note.vkey(ORIGIN, KEYS["logkey3"].public) + "\nquorum none\n"
+    b.add("10-policy-preannounces-log-key", b.build("policy", {"text": text}, roots))
+    b.add("11-log-key-preannounced", b.build("log_key", {"pk": KEYS["logkey3"].public, "overlap": 60}, roots))
+    copied = dict(enrolled, sigs=list(reversed(enrolled["sigs"])))
+    b.add("12-copy-enroll-unsorted-sigs", copied, "decode")
+    b.add("13-copy-enroll-sorted-sigs", enrolled, "dup-entry")
+    b.add("14-root-threshold-full", b.build("root_thr", {"thr": 3}, roots))
+    removal = b.build("root_remove", {"kid": KEYS["spare"].id}, all_roots)
+    b.add("15-root-remove-unknown-before-invariant", removal, "unknown-key")
+    known = dict(removal, body={"kid": KEYS["root3"].id}, sigs=[])
+    b.add("16-root-remove-known-at-full-threshold", _signed(known, all_roots), "root-invariant")
+    b.add("17-root-threshold-repaired", b.build("root_thr", {"thr": 2}, all_roots))
+    b.add("18-root-remove-known", b.build("root_remove", {"kid": KEYS["root3"].id}, all_roots))
+    return b.items
