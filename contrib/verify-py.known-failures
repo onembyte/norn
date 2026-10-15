@@ -12,3 +12,24 @@
 # `served-*`, since this build's harness raises on a `served-*` shape it does
 # not know and then runs nothing after it.
 unreached-witness/cases.json#unhandled expected="handled" got="UNKNOWN CASE FORMAT"
+
+# Row 6.5l-xiii-h (2026-10-14): D-078, which this build predates. It keeps D-070's
+# one seen set, so a refused copy still burns the genuine entry; it takes any
+# non-space policy name; and it appends a re-published active log key, so the
+# entries after it are stale-state. Each line is the build reading a rule it
+# was never given, not a defect in it.
+log-republish/03-revoke-genuine.cbor expected="accept" got="dup-entry"
+log-republish/05-note-genuine.cbor expected="accept" got="dup-entry"
+log-republish/08-log-key-anchor.cbor expected="dup-key" got="accept"
+log-republish/08-log-key-anchor.cbor#manifest-code expected="dup-key" got="accept"
+log-republish/09-log-key-new.cbor expected="accept" got="stale-state"
+log-republish/10-log-key-learned.cbor expected="dup-key" got="stale-state"
+log-republish/10-log-key-learned.cbor#manifest-code expected="dup-key" got="stale-state"
+log-republish/11-policy-name-not-ascii.cbor expected="decode" got="accept"
+log-republish/11-policy-name-not-ascii.cbor#manifest-code expected="decode" got="accept"
+log-republish/12-policy-name-ascii.cbor expected="accept" got="stale-state"
+log-republish/state.json expected=sha256:ba10d21fe9609539f3fb91a2ec4ae2e061b45205d60ecf18ed2e4d5bc2d1de31 got=sha256:d1759d9b15e219aa10be659847b37bda7592d3610db174b6cbf0ed32162cc84b
+policies/bad-group-name-plus.txt expected=false got=true
+policies/bad-witness-name-not-ascii.txt expected=false got=true
+policies/bad-witness-name-one-past-the-cap.txt expected=false got=true
+trust-bad/54-witness-name-not-ascii.cbor expected=false got=true

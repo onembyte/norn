@@ -1371,7 +1371,7 @@ func TestEveryNegativeDeclaresTheSectionThatStatesItsRule(t *testing.T) {
 	for _, dir := range []string{
 		"checkpoints-bad", "proofs-bad", "served-bad", "fork",
 		"entries-hostile", "policies", "genesis", "trust-bad", "receipt-bad", "requests-bad",
-		"served-genesis", "log-cas", "log-edges", "log-order", "served-large-bad", "served-empty-entry",
+		"served-genesis", "log-cas", "log-edges", "log-order", "log-republish", "served-large-bad", "served-empty-entry",
 		"served-rotated-wrong-name", "served-rotated-earlier", "unreached-witness",
 	} {
 		t.Run(dir, func(t *testing.T) {
@@ -1387,7 +1387,7 @@ func TestEveryNegativeDeclaresTheSectionThatStatesItsRule(t *testing.T) {
 				} `json:"rules"`
 			}
 			file := "cases.json"
-			if dir == "log-cas" || dir == "log-edges" || dir == "log-order" {
+			if dir == "log-cas" || dir == "log-edges" || dir == "log-order" || dir == "log-republish" {
 				file = "manifest.json"
 			}
 			readJSON(t, filepath.Join(root, dir, file), &manifest)
@@ -1417,7 +1417,7 @@ func TestEveryNegativeDeclaresTheSectionThatStatesItsRule(t *testing.T) {
 			// others. A failed unmarshal into []string leaves the slice
 			// populated with empties, so the fallback starts from nil.
 			var names []string
-			if dir == "log-cas" || dir == "log-edges" || dir == "log-order" {
+			if dir == "log-cas" || dir == "log-edges" || dir == "log-order" || dir == "log-republish" {
 				for _, e := range manifest.Entries {
 					if e.Reason != "" {
 						names = append(names, e.Name)

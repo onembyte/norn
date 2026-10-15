@@ -35,7 +35,7 @@ OWNED = frozenset({
     "keys.json", "entries", "log", "genesis", "state.json",
     "trust.cbor", "trust.toml", "trust.fingerprint", "trust-bad", "trust-good",
     "receipt.note", "receipt.json", "receipt-bad", "requests", "requests-bad", "policies",
-    "entries-hostile", "proven", "log-empty", "log-admission", "log-cas", "log-edges", "log-order", "genesis-good",
+    "entries-hostile", "proven", "log-empty", "log-admission", "log-cas", "log-edges", "log-order", "log-republish", "genesis-good",
     "receipt-rotated",
 })
 
@@ -411,6 +411,7 @@ def write_trust_rejections(out: pathlib.Path) -> None:
     mode = {"section": "9.1", "says": "`mode` MUST be"}
     size = {"section": "9.1", "says": "MAX_TRUST_BYTES"}
     trust_rules = {
+        "54-witness-name-not-ascii": {"section": "9.1", "says": "A witness or group name follows §7's key-name grammar"},
         "52-name-one-past-the-cap": name,
         "53-log-cosignature-without-policy-log": logkey,
         "51-witness-key-is-log-key": {"section":"9.1", "says":"no witness `key`'s public key equals `log_key`'s"},
@@ -585,6 +586,42 @@ def write_order_log(out: pathlib.Path) -> None:
         "rules": {name: {"section": section, "says": says} for name, (section, says) in phrases.items()},
     }) + "\n")
     write(out / "log-order" / "state.json", replay.replay(anchor, raw).to_json() + "\n")
+
+
+def write_republish_log(out: pathlib.Path) -> None:
+    """The expected codes are §5.1's rules, never replay-derived answers."""
+    items = fixture.republish_log()
+    raw = [it.raw for it in items]
+    anchor = fixture.anchor_for(raw)
+    phrases = [
+        ("5.1", "Entry 0"),
+        ("5.1", "add the device `active`"),
+        ("5.1", "authorised by signers, roots **or** the device itself (`threshold`)"),
+        ("5.1", "genuine entry, is refused, and the genuine entry is judged on its own"),
+        ("5.1", "2. Decode per §4.0 → on failure reject (`decode`)."),
+        ("5.1", "why the two kinds of key stay apart (H1)."),
+        ("5.1", "other signature list is `dup-entry` here, before any later rule can judge"),
+        ("5.1", "it, and so is a byte copy of any entry. But a **refused** entry burns"),
+        ("5.1", "`pk` is not an active log key — `anchor.log_key` or any `pk` in `log_keys`"),
+        ("5.1", "**append** `{pk, overlap, since_index}` to `log_keys`"),
+        ("5.1", "`pk` is not an active log key — `anchor.log_key` or any `pk` in `log_keys`"),
+        ("9.1", "A witness or group name follows §7's key-name grammar"),
+        ("5.1", "replace `policy`; `versions.policy` becomes this index"),
+    ]
+    for it in items:
+        write(out / "log-republish" / (it.name + ".cbor"), it.raw)
+        if it.reason:
+            write(out / "log-republish" / (it.name + ".reason"), it.reason + "\n")
+    write(out / "log-republish" / "manifest.json", canonjson.dumps({
+        "anchor": {"net": anchor.net, "genesis_hash": anchor.genesis_hash,
+                   "log_key": anchor.log_key, "policy": anchor.policy},
+        "entries": [{"index": i, "name": it.name, "reason": it.reason or ""}
+                    for i, it in enumerate(items)],
+        "codes": {it.name: it.reason for it in items if it.reason},
+        "rules": {it.name: {"section": section, "says": says}
+                  for it, (section, says) in zip(items, phrases)},
+    }) + "\n")
+    write(out / "log-republish" / "state.json", replay.replay(anchor, raw).to_json() + "\n")
 
 
 def write_trust_acceptances(out: pathlib.Path) -> None:
@@ -829,6 +866,10 @@ def write_policies(out: pathlib.Path) -> None:
         cases.append(case)
     grammar = {"section": "9.1", "says": "The rest of the grammar, stated because"}
     policy_rules = {name: dict(grammar) for name, _, _, _ in fixture.policy_grammar()}
+    for name in ("bad-witness-name-not-ascii", "bad-group-name-plus",
+                 "bad-witness-name-one-past-the-cap", "witness-name-at-the-cap"):
+        policy_rules[name] = {
+            "section": "9.1", "says": "A witness or group name follows §7's key-name grammar — one or more bytes `0x21`–`0x7E`, `+` excluded — and is at most 64 bytes"}
     policy_rules["bad-quorum-undefined"] = {
         "section": "9.1", "says": "it names a witness, a group, or the reserved name `none`"}
     policy_rules["bad-two-quorums"] = {
@@ -1134,6 +1175,7 @@ def main(argv: list[str]) -> int:
     write_cas_log(out)
     write_edges_log(out)
     write_order_log(out)
+    write_republish_log(out)
     write_trust(out)
     write_receipt_rotated(out)
     write_policies(out)

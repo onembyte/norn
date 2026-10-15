@@ -1387,6 +1387,18 @@ def policy_grammar() -> list[tuple[str, str, bool, str]]:
     bad_witness_id = _witness_vkey_with_wrong_id("pi")
 
     return [
+        ("bad-witness-name-not-ascii",
+         f"witness zürich {witness_vkey('pi')}\nquorum zürich\n", False,
+         "a witness or group name follows the key-name grammar"),
+        ("bad-group-name-plus",
+         f"{pi}\ngroup a+b any pi\nquorum a+b\n", False,
+         "a name excludes '+'"),
+        ("bad-witness-name-one-past-the-cap",
+         f"witness {'a' * 65} {witness_vkey('pi')}\nquorum {'a' * 65}\n", False,
+         "a name is at most 64 bytes"),
+        ("witness-name-at-the-cap",
+         f"witness {'a' * 64} {witness_vkey('pi')}\nquorum {'a' * 64}\n", True,
+         "the inclusive 64-byte name cap accepts"),
         ("minimal", f"{log}\n{pi}\nquorum pi\n", True,
          "one log, one witness, one quorum"),
         ("bad-final-comment-no-lf", f"{log}\n{pi}\nquorum pi\n# note", False,
@@ -1661,6 +1673,10 @@ def trust_rejections() -> list[tuple[str, dict[str, Any]]]:
                       policy=f"witness w {reuse}\nquorum w\n")
     return [("51-witness-key-is-log-key", reused_log),
         ("52-name-one-past-the-cap", damaged(name="n" * 65)),
+        ("54-witness-name-not-ascii", damaged(
+            witnesses=[dict(base["witnesses"][0], name="zürich")]
+            + [dict(w) for w in base["witnesses"][1:]],
+            policy=base["policy"].replace("witness pi ", "witness zürich ").replace(" pi ", " zürich "))),
         ("53-log-cosignature-without-policy-log", damaged(
             log_key=note.vkey(ORIGIN, KEYS["logkey"].public, note.ALG_COSIGNATURE),
             policy="".join(line for line in base["policy"].splitlines(keepends=True)
@@ -2925,4 +2941,36 @@ def order_log() -> list[LogItem]:
     identity = note.vkey("order-log", b"\x01" + bytes(31))
     add("policy-log-identity", "policy", {"text": f"log {identity}\nquorum none\n"},
         roots, "decode")
+    return b.items
+
+
+def republish_log() -> list[LogItem]:
+    """D-078's refused copies, separate hash domains, keys and policy names."""
+    b = _Builder()
+    roots = [("root1", "root"), ("root2", "root")]
+    signer = [("signer1", "signer")]
+    b.add("00-genesis", genesis())
+    b.add("01-enroll-nas", b.build("enroll", _enroll_body("nas"), signer))
+    # Both genuine entries can land one position earlier if the preceding
+    # refused bytes are omitted. Their signed content stays byte-identical.
+    revoke = b.build("revoke", {"device_id": "nas"}, signer)
+    b.add("02-revoke-stripped", dict(revoke, sigs=[]), "threshold")
+    b.add("03-revoke-genuine", revoke)
+    genuine = b.build("note", {"text": "after its own preimage"}, signer)
+    b.add_raw("04-note-preimage", entry.preimage(genuine), "decode")
+    b.add("05-note-genuine", genuine)
+    copied = dict(genuine, sigs=genuine["sigs"] + [
+        {"kid": "ffffffffffffffff", "role": "signer", "sig": bytes(64)}])
+    b.add("06-copy-applied-extra-sig", copied, "dup-entry")
+    b.add_raw("07-copy-refused-bytes", b.items[2].raw, "dup-entry")
+    b.add("08-log-key-anchor", b.build("log_key", {
+        "pk": KEYS["logkey"].public, "overlap": 60}, roots), "dup-key")
+    b.add("09-log-key-new", b.build("log_key", {
+        "pk": KEYS["logkey2"].public, "overlap": 60}, roots))
+    b.add("10-log-key-learned", b.build("log_key", {
+        "pk": KEYS["logkey2"].public, "overlap": 60}, roots), "dup-key")
+    for name, label, reason in (("11-policy-name-not-ascii", "zürich", "decode"),
+                                ("12-policy-name-ascii", "zurich", None)):
+        text = f"witness {label} {witness_vkey('pi')}\nquorum {label}\n"
+        b.add(name, b.build("policy", {"text": text}, roots), reason)
     return b.items
