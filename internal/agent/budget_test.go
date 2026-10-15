@@ -85,24 +85,44 @@ func cycleWithin(t *testing.T, a *Agent, limit time.Duration) error {
 	}
 }
 
+// unstalledCycle times one cycle of the same watchdog with peers that answer
+// everything at once: what this machine spends on the cycle itself -- the log
+// verified and replayed, under the race detector when the gate runs it. The
+// budget tests measure a stall against this rather than against the clock. A
+// fixed two-second bound passed on a quiet machine and failed on the same
+// tree, clean HEAD included, while other work held two cores (row
+// 6.5l-xiv-a2).
+func unstalledCycle(t *testing.T) time.Duration {
+	t.Helper()
+	srv := httptest.NewServer(gossip.Handler(servedLog(t), ""))
+	t.Cleanup(srv.Close)
+	a, _ := budgetedWatchdog(t, []string{srv.URL, srv.URL, srv.URL}, &recorder{})
+	started := time.Now()
+	if err := cycleWithin(t, a, 30*time.Second); err != nil {
+		t.Fatalf("the unstalled cycle failed: %v", err)
+	}
+	return time.Since(started)
+}
+
 // H2-b. After H2-a one silent peer costs one timeout, so r of them cost r
 // timeouts, twice: once for checkpoints and once for evidence. That is still
 // a cycle that does not reconcile for as long as the slowest neighbours
 // decide. A round has one budget; peers it did not reach are peers it did not
 // ask, and the table is reconciled all the same.
 func TestARoundOfSilentPeersCostsOneBudgetNotRTimeouts(t *testing.T) {
+	base := unstalledCycle(t)
 	silent := silentListener(t)
 	rec := &recorder{}
 	a, fake := budgetedWatchdog(t, []string{silent, silent, silent}, rec)
 
 	// Two rounds (the first head's corroboration, then evidence) at 400 ms
-	// each, plus the cycle itself; r × 2 s × 2 would be twelve seconds.
+	// each on top of the cycle itself; r × 2 s × 2 would be twelve seconds.
 	started := time.Now()
-	if err := cycleWithin(t, a, 3*time.Second); err != nil {
+	if err := cycleWithin(t, a, base+3*time.Second); err != nil {
 		t.Fatalf("the cycle failed: %v", err)
 	}
-	if took := time.Since(started); took > 2*time.Second {
-		t.Errorf("the cycle took %s for two 400 ms rounds", took)
+	if extra := time.Since(started) - base; extra > 2*time.Second {
+		t.Errorf("silent peers added %s to a %s cycle; two 400 ms rounds cost 800 ms", extra, base)
 	}
 	peers, _ := fake.Peers()
 	if holds(peers, rogue(t).Key) {
@@ -130,12 +150,13 @@ func TestAnEvidenceRoundHasItsOwnBudget(t *testing.T) {
 	rec := &recorder{}
 	a, fake := budgetedWatchdog(t, []string{srv.URL, srv.URL, srv.URL}, rec)
 
+	base := unstalledCycle(t)
 	started := time.Now()
-	if err := cycleWithin(t, a, 3*time.Second); err != nil {
+	if err := cycleWithin(t, a, base+3*time.Second); err != nil {
 		t.Fatalf("the cycle failed: %v", err)
 	}
-	if took := time.Since(started); took > 2*time.Second {
-		t.Errorf("the cycle took %s with only the evidence round stalling", took)
+	if extra := time.Since(started) - base; extra > 1500*time.Millisecond {
+		t.Errorf("the evidence round alone added %s to a %s cycle; its budget is 400 ms", extra, base)
 	}
 	if rec.kinds()[FirstHeadUncorroborated] != 0 {
 		t.Error("the peers answered for checkpoints; the head was corroborated")
