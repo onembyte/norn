@@ -123,6 +123,8 @@ Let `p = 2²⁵⁵ − 19`, `B` the base point, `L = 2²⁵² +
    `signer_add`, `log_key` or `enroll` entry, a `rotate`'s incoming
    `device_pk`, and every verifier key a `policy` entry's text carries (§5), an
    enrollment request (§16), and a trust file's `log_key` and `witnesses` (§9).
+   The policy that fork evidence carries (§11.1) is parsed the same way, though
+   its keys enter no state: a policy parses one way everywhere (D-079).
    A key that is not is refused as `decode` at its entry type's body step
    (§5.1, §5.2) — for a governance entry that step follows the root quorum, so
    an under-signed one is `threshold` first — and where a request is decoded
@@ -1046,7 +1048,7 @@ why there is no domain prefix here — there is nothing for one to separate.
 | key | type | meaning |
 |---|---|---|
 | `v` | uint | `1` |
-| `device` | text | the `device_id` this bundle proves |
+| `device` | text | the `device_id` this bundle proves, in §2's grammar, as §16.1 requires of a request; a label outside it is `bundle` (D-079) |
 | `index` | uint | the entry's index in the log |
 | `entry` | bytes | the entry itself, so the bundle stands alone |
 | `proof` | array of 32-byte strings | the RFC 6962 §2.1.1 audit path — the inclusion proof — leaf to root, verified per RFC 9162 §2.1.3.2: exactly the hashes that procedure consumes |
@@ -1066,7 +1068,10 @@ That last step is not bookkeeping. The inclusion proof binds the *entry* to the
 log and says nothing about the label beside it, so without it a bundle reading
 `device: "nas"` around another device's entry proves exactly as much as an
 honest one, and a consumer keying on `device` believes something no proof
-established.
+established. The id an `enroll` names is the one its request decodes to under
+§16.1: an entry whose request does not decode, or whose body names no
+`device_id`, names no device, and a bundle around it is `binding` whatever its
+label says (D-079).
 
 The quorum is not optional here, and saying "verify the checkpoint note" was
 not enough. §8 sells a bundle as self-contained, checkable by somebody holding
@@ -1538,10 +1543,10 @@ three of its own, in this order:
 
 | step | code | the refusal |
 |---|---|---|
-| 1 | `bundle` | the bundle does not decode as §8.1's closed map, carries an unknown key, or an unsupported version |
+| 1 | `bundle` | the bundle does not decode as §8.1's closed map, carries an unknown key, an unsupported version, or a `device` outside §2's grammar |
 | 2 | — | the checkpoint, as loop steps 2–7: `note`, `log-signature`, `checkpoint`, `origin`, `cosignature`, `quorum` |
 | 3 | `inclusion` | the index is outside the tree, or the inclusion proof does not chain the entry's leaf hash to the signed root, or the proof carries more or fewer hashes than RFC 9162 §2.1.3.2 consumes |
-| 4 | `binding` | the entry is not about the device the bundle names (§8.1's device↔entry binding) |
+| 4 | `binding` | the entry is not about the device the bundle names, or names none — an `enroll` whose request does not decode (§8.1's device↔entry binding) |
 
 A `says` string in `cases.json` stays a semantic hint (§12). Where a case names
 a code, the code is the contract.
@@ -1613,7 +1618,7 @@ proves a fork exactly as it did, and claims no common prefix.
 | `split_root` | bytes (32) | **version 2.** The root both branches had at `split`. All zero when `split` is 0 |
 | `split_proof_held` | array of bytes (32 each) | **version 2.** RFC 6962 §2.1.2 consistency proof chaining (`split`, `split_root`) to `held`'s signed head. Empty when `split` equals `held`'s size, where the signature says it alone, and empty when `split` is 0 |
 | `split_proof_conflicting` | array of bytes (32 each) | **version 2.** The same proof to `conflicting`'s signed head, with the same two empty cases |
-| `policy` | text | the `tlog-policy` the **accuser** was verifying under, so a reader can see which witnesses were meant to prevent this. **Informational.** It MUST parse as `c2sp.org/tlog-policy` — a closed schema with a stated grammar is part of the format — and a reader MUST NOT verify anything under it. The reader uses **its own** policy: the trust file's, or one it has replayed (§9.4). Verifying under the carried field hands the accuser the quorum rule, and an accuser writing `quorum none` then gets two uncosigned checkpoints accepted as proof of equivocation — which, by §11 rule 4, takes the network down until an operator installs a new trust file. This implementation did exactly that until cold-model gate run 7 |
+| `policy` | text | the `tlog-policy` the **accuser** was verifying under, so a reader can see which witnesses were meant to prevent this. **Informational.** It MUST parse as `c2sp.org/tlog-policy`, every verifier key it carries a valid point (§3.1), else the file is `policy` — a closed schema with a stated grammar is part of the format, and a policy parses one way everywhere (D-079) — and a reader MUST NOT verify anything under it. The reader uses **its own** policy: the trust file's, or one it has replayed (§9.4). Verifying under the carried field hands the accuser the quorum rule, and an accuser writing `quorum none` then gets two uncosigned checkpoints accepted as proof of equivocation — which, by §11 rule 4, takes the network down until an operator installs a new trust file. This implementation did exactly that until cold-model gate run 7 |
 
 A reader MUST, in this order:
 
@@ -1663,7 +1668,7 @@ checks:
 | 1 | `cbor` | the file is not valid deterministic CBOR (§4.0), or is not a map |
 | 2 | `version` | the map's `version` is not `1` or `2` — absent, not a uint, or another number. Checked **before** the key set: a key set is only closed relative to a version, so a reader cannot judge the schema of a version it does not speak, and a file with `version: 3` and a key no version defines is `version`, not `schema` (`fork/bad-version-and-unknown-key`) |
 | 3 | `schema` | the map is not the closed set of exactly seven keys (version 1) or eleven (version 2), or a value has the wrong type — for example, the `size` field is a boolean rather than a uint — which includes a `held_root` or a `proof` hash that is not **exactly 32 bytes**, as the table above types them. A wrong length is a schema fault, checked here, before any checkpoint is read |
-| 4 | `policy` | the carried `policy` is not a well-formed `c2sp.org/tlog-policy`. The field is **informational**, but a closed schema is part of the format |
+| 4 | `policy` | the carried `policy` is not a well-formed `c2sp.org/tlog-policy`, or carries a verifier key that is not a valid point (§3.1). The field is **informational**, but a closed schema is part of the format |
 | 5 | `held` | the held checkpoint fails any §10 check: note framing, log signature, checkpoint body, origin, cosignature, or quorum |
 | 6 | `conflicting` | the conflicting checkpoint fails any §10 check. The held checkpoint is checked first, so a file wrong in both is refused as `held` |
 | 7 | `size` | `size` is above the held checkpoint's own size, or the conflicting checkpoint's size does not equal `size` |

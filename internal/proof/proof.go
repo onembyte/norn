@@ -18,6 +18,7 @@ import (
 	"github.com/onembyte/norn/internal/cosign"
 	"github.com/onembyte/norn/internal/enrollreq"
 	"github.com/onembyte/norn/internal/entry"
+	"github.com/onembyte/norn/internal/fields"
 	"github.com/onembyte/norn/internal/note"
 	"github.com/onembyte/norn/internal/policy"
 	"github.com/onembyte/norn/internal/refusal"
@@ -108,6 +109,12 @@ func decode(raw []byte) (*Bundle, error) {
 	}
 	if b.Device, ok = m["device"].(string); !ok || b.Device == "" {
 		return nil, proofErrorf("device must be a non-empty text string")
+	}
+	// The label follows §2's grammar, as every other device_id does (D-079):
+	// a label no device could have is malformed here, before the entry it
+	// sits beside is looked at.
+	if _, err := fields.DeviceID(b.Device); err != nil {
+		return nil, proofErrorf("device: %v", err)
 	}
 	index, ok := m["index"].(uint64)
 	if !ok {
