@@ -1372,7 +1372,7 @@ func TestEveryNegativeDeclaresTheSectionThatStatesItsRule(t *testing.T) {
 		"checkpoints-bad", "proofs-bad", "served-bad", "fork",
 		"entries-hostile", "policies", "genesis", "trust-bad", "receipt-bad", "requests-bad",
 		"served-genesis", "log-cas", "log-edges", "log-order", "log-republish", "served-large-bad", "served-empty-entry",
-		"served-rotated-wrong-name", "served-rotated-earlier", "unreached-witness",
+		"served-rotated-wrong-name", "served-rotated-earlier", "unreached-witness", "dropped-witness",
 	} {
 		t.Run(dir, func(t *testing.T) {
 			var manifest struct {
@@ -1406,6 +1406,17 @@ func TestEveryNegativeDeclaresTheSectionThatStatesItsRule(t *testing.T) {
 					t.Errorf("%s names §%s and no phrase; a section reference without "+
 						"one cannot show the rule is written there", name, rule.Section)
 					continue
+				}
+				// Run 16's new cases cite one raw normative line, so a
+				// paragraph assembled across line breaks cannot stand in.
+				if dir == "dropped-witness" || strings.Contains(name, "padded-proof") || name == "bad-padded-split-proof" {
+					onLine := false
+					for _, line := range strings.Split(section.Body, "\n") {
+						onLine = onLine || strings.Contains(line, rule.Says)
+					}
+					if !onLine {
+						t.Errorf("%s does not cite one raw line of §%s", name, rule.Section)
+					}
 				}
 				if !strings.Contains(section.Body, rule.Says) {
 					t.Errorf("%s is refused by a rule §%s does not state: %q",
@@ -2922,7 +2933,7 @@ func TestEveryServedAndBundleNegativeCitesTheRuleOfItsCode(t *testing.T) {
 			"log-signature": {"under the log keys the verifier trusts"},
 			"origin":        {"this network's origin"},
 			"quorum":        {"a satisfied witness quorum"},
-			"inclusion":     {"reach that checkpoint's root at `index`"},
+			"inclusion":     {"reach that checkpoint's root at `index`", "the proof carries more or fewer hashes than RFC 9162 §2.1.3.2 consumes"},
 			"binding":       {"`device` is the `device_id` the `entry` names"},
 		},
 		"receipt-bad": {

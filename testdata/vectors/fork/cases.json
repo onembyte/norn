@@ -135,6 +135,14 @@
     {
       "name": "bad-size-zero-empty-held",
       "says": "at size 0"
+    },
+    {
+      "name": "bad-padded-proof",
+      "says": "the proof does not chain"
+    },
+    {
+      "name": "bad-padded-split-proof",
+      "says": "the held split proof does not chain"
     }
   ],
   "codes": {
@@ -149,6 +157,8 @@
     "bad-other-origin": "held",
     "bad-oversize": "oversize",
     "bad-oversize-and-not-cbor": "oversize",
+    "bad-padded-proof": "proof",
+    "bad-padded-split-proof": "proof",
     "bad-policy-says-quorum-none": "held",
     "bad-policy-unparseable": "policy",
     "bad-policy-unparseable-and-foreign-held": "policy",
@@ -217,6 +227,14 @@
     },
     "bad-oversize-and-not-cbor": {
       "says": "the size bound is checked before any parse",
+      "section": "11.1"
+    },
+    "bad-padded-proof": {
+      "says": "the consistency proof does not chain `held_root` at `size` to the held checkpoint's signed head",
+      "section": "11.1"
+    },
+    "bad-padded-split-proof": {
+      "says": "a split proof does not chain `split_root` at `split` to its head",
       "section": "11.1"
     },
     "bad-policy-says-quorum-none": {

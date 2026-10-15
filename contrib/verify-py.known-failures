@@ -42,3 +42,9 @@ trust-bad/54-witness-name-not-ascii.cbor expected=false got=true
 # two-byte booleans were kept out of `entries-hostile/`: this build names every
 # hostile case in its own code, raises on a new one, and then runs nothing after it.
 log-republish/16-policy-text-at-the-cap.cbor expected="accept" got="stale-state"
+
+# Row 6.5l-xiv-c, Go half (2026-10-15): `dropped-witness/`, a head checked by a
+# reader that replayed a `policy` entry, a manifest shape this build never saw
+# (as `unreached-witness/` above). Named outside `served-*` for the same reason.
+# The padded proofs are refused by this build as written.
+dropped-witness/cases.json#unhandled expected="handled" got="UNKNOWN CASE FORMAT"

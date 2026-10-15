@@ -1,0 +1,37 @@
+{
+  "cases": [
+    {
+      "file": "forged-friend.checkpoint",
+      "name": "friend-after-drop",
+      "reader": "informed",
+      "says": "replay both entries on this trust anchor, then ignore friend's line under the replacement policy"
+    },
+    {
+      "file": "forged-friend.checkpoint",
+      "name": "friend-before-replay",
+      "reader": "fresh",
+      "says": "without replay, the trust policy still names friend and its matching signature does not verify"
+    }
+  ],
+  "codes": {
+    "friend-after-drop": "accept",
+    "friend-before-replay": "cosignature"
+  },
+  "comment": "The trust file still lists pi, vps and friend. Replay the fixture genesis and root-signed policy entry in the stated order on that anchor; both apply, and the replacement policy names only pi and vps, requiring both. Serve the same forged head over served's honest tiles to both readers. Only the policy in force differs; the head is not checked retroactively under the policy its own entries publish (SPEC 9.4).",
+  "replay": [
+    "00-genesis.cbor",
+    "01-policy-drops-friend.cbor"
+  ],
+  "rules": {
+    "friend-after-drop": {
+      "says": "listed meaning named by the policy in force (§9.4), not a witness a `policy` entry has dropped that the trust file still lists",
+      "section": "10.1"
+    },
+    "friend-before-replay": {
+      "says": "A node holding only the trust file uses its policy.",
+      "section": "9.4"
+    }
+  },
+  "serve_over": "served",
+  "trust": "trust.cbor"
+}

@@ -59,7 +59,7 @@ vectors:
 # from the Go implementation, because producing a tiled log needs one. Each
 # half is checked against its own generator; neither is checked against itself
 # alone, since upstream libraries validate both.
-GO_VECTOR_DIRS := unreached-witness served-empty-entry served-large-bad served-rotated-wrong-name served-rotated-earlier served served-large proofs fork checkpoints-bad proofs-bad served-bad served-rotated served-superseded served-twice-cosigned served-extra-witness served-name-collision served-unknown-algorithm served-stranger-name detect served-genesis proofs-rotated
+GO_VECTOR_DIRS := dropped-witness unreached-witness served-empty-entry served-large-bad served-rotated-wrong-name served-rotated-earlier served served-large proofs fork checkpoints-bad proofs-bad served-bad served-rotated served-superseded served-twice-cosigned served-extra-witness served-name-collision served-unknown-algorithm served-stranger-name detect served-genesis proofs-rotated
 
 # Vectors neither of Norn's implementations produces. `anchors` holds a `.ots`
 # written by python-opentimestamps, and regenerating it would defeat the point
