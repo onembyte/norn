@@ -12,8 +12,8 @@ import (
 
 // These answers come from §5.1 and §5.2, independently of the manifest.
 func TestEveryRepublishCaseMatchesAndRepairsItsNamedFault(t *testing.T) {
-	names := []string{"00-genesis", "01-enroll-nas", "02-revoke-stripped", "03-revoke-genuine", "04-note-preimage", "05-note-genuine", "06-copy-applied-extra-sig", "07-copy-refused-bytes", "08-log-key-anchor", "09-log-key-new", "10-log-key-learned", "11-policy-name-not-ascii", "12-policy-name-ascii"}
-	codes := []string{"", "", ReasonThreshold, "", ReasonDecode, "", ReasonDupEntry, ReasonDupEntry, ReasonDupKey, "", ReasonDupKey, ReasonDecode, ""}
+	names := []string{"00-genesis", "01-enroll-nas", "02-revoke-stripped", "03-revoke-genuine", "04-note-preimage", "05-note-genuine", "06-copy-applied-extra-sig", "07-copy-refused-bytes", "08-log-key-anchor", "09-log-key-new", "10-log-key-learned", "11-policy-name-not-ascii", "12-policy-name-ascii", "13-params-two-byte-true", "14-params-canonical-true", "15-copy-genesis-extra-sig", "16-policy-text-at-the-cap", "17-policy-text-one-past-the-cap"}
+	codes := []string{"", "", ReasonThreshold, "", ReasonDecode, "", ReasonDupEntry, ReasonDupEntry, ReasonDupKey, "", ReasonDupKey, ReasonDecode, "", ReasonDecode, "", ReasonDupEntry, "", ReasonDecode}
 	dir := vectorRoot() + "/log-republish"
 	anchor, raw, m := loadCase(t, dir)
 	if len(raw) != len(names) {
@@ -50,7 +50,69 @@ func TestEveryRepublishCaseMatchesAndRepairsItsNamedFault(t *testing.T) {
 					t.Fatalf("repair Go = %q, want %q", got, want)
 				}
 			}
+
 			switch i {
+			case 13, 14:
+				marker := append([]byte{0x73}, []byte("rotate_needs_signer")...)
+				malformed := bytes.Replace(raw[14], append(append([]byte{}, marker...), 0xf5), append(append([]byte{}, marker...), 0xf8, 0x15), 1)
+				if bytes.Equal(malformed, raw[14]) || !bytes.Equal(malformed, raw[13]) {
+					t.Fatal("params pair differs in more than the true encoding")
+				}
+				check(raw[:13], raw[14], "")
+			case 15:
+				e, err := entry.Decode(raw[i])
+				if err != nil {
+					t.Fatal(err)
+				}
+				if len(e.Sigs) < 1 {
+					t.Fatal("copy has no signatures")
+				}
+				extra := e.Sigs[len(e.Sigs)-1]
+				if extra.Kid != "ffffffffffffffff" || extra.Role != "signer" || !bytes.Equal(extra.Sig, make([]byte, 64)) {
+					t.Fatal("copy needs a sorted unresolvable signature")
+				}
+				e.Sigs = e.Sigs[:len(e.Sigs)-1]
+				original, err := entry.Encode(e)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !bytes.Equal(original, raw[0]) || bytes.Equal(raw[i], raw[0]) {
+					t.Fatal("genesis copy differs in more than its signatures")
+				}
+				// With the duplicate occurrence removed, this same envelope is
+				// a valid anchored genesis, including its extra signature.
+				repairedAnchor := anchor
+				repairedAnchor.GenesisHash = entry.LeafHash(raw[i])
+				if st := Replay(repairedAnchor, [][]byte{raw[i]}); st.Size != 1 || len(st.Rejected) != 0 {
+					t.Fatalf("genesis copy alone: %+v", st.Rejected)
+				}
+			case 16, 17:
+				e, err := entry.Decode(raw[i])
+				if err != nil {
+					t.Fatal(err)
+				}
+				text := e.Body["text"].(string)
+				if len(text) != 4096+i-16 || len([]rune(text)) >= 4096 {
+					t.Fatalf("policy boundary has %d bytes and %d characters", len(text), len([]rune(text)))
+				}
+				if i == 17 {
+					if !strings.HasSuffix(text, "x\n") {
+						t.Fatal("missing one-byte excess")
+					}
+					e.Body["text"] = strings.TrimSuffix(text, "x\n") + "\n"
+					e.Sigs = nil
+					for _, key := range []string{"root1", "root2"} {
+						if err := entry.Sign(e, privateKey(t, key), "root"); err != nil {
+							t.Fatal(err)
+						}
+					}
+					repaired, err := entry.Encode(e)
+					if err != nil {
+						t.Fatal(err)
+					}
+					check(raw[:i], repaired, "")
+				}
+
 			case 2:
 				e, err := entry.Decode(raw[i])
 				if err != nil {
@@ -140,6 +202,9 @@ func TestEveryRepublishCaseMatchesAndRepairsItsNamedFault(t *testing.T) {
 	}
 	if final.Devices["nas"].Status != state.StatusRevoked {
 		t.Fatal("genuine revoke did not revoke nas")
+	}
+	if final.Params["rotate_needs_signer"] != true {
+		t.Fatal("canonical params did not set rotate_needs_signer")
 	}
 	want, err := os.ReadFile(dir + "/state.json")
 	if err != nil {

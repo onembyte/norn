@@ -1671,7 +1671,13 @@ def trust_rejections() -> list[tuple[str, dict[str, Any]]]:
     reuse = note.vkey("different-name", KEYS["logkey"].public, note.ALG_COSIGNATURE)
     reused_log = dict(base, witnesses=[{"name":"w", "key":reuse}],
                       policy=f"witness w {reuse}\nquorum w\n")
-    return [("51-witness-key-is-log-key", reused_log),
+    return [("55-log-key-small-order", damaged(
+            log_key=note.vkey(ORIGIN, ORDER_EIGHT),
+            # With no policy log line, only trust-level point admission can
+            # refuse the key; note.vkey recomputes its id under the origin.
+            policy="".join(line for line in base["policy"].splitlines(keepends=True)
+                           if not line.startswith("log ")))),
+        ("51-witness-key-is-log-key", reused_log),
         ("52-name-one-past-the-cap", damaged(name="n" * 65)),
         ("54-witness-name-not-ascii", damaged(
             witnesses=[dict(base["witnesses"][0], name="zürich")]
@@ -2973,4 +2979,23 @@ def republish_log() -> list[LogItem]:
                                 ("12-policy-name-ascii", "zurich", None)):
         text = f"witness {label} {witness_vkey('pi')}\nquorum {label}\n"
         b.add(name, b.build("policy", {"text": text}, roots), reason)
+    # Sign the canonical content once. Only the received boolean encoding
+    # differs, so accepting the malformed copy burns the genuine content key.
+    params = b.build("params", {"rotate_needs_signer": True}, roots)
+    canonical = entry.encode(params)
+    marker = b"\x73rotate_needs_signer\xf5"
+    assert canonical.count(marker) == 1
+    b.add_raw("13-params-two-byte-true", canonical.replace(
+        marker, b"\x73rotate_needs_signer\xf8\x15", 1), "decode")
+    b.add_raw("14-params-canonical-true", canonical, None)
+    b.add_raw("15-copy-genesis-extra-sig", _copy_with_extra_signature(b.items[0].raw), "dup-entry")
+    # Comment padding changes no policy meaning. Two-byte characters separate
+    # the UTF-8 byte cap from a character count, on both sides of the boundary.
+    text = f"witness zurich {witness_vkey('pi')}\nquorum zurich\n#"
+    remaining = 4096 - len(text.encode()) - 1
+    text += "é" * (remaining // 2) + "x" * (remaining % 2) + "\n"
+    assert len(text.encode()) == 4096
+    b.add("16-policy-text-at-the-cap", b.build("policy", {"text": text}, roots))
+    b.add("17-policy-text-one-past-the-cap", b.build(
+        "policy", {"text": text[:-1] + "x\n"}, roots), "decode")
     return b.items

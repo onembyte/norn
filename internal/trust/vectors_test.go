@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/onembyte/norn/internal/cbor"
+	"github.com/onembyte/norn/internal/note"
 )
 
 // Cold gate run 13, D18. One letter of the origin changes case, and the log
@@ -440,5 +441,54 @@ func TestTheLogKeyNameComparisonIsEquality(t *testing.T) {
 	}
 	if err == nil {
 		t.Error("the file must be refused")
+	}
+}
+
+// The optional policy log line is absent so it cannot mask log-key admission.
+func TestTheTrustLogKeySmallOrderPointIsTheOnlyFault(t *testing.T) {
+	const name = "55-log-key-small-order"
+	doc := trustBad(t, name)
+	key, err := note.ParseVerifierKey(doc["log_key"].(string))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if key.Name != doc["origin"] {
+		t.Fatal("log key name differs from origin")
+	}
+	for _, line := range strings.Split(doc["policy"].(string), "\n") {
+		if strings.HasPrefix(line, "log ") {
+			t.Fatal("policy log line could mask point admission")
+		}
+	}
+	raw, err := cbor.Encode(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := Parse(raw)
+	if err == nil {
+		err = parsed.Validate()
+	}
+	if err == nil || !strings.Contains(err.Error(), "log_key is not a valid point") {
+		t.Fatalf("Go: want invalid log_key point, got %v", err)
+	}
+	honestRaw, err := os.ReadFile(filepath.Join("..", "..", "testdata", "vectors", "trust.cbor"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	honest, err := Parse(honestRaw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc["log_key"] = honest.LogKey
+	raw, err = cbor.Encode(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err = Parse(raw)
+	if err == nil {
+		err = parsed.Validate()
+	}
+	if err != nil {
+		t.Fatalf("repair: %v", err)
 	}
 }

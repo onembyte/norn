@@ -130,6 +130,17 @@ class HostileInputVectors(unittest.TestCase):
 class AllowListVectors(unittest.TestCase):
     ROOT = Path(__file__).resolve().parents[3] / "testdata" / "vectors"
 
+    def test_two_byte_booleans_are_bare_profile_refusals(self):
+        # Cold gate run 16, M1. The bare heads are tested here rather than
+        # shipped in `entries-hostile/`, whose every case the fourth cold
+        # build's harness names in its own code (row 6.5l-xiv-c);
+        # `log-republish/13` and `14` carry the rule to every reader.
+        for i in range(2):
+            with self.subTest(value=20+i):
+                with self.assertRaisesRegex(cbor.ProfileError, "simple value"):
+                    cbor.decode(bytes((0xf8, 20+i)))
+                self.assertIs(cbor.decode(bytes((0xf4+i,))), bool(i))
+
     def test_bare_simple_value_is_refused_only_by_the_profile(self):
         raw = (self.ROOT / "entries-hostile" / "bare-simple.cbor").read_bytes()
         self.assertEqual(raw, b"\xf0")

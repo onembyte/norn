@@ -28,8 +28,17 @@ log-republish/10-log-key-learned.cbor#manifest-code expected="dup-key" got="stal
 log-republish/11-policy-name-not-ascii.cbor expected="decode" got="accept"
 log-republish/11-policy-name-not-ascii.cbor#manifest-code expected="decode" got="accept"
 log-republish/12-policy-name-ascii.cbor expected="accept" got="stale-state"
-log-republish/state.json expected=sha256:ba10d21fe9609539f3fb91a2ec4ae2e061b45205d60ecf18ed2e4d5bc2d1de31 got=sha256:d1759d9b15e219aa10be659847b37bda7592d3610db174b6cbf0ed32162cc84b
+log-republish/state.json expected=sha256:e51db95acaf97239f95d6d5111df476899b9f2b95bdb8f6edfa117494e5f942e got=sha256:3a8fa2ab36d0c7150b2e6524ad253ed5a253969efccc683082987d81774f2628
 policies/bad-group-name-plus.txt expected=false got=true
 policies/bad-witness-name-not-ascii.txt expected=false got=true
 policies/bad-witness-name-one-past-the-cap.txt expected=false got=true
 trust-bad/54-witness-name-not-ascii.cbor expected=false got=true
+
+# Row 6.5l-xiv-c (2026-10-15): run 16's vectors in `log-republish/`. The build
+# answers every new entry as written but one: having accepted entry 11's
+# `zürich` policy (above), it holds a policy version one ahead, so the policy
+# at the 4096-byte cap is stale-state for it -- the same debt as entry 12, one
+# policy later. The `state.json` line above changed with the fixture. The bare
+# two-byte booleans were kept out of `entries-hostile/`: this build names every
+# hostile case in its own code, raises on a new one, and then runs nothing after it.
+log-republish/16-policy-text-at-the-cap.cbor expected="accept" got="stale-state"

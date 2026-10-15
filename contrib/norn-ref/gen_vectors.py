@@ -411,6 +411,7 @@ def write_trust_rejections(out: pathlib.Path) -> None:
     mode = {"section": "9.1", "says": "`mode` MUST be"}
     size = {"section": "9.1", "says": "MAX_TRUST_BYTES"}
     trust_rules = {
+        "55-log-key-small-order": {"section": "3.1", "says": "enrollment request (§16), and a trust file's `log_key` and `witnesses` (§9)."},
         "54-witness-name-not-ascii": {"section": "9.1", "says": "A witness or group name follows §7's key-name grammar"},
         "52-name-one-past-the-cap": name,
         "53-log-cosignature-without-policy-log": logkey,
@@ -607,6 +608,11 @@ def write_republish_log(out: pathlib.Path) -> None:
         ("5.1", "`pk` is not an active log key — `anchor.log_key` or any `pk` in `log_keys`"),
         ("9.1", "A witness or group name follows §7's key-name grammar"),
         ("5.1", "replace `policy`; `versions.policy` becomes this index"),
+        ("4.0", "`0xf8` followed by any byte below 32 — `0xf8 0x14` and `0xf8 0x15`"),
+        ("5.1", "**merge** into `params`; `versions.params` becomes this index"),
+        ("5.1", "1. Its `entry_hash` joins §5.1 step 1's first seen set, and when step 8 applies it, its `content_hash` joins the second (D-078)."),
+        ("5.1", "`text` ≤ 4096 bytes (`decode`)"),
+        ("5.1", "`text` ≤ 4096 bytes (`decode`)"),
     ]
     for it in items:
         write(out / "log-republish" / (it.name + ".cbor"), it.raw)
