@@ -65,6 +65,9 @@ func extendRunFourteenManifest(root, dir string, cases []map[string]string, code
 	for name, rule := range rules {
 		manifest["rules"].(map[string]any)[name] = rule
 	}
+	if dir == "served-large-bad" {
+		manifest["comment"] = "Replace each named path over served-large. The two full width-256 cases add trailing bytes; the level-1 case changes one byte without changing length."
+	}
 	if dir == "proofs-bad" {
 		manifest["comment"] = strings.Replace(manifest["comment"].(string), "except no-quorum-tampered-proof", "except wrong-version-and-untrusted-checkpoint and no-quorum-tampered-proof", 1)
 	}

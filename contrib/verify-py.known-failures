@@ -55,3 +55,9 @@ dropped-witness/cases.json#unhandled expected="handled" got="UNKNOWN CASE FORMAT
 # signed by the device itself is dup-entry for it, and the state differs.
 log-rules/04-revoke-nas-by-self.cbor expected="accept" got="dup-entry"
 log-rules/state.json expected=sha256:091cf9a391c41260e48900690fb7f9285295c46719a62faf4d578e805b1235d5 got=sha256:02b15356e1f55a09a93ba1997719ee9916142e52f1f64c91f9aeb45f0e941381
+
+# Row 6.5l-xiv-d, Go half (2026-10-15): `heads-run16/`, heads with reader
+# histories and a request table with the consumer's network, a manifest shape
+# this build never saw (as `unreached-witness/` above). The other twelve cases
+# it answers as written: the level-1 tile, the receipt, both evidence key sets.
+heads-run16/cases.json#unhandled expected="handled" got="UNKNOWN CASE FORMAT"

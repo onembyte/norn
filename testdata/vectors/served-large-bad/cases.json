@@ -11,13 +11,20 @@
       "name": "full-hash-tile-trailing-bytes",
       "path": "tile/0/000",
       "says": "two trailing bytes after 256 leaf hashes"
+    },
+    {
+      "file": "level-one-byte-changed.bin",
+      "name": "level-one-byte-changed",
+      "path": "tile/1/000.p/1",
+      "says": "one changed byte in the width-1 level-1 hash tile"
     }
   ],
   "codes": {
     "full-entry-bundle-trailing-bytes": "entries",
-    "full-hash-tile-trailing-bytes": "tiles"
+    "full-hash-tile-trailing-bytes": "tiles",
+    "level-one-byte-changed": "tiles"
   },
-  "comment": "Replace each named full width-256 path over served-large. Only the trailing bytes differ.",
+  "comment": "Replace each named path over served-large. The two full width-256 cases add trailing bytes; the level-1 case changes one byte without changing length.",
   "rules": {
     "full-entry-bundle-trailing-bytes": {
       "says": "Bytes after the last frame a full bundle needs",
@@ -26,6 +33,10 @@
     "full-hash-tile-trailing-bytes": {
       "says": "compared byte for byte, length included",
       "section": "10.1"
+    },
+    "level-one-byte-changed": {
+      "says": "require every served hash tile == the rebuilt tree's",
+      "section": "10"
     }
   },
   "serve_over": "served-large"

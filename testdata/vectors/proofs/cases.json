@@ -5,6 +5,9 @@
     "file": "at-the-cap.bundle"
   },
   "checkpoint_quorum_time": 1760003607,
+  "codes": {
+    "nas-rotate": "accept"
+  },
   "comment": "the served log and its proof bundles, produced by the Go implementation and validated by upstream libraries; see SPEC 12. `installs` is the wg_pk, in hex, that a node installs for each device once its bundle checks out: the key replay gives (SPEC 8.1 condition 3), which is not always the key in the bundle's entry. `nas` rotated after it enrolled, so its bundle proves the enrol and names the old key",
   "devices": [
     "astral",
@@ -34,5 +37,20 @@
     "index": 126,
     "size": 127
   },
-  "size": 162
+  "rules": {
+    "nas-rotate": {
+      "says": "types, the `device_id` in the body — and apply the rules below.",
+      "section": "8.1"
+    }
+  },
+  "size": 162,
+  "sound": [
+    {
+      "device": "nas",
+      "file": "nas-rotate.bundle",
+      "index": 35,
+      "name": "nas-rotate",
+      "says": "a rotate is bound through device_id in its body"
+    }
+  ]
 }

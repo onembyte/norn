@@ -73,7 +73,10 @@ func writeRunSixteen(root, signed string, entries [][]byte) error {
 			return err
 		}
 	}
-	return writeDroppedWitness(root, signed, entries)
+	if err := writeDroppedWitness(root, signed, entries); err != nil {
+		return err
+	}
+	return writeRunSixteenPlainRules(root, signed, entries)
 }
 
 func writeDroppedWitness(root, signed string, entries [][]byte) error {

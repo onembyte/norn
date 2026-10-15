@@ -224,4 +224,9 @@ class RunFourteen(unittest.TestCase):
             for case in manifest['cases']:
                 honest=read(manifest['serve_over']+'/'+case['path'])
                 damaged=read('served-large-bad/'+case['file'])
-                self.assertTrue(damaged.startswith(honest)); self.assertGreater(len(damaged),len(honest))
+                if case['name']=='level-one-byte-changed':
+                    # Run 16, L8: one byte of the level-1 tile, nothing appended.
+                    self.assertEqual(len(damaged),len(honest))
+                    self.assertEqual(sum(a!=b for a,b in zip(honest,damaged)),1)
+                else:
+                    self.assertTrue(damaged.startswith(honest)); self.assertGreater(len(damaged),len(honest))

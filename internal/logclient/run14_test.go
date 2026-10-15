@@ -162,24 +162,39 @@ func checkRunFourteenServed(t *testing.T) {
 		if err := json.Unmarshal([]byte(readFile(t, filepath.Join(dir, "cases.json"))), &manifest); err != nil {
 			t.Fatal(err)
 		}
-		if manifest.ServeOver != "served-large" || len(manifest.Cases) != 2 {
-			t.Fatal("must cover both full paths over served-large")
+		if manifest.ServeOver != "served-large" || len(manifest.Cases) != 3 {
+			t.Fatal("must cover both full paths and the level-1 tile over served-large")
 		}
 		for _, c := range manifest.Cases {
 			t.Run(c.Name, func(t *testing.T) {
 				honest := filepath.Join(vectorRoot(), manifest.ServeOver)
 				copy := servedWith(t, honest, readFile(t, filepath.Join(honest, "checkpoint")))
-				want := map[string]string{"full-entry-bundle-trailing-bytes": "entries", "full-hash-tile-trailing-bytes": "tiles"}[c.Name]
+				want := map[string]string{"full-entry-bundle-trailing-bytes": "entries", "full-hash-tile-trailing-bytes": "tiles", "level-one-byte-changed": "tiles"}[c.Name]
 				if want == "" || manifest.Codes[c.Name] != want {
 					t.Fatalf("%s is coded %q, SPEC states %q", c.Name, manifest.Codes[c.Name], want)
 				}
 				original := readFile(t, filepath.Join(honest, c.Path))
 				bad := readFile(t, filepath.Join(dir, c.File))
-				if len(bad) <= len(original) || !strings.HasPrefix(bad, original) {
-					t.Fatal("only trailing bytes may differ")
-				}
-				if c.Path != "tile/entries/000" && c.Path != "tile/0/000" {
-					t.Fatal("must mutate full width-256 paths")
+				if c.Name == "level-one-byte-changed" {
+					if c.Path != "tile/1/000.p/1" || len(bad) != len(original) || len(bad) != 32 {
+						t.Fatal("must mutate the width-1 level-1 tile")
+					}
+					different := 0
+					for i := range original {
+						if original[i] != bad[i] {
+							different++
+						}
+					}
+					if different != 1 {
+						t.Fatal("only one tile byte may differ")
+					}
+				} else {
+					if len(bad) <= len(original) || !strings.HasPrefix(bad, original) {
+						t.Fatal("only trailing bytes may differ")
+					}
+					if c.Path != "tile/entries/000" && c.Path != "tile/0/000" {
+						t.Fatal("must mutate full width-256 paths")
+					}
 				}
 				write(t, filepath.Join(copy, c.Path), bad)
 				runFourteenAnswer(t, copy, anchor, manifest.Codes[c.Name])

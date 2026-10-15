@@ -143,6 +143,14 @@
     {
       "name": "bad-padded-split-proof",
       "says": "the held split proof does not chain"
+    },
+    {
+      "name": "bad-v1-split-keys",
+      "says": "unknown field"
+    },
+    {
+      "name": "bad-v2-without-split-keys",
+      "says": "missing fields"
     }
   ],
   "codes": {
@@ -179,6 +187,8 @@
     "bad-twelve-keys": "schema",
     "bad-unverifiable-conflicting": "conflicting",
     "bad-unverifiable-conflicting-and-size-mismatch": "conflicting",
+    "bad-v1-split-keys": "schema",
+    "bad-v2-without-split-keys": "schema",
     "bad-version-and-unknown-key": "version",
     "bad-version-three": "version",
     "bad-wrong-version": "version"
@@ -315,6 +325,14 @@
     },
     "bad-unverifiable-conflicting-and-size-mismatch": {
       "says": "the conflicting checkpoint fails any §10 check",
+      "section": "11.1"
+    },
+    "bad-v1-split-keys": {
+      "says": "the map is not the closed set of exactly seven keys (version 1) or eleven (version 2)",
+      "section": "11.1"
+    },
+    "bad-v2-without-split-keys": {
+      "says": "the map is not the closed set of exactly seven keys (version 1) or eleven (version 2)",
       "section": "11.1"
     },
     "bad-version-and-unknown-key": {

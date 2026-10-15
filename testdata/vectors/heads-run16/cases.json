@@ -1,0 +1,108 @@
+{
+  "cases": [
+    {
+      "file": "stranger-log-id.checkpoint",
+      "name": "stranger-log-id",
+      "reader": "fresh",
+      "says": "a stranger name carrying only the log's key id names no trusted key"
+    },
+    {
+      "file": "stranger-pi-id.checkpoint",
+      "name": "stranger-pi-id",
+      "reader": "fresh",
+      "says": "a stranger name carrying only pi's key id names no listed witness"
+    },
+    {
+      "file": "stranger-del.checkpoint",
+      "name": "stranger-del",
+      "reader": "fresh",
+      "says": "DEL is permitted in a stranger signature name"
+    },
+    {
+      "file": "stranger-three-bytes.checkpoint",
+      "name": "stranger-three-bytes",
+      "reader": "fresh",
+      "says": "three decoded bytes cannot carry the four-byte key id"
+    },
+    {
+      "file": "policy-log-only.checkpoint",
+      "name": "policy-log-only",
+      "reader": "informed",
+      "says": "replay genesis and policy; logkey3 is named only on the policy log line, never by log_key"
+    },
+    {
+      "file": "forged-pi-without-quorum.checkpoint",
+      "name": "forged-pi-without-quorum",
+      "reader": "fresh",
+      "says": "the forged pi line is cosignature before the independently short quorum"
+    }
+  ],
+  "codes": {
+    "forged-pi-without-quorum": "cosignature",
+    "policy-log-only": "log-signature",
+    "stranger-del": "accept",
+    "stranger-log-id": "accept",
+    "stranger-pi-id": "accept",
+    "stranger-three-bytes": "note"
+  },
+  "comment": "Serve every head over served's honest tiles. Fresh readers use only trust.cbor; the informed reader replays the two named entries in order and uses the replacement policy, retaining only keys published through log_key. Requests are checked separately with consumer_net, not as checkpoints; accept is a semantic result, not a new refusal code.",
+  "replay": [
+    "00-genesis.cbor",
+    "01-policy-logkey3.cbor"
+  ],
+  "requests": {
+    "cases": [
+      {
+        "accept": true,
+        "file": "request-this-network.cbor",
+        "name": "request-this-network",
+        "says": "verify the signature, then require net to equal consumer_net before displaying the request"
+      },
+      {
+        "accept": false,
+        "file": "request-other-network.cbor",
+        "name": "request-other-network",
+        "says": "verify the signature, then require net to equal consumer_net before displaying the request"
+      }
+    ],
+    "consumer_net": "6e6f726e2d746573746e65742d303031",
+    "rules": {
+      "request-other-network": {
+        "says": "MUST also refuse a request whose `net` is not the network it serves, before",
+        "section": "16.1"
+      },
+      "request-this-network": {
+        "says": "MUST also refuse a request whose `net` is not the network it serves, before",
+        "section": "16.1"
+      }
+    }
+  },
+  "rules": {
+    "forged-pi-without-quorum": {
+      "says": "a cosignature line whose name **and** key id match a listed witness does not verify",
+      "section": "10.1"
+    },
+    "policy-log-only": {
+      "says": "Norn takes the log key it verifies with from `log_key`, never from here",
+      "section": "9.1"
+    },
+    "stranger-del": {
+      "says": "MUST NOT contain an ASCII control character below U+0020",
+      "section": "7"
+    },
+    "stranger-log-id": {
+      "says": "What follows the key id is judged by the trusted key whose name and key id",
+      "section": "7"
+    },
+    "stranger-pi-id": {
+      "says": "What follows the key id is judged by the trusted key whose name and key id",
+      "section": "7"
+    },
+    "stranger-three-bytes": {
+      "says": "and canonical padded base64 that decodes to at least the 4-byte `key_id`.",
+      "section": "7"
+    }
+  },
+  "serve_over": "served",
+  "trust": "trust.cbor"
+}
