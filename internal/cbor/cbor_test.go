@@ -243,3 +243,27 @@ func TestOversizeMapKeyInARequest(t *testing.T) {
 		t.Error("decoded a 24-byte map key; the §4.0 cap is not enforced")
 	}
 }
+
+// Cold gate run 16, M1: `0xf8` is a simple value in the two-byte form, not a
+// float -- major type 7 takes floats at arguments 25 to 27 -- and below 32 it is
+// not well-formed at all (RFC 8949 §3.3), `false` and `true` included. The
+// decoder refused all of them, calling each a float, so a hostile vector naming
+// its rule would have found the wrong one.
+func TestATwoByteSimpleValueIsRefusedAsOneNotAsAFloat(t *testing.T) {
+	for _, c := range []struct{ hex, says string }{
+		{"f814", "simple value 20 in the two-byte form is not well-formed"},
+		{"f815", "simple value 21 in the two-byte form is not well-formed"},
+		{"f800", "simple value 0 in the two-byte form is not well-formed"},
+		{"f81f", "simple value 31 in the two-byte form is not well-formed"},
+		{"f820", "simple value 32 is outside the profile"},
+		{"f8ff", "simple value 255 is outside the profile"},
+		{"f97e00", "floats are outside the profile"},
+		{"fa7fc00000", "floats are outside the profile"},
+		{"fb7ff8000000000000", "floats are outside the profile"},
+	} {
+		_, err := Decode(mustHex(t, c.hex))
+		if err == nil || !strings.Contains(err.Error(), c.says) {
+			t.Errorf("%s: want %q, got %v", c.hex, c.says, err)
+		}
+	}
+}

@@ -189,10 +189,22 @@ func (d *decoder) head() (byte, uint64, error) {
 	if extra > 27 {
 		return 0, 0, profileErrorf("reserved or indefinite length")
 	}
-	// Major 7 with a 2-, 4- or 8-byte argument is a float. §4.0 bans floats by
-	// name, so the refusal says so: "simple value 15360" is the same sentence
-	// a null produces, and `entries-hostile` asks each case to be refused for
-	// its own rule (cold gate run 8, D15).
+	// Major 7 with a 1-byte argument is a simple value in the two-byte form,
+	// which RFC 8949 §3.3 makes not well-formed below 32 -- `false` and `true`
+	// included (cold gate run 16, M1). With a 2-, 4- or 8-byte argument it is a
+	// float. §4.0 bans floats by name, so the refusal says so: "simple value
+	// 15360" is the same sentence a null produces, and `entries-hostile` asks
+	// each case to be refused for its own rule (cold gate run 8, D15).
+	if major == mtSimple && extra == 24 {
+		raw, err := d.take(1)
+		if err != nil {
+			return 0, 0, err
+		}
+		if raw[0] < 32 {
+			return 0, 0, profileErrorf("simple value %d in the two-byte form is not well-formed (RFC 8949 §3.3)", raw[0])
+		}
+		return major, uint64(raw[0]), nil
+	}
 	if major == mtSimple {
 		return 0, 0, profileErrorf("floats are outside the profile")
 	}
