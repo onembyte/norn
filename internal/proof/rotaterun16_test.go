@@ -31,7 +31,7 @@ func TestABundleAroundNasRotateAcceptsUnderItsOwnLabel(t *testing.T) {
 	if err := json.Unmarshal(read("proofs/cases.json"), &m); err != nil {
 		t.Fatal(err)
 	}
-	if len(m.Sound) != 1 || m.Sound[0].Name != "nas-rotate" || m.Sound[0].Device != "nas" || m.Sound[0].Index != 35 || m.Codes["nas-rotate"] != "accept" {
+	if len(m.Sound) != 2 || m.Sound[0].Name != "nas-rotate" || m.Sound[0].Device != "nas" || m.Sound[0].Index != 35 || m.Codes["nas-rotate"] != "accept" {
 		t.Fatal("proofs manifest must list the nas rotate as sound")
 	}
 	b, err := Decode(read("proofs/" + m.Sound[0].File))

@@ -67,3 +67,8 @@ heads-run16/cases.json#unhandled expected="handled" got="UNKNOWN CASE FORMAT"
 # `unreached-witness/` above). It answers D-079's other three cases as written:
 # the small-order carried policy, the `NAS` label, the undecodable request.
 grown-log/cases.json#unhandled expected="handled" got="UNKNOWN CASE FORMAT"
+
+# Row 6.5l-xiv-j (2026-10-16): no failure, a gap. This build walks
+# `proofs/cases.json`'s `devices`, `at_the_cap` and `right_edge_inclusion` and
+# never `sound`, so it has checked neither `nas-rotate.bundle` nor
+# `laptop-revoke.bundle`; its pass count is no evidence for either.

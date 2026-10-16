@@ -6,9 +6,10 @@
   },
   "checkpoint_quorum_time": 1760003607,
   "codes": {
+    "laptop-revoke": "accept",
     "nas-rotate": "accept"
   },
-  "comment": "the served log and its proof bundles, produced by the Go implementation and validated by upstream libraries; see SPEC 12. `installs` is the wg_pk, in hex, that a node installs for each device once its bundle checks out: the key replay gives (SPEC 8.1 condition 3), which is not always the key in the bundle's entry. `nas` rotated after it enrolled, so its bundle proves the enrol and names the old key",
+  "comment": "the served log and its proof bundles, produced by the Go implementation and validated by upstream libraries; see SPEC 12. `installs` is the wg_pk, in hex, that a node installs for each device once its bundle checks out: the key replay gives (SPEC 8.1 condition 3), which is not always the key in the bundle's entry. `nas` rotated after it enrolled, so its bundle proves the enrol and names the old key; sound includes nas-rotate and laptop-revoke, both accepted as bundles. Condition 3 installs the replayed nas key and nothing for laptop: installs omits laptop because replay leaves it revoked at the served checkpoint",
   "devices": [
     "astral",
     "badgrant",
@@ -38,6 +39,10 @@
     "size": 127
   },
   "rules": {
+    "laptop-revoke": {
+      "says": "types, the `device_id` in the body — and apply the rules below.",
+      "section": "8.1"
+    },
     "nas-rotate": {
       "says": "types, the `device_id` in the body — and apply the rules below.",
       "section": "8.1"
@@ -51,6 +56,13 @@
       "index": 35,
       "name": "nas-rotate",
       "says": "a rotate is bound through device_id in its body"
+    },
+    {
+      "device": "laptop",
+      "file": "laptop-revoke.bundle",
+      "index": 36,
+      "name": "laptop-revoke",
+      "says": "a revoke is bound through device_id in its body and passes every bundle check; condition 3 installs nothing because replay leaves laptop revoked at the served checkpoint, so installs omits laptop"
     }
   ]
 }

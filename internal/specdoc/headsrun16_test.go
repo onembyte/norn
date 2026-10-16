@@ -21,7 +21,7 @@ func TestRunSixteenPlainRuleCasesCiteOneRawLineAndTheirFullPaths(t *testing.T) {
 		{"served-large-bad", []string{"level-one-byte-changed"}},
 		{"receipt-bad", []string{"origin-extended.note"}},
 		{"fork", []string{"bad-v1-split-keys", "bad-v2-without-split-keys"}},
-		{"proofs", []string{"nas-rotate"}},
+		{"proofs", []string{"nas-rotate", "laptop-revoke"}},
 	} {
 		raw, err := os.ReadFile(filepath.Join(vectorsDir(), tc.dir, "cases.json"))
 		if err != nil {

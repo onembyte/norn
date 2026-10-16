@@ -1740,6 +1740,7 @@ naming that rule is how the generators and the placement guards check it.
 | `proofs/<device>.bundle` | one §8.1 proof bundle per active device, each proving the entry that made that device active; `cases.json` gives the origin, the log-key seed, the device list and, under `installs`, the key a node installs for each device (§8.1 condition 3) |
 | `proofs/at-the-cap.bundle` | a valid bundle of exactly 81919 bytes (`MAX_BUNDLE_BYTES`), grown only with real cosignatures from the unlisted `stranger` key; `cases.json` names it under `at_the_cap` and requires acceptance |
 | `proofs/nas-rotate.bundle` | the fixture's real `log/35-rotate-nas` in a bundle labelled `nas`, accepted through the body's `device_id`; `cases.json` lists it separately under `sound`, with `codes` and `rules`, leaving the activating-entry device list unchanged |
+| `proofs/laptop-revoke.bundle` | the fixture's real `log/36-revoke-self-laptop` in a bundle labelled `laptop`, accepted through the body's `device_id`; `cases.json` lists it under `sound`, with `codes` and `rules`. Condition 3 installs nothing because replay leaves laptop revoked at the served checkpoint, so `installs` omits it |
 | `proofs/right-edge.json` | a standalone RFC 6962 inclusion proof for the last leaf, index 126, of a 127-entry tree; it carries the entry bytes, leaf hash, root and path hashes |
 | `trust.cbor` · `trust.toml` · `trust.fingerprint` | the trust anchor (§9), authoritative bytes, human rendering, and its fingerprint |
 | `receipt.note` | a submission receipt: the signed note itself (§7) |
@@ -1866,6 +1867,7 @@ this table drifted out of date the moment one was.
 | §7 receipt origin equality (run 16, L8) | `receipt.note` | `receipt-bad/origin-extended.note` appends one origin character and re-signs with the log key: `origin` |
 | §11.1 exact versioned evidence key sets (run 16, L8) | `fork/evidence.cbor` and `fork/evidence-v1.cbor` prove the fork | `fork/bad-v1-split-keys` carries all four version-2 split fields at version 1; `fork/bad-v2-without-split-keys` omits them at version 2: each `schema` |
 | §8.1 a positive rotate binding (run 16, L8) | `proofs/nas-rotate` is `proofs/nas-rotate.bundle`, proving nas's real rotation under its own label: accepted | relabelling the same bundle is `binding`; `proofs-bad/rotate-entry-other-device` ships an earlier nas rotation under another label |
+| §8.1 a positive revoke binding and condition 3 (run 16, L8) | `proofs/laptop-revoke` is `proofs/laptop-revoke.bundle`, proving laptop's accepted self-revoke at index 36: accepted as a bundle, nothing installed because replay leaves laptop revoked at size 162. `proofs/nas.bundle` still installs `installs[nas]`, the replayed key | relabelling the revoke bundle with another active device's id is `binding`; `proofs-bad/revoke-entry-other-device` ships that refusal |
 | §16.1 a request consumer's network (run 16, L8) | `heads-run16/request-this-network` accepts with the manifest's `consumer_net` | `heads-run16/request-other-network` verifies its signature and is refused only for another network; both accept with their own network, and `requests-bad/` is unchanged |
 | §5.1 adjacent replay checks and §3.1 policy log-key admission (run 15) | paired `log-order/` cases repair either fault alone and expose the other; every case accepts after its faults are repaired; `proven/grant-labels.json` sorts IPv4 prefixes as text, leaves a single zero group uncompressed and compresses two zero groups | `log-order/02-rotate-incoming-only` (`no-device-sig`); `log-order/04-rotate-threshold-before-prev`, `log-order/05-enroll-threshold-before-prev`, `log-order/07-revoke-threshold-before-prev` (`threshold`); `log-order/06-enroll-prev-before-dup-id`, `log-order/11-policy-prev-before-dup-key`, `log-order/12-signer-remove-prev-before-unknown-key`, `log-order/13-signer-thr-prev-before-bad-thr`, `log-order/14-log-key-prev-before-dup-key` (`stale-state`); `log-order/08-signer-add-after-before-threshold` (`after`); `log-order/09-params-body-before-prev`, `log-order/10-policy-parse-before-prev`, `log-order/15-policy-log-identity` (`decode`) |
 | §5.1 `prev` check order | accepted entries in `log-cas/` | `log-cas/25-threshold-before-stale` (`threshold`), `log-cas/28-current-signature-before-stale` (`no-device-sig`), `log-cas/29-stale-before-incoming-proof`, `log-cas/30-stale-before-dup-key` and `log-cas/31-stale-before-dup-wg` (`stale-state`): two faults each, with the deciding check first |
@@ -2094,9 +2096,9 @@ admits its holes, so:
   Each is a sentence above that a careful reader gets right, and each has an
   input a network can see on which a reader who got it wrong would differ;
   Go gives this document's answer on every one, and the reference on every one
-  in the layers it implements. What remains is a bundle around a `revoke`
-  (§8.1): the `rotate` is vectored, the `revoke` is not. Beyond
-  the static suite: §11 rule 3's frozen set, §15's `CLOCK_SKEW` alarm and
+  in the layers it implements. Both the `rotate` and the `revoke` (§8.1) are
+  vectored by `proofs/nas-rotate.bundle` and `proofs/laptop-revoke.bundle`.
+  Beyond the static suite: §11 rule 3's frozen set, §15's `CLOCK_SKEW` alarm and
   §13.2's restart rules are node behaviour, held by the Go tests.
 Everything else named in the table above ships, and the build fails if a path
 cited here is missing or a directory here is not named.

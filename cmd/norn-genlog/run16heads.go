@@ -69,7 +69,7 @@ func writeRunSixteenPlainRules(root, signed string, entries [][]byte) error {
 			return err
 		}
 	}
-	return writeRunSixteenRotateBundle(root, signed, entries)
+	return writeRunSixteenDeviceBundles(root, signed, entries)
 }
 
 func writeRunSixteenHeads(root, signed string, entries [][]byte) error {
@@ -231,33 +231,47 @@ func writeRunSixteenHeads(root, signed string, entries [][]byte) error {
 	})
 }
 
-func writeRunSixteenRotateBundle(root, signed string, entries [][]byte) error {
-	const index = 35
-	env, err := entry.Decode(entries[index])
-	if err != nil || env.T != "rotate" || env.Body["device_id"] != "nas" {
-		return fmt.Errorf("fixture index 35 is not nas's rotate: %v", err)
-	}
+func writeRunSixteenDeviceBundles(root, signed string, entries [][]byte) error {
 	tree, err := tlog.Build(entries)
 	if err != nil {
 		return err
 	}
-	path, err := tree.InclusionProof(index)
-	if err != nil {
-		return err
-	}
-	bundle, err := proof.Build("nas", index, entries[index], path, signed)
-	if err != nil {
-		return err
-	}
-	raw, err := bundle.Encode()
-	if err != nil {
-		return err
-	}
-	if err := os.WriteFile(filepath.Join(root, "proofs", "nas-rotate.bundle"), raw, 0o644); err != nil {
-		return err
+	sound := []map[string]any{}
+	codes := map[string]string{}
+	rules := map[string]map[string]string{}
+	for _, c := range []struct {
+		name, device, kind, says string
+		index                    int64
+	}{
+		{"nas-rotate", "nas", "rotate", "a rotate is bound through device_id in its body", 35},
+		{"laptop-revoke", "laptop", "revoke", "a revoke is bound through device_id in its body and passes every bundle check; condition 3 installs nothing because replay leaves laptop revoked at the served checkpoint, so installs omits laptop", 36},
+	} {
+		env, err := entry.Decode(entries[c.index])
+		if err != nil || env.T != c.kind || env.Body["device_id"] != c.device {
+			return fmt.Errorf("fixture index %d is not %s's %s: %v", c.index, c.device, c.kind, err)
+		}
+		path, err := tree.InclusionProof(c.index)
+		if err != nil {
+			return err
+		}
+		bundle, err := proof.Build(c.device, c.index, entries[c.index], path, signed)
+		if err != nil {
+			return err
+		}
+		raw, err := bundle.Encode()
+		if err != nil {
+			return err
+		}
+		file := c.name + ".bundle"
+		if err := os.WriteFile(filepath.Join(root, "proofs", file), raw, 0o644); err != nil {
+			return err
+		}
+		sound = append(sound, map[string]any{"name": c.name, "file": file, "device": c.device, "index": c.index, "says": c.says})
+		codes[c.name] = "accept"
+		rules[c.name] = map[string]string{"section": "8.1", "says": "types, the `device_id` in the body — and apply the rules below."}
 	}
 	manifestPath := filepath.Join(root, "proofs", "cases.json")
-	raw, err = os.ReadFile(manifestPath)
+	raw, err := os.ReadFile(manifestPath)
 	if err != nil {
 		return err
 	}
@@ -265,10 +279,11 @@ func writeRunSixteenRotateBundle(root, signed string, entries [][]byte) error {
 	if err := json.Unmarshal(raw, &manifest); err != nil {
 		return err
 	}
-	// The device list still means the activating entries. Add a separate sound
-	// list so the positive rotation does not change any existing case's meaning.
-	manifest["sound"] = []map[string]any{{"name": "nas-rotate", "file": "nas-rotate.bundle", "device": "nas", "index": index, "says": "a rotate is bound through device_id in its body"}}
-	manifest["codes"] = map[string]string{"nas-rotate": "accept"}
-	manifest["rules"] = map[string]map[string]string{"nas-rotate": {"section": "8.1", "says": "types, the `device_id` in the body — and apply the rules below."}}
+	// The device list still means the activating entries. Keep both sound
+	// device changes separate: acceptance as a bundle does not imply active.
+	manifest["sound"] = sound
+	manifest["codes"] = codes
+	manifest["rules"] = rules
+	manifest["comment"] = manifest["comment"].(string) + "; sound includes nas-rotate and laptop-revoke, both accepted as bundles. Condition 3 installs the replayed nas key and nothing for laptop: installs omits laptop because replay leaves it revoked at the served checkpoint"
 	return writeRunFourteenJSON(manifestPath, manifest)
 }
