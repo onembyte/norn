@@ -1,0 +1,59 @@
+{
+  "cases": [
+    {
+      "file": "evidence.cbor",
+      "name": "evidence-fresh",
+      "reader": "fresh",
+      "says": "pi and vps prove the fork under the trust policy"
+    },
+    {
+      "file": "evidence.cbor",
+      "name": "evidence-informed",
+      "reader": "informed",
+      "says": "held lacks the replayed quorum"
+    },
+    {
+      "file": "nas.bundle",
+      "name": "bundle-fresh",
+      "reader": "fresh",
+      "says": "pi and vps satisfy the trust policy"
+    },
+    {
+      "file": "nas.bundle",
+      "name": "bundle-informed",
+      "reader": "informed",
+      "says": "the bundle lacks the replayed quorum"
+    }
+  ],
+  "codes": {
+    "bundle-fresh": "accept",
+    "bundle-informed": "quorum",
+    "evidence-fresh": "accept",
+    "evidence-informed": "held"
+  },
+  "comment": "Only friend's lines are removed from fork/evidence.cbor and proofs/nas.bundle. Both original files accept for both readers; replay served under the trust policy before checking these artifacts. accept for evidence means fork proved.",
+  "readers": {
+    "fresh": "trust.cbor only; two of three",
+    "informed": "replayed served; roots published three of three"
+  },
+  "replay": "../served",
+  "rules": {
+    "bundle-fresh": {
+      "says": "A node holding only the trust file uses its policy.",
+      "section": "9.4"
+    },
+    "bundle-informed": {
+      "says": "log_key` of a state it has accepted) and the policy of that state",
+      "section": "8.1"
+    },
+    "evidence-fresh": {
+      "says": "A node holding only the trust file uses its policy.",
+      "section": "9.4"
+    },
+    "evidence-informed": {
+      "says": "The reader uses **its own** policy: the trust file's, or one it has replayed (§9.4).",
+      "section": "11.1"
+    }
+  },
+  "trust": "../trust.cbor"
+}

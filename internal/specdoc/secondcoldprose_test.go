@@ -32,8 +32,7 @@ func TestTheSecondColdBuildsProseFindingsAreFixed(t *testing.T) {
 			"  contract — exactly which bytes are hashed — and `anchors/cases.json` pins it.\n" +
 			"  The proof tree, its calendar reply and any Bitcoin attestation are\n" +
 			"  `python-opentimestamps`'s format, which this document does not describe, so\n" +
-			"  no reader is asked to validate them; anchoring is advisory (D-009).\n" +
-			"- **`quorum none` accepting an uncosigned head.**", ""},
+			"  no reader is asked to validate them; anchoring is advisory (D-009).", ""},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			section, ok := doc.Section(c.section)

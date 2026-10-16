@@ -72,3 +72,12 @@ grown-log/cases.json#unhandled expected="handled" got="UNKNOWN CASE FORMAT"
 # `proofs/cases.json`'s `devices`, `at_the_cap` and `right_edge_inclusion` and
 # never `sound`, so it has checked neither `nas-rotate.bundle` nor
 # `laptop-revoke.bundle`; its pass count is no evidence for either.
+
+# Row 6.5l-xv-d, Go half (2026-10-16): run 17's `replayed-policy/` (evidence
+# and a bundle read by a fresh and an informed reader), `quorum-none/` (a
+# second trust anchor and its proven sets) and `genesis-unapplied/` (a trust
+# file over an entry 0 that does not apply), three manifest shapes this build
+# never saw. It answers the new `fork/` and `proofs-bad/` cases as written.
+genesis-unapplied/cases.json#unhandled expected="handled" got="UNKNOWN CASE FORMAT"
+quorum-none/cases.json#unhandled expected="handled" got="UNKNOWN CASE FORMAT"
+replayed-policy/cases.json#unhandled expected="handled" got="UNKNOWN CASE FORMAT"

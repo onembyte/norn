@@ -1,0 +1,51 @@
+{
+  "cases": [
+    {
+      "file": "uncosigned.checkpoint",
+      "name": "uncosigned",
+      "proven": [
+        "astral",
+        "badgrant",
+        "contractor",
+        "labelcap",
+        "nas",
+        "pi-cam",
+        "printer",
+        "router"
+      ],
+      "says": "quorum none accepts without cosignatures and supplies no clock"
+    },
+    {
+      "file": "../served/checkpoint",
+      "name": "cosigned-no-clock",
+      "proven": [
+        "astral",
+        "badgrant",
+        "contractor",
+        "labelcap",
+        "nas",
+        "pi-cam",
+        "printer",
+        "router"
+      ],
+      "says": "quorum none supplies no clock even when witnesses signed; contractor remains proven"
+    }
+  ],
+  "codes": {
+    "cosigned-no-clock": "accept",
+    "uncosigned": "accept"
+  },
+  "comment": "The trust file differs only in its quorum directive and retains all witnesses. Serve each head over served's unchanged tiles. Both have no quorum time; expected proven is the active set including contractor. Substituting a wall clock past contractor's expires drops it.",
+  "rules": {
+    "cosigned-no-clock": {
+      "says": "With no quorum time, expiry cannot be judged and active claims retain their",
+      "section": "13"
+    },
+    "uncosigned": {
+      "says": "it names a witness, a group, or the reserved name `none`.",
+      "section": "9.1"
+    }
+  },
+  "serve_over": "served",
+  "trust": "trust.cbor"
+}

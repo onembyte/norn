@@ -1,0 +1,33 @@
+{
+  "cases": [
+    {
+      "name": "unapplied",
+      "proven": [],
+      "says": "the pinned entry 0 has only one of its required two root signatures",
+      "serve": ".",
+      "trust": "trust.cbor"
+    },
+    {
+      "name": "sound",
+      "proven": [],
+      "says": "the unchanged fixture genesis applies with both root signatures",
+      "serve": "sound",
+      "trust": "../trust.cbor"
+    }
+  ],
+  "codes": {
+    "sound": "accept",
+    "unapplied": "genesis"
+  },
+  "comment": "A reader holding no checkpoint checks each one-entry log under the named trust. The bad anchor pins exactly entry.cbor's leaf hash, but replay aborts bad-genesis: matching the leaf hash alone would accept an empty proven set. sound restores the removed signature and the original trust hash.",
+  "rules": {
+    "sound": {
+      "says": "replaying it alone aborts with `bad-genesis` (§5.1).",
+      "section": "10.1"
+    },
+    "unapplied": {
+      "says": "replaying it alone aborts with `bad-genesis` (§5.1).",
+      "section": "10.1"
+    }
+  }
+}

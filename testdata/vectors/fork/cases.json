@@ -155,12 +155,26 @@
     {
       "name": "bad-policy-small-order-key",
       "says": "not a valid point"
+    },
+    {
+      "name": "bad-split-zero-with-a-root",
+      "says": "all-zero root"
+    },
+    {
+      "name": "bad-declared-length-past-the-file",
+      "says": "truncated"
+    },
+    {
+      "name": "bad-empty-map-key",
+      "says": "map key must be 1-23 bytes"
     }
   ],
   "codes": {
     "bad-bool-size": "schema",
     "bad-consistent": "consistent",
     "bad-consistent-and-bad-split": "proof",
+    "bad-declared-length-past-the-file": "cbor",
+    "bad-empty-map-key": "cbor",
     "bad-forged-proof": "proof",
     "bad-held-root-at-same-size": "proof",
     "bad-non-canonical-cbor": "cbor",
@@ -189,6 +203,7 @@
     "bad-split-proof-held": "proof",
     "bad-split-root-length": "schema",
     "bad-split-zero-with-a-proof": "proof",
+    "bad-split-zero-with-a-root": "proof",
     "bad-twelve-keys": "schema",
     "bad-unverifiable-conflicting": "conflicting",
     "bad-unverifiable-conflicting-and-size-mismatch": "conflicting",
@@ -211,6 +226,14 @@
     "bad-consistent-and-bad-split": {
       "says": "every proof a file carries is checked before the file is read as a fork",
       "section": "11.1"
+    },
+    "bad-declared-length-past-the-file": {
+      "says": "It is the file's own length: a short file whose CBOR declares more than it holds is `cbor`, not `oversize`",
+      "section": "11.1"
+    },
+    "bad-empty-map-key": {
+      "says": "every **map key** is a text string of 1–23 bytes",
+      "section": "4.0"
     },
     "bad-forged-proof": {
       "says": "check `proof` chains",
@@ -322,6 +345,10 @@
     },
     "bad-split-zero-with-a-proof": {
       "says": "A `split` that is 0 carries an all-zero `split_root` and two empty proofs.",
+      "section": "11.1"
+    },
+    "bad-split-zero-with-a-root": {
+      "says": "`split` is 0 with a `split_root` that is not all zero (step 4)",
       "section": "11.1"
     },
     "bad-twelve-keys": {

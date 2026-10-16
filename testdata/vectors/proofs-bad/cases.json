@@ -67,6 +67,18 @@
     {
       "name": "request-undecodable",
       "says": "request does not decode"
+    },
+    {
+      "name": "short-proof-hash",
+      "says": "32-byte string"
+    },
+    {
+      "name": "request-device-pk-small-order",
+      "says": "request does not decode"
+    },
+    {
+      "name": "pk-length-under-own-id",
+      "says": "request does not decode"
     }
   ],
   "codes": {
@@ -78,9 +90,12 @@
     "one-past-the-cap": "bundle",
     "open-schema": "bundle",
     "padded-proof": "inclusion",
+    "pk-length-under-own-id": "binding",
+    "request-device-pk-small-order": "binding",
     "request-undecodable": "binding",
     "revoke-entry-other-device": "binding",
     "rotate-entry-other-device": "binding",
+    "short-proof-hash": "bundle",
     "tampered-proof": "inclusion",
     "wrong-entry": "inclusion",
     "wrong-log-key": "log-signature",
@@ -124,6 +139,14 @@
       "says": "the proof carries more or fewer hashes than RFC 9162 §2.1.3.2 consumes",
       "section": "10.1"
     },
+    "pk-length-under-own-id": {
+      "says": "an `enroll` whose request does not decode",
+      "section": "10.1"
+    },
+    "request-device-pk-small-order": {
+      "says": "an `enroll` whose request does not decode",
+      "section": "10.1"
+    },
     "request-undecodable": {
       "says": "an `enroll` whose request does not decode",
       "section": "10.1"
@@ -135,6 +158,10 @@
     "rotate-entry-other-device": {
       "says": "`device` is the `device_id` the `entry` names",
       "section": "8.1"
+    },
+    "short-proof-hash": {
+      "says": "or a `proof` element that is not exactly 32 bytes, as §8.1 types it",
+      "section": "10.1"
     },
     "tampered-proof": {
       "says": "reach that checkpoint's root at `index`",

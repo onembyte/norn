@@ -2929,7 +2929,7 @@ func TestEveryServedAndBundleNegativeCitesTheRuleOfItsCode(t *testing.T) {
 			"unserved": {"any file a later step needs and cannot fetch"},
 		},
 		"proofs-bad": {
-			"bundle":        {"a closed map of exactly these six keys", "`v` | uint | `1`", "larger than this MUST be refused on length", "or a `device` outside §2's grammar"},
+			"bundle":        {"a closed map of exactly these six keys", "`v` | uint | `1`", "larger than this MUST be refused on length", "or a `device` outside §2's grammar", "or a `proof` element that is not exactly 32 bytes, as §8.1 types it"},
 			"log-signature": {"under the log keys the verifier trusts"},
 			"origin":        {"this network's origin"},
 			"quorum":        {"a satisfied witness quorum"},
