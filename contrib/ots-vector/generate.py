@@ -131,8 +131,8 @@ def main() -> int:
                 "says": "SPEC 6: the stamped value is SHA-256 of the note's leading "
                         "bytes through the blank separator line -- the three body "
                         "lines PLUS the blank line, four 0x0A in all. Not the "
-                        "three-line body, and not SPEC 7's signed text, which stops "
-                        "one 0x0A earlier. Those are three different byte ranges",
+                        "three-line body, which is also SPEC 7's signed text and "
+                        "stops one 0x0A earlier. Those are two different byte ranges",
             },
             {
                 "name": "sample.ots",

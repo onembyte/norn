@@ -1,6 +1,7 @@
 package specdoc
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -62,6 +63,12 @@ func TestRunSixteensProseFindingsAreFixed(t *testing.T) {
 		{"L9 two byte ranges", "6",
 			"which is also §7's *signed text* and stops one `0x0A` earlier: those are two different byte ranges",
 			"those are three different byte ranges"},
+		{"L9 the vector index counts two", "12",
+			"before it can tell which of two byte ranges was stamped",
+			"which of three byte ranges was stamped"},
+		{"L9 the body and the signed text are one neighbour", "12.1",
+			"a reader computing the neighbouring byte range — the three-line body, which is also §7's signed text — never matches a stamp",
+			"one of the two neighbouring byte ranges"},
 		{"L4 the trust file's log_key now has a vector", "12.1",
 			"`trust-bad/55-log-key-small-order` carries an order-8 `log_key` under the origin's name, with its id recomputed and no policy `log` line: invalid only by §3.1 item 2",
 			"The exception is a trust file's `log_key`"},
@@ -98,5 +105,38 @@ func TestRunSixteensProseFindingsAreFixed(t *testing.T) {
 				t.Errorf("%s still says %q", where, c.stale)
 			}
 		})
+	}
+}
+
+// L9 again, where SPEC is not the only author: the anchors manifest repeats
+// §6's sentence, and its generator (contrib/ots-vector/generate.py) still
+// counted three ranges after §6 was corrected. A reader of the manifest alone
+// would hunt for a third digest that does not exist.
+func TestTheAnchorsManifestCountsTwoByteRanges(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "testdata", "vectors", "anchors", "cases.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest struct {
+		Cases []struct{ Name, Says string }
+	}
+	if err := json.Unmarshal(raw, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, c := range manifest.Cases {
+		if !strings.HasPrefix(c.Name, "checkpoint-") {
+			continue
+		}
+		found = true
+		if strings.Contains(c.Says, "three different byte ranges") {
+			t.Errorf("anchors/%s still says the three-line body and §7's signed text are different ranges", c.Name)
+		}
+		if !strings.Contains(c.Says, "which is also SPEC 7's signed text") || !strings.Contains(c.Says, "two different byte ranges") {
+			t.Errorf("anchors/%s does not say the body is §7's signed text, two ranges in all: %q", c.Name, c.Says)
+		}
+	}
+	if !found {
+		t.Fatal("anchors/cases.json lists no checkpoint proof")
 	}
 }

@@ -19,4 +19,7 @@ hundred bytes is not a trade worth making. Later upstream versions also import
 `pycryptodomex` at load time, for a Keccak-256 operation no Norn proof uses, so
 the stub carries a `Cryptodome.Hash.keccak` that raises if it is ever called.
 Upstream `3af4643` regenerates `sample.ots` byte for byte, which is the check
-that a newer serializer still writes the same proofs.
+that a newer serializer still writes the same proofs. So does the
+`opentimestamps` 0.4.5 wheel from PyPI, every proof and `calendar-response.bin`
+included (2026-10-16), and it needs no clone: unzip it into a directory and put
+that directory where `/tmp/ots` stands above.
