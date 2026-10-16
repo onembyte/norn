@@ -17,8 +17,7 @@ enrollment ceremony, and no rule lives in them (D-064). What a second
 implementation needs is in this document and the vectors beside it, and a
 companion that disagrees is the companion that is wrong.
 
-Norn reuses these specifications verbatim; where they conflict with this document,
-they win, with one exception. §7 and §10 are Norn's profile of `c2sp.org/signed-note`, `tlog-checkpoint` and `tlog-cosignature`, and govern where they are stricter:
+Norn reuses these specifications verbatim. Where this document states a rule more narrowly than one of them — a profile, a closed set, an exact count — its rule governs, as §4.0's profile of RFC 8949, §6's three-line checkpoint body and §16.2's profile of BIP-350 do; where they otherwise conflict, they win (cold gate run 17, D12). In particular §7 and §10 are Norn's profile of `c2sp.org/signed-note`, `tlog-checkpoint` and `tlog-cosignature`, and govern where they are stricter:
 every line from a trusted key verifies, that key fixes the line's exact length,
 the base64 is canonical, and the note is UTF-8 (D-074 c). The specifications:
 
@@ -1543,7 +1542,7 @@ three of its own, in this order:
 
 | step | code | the refusal |
 |---|---|---|
-| 1 | `bundle` | the bundle does not decode as §8.1's closed map, carries an unknown key, an unsupported version, or a `device` outside §2's grammar |
+| 1 | `bundle` | the bundle does not decode as §8.1's closed map, carries an unknown key, an unsupported version, or a `device` outside §2's grammar; or a `proof` element that is not exactly 32 bytes, as §8.1 types it (cold gate run 17, D8) |
 | 2 | — | the checkpoint, as loop steps 2–7: `note`, `log-signature`, `checkpoint`, `origin`, `cosignature`, `quorum` |
 | 3 | `inclusion` | the index is outside the tree, or the inclusion proof does not chain the entry's leaf hash to the signed root, or the proof carries more or fewer hashes than RFC 9162 §2.1.3.2 consumes |
 | 4 | `binding` | the entry is not about the device the bundle names, or names none — an `enroll` whose request does not decode (§8.1's device↔entry binding) |
@@ -1664,7 +1663,7 @@ checks:
 
 | step | code | the refusal |
 |---|---|---|
-| 0 | `oversize` | the file is larger than `MAX_EVIDENCE_BYTES`; a reader accepts **from a stranger**, so the size bound is checked before any parse |
+| 0 | `oversize` | the file is larger than `MAX_EVIDENCE_BYTES`; a reader accepts **from a stranger**, so the size bound is checked before any parse. It is the file's own length: a short file whose CBOR declares more than it holds is `cbor`, not `oversize`, since nothing it declares is allocated (cold gate run 17, D9) |
 | 1 | `cbor` | the file is not valid deterministic CBOR (§4.0), or is not a map |
 | 2 | `version` | the map's `version` is not `1` or `2` — absent, not a uint, or another number. Checked **before** the key set: a key set is only closed relative to a version, so a reader cannot judge the schema of a version it does not speak, and a file with `version: 3` and a key no version defines is `version`, not `schema` (`fork/bad-version-and-unknown-key`) |
 | 3 | `schema` | the map is not the closed set of exactly seven keys (version 1) or eleven (version 2), or a value has the wrong type — for example, the `size` field is a boolean rather than a uint — which includes a `held_root` or a `proof` hash that is not **exactly 32 bytes**, as the table above types them. A wrong length is a schema fault, checked here, before any checkpoint is read |
@@ -1672,7 +1671,7 @@ checks:
 | 5 | `held` | the held checkpoint fails any §10 check: note framing, log signature, checkpoint body, origin, cosignature, or quorum |
 | 6 | `conflicting` | the conflicting checkpoint fails any §10 check. The held checkpoint is checked first, so a file wrong in both is refused as `held` |
 | 7 | `size` | `size` is above the held checkpoint's own size, or the conflicting checkpoint's size does not equal `size` |
-| 8 | `proof` | `size` is 0 — no consistency proof starts at an empty tree (RFC 6962 §2.1.2 defines one only for 0 < m < n) and every log has the same root there, so no file can show a disagreement at size 0; or the consistency proof does not chain `held_root` at `size` to the held checkpoint's signed head; or, where `size` equals the held size, `held_root` is not the root the held checkpoint is signed over — there is no proof to check, and this comparison is the only thing binding `held_root` to anything, so a reader that skips it proves a fork from one honest checkpoint and any 32 bytes; or a proof is carried where `size` equals the held size and §11.1 requires none; or, at version 2, `split` is above `size`, a split proof does not chain `split_root` at `split` to its head, or a split proof is carried where none is required (step 4) — all of it before `consistent` below: every proof a file carries is checked before the file is read as a fork (D-076, `fork/bad-consistent-and-bad-split`) |
+| 8 | `proof` | `size` is 0 — no consistency proof starts at an empty tree (RFC 6962 §2.1.2 defines one only for 0 < m < n) and every log has the same root there, so no file can show a disagreement at size 0; or the consistency proof does not chain `held_root` at `size` to the held checkpoint's signed head; or, where `size` equals the held size, `held_root` is not the root the held checkpoint is signed over — there is no proof to check, and this comparison is the only thing binding `held_root` to anything, so a reader that skips it proves a fork from one honest checkpoint and any 32 bytes; or a proof is carried where `size` equals the held size and §11.1 requires none; or, at version 2, `split` is above `size`, `split` is 0 with a `split_root` that is not all zero (step 4), a split proof does not chain `split_root` at `split` to its head, or a split proof is carried where none is required (step 4) — all of it before `consistent` below: every proof a file carries is checked before the file is read as a fork (D-076, `fork/bad-consistent-and-bad-split`) |
 | 9 | `consistent` | `held_root` equals `conflicting`'s root at `size`; the file proves nothing, and a node MUST NOT publish it as an accusation |
 
 **`MAX_EVIDENCE_BYTES` is 65536**. Two signed checkpoints, a root and a
@@ -1789,7 +1788,7 @@ this table drifted out of date the moment one was.
 |---|---|---|
 | §11.1 carried policy point admission (D-079 (1)) | `fork/evidence.cbor`; restoring only the carried policy recovers it byte for byte | `fork/bad-policy-small-order-key.cbor` names an order-8 witness under pi with its id recomputed and quorum on pi: `policy`, step 4 |
 | §8.1 bundle label grammar (D-079 (2)) | `proofs/nas.bundle`; restoring only the label recovers it byte for byte | `proofs-bad/device-not-a-device-id.bundle` labels the sound nas bundle `NAS`: `bundle`, step 1 |
-| §8.1 an undecodable request names no device (D-079 (2)) | `proofs/nas.bundle` accepts; the refused entry's inclusion proof and served checkpoint remain sound | `proofs-bad/request-undecodable.bundle` proves `log/79-bad-device_id-uppercase` under the valid label `probe`: `binding`, step 4 |
+| §8.1 an undecodable request names no device (D-079 (2)) | `proofs/nas.bundle` accepts; the refused entry's inclusion proof and served checkpoint remain sound | `proofs-bad/request-undecodable.bundle` proves `log/79-bad-device_id-uppercase` under the valid label `probe`: `binding`, step 4. The label also differs from the request's raw id `Probe`, so it shows the rule only to a reader that reports why (cold gate run 17, D11); `log/81-bad-pk-length` under its own id `probe` separates the two, and is listed below until it ships |
 | §6 and §10.1 full tiles replace deleted partial paths (D-079 (3)) | `grown-log/older-head-over-full-tiles` accepts the older head at 162 over the grown log's full tile and bundle; `grown-log/corrupt-beyond-prefix` changes one byte in hash 200 and accepts | `grown-log/full-tile-gone` deletes `tile/0/000`: `unserved`; `grown-log/full-bundle-gone` deletes `tile/entries/000`: `unserved`; `grown-log/corrupt-within-prefix` changes one byte in hash 10: `tiles`. Both width-162 partial paths are absent throughout |
 | §8.1 inclusion proof exact consumption (run 16, M3) | `proofs/nas.bundle`; removing the appended hash recovers it byte for byte | `proofs-bad/padded-proof.bundle` appends one 32-byte hash to the sound bundle: `inclusion` |
 | §11.1 consistency proof exact consumption (run 16, M3) | `fork/evidence.cbor`; removing each appended hash recovers it byte for byte | `fork/bad-padded-proof.cbor` appends one 32-byte hash to `proof`; `fork/bad-padded-split-proof.cbor` appends one to `split_proof_held`, leaving the main proof sound: both `proof` at step 8 |
@@ -1902,7 +1901,7 @@ this table drifted out of date the moment one was.
 | §5.3 policy for the checkpoint's `T` | `served/checkpoint` is accepted under `trust.cbor`'s 2-of-3 policy, so `proofs/cases.json` records `checkpoint_quorum_time` 1760003607. The same checkpoint replays a 3-of-3 policy; `replayed_policy_quorum_time` 1760003600 pins the different, retroactive reading. It also separates the median from the k-th newest: `replayed_policy_quorum_time` is computed under a three-of-three policy, where the k-th newest is the oldest cosignature and the median is not, so a median reader gets 1760003607 and fails (cold gate run 13, D19) | — |
 | §4.0 the grant, §4.5 `routes` | `proven/cases.json`'s `grants`: `router`'s label `10.9.1.5/24, fd00::5/64` becomes `10.9.1.0/24, fd00::/64` (masked, sorted as text), `nas` has none, and `badgrant`'s `10.9.2.0/24, nope` is no grant at all — a reader that keeps the part that parsed differs by a prefix a node would install. `log/156-params-routes-granted` names the default | `log/157-bad-params-routes-unknown-value` (`"open"`) and `log/158-bad-params-routes-wrong-type` (`1`): the value set is closed and the type is text, each `decode` |
 | §5.3 evaluation time | `proven/cases.json`: the admitted set at four values of `T` — no clock, before, **exactly at**, and after the one deadline the fixture carries. `state.json` is clock-independent by design, so this is the only vector that exercises expiry | the `at-the-deadline` case, where `expires == T` and the device is **out** |
-| §7 receipt, codes and check order | `receipt.note` | **19 `receipt-bad/` cases** cover all eight closed codes: `note` (extra final newline), `log-signature` (untrusted signer), `receipt` (wrong header), `origin`, `leaf-hash` (invalid data and non-zero pad bits), `deadline` (`leading-zero.note`), `entry`, and `expired` (checked at the deadline). Body and signer negatives are re-signed; the framing case cannot be, and expiry is a time-dependent check over the otherwise valid receipt. The leading-zero case closes cold gate run 11, D4: §6 fixed a checkpoint's size spelling while §7 left this deadline implicit, so `ReceiptDeadlineLax` passed all 622 checks. **The order** is held pair by pair (cold gate run 13, D4): until then every case failed one step, so a reader that swapped two adjacent steps passed. Each `order-` case fails steps *n* and *n*+1 and is refused for *n* — `order-log-signature-before-receipt` (signed by another key, wrong header), `order-receipt-before-origin`, `order-origin-before-leaf-hash`, `order-leaf-hash-before-deadline`, `order-deadline-before-entry` and `order-entry-before-expired` (another entry's hash, checked at the deadline) |
+| §7 receipt, codes and check order | `receipt.note` | **20 `receipt-bad/` cases** cover all eight closed codes: `note` (extra final newline), `log-signature` (untrusted signer), `receipt` (wrong header), `origin`, `leaf-hash` (invalid data and non-zero pad bits), `deadline` (`leading-zero.note`), `entry`, and `expired` (checked at the deadline). Body and signer negatives are re-signed; the framing case cannot be, and expiry is a time-dependent check over the otherwise valid receipt. The leading-zero case closes cold gate run 11, D4: §6 fixed a checkpoint's size spelling while §7 left this deadline implicit, so `ReceiptDeadlineLax` passed all 622 checks. **The order** is held pair by pair (cold gate run 13, D4): until then every case failed one step, so a reader that swapped two adjacent steps passed. Each `order-` case fails steps *n* and *n*+1 and is refused for *n* — `order-log-signature-before-receipt` (signed by another key, wrong header), `order-receipt-before-origin`, `order-origin-before-leaf-hash`, `order-leaf-hash-before-deadline`, `order-deadline-before-entry` and `order-entry-before-expired` (another entry's hash, checked at the deadline) |
 | §§6–7 every decimal note line is at most 2⁶³−1 (D-076) | `served/checkpoint` and `receipt.note` | `checkpoints-bad/33-size-above-2-63` changes only the honest size line to 9223372036854775808, re-signed and cosigned by all three witnesses, served over the honest tiles: `checkpoint`. `receipt-bad/deadline-above-2-63.note` changes only the shipped receipt's deadline to the same integer, re-signed by the log: `deadline` |
 | §9.1 every policy line ends in LF (D-076) | `policies/minimal` | `policies/bad-final-comment-no-lf` appends `# note` without LF to the minimal policy; adding its missing delimiter makes the policy parse. A missing final line feed is an error whatever the last line holds |
 | §11.1 every carried proof precedes the root comparison (D-076) | the version-2 `fork/evidence.cbor` | `fork/bad-consistent-and-bad-split` carries agreeing roots and a real common split whose held proof has one corrupted hash. Every proof a file carries is checked before the file is read as a fork: `proof`, before `consistent`. Repairing the held split proof gives `consistent`; making the roots differ still gives `proof` |
@@ -1916,7 +1915,7 @@ this table drifted out of date the moment one was.
 | §9.1 `anchor` is OPTIONAL | `trust-good/no-anchor` — **accepted**. Every other trust file in the suite carries one, so a reader that required it rejected nothing | — |
 | §9.1 open URL readings | `trust-good/url-fields-are-opaque` — **accepted** with an invalid URI spelling in `log_urls`, an explicitly empty witness URL, and a different policy URL. The empty field survives canonical re-encoding | `trust-bad/33-log-url-empty-string`: `log_urls` still has a non-empty constraint |
 | §9.1 the members the table shows and never constrained | `trust-good/witness-without-url`, `trust-good/anchor-unknown-type`, and `trust-good/url-fields-are-opaque`, all **accepted**: a reader that requires an optional member, refuses an unknown anchor type, validates URL syntax, or requires URL correspondence refuses a file this document permits | `31-witness-open-schema`, `32-witness-name-too-long` (renamed in the policy too, so correspondence holds), `33-log-url-empty-string`, `34-anchor-missing-member`, `35-anchor-unknown-mode`, `36-policy-log-key-mismatch`, and `43-anchor-unknown-member`. An unknown anchor **type** is ignorable — anchoring is advisory (D-009) — where an unknown **mode** or member is not |
-| §9 trust file, fingerprint | `trust.cbor` | **53 rejected anchors** in `trust-bad/`. **`15`** and **`16`** parse cleanly as verifier keys and are refused by the algorithm rule — the trust file's, and the policy grammar's again once the key enters the policy, so neither isolates the trust-level rule alone (run 14, L4); **`17`** and **`18`** are a witness the policy never names and a policy naming a witness the file does not list, each otherwise perfectly valid |
+| §9 trust file, fingerprint | `trust.cbor` | **53 rejected anchors** in `trust-bad/`. **`15`** and **`16`** parse cleanly as verifier keys and are refused by the algorithm rule — the trust file's, and the policy grammar's again once the key enters the policy, so neither isolates the trust-level rule alone (run 14, L4); **`17`** and **`18`** are a witness the policy never names and a policy naming a witness the file does not list, each otherwise perfectly valid. The trust file's witness-name rule is in the same place: `32-witness-name-too-long` and `54-witness-name-not-ascii` are refused by it and again by the policy grammar once correspondence puts the name in the policy, so neither isolates it (cold gate run 17, D11) |
 | §9.1 four rules that another rule used to decide | `trust.cbor` | `26-name-too-long` and `27-name-empty` (both ends of the 1–64 byte bound; `14` covers absent), `28-empty-log-urls` (present and empty, which is a different path from absent), `07-no-witnesses` — whose policy is `quorum none` and names no witnesses either, so only the explicit witness minimum can refuse it — and `08-duplicate-witness-name`, which lists all three witnesses *and* a byte-identical second `pi`, so names and keys correspond exactly and only uniqueness is broken |
 | §9.1's three MUSTs about the **log key and origin** | `trust.cbor` | `11-log-key-name-mismatch` (the note name is not `origin`), `13-origin-only` (`origin` is the derived value plus one character, so a prefix check accepts it), and `16-log-key-is-a-cosignature-key`. Each carries its damaged key in its **policy** as well, so the `log`-line correspondence rule agrees and only the named rule can refuse it |
 | §9.1 D10's three isolated rules | `trust.cbor` | `13-origin-only` is the derived origin plus one character; `42-witness-key-mismatch` keeps every witness name aligned and changes only the key; `43-anchor-unknown-member` carries the three required members and one unknown. Each otherwise valid file is refused only by the named rule |
@@ -2061,10 +2060,10 @@ admits its holes, so:
 - **§16.1's 32-byte `device_pk`.** At the request layer
   `requests-bad/short-device-pk` is refused by that rule, and a verifier that
   skipped it would fail anyway: a 31-byte key verifies nothing. At the entry
-  layer the code tells the two apart: `log/81-bad-pk-length` embeds such a
-  request and is `decode`, where a reader without the rule decodes the request
-  and answers `no-device-sig` (cold gate run 16, L6). So the rule is pinned,
-  through the entry's code.
+  layer `log/81-bad-pk-length` embeds such a request and is `decode`, and so it
+  is for a reader without the length rule: §3.1's point admission refuses a
+  31-byte key at the same step (cold gate run 17, D11, correcting run 16's L6).
+  The rule is refused, and never isolated.
 - **§5's `state.net` coming from the anchor rather than from the genesis
   entry.** Unobservable: entry 0 aborts whenever the two differ, so no file can
   tell the two readings apart. Recorded here because a reader will look.
@@ -2096,10 +2095,24 @@ admits its holes, so:
   Each is a sentence above that a careful reader gets right, and each has an
   input a network can see on which a reader who got it wrong would differ;
   Go gives this document's answer on every one, and the reference on every one
-  in the layers it implements. Both the `rotate` and the `revoke` (§8.1) are
-  vectored by `proofs/nas-rotate.bundle` and `proofs/laptop-revoke.bundle`.
+  in the layers it implements. Every rule run 16 listed here is now vectored;
+  the last two, a bundle around a `rotate` and one around a `revoke` (§8.1), by
+  `proofs/nas-rotate.bundle` and `proofs/laptop-revoke.bundle`.
   Beyond the static suite: §11 rule 3's frozen set, §15's `CLOCK_SKEW` alarm and
   §13.2's restart rules are node behaviour, held by the Go tests.
+- **Rules stated plainly that no vector holds yet (cold gate run 17, D11).**
+  Each has an input a network can see on which a reader who got it wrong would
+  differ, and Go gives this document's answer on every one: a surplus signature
+  element whose `kid` differs only in case (§4.0, `decode`); an `enroll` signed
+  by roots and no signer (§4.3, `threshold`); a trust file whose genesis entry
+  does not apply (§10.1, `genesis`); grant order across address families, and
+  `::` standing for at least one group (§4.0); a request with `expires` 0
+  (§16.1); a receipt with no signature line (§7, `note`); evidence and a bundle
+  checked under a replayed policy (§11.1 `held`, §8.1 `quorum`); a request whose
+  `device_pk` is not a valid point, and `log/81-bad-pk-length` under its own id,
+  each inside a bundle (§8.1, `binding`); an empty map key in evidence (§4.0,
+  `cbor`); and `quorum none` (an uncosigned head accepted, an expiring device
+  kept while there is no clock). Row 6.5l-xv-d ships them and strikes each here.
 Everything else named in the table above ships, and the build fails if a path
 cited here is missing or a directory here is not named.
 
