@@ -128,7 +128,9 @@ func Write(dir string, cp tlog.Checkpoint, signedCheckpoint string, entries [][]
 // supersede narrower partials, which may be removed. This is from memory, not
 // a quote of its exact wording. Keeping one previous generation delays that
 // removal so a peer that just read our old checkpoint can fetch its exact
-// paths; logclient.checkTiles does not fall back to wider tiles.
+// paths with one request each; since D-079 logclient falls back to the full
+// tile or bundle when the partial path is gone, so this is a courtesy, not a
+// need.
 func keepPartials(keep map[string]bool, size int64) {
 	if width := int(size % tlog.TileWidth); width != 0 {
 		keep[tlog.EntryBundlePath(size/tlog.TileWidth, width)] = true

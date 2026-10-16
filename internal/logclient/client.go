@@ -215,17 +215,9 @@ func VerifyFrom(held *Result, f Fetcher, anchor Anchor) (*Result, error) {
 	var fresh [][]byte
 	for index := from / tlog.TileWidth; cp.Size > from && index*tlog.TileWidth < cp.Size; index++ {
 		width := int(min(cp.Size-index*tlog.TileWidth, tlog.TileWidth))
-		bundle, err := fetchBundle(f, index, width)
+		entries, err := bundleEntries(f, index, width, cp.Size)
 		if err != nil {
 			return nil, err
-		}
-		entries, err := tlog.DecodeBundle(bundle)
-		if err != nil {
-			return nil, refuse(refusal.Entries, "entry bundle %d does not frame: %v", index, err)
-		}
-		if len(entries) != width {
-			return nil, refuse(refusal.Entries, "entry bundle %d holds %d entries; a checkpoint "+
-				"of %d implies %d", index, len(entries), cp.Size, width)
 		}
 		for i, raw := range entries {
 			at := index*tlog.TileWidth + int64(i)
@@ -378,36 +370,54 @@ func fetchEntries(f Fetcher, size int64) ([][]byte, error) {
 	var out [][]byte
 	for index := int64(0); int64(len(out)) < size; index++ {
 		width := int(min(size-int64(len(out)), int64(tlog.TileWidth)))
-		raw, err := fetchBundle(f, index, width)
+		entries, err := bundleEntries(f, index, width, size)
 		if err != nil {
 			return nil, err
-		}
-		entries, err := tlog.DecodeBundle(raw)
-		if err != nil {
-			return nil, refuse(refusal.Entries, "entry bundle %d does not frame: %v", index, err)
-		}
-		if len(entries) != width {
-			return nil, refuse(refusal.Entries, "entry bundle %d holds %d entries; a checkpoint "+
-				"of %d implies %d", index, len(entries), size, width)
 		}
 		out = append(out, entries...)
 	}
 	return out, nil
 }
 
+// bundleEntries fetches bundle `index` for a head of `size` and returns the
+// `width` entries that head implies. A full bundle standing in for a deleted
+// partial one holds every entry of its group, of which the head implies the
+// first width (D-079); its own count is still exact.
+func bundleEntries(f Fetcher, index int64, width int, size int64) ([][]byte, error) {
+	raw, full, err := fetchBundle(f, index, width)
+	if err != nil {
+		return nil, err
+	}
+	entries, err := tlog.DecodeBundle(raw)
+	if err != nil {
+		return nil, refuse(refusal.Entries, "entry bundle %d does not frame: %v", index, err)
+	}
+	expected := width
+	if full {
+		expected = tlog.TileWidth
+	}
+	if len(entries) != expected {
+		return nil, refuse(refusal.Entries, "entry bundle %d holds %d entries; a checkpoint "+
+			"of %d implies %d", index, len(entries), size, expected)
+	}
+	return entries[:width], nil
+}
+
 // fetchBundle prefers the checkpoint's exact width. A peer may have published
 // a full bundle since we read its previous checkpoint, while still retaining
 // the partial that checkpoint requires. Trying the full path first would then
-// fetch too many entries and refuse a usable previous head.
-func fetchBundle(f Fetcher, index int64, width int) ([]byte, error) {
+// fetch too many entries and refuse a usable previous head. When the partial
+// is gone, which tlog-tiles allows once the full bundle exists, the full one
+// stands in (D-079), and the second result says so.
+func fetchBundle(f Fetcher, index int64, width int) ([]byte, bool, error) {
 	if raw, err := f.Fetch(tlog.EntryBundlePath(index, width)); err == nil {
-		return raw, nil
+		return raw, false, nil
 	}
 	raw, err := f.Fetch(tlog.EntryBundlePath(index, tlog.TileWidth))
 	if err != nil {
-		return nil, refuse(refusal.Unserved, "fetching entry bundle %d: %v", index, err)
+		return nil, false, refuse(refusal.Unserved, "fetching entry bundle %d: %v", index, err)
 	}
-	return raw, nil
+	return raw, width != tlog.TileWidth, nil
 }
 
 // checkTiles requires every hash tile the tree implies to be served, and to be
@@ -424,6 +434,18 @@ func checkTiles(f Fetcher, tree *tlog.Tree, unchanged map[string]bool) error {
 			continue
 		}
 		served, err := f.Fetch(tile.Path())
+		if err != nil && tile.Width != tlog.TileWidth {
+			// The partial tile may be gone, which tlog-tiles allows once the
+			// full one exists: its first Width hashes are the same bytes, and
+			// they are compared below exactly as the partial would be (D-079).
+			if full, fullErr := f.Fetch(tlog.TilePath(tile.Level, tile.Index, tlog.TileWidth)); fullErr == nil {
+				if len(full) < len(tile.Data) {
+					return refuse(refusal.Tiles, "the full hash tile standing in for %s holds fewer "+
+						"than the %d hashes the head implies", tile.Path(), tile.Width)
+				}
+				served, err = full[:len(tile.Data)], nil
+			}
+		}
 		if err != nil {
 			return refuse(refusal.Unserved, "the log does not serve %s, which tlog-tiles requires: %v",
 				tile.Path(), err)
