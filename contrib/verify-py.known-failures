@@ -54,7 +54,13 @@ dropped-witness/cases.json#unhandled expected="handled" got="UNKNOWN CASE FORMAT
 # content of the refused `revoke` signed by another device, so the same revoke
 # signed by the device itself is dup-entry for it, and the state differs.
 log-rules/04-revoke-nas-by-self.cbor expected="accept" got="dup-entry"
-log-rules/state.json expected=sha256:091cf9a391c41260e48900690fb7f9285295c46719a62faf4d578e805b1235d5 got=sha256:02b15356e1f55a09a93ba1997719ee9916142e52f1f64c91f9aeb45f0e941381
+# Row 6.5l-xv-d, reference half (2026-10-16): the same debt again. Entry 22, an
+# `enroll` signed by roots alone, is refused as `threshold`; 23 is the same
+# entry with a signer's signature added, so its content is 22's and this build,
+# which records a refused entry's content, calls it a duplicate. The state line
+# moved with the six new entries.
+log-rules/23-enroll-with-signer.cbor expected="accept" got="dup-entry"
+log-rules/state.json expected=sha256:1f4d3db2bb8a678a1f2a91a720d2a399f940db21739a491778018a1b78069f02 got=sha256:d6cf88dbfd404e7477bddbbb653bc3859ad0e61bcd4b419a397053abeb05a9f8
 
 # Row 6.5l-xiv-d, Go half (2026-10-15): `heads-run16/`, heads with reader
 # histories and a request table with the consumer's network, a manifest shape

@@ -1,9 +1,9 @@
-"""Run 16's plainly stated rules, read from the distributed replay fixture."""
+"""Runs 16 and 17's plainly stated rules, read from the distributed replay fixture."""
 import json
 from pathlib import Path
 import unittest
 
-from nornref import cbor, entry, fixture, replay
+from nornref import cbor, entry, enrollreq, fixture, replay
 
 ROOT = Path(__file__).resolve().parents[3] / "testdata" / "vectors" / "log-rules"
 NAMES = ["00-genesis", "01-enroll-nas", "02-enroll-laptop",
@@ -14,9 +14,12 @@ NAMES = ["00-genesis", "01-enroll-nas", "02-enroll-laptop",
          "12-copy-enroll-unsorted-sigs", "13-copy-enroll-sorted-sigs",
          "14-root-threshold-full", "15-root-remove-unknown-before-invariant",
          "16-root-remove-known-at-full-threshold", "17-root-threshold-repaired",
-         "18-root-remove-known"]
+         "18-root-remove-known", "19-root-restore-known",
+         "20-note-uppercase-kid", "21-note-without-surplus-kid",
+         "22-enroll-by-roots", "23-enroll-with-signer",
+         "24-enroll-expires-zero", "25-enroll-without-expires"]
 CODES = ["", "", "", "threshold", "", "stale-state", "", "decode", "", "", "", "",
-         "decode", "dup-entry", "", "unknown-key", "root-invariant", "", ""]
+         "decode", "dup-entry", "", "unknown-key", "root-invariant", "", "", "", "decode", "", "threshold", "", "decode", ""]
 
 
 class RuleVectors(unittest.TestCase):
@@ -94,6 +97,37 @@ class RuleVectors(unittest.TestCase):
                     check(raw[:18], raw[18])
                 elif i == 16:
                     check(raw[:18], raw[18])
+                elif i == 20:
+                    self.assertEqual(len(env["sigs"]), 2)
+                    surplus = next(s for s in env["sigs"] if s["kid"] != fixture.KEYS["signer1"].id)
+                    self.assertEqual(surplus["kid"], fixture.KEYS["signer1"].id.upper())
+                    self.assertNotEqual(surplus["kid"], surplus["kid"].lower())
+                    env["sigs"].remove(surplus)
+                    self.assertEqual(entry.encode(env), raw[21])
+                    check(raw[:i], raw[21])
+                elif i == 22:
+                    before = replay.replay(anchor, raw[:i])
+                    self.assertEqual(set(before.roots), {fixture.KEYS[k].id for k in fixture.ROOTS})
+                    self.assertEqual({s["kid"] for s in env["sigs"]}, set(before.roots))
+                    self.assertEqual({s["role"] for s in env["sigs"]}, {"root"})
+                    req = enrollreq.decode(env["body"]["request"])
+                    self.assertNotIn(req["device_id"], before.devices)
+                    self.assertNotIn(req["wg_pk"], before.active_wg)
+                    self.assertTrue(enrollreq.verify(req))
+                    entry.sign(env, fixture.KEYS["signer1"], "signer")
+                    self.assertEqual(entry.encode(env), raw[23])
+                    check(raw[:i], raw[23])
+                elif i == 24:
+                    req = cbor.decode(env["body"]["request"])
+                    self.assertEqual(req["expires"], 0)
+                    self.assertGreater(req["ts"], 0)
+                    del req["expires"]
+                    enrollreq.sign(req, fixture.KEYS["sundial"])
+                    env["body"]["request"] = cbor.encode(req)
+                    env["sigs"] = []
+                    entry.sign(env, fixture.KEYS["signer1"], "signer")
+                    self.assertEqual(entry.encode(env), raw[25])
+                    check(raw[:i], raw[25])
                 else:
                     self.fail("refusal has no repair")
         self.assertEqual((final.to_json() + "\n").encode(), (ROOT / "state.json").read_bytes())

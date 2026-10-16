@@ -2937,7 +2937,7 @@ func TestEveryServedAndBundleNegativeCitesTheRuleOfItsCode(t *testing.T) {
 			"binding":       {"`device` is the `device_id` the `entry` names", "an `enroll` whose request does not decode"},
 		},
 		"receipt-bad": {
-			"note":          {"a second `0x0A` after the final signature creates a forbidden blank line"},
+			"note":          {"a second `0x0A` after the final signature creates a forbidden blank line", "or no signature line, is `note`"},
 			"log-signature": {"The note MUST verify under a log key the verifier trusts"},
 			"receipt":       {"The first line MUST be", "Require exactly four signed-text lines"},
 			"origin":        {"The origin line MUST equal the anchored origin"},

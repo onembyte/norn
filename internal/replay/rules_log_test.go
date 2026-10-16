@@ -2,20 +2,22 @@ package replay
 
 import (
 	"bytes"
+	"crypto/ed25519"
 	"encoding/json"
 	"os"
 	"strings"
 	"testing"
 
 	"github.com/onembyte/norn/internal/cbor"
+	"github.com/onembyte/norn/internal/enrollreq"
 	"github.com/onembyte/norn/internal/entry"
 )
 
 // These outcomes are the rules in §4.0, §4.3, §4.4 and §5.1, independent of
 // the manifest. The repairs retain the original content wherever possible.
 func TestEveryRuleCaseMatchesAndEachRefusalRepairs(t *testing.T) {
-	names := []string{"00-genesis", "01-enroll-nas", "02-enroll-laptop", "03-revoke-nas-by-laptop", "04-revoke-nas-by-self", "05-signer-add-without-prev", "06-signer-add-prev-zero", "07-note-without-ts", "08-note-with-ts", "09-enroll-empty-label-value", "10-policy-preannounces-log-key", "11-log-key-preannounced", "12-copy-enroll-unsorted-sigs", "13-copy-enroll-sorted-sigs", "14-root-threshold-full", "15-root-remove-unknown-before-invariant", "16-root-remove-known-at-full-threshold", "17-root-threshold-repaired", "18-root-remove-known"}
-	codes := []string{"", "", "", ReasonThreshold, "", ReasonStaleState, "", ReasonDecode, "", "", "", "", ReasonDecode, ReasonDupEntry, "", ReasonUnknownKey, ReasonRootInvariant, "", ""}
+	names := []string{"00-genesis", "01-enroll-nas", "02-enroll-laptop", "03-revoke-nas-by-laptop", "04-revoke-nas-by-self", "05-signer-add-without-prev", "06-signer-add-prev-zero", "07-note-without-ts", "08-note-with-ts", "09-enroll-empty-label-value", "10-policy-preannounces-log-key", "11-log-key-preannounced", "12-copy-enroll-unsorted-sigs", "13-copy-enroll-sorted-sigs", "14-root-threshold-full", "15-root-remove-unknown-before-invariant", "16-root-remove-known-at-full-threshold", "17-root-threshold-repaired", "18-root-remove-known", "19-root-restore-known", "20-note-uppercase-kid", "21-note-without-surplus-kid", "22-enroll-by-roots", "23-enroll-with-signer", "24-enroll-expires-zero", "25-enroll-without-expires"}
+	codes := []string{"", "", "", ReasonThreshold, "", ReasonStaleState, "", ReasonDecode, "", "", "", "", ReasonDecode, ReasonDupEntry, "", ReasonUnknownKey, ReasonRootInvariant, "", "", "", ReasonDecode, "", ReasonThreshold, "", ReasonDecode, ""}
 	dir := vectorRoot() + "/log-rules"
 	anchor, raw, m := loadCase(t, dir)
 	if len(raw) != len(names) {
@@ -171,6 +173,89 @@ func TestEveryRuleCaseMatchesAndEachRefusalRepairs(t *testing.T) {
 				check(raw[:18], raw[18], "")
 			case 16:
 				check(raw[:18], raw[18], "")
+			case 20:
+				sigs := env["sigs"].([]any)
+				if len(sigs) != 2 {
+					t.Fatal("expected signer and surplus element")
+				}
+				kid := entry.Kid(publicOf(t, "signer1"))
+				var kept []any
+				for _, sig := range sigs {
+					sm := sig.(map[string]any)
+					if sm["kid"] == kid {
+						kept = append(kept, sig)
+					} else if sm["kid"] != strings.ToUpper(kid) || sm["kid"] == kid {
+						t.Fatal("surplus kid must be the signer's hex in uppercase")
+					}
+				}
+				if len(kept) != 1 {
+					t.Fatal("missing genuine signer")
+				}
+				env["sigs"] = kept
+				encoded, err := cbor.Encode(env)
+				if err != nil {
+					t.Fatal(err)
+				}
+				paired(encoded, 21)
+				check(raw[:i], raw[21], "")
+			case 22:
+				before := Replay(anchor, raw[:i])
+				sigs := env["sigs"].([]any)
+				if len(before.Roots) != 3 || len(sigs) != 3 {
+					t.Fatal("expected three current roots")
+				}
+				for _, sig := range sigs {
+					sm := sig.(map[string]any)
+					if sm["role"] != "root" || before.Roots[sm["kid"].(string)] == "" {
+						t.Fatal("not signed only by current roots")
+					}
+				}
+				req, err := enrollreq.Decode(env["body"].(map[string]any)["request"].([]byte))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !enrollreq.Verify(req) {
+					t.Fatal("request signature does not verify")
+				}
+				if _, ok := before.Devices[req.DeviceID]; ok {
+					t.Fatal("request needs a fresh device")
+				}
+				e, err := entry.Decode(raw[i])
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := entry.Sign(e, privateKey(t, "signer1"), "signer"); err != nil {
+					t.Fatal(err)
+				}
+				encoded, err := entry.Encode(e)
+				if err != nil {
+					t.Fatal(err)
+				}
+				paired(encoded, 23)
+				check(raw[:i], raw[23], "")
+			case 24:
+				body := env["body"].(map[string]any)
+				value, err := cbor.Decode(body["request"].([]byte))
+				if err != nil {
+					t.Fatal(err)
+				}
+				req := value.(map[string]any)
+				if req["expires"] != uint64(0) || req["ts"].(uint64) == 0 {
+					t.Fatal("expected explicit expires 0 after a positive ts")
+				}
+				delete(req, "expires")
+				delete(req, "sig")
+				unsigned, err := cbor.Encode(req)
+				if err != nil {
+					t.Fatal(err)
+				}
+				req["sig"] = ed25519.Sign(privateKey(t, "sundial"), append([]byte(enrollreq.PreimagePrefix), unsigned...))
+				body["request"], err = cbor.Encode(req)
+				if err != nil {
+					t.Fatal(err)
+				}
+				paired(sign([]string{"signer1"}, "signer"), 25)
+				check(raw[:i], raw[25], "")
 			default:
 				t.Fatal("refusal has no repair")
 			}

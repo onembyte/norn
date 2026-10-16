@@ -17,6 +17,7 @@ class Deterministic(unittest.TestCase):
             gen_vectors.write_empty_log(out)
             gen_vectors.write_admission_log(out)
             gen_vectors.write_cas_log(out)
+            gen_vectors.write_rules_log(out)
             gen_vectors.write_genesis_aborts(out)
             gen_vectors.write_trust_rejections(out)
             gen_vectors.write_trust(out)

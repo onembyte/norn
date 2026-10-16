@@ -169,6 +169,8 @@ def write_proven(out: pathlib.Path, final: Any, entries: list[bytes]) -> None:
     space = "U+0020 is removed from both of its ends and nothing else is."
     canonical = "every group in lowercase hexadecimal (an embedded dotted quad is written as"
     forms = [
+        ("9.0.0.0/8, 1::/16", ["1::/16", "9.0.0.0/8"], "duplicates removed, sorted as text"),
+        ("1:2:3:4:5:6:7::8/128", [], "address as RFC 4291 §2.2 writes it: groups of one to four hexadecimal digits in"),
         ("1:0:0:2:3:0:0:4/128", ["1::2:3:0:0:4/128"], "IPv6 address in RFC 5952 form with"),
         ("10.0.0.1/8, 10.0.0.2/8", ["10.0.0.0/8"], "its prefix, duplicates removed, sorted as text"),
         ("9.0.0.0/8, 10.0.0.0/8", ["10.0.0.0/8", "9.0.0.0/8"], "duplicates removed, sorted as text"),
@@ -595,7 +597,36 @@ def write_order_log(out: pathlib.Path) -> None:
 
 def write_rules_log(out: pathlib.Path) -> None:
     """Every outcome cites the deciding sentence on one raw normative line."""
-    items = fixture.rules_log()
+    b = fixture._Builder()
+    b.items = fixture.rules_log()
+    roots = [("root1", "root"), ("root2", "root")]
+    signer = [("signer1", "signer")]
+    # Entry 18 removed root3. Restore it so the enroll below really carries
+    # all three current roots, not two current roots and an unknown key.
+    b.add("19-root-restore-known", b.build("root_add", {"pk": fixture.KEYS["root3"].public}, roots))
+    honest = b.build("note", {"text": "signature kids are lowercase hex"}, signer)
+    surplus = dict(honest["sigs"][0], kid=honest["sigs"][0]["kid"].upper())
+    malformed = dict(honest, sigs=sorted(honest["sigs"] + [surplus], key=lambda sig: sig["kid"]))
+    b.add("20-note-uppercase-kid", malformed, "decode")
+    b.add("21-note-without-surplus-kid", honest)
+    request = fixture._request("probe", "sundial", "sundial", 20_000)
+    enrolled = b.build("enroll", {"request": cbor.encode(request)},
+                       [(key, "root") for key in fixture.ROOTS])
+    b.add("22-enroll-by-roots", enrolled, "threshold")
+    repaired = dict(enrolled, sigs=list(enrolled["sigs"]))
+    entry.sign(repaired, fixture.KEYS["signer1"], "signer")
+    b.add("23-enroll-with-signer", repaired)
+    request = fixture._request("expiry-probe", "sundial", "printer", 20_000)
+    request["expires"] = 0
+    enrollreq.sign(request, fixture.KEYS["sundial"])
+    expired = b.build("enroll", {"request": cbor.encode(request)}, signer)
+    b.add("24-enroll-expires-zero", expired, "decode")
+    del request["expires"]
+    enrollreq.sign(request, fixture.KEYS["sundial"])
+    repaired = dict(expired, body={"request": cbor.encode(request)}, sigs=[])
+    fixture._signed(repaired, signer)
+    b.add("25-enroll-without-expires", repaired)
+    items = b.items
     raw = [it.raw for it in items]
     anchor = fixture.anchor_for(raw)
     phrases = [
@@ -618,6 +649,13 @@ def write_rules_log(out: pathlib.Path) -> None:
         ("5.1", "removing it leaves ≥ `root_thr` roots and ≥ 1 root (`root-invariant`)"),
         ("5.1", "set the threshold; that version becomes this index"),
         ("5.1", "remove; `versions.roots` becomes this index"),
+        ("4.3", "| `root_add` | `pk` | ≥ `root_thr` roots |"),
+        ("4.0", "exactly 16 characters matching `^[0-9a-f]{16}$`"),
+        ("4.3", "any 1 signer or root; **no state effect**"),
+        ("4.3", "≥ `signer_thr` signers."),
+        ("4.3", "≥ `signer_thr` signers."),
+        ("16.1", "requested expiry, unix seconds; MUST be > `ts`"),
+        ("16.1", "| `expires` | uint | |"),
     ]
     for it in items:
         write(out / "log-rules" / (it.name + ".cbor"), it.raw)
@@ -754,6 +792,12 @@ def write_trust(out: pathlib.Path) -> None:
     # Note framing is tested before any trusted signature lookup.
     add_case("extra-final-newline.note", signed + "\n", "note",
              "a second `0x0A` after the final signature creates a forbidden blank line",
+             malformed=True)
+
+    add_case("no-signature-line.note",
+             "".join(line for line in signed.splitlines(keepends=True)
+                     if not line.startswith(note.SIG_PREFIX)),
+             "note", "or no signature line, is `note`",
              malformed=True)
 
     # Same receipt text, signed by a key other than the one in trust.cbor: a
