@@ -259,7 +259,7 @@ func TestABusEventRaisesUnprovenPeerBeforeTheNextPoll(t *testing.T) {
 	go func() { done <- loop(ctx, cycle, time.Hour, slog.New(slog.NewTextHandler(io.Discard, nil))) }()
 	// Wait for both initial status snapshots before adding the rogue, so
 	// the initial cycle cannot accidentally be the source of the alarm.
-	deadline := time.After(2 * time.Second)
+	deadline := time.After(watchDeadline(t))
 	for {
 		api.mu.Lock()
 		reads := api.reads
@@ -280,7 +280,7 @@ func TestABusEventRaisesUnprovenPeerBeforeTheNextPoll(t *testing.T) {
 	rogue := peertable.Key{44}
 	api.set(append(append([]peertable.Key(nil), original...), rogue))
 	api.bus <- `{}`
-	timeout := time.After(2 * time.Second)
+	timeout := time.After(watchDeadline(t))
 	for {
 		select {
 		case event := <-events:

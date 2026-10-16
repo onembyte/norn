@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -47,12 +48,43 @@ func startWatchRun(t *testing.T, cycle loopCycle, poll time.Duration) *watchRun 
 	t.Cleanup(func() { cancel() })
 	return r
 }
+
+// scaledDeadline is how long a watch test waits for an event that takes
+// milliseconds on a quiet machine. Each wait once had a fixed two seconds,
+// which tied the whole race run to the machine's speed: four gates on
+// 2026-10-15 failed here while another project's build held the CPU, with
+// every test passing alone (row 6.5l-xiv-g2). The first test to wait times
+// one unstalled initial cycle, which replays the served log under the race
+// detector, and every wait is four of those plus a second, two seconds at
+// least: a regression still fails in seconds rather than hanging.
+func scaledDeadline(unstalled time.Duration) time.Duration {
+	return max(2*time.Second, 4*unstalled+time.Second)
+}
+
+var (
+	watchDeadlineOnce  sync.Once
+	watchDeadlineValue time.Duration
+)
+
+func watchDeadline(t *testing.T) time.Duration {
+	t.Helper()
+	watchDeadlineOnce.Do(func() {
+		cycle, _, _ := tailscaleCycle(t)
+		started := time.Now()
+		if err := cycle.Once(); err != nil {
+			t.Fatal(err)
+		}
+		watchDeadlineValue = scaledDeadline(time.Since(started))
+	})
+	return watchDeadlineValue
+}
+
 func receiveWatch[T any](t *testing.T, ch <-chan T) T {
 	t.Helper()
 	select {
 	case v := <-ch:
 		return v
-	case <-time.After(2 * time.Second):
+	case <-time.After(watchDeadline(t)):
 		t.Fatal("timed out waiting for watch loop")
 		var zero T
 		return zero
@@ -77,7 +109,7 @@ func (r *watchRun) warning(t *testing.T, errorText string) {
 		if !found {
 			t.Fatalf("warning does not name %q: %v", errorText, record)
 		}
-	case <-time.After(2 * time.Second):
+	case <-time.After(watchDeadline(t)):
 		t.Fatal("watch failure was not reported")
 	}
 }
@@ -90,7 +122,7 @@ func (r *watchRun) stop(t *testing.T) {
 }
 func waitInitialWatch(t *testing.T, api *localAPIHandler) {
 	t.Helper()
-	deadline := time.After(2 * time.Second)
+	deadline := time.After(watchDeadline(t))
 	for {
 		api.mu.Lock()
 		reads := api.reads
@@ -114,7 +146,7 @@ func endWatch(api *localAPIHandler) {
 }
 func waitRogue(t *testing.T, r *watchRun, events <-chan agent.Event) {
 	t.Helper()
-	deadline := time.After(2 * time.Second)
+	deadline := time.After(watchDeadline(t))
 	for {
 		select {
 		case e := <-events:
