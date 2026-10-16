@@ -61,3 +61,9 @@ log-rules/state.json expected=sha256:091cf9a391c41260e48900690fb7f9285295c46719a
 # this build never saw (as `unreached-witness/` above). The other twelve cases
 # it answers as written: the level-1 tile, the receipt, both evidence key sets.
 heads-run16/cases.json#unhandled expected="handled" got="UNKNOWN CASE FORMAT"
+
+# Row 6.5l-xiv-h (2026-10-16): `grown-log/`, D-079 (3)'s older head over a
+# grown log's full tiles, a manifest shape this build never saw (as
+# `unreached-witness/` above). It answers D-079's other three cases as written:
+# the small-order carried policy, the `NAS` label, the undecodable request.
+grown-log/cases.json#unhandled expected="handled" got="UNKNOWN CASE FORMAT"

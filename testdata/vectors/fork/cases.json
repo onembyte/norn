@@ -151,6 +151,10 @@
     {
       "name": "bad-v2-without-split-keys",
       "says": "missing fields"
+    },
+    {
+      "name": "bad-policy-small-order-key",
+      "says": "not a valid point"
     }
   ],
   "codes": {
@@ -168,6 +172,7 @@
     "bad-padded-proof": "proof",
     "bad-padded-split-proof": "proof",
     "bad-policy-says-quorum-none": "held",
+    "bad-policy-small-order-key": "policy",
     "bad-policy-unparseable": "policy",
     "bad-policy-unparseable-and-foreign-held": "policy",
     "bad-policy-unparseable-and-unknown-key": "schema",
@@ -249,6 +254,10 @@
     },
     "bad-policy-says-quorum-none": {
       "says": "never the one in the file",
+      "section": "11.1"
+    },
+    "bad-policy-small-order-key": {
+      "says": "or carries a verifier key that is not a valid point (§3.1)",
       "section": "11.1"
     },
     "bad-policy-unparseable": {

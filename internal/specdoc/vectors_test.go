@@ -1372,7 +1372,7 @@ func TestEveryNegativeDeclaresTheSectionThatStatesItsRule(t *testing.T) {
 		"checkpoints-bad", "proofs-bad", "served-bad", "fork",
 		"entries-hostile", "policies", "genesis", "trust-bad", "receipt-bad", "requests-bad",
 		"served-genesis", "log-cas", "log-edges", "log-order", "log-republish", "served-large-bad", "served-empty-entry",
-		"served-rotated-wrong-name", "served-rotated-earlier", "unreached-witness", "dropped-witness",
+		"served-rotated-wrong-name", "served-rotated-earlier", "unreached-witness", "dropped-witness", "grown-log",
 	} {
 		t.Run(dir, func(t *testing.T) {
 			var manifest struct {
@@ -1409,7 +1409,7 @@ func TestEveryNegativeDeclaresTheSectionThatStatesItsRule(t *testing.T) {
 				}
 				// Run 16's new cases cite one raw normative line, so a
 				// paragraph assembled across line breaks cannot stand in.
-				if dir == "dropped-witness" || strings.Contains(name, "padded-proof") || name == "bad-padded-split-proof" {
+				if dir == "grown-log" || name == "bad-policy-small-order-key" || name == "device-not-a-device-id" || name == "request-undecodable" || dir == "dropped-witness" || strings.Contains(name, "padded-proof") || name == "bad-padded-split-proof" {
 					onLine := false
 					for _, line := range strings.Split(section.Body, "\n") {
 						onLine = onLine || strings.Contains(line, rule.Says)
@@ -2929,12 +2929,12 @@ func TestEveryServedAndBundleNegativeCitesTheRuleOfItsCode(t *testing.T) {
 			"unserved": {"any file a later step needs and cannot fetch"},
 		},
 		"proofs-bad": {
-			"bundle":        {"a closed map of exactly these six keys", "`v` | uint | `1`", "larger than this MUST be refused on length"},
+			"bundle":        {"a closed map of exactly these six keys", "`v` | uint | `1`", "larger than this MUST be refused on length", "or a `device` outside §2's grammar"},
 			"log-signature": {"under the log keys the verifier trusts"},
 			"origin":        {"this network's origin"},
 			"quorum":        {"a satisfied witness quorum"},
 			"inclusion":     {"reach that checkpoint's root at `index`", "the proof carries more or fewer hashes than RFC 9162 §2.1.3.2 consumes"},
-			"binding":       {"`device` is the `device_id` the `entry` names"},
+			"binding":       {"`device` is the `device_id` the `entry` names", "an `enroll` whose request does not decode"},
 		},
 		"receipt-bad": {
 			"note":          {"a second `0x0A` after the final signature creates a forbidden blank line"},

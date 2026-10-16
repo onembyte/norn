@@ -1,0 +1,63 @@
+{
+  "cases": [
+    {
+      "name": "older-head-over-full-tiles",
+      "says": "accept the older signed head using the full tile and bundle"
+    },
+    {
+      "name": "full-tile-gone",
+      "path": "tile/0/000",
+      "remove": true,
+      "says": "neither partial nor full hash tile is served"
+    },
+    {
+      "name": "full-bundle-gone",
+      "path": "tile/entries/000",
+      "remove": true,
+      "says": "neither partial nor full entry bundle is served"
+    },
+    {
+      "file": "corrupt-within-prefix.bin",
+      "name": "corrupt-within-prefix",
+      "path": "tile/0/000",
+      "says": "one changed byte in hash 10 inside the older head's prefix"
+    },
+    {
+      "file": "corrupt-beyond-prefix.bin",
+      "name": "corrupt-beyond-prefix",
+      "path": "tile/0/000",
+      "says": "one changed byte in hash 200 beyond the older head's prefix"
+    }
+  ],
+  "codes": {
+    "corrupt-beyond-prefix": "accept",
+    "corrupt-within-prefix": "tiles",
+    "full-bundle-gone": "unserved",
+    "full-tile-gone": "unserved",
+    "older-head-over-full-tiles": "accept"
+  },
+  "comment": "The 162-entry fixture appended twice produces 324 entries, full tiles and deleted width-162 partial paths. The checkpoint is served's unchanged signed and cosigned head at 162. Apply each replacement or deletion over this directory; the case with no mutation accepts it as served.",
+  "rules": {
+    "corrupt-beyond-prefix": {
+      "says": "MAY fetch `tile/\u003cL\u003e/\u003cN\u003e` and use its first `W` hashes",
+      "section": "6"
+    },
+    "corrupt-within-prefix": {
+      "says": "what it uses is compared with the tree it rebuilt exactly as the partial path would have been",
+      "section": "6"
+    },
+    "full-bundle-gone": {
+      "says": "`unserved` only when neither the partial path nor the full one is served",
+      "section": "10.1"
+    },
+    "full-tile-gone": {
+      "says": "`unserved` only when neither the partial path nor the full one is served",
+      "section": "10.1"
+    },
+    "older-head-over-full-tiles": {
+      "says": "MAY fetch `tile/\u003cL\u003e/\u003cN\u003e` and use its first `W` hashes",
+      "section": "6"
+    }
+  },
+  "serve_over": "grown-log"
+}

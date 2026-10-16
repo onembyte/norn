@@ -59,9 +59,18 @@
     {
       "name": "padded-proof",
       "says": "inclusion proof"
+    },
+    {
+      "name": "device-not-a-device-id",
+      "says": "device:"
+    },
+    {
+      "name": "request-undecodable",
+      "says": "request does not decode"
     }
   ],
   "codes": {
+    "device-not-a-device-id": "bundle",
     "device-not-in-entry": "binding",
     "foreign-checkpoint": "log-signature",
     "no-quorum": "quorum",
@@ -69,6 +78,7 @@
     "one-past-the-cap": "bundle",
     "open-schema": "bundle",
     "padded-proof": "inclusion",
+    "request-undecodable": "binding",
     "revoke-entry-other-device": "binding",
     "rotate-entry-other-device": "binding",
     "tampered-proof": "inclusion",
@@ -82,6 +92,10 @@
   "log_key": "norn/nzxxe3rnorsxg5domv2c2mbqge+bea4a666+AV6v97lmGyW99eHglI8syFAU2uY+/HuHHq0VYz9Rmio1",
   "origin": "norn/nzxxe3rnorsxg5domv2c2mbqge",
   "rules": {
+    "device-not-a-device-id": {
+      "says": "or a `device` outside §2's grammar",
+      "section": "10.1"
+    },
     "device-not-in-entry": {
       "says": "`device` is the `device_id` the `entry` names",
       "section": "8.1"
@@ -108,6 +122,10 @@
     },
     "padded-proof": {
       "says": "the proof carries more or fewer hashes than RFC 9162 §2.1.3.2 consumes",
+      "section": "10.1"
+    },
+    "request-undecodable": {
+      "says": "an `enroll` whose request does not decode",
       "section": "10.1"
     },
     "revoke-entry-other-device": {
