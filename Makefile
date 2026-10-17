@@ -31,8 +31,15 @@ lab-sim:
 	END { for (i=1; i<=n; i++) print lines[order[i]]; if (caveat) print caveat }' "$$log"; \
 	if [ $$status -ne 0 ]; then cat "$$log" >&2; fi; exit $$status
 
+# vet and lint read both builds, Linux and macOS, wherever they run: CI runs
+# on Linux, the gate on a Mac, and a file behind a build tag is seen by only
+# one of them. A helper used only off Linux once passed here and failed the
+# first public CI run (2026-10-17). staticcheck is built for this machine and
+# reads the other platform's build through -exec.
+LINT_OS := linux darwin
+
 vet:
-	$(GO) vet $(PKGS)
+	@for os in $(LINT_OS); do GOOS=$$os $(GO) vet $(PKGS) || exit 1; done
 
 fmt:
 	gofmt -s -w $$(find . -name '*.go' -not -path './.git/*')
@@ -42,7 +49,9 @@ fmt-check:
 	if [ -n "$$out" ]; then echo "gofmt needed:"; echo "$$out"; exit 1; fi
 
 lint:
-	$(GO) run honnef.co/go/tools/cmd/staticcheck@2025.1.1 $(PKGS)
+	@for os in $(LINT_OS); do \
+		$(GO) run -exec "env GOOS=$$os" honnef.co/go/tools/cmd/staticcheck@2025.1.1 $(PKGS) || exit 1; \
+	done
 
 tidy:
 	$(GO) mod tidy

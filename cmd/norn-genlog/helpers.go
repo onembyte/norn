@@ -272,3 +272,23 @@ func noteBody(signed string) (string, error) {
 	}
 	return signed[:i+1], nil
 }
+
+// removePruned removes path and then each directory that leaves empty, up to
+// but not including root. Git carries no empty directory, so one left behind
+// would be in a generated tree and never in a checkout of it, and the two
+// would differ.
+func removePruned(root, path string) error {
+	if err := os.Remove(path); err != nil {
+		return err
+	}
+	for dir := filepath.Dir(path); dir != filepath.Clean(root) && strings.HasPrefix(dir, root); dir = filepath.Dir(dir) {
+		names, err := os.ReadDir(dir)
+		if err != nil || len(names) > 0 {
+			return err
+		}
+		if err := os.Remove(dir); err != nil {
+			return err
+		}
+	}
+	return nil
+}

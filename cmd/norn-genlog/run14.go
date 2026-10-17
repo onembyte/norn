@@ -323,7 +323,7 @@ func writeRunFourteenServed(root, origin string, key ed25519.PrivateKey, entries
 		}
 		path := filepath.Join(dir, tlog.TilePath(0, 0, forkAt))
 		if strings.Contains(name, "missing") {
-			if err := os.Remove(path); err != nil {
+			if err := removePruned(dir, path); err != nil {
 				return err
 			}
 		} else {

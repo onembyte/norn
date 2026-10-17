@@ -1,7 +1,5 @@
 package main
 
-import "time"
-
 // clock names the monotonic clock nornd's reading comes from (§15's
 // "monotonic time since").
 //
@@ -37,9 +35,3 @@ func clockFor(goos string) clock {
 // newMono is the monotonic reading build hands the agent; a variable so a
 // test can see that it does.
 var newMono = monotonic
-
-// sinceStart is Go's monotonic reading from now on.
-func sinceStart() func() time.Duration {
-	started := time.Now()
-	return func() time.Duration { return time.Since(started) }
-}

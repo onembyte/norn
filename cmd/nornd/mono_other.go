@@ -9,3 +9,9 @@ import "time"
 func monotonic() (func() time.Duration, error) {
 	return sinceStart(), nil
 }
+
+// sinceStart is Go's monotonic reading from now on.
+func sinceStart() func() time.Duration {
+	started := time.Now()
+	return func() time.Duration { return time.Since(started) }
+}
