@@ -1335,3 +1335,81 @@ Go's own `sumdb` client falls back the same way. Rejected: exact paths only —
 then `tlogstore` must keep every partial tile for ever, against the format's
 allowance, or older heads stay uncheckable.
 Rows: 6.5l-xiv-f (1, 2), 6.5l-xiv-g (3), 6.5l-xiv-h (the vectors), then run 17.
+
+## D-080 · Cold run 17's five open readings: blanks after a policy field, the keys that verify evidence, a stand-in full file, a trust policy's cap, a bundle's binding (2026-10-17)
+The owner's answers of 2026-10-17 to the DECISION 6.5l-xv-c (`BUILD-LOG.md`,
+"DECISION TAKEN — 6.5l-xv-c"): **1-A, 2-A, 3-A, 4-A, 5-A**, weighed in the
+session before anything was written (global rule 14a).
+**(1)** §9.1: spaces and tabs after the last field are not part of it and add
+no field, as the leading-whitespace row already says of blanks before the
+keyword. **Why.** Go, the reference and the fourth cold build all trim both
+ends of a line before splitting it, so a root-signed `policy` ending
+`quorum home␠` applies in all three today; §9.1 singled out leading whitespace
+and said nothing of trailing, so a reader that trims the front and splits on
+runs gets an empty last field, refuses the entry as `decode`, and holds the
+old quorum while every other reader holds the new one: run 17's D1, the split
+the names row exists to prevent. Rejected: refuse a trailing blank — three
+implementations change, and a human-written policy with one stray space is
+applied by some readers and refused by others until all have updated, which
+is the fault itself.
+**(2)** §11.1 step 1: both checkpoints are verified under the log keys the
+reader trusts (§9.4: the trust file's, plus every `log_key` of a state it has
+accepted) and the reader's own policy, as §7, §8.1 and §10 already say; a
+reader holding only the trust file refuses evidence signed by a rotated key
+as `held`, and §11.1's opening says that its "trust file and nothing else"
+reader checks evidence under the keys the trust file names. **Why.** The step
+said "this network's log key", singular, where every other verifier in the
+document names the §9.4 set; `nornd` already checks peer evidence under the
+learned keys (SEC-005), and `norn verify-evidence` under the trust file's
+alone unless given `-log`, which is the reader the opening describes. A fork
+signed under a rotated key is exactly what a log that rotated and then
+equivocated produces, and under the singular reading no node that learned the
+key could prove it. Rejected: the trust file's key only — `nornd` changes for
+the worse, and the one artifact that catches a rotated-then-equivocating log
+stops working for everyone who learned the key.
+**(3)** §6 and §10.1: a verifier that cannot fetch `tile/<L>/<N>.p/<W>` MUST
+fetch the full path before answering `unserved`, and the file it fetches must
+itself be a well-formed full tile or bundle — exactly 32 × 256 bytes, or
+exactly 256 frames — of which only the first W hashes or entries are then
+compared with the rebuilt tree; a stand-in that is not is `tiles` or
+`entries`, as a malformed served file at that step always was. **Why.** §10.1
+step 12 says a tile of width W is exactly 32 × W bytes and step 8 says bytes
+after a full bundle's last frame are `entries` either way; a file served under
+a full path is a full tile, and a 5184-byte one is a file the log could never
+have written. Go's bundle side already required the exact count while its tile
+side compared only the first W hashes (run 17's D3, found the day after
+6.5l-xiv-g wrote both); one rule for both. D-079 wrote the fallback as
+`c2sp.org/tlog-tiles`' MAY; §10.1 step 1 and `grown-log/` already make a
+reader that does not fall back wrong, and the preamble now says a rule this
+document states more narrowly governs (run 17's D12), so the word is MUST
+(run 17's D10). Rejected: judge only the first W — a verifier accepts a
+truncated or padded file under a full path as well formed, and the two halves
+of Go keep different rules.
+**(4)** §9.1: a trust file's `policy` is bounded only by `MAX_TRUST_BYTES`;
+§4.0's 4096-byte cap on `text` bounds the `note` and `policy` entry fields. A
+trust policy above 4096 bytes can therefore never be republished as a
+`policy` entry, and §9.1 says so. **Why.** All three implementations accept
+the 4695-byte trust policy, and `fork/evidence-at-the-cap` already pins the
+same reading for the policy evidence carries; the cap is an entry's, stated in
+the entry profile. Rejected: 4096 everywhere — three implementations change,
+`fork/evidence-at-the-cap` is rebuilt, and an operator's larger trust file
+stops a node from starting for a bound that exists to keep an entry small.
+**(5)** §8.1: "decodes under §16.1" means the request's structure and field
+rules, §3.1's point admission included; the request's signature and network
+are not part of it, since replay judges those and a bundle proves inclusion,
+not acceptance (run 15's L3). The entry itself must decode under §4.0's
+profile and §4.1's envelope — version 1, a text `t`, a map `body` — or it
+names no device and the bundle is `binding`. At step 1, an `entry` longer than
+`MAX_ENTRY_BYTES` is `bundle`: §8.1 types a bundle as one that wraps an entry
+of at most that many bytes, so a longer one is malformed before any checkpoint
+is read (run 17's D7). **Why.** Go answered the first three this way and the
+fourth cold build split on the network check; the run's base read the body of
+a version-2 entry and accepted. Binding exists to stop a label from being
+pasted beside another device's entry, not to repeat replay. Rejected: the
+consumer's duties as part of decoding — binding repeats replay's signature
+and network checks, and a sound inclusion proof around a logged entry is
+refused for a fault the log's state already records. Rejected for D7:
+`binding` — Go's answer today, one structural fault refused at step 4 where
+every other one is refused at step 1.
+Rows: 6.5l-xv-e (1 and 4), 6.5l-xv-f (2), 6.5l-xv-g (3), 6.5l-xv-h (5),
+6.5l-xv-i (the vectors), then run 18.

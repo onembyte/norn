@@ -176,6 +176,15 @@ incident that produced it. Read that section before the first firing.
   not decode names no device (`binding`); a verifier may use the first W
   hashes of the full tile where the partial one is gone, as
   `c2sp.org/tlog-tiles` allows.** Rows 6.5l-xiv-f to -h; `DECISIONS.md` D-079.
+- **D-080 (taken 2026-10-17, the owner's answers to 6.5l-xv-c): blanks after
+  a policy line's last field add no field; fork evidence is verified under the
+  log keys the reader trusts (§9.4) and its own policy, `held` for a reader
+  that has not learned a rotated key; a full tile or bundle standing in for a
+  deleted partial one must itself be well formed, and a verifier MUST fetch it
+  before answering `unserved`; a trust file's policy is bounded only by
+  `MAX_TRUST_BYTES`; a bundle's request decodes by structure, field rules and
+  point admission, not its signature or network, and an entry over
+  `MAX_ENTRY_BYTES` is `bundle`.** Rows 6.5l-xv-e to -i; `DECISIONS.md` D-080.
 - **D-072 (taken 2026-10-09, the owner's answers):** a proven fork freezes
   authorization at the common prefix both branches agree on and keeps
   enforcing it — the set shrinks, never grows, and fails closed when no split
