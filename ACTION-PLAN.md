@@ -252,15 +252,15 @@ not just been asked.
 Each box is a fact to check on the day, not a promise made today.
 
 **The repository**
-- [ ] **Visibility.** Private today. Both messages link to it: make it public
-  first (after `PUBLICATION.md` §5's gates and the private review), or send
-  without the link and offer access.
+- [x] **Visibility.** Done: public since 2026-10-17, history and all, as an
+  untested preview (`v0.1.0-preview`), at your request; both messages can link
+  to it. A second review that day found GitHub's private vulnerability
+  reporting off, which `SECURITY.md` sends reporters to; it is on.
 - [x] **License.** `LICENSE` is Apache-2.0.
-- [ ] **README status line.** Dated 2026-10-07; the counts in it are guarded by
+- [ ] **README status line.** Dated 2026-10-17; the counts in it are guarded by
   the build, the date is not.
-- [ ] **`RELEASE-NOTES-v0.1.md` is stale.** It calls D-072 and D-074 unresolved
-  (both are decided), counts 13 cold-model runs (there are 14), and predates
-  D-075, D-076 and D-077. Refresh it when you tag v0.1 (U8).
+- [ ] **`RELEASE-NOTES-v0.1.md`.** Refreshed on 2026-10-17 (D-072 to D-080
+  decided, 17 cold-model runs); refresh it again when you tag v0.1 (U8).
 - [ ] **`make verify-py` green.** Green since the fourth cold build (6.5l-xii-f,
   2026-10-12); recheck on the day, since a vector added after its seal is
   recorded in `contrib/verify-py.known-failures`.
@@ -275,13 +275,13 @@ Each box is a fact to check on the day, not a promise made today.
 - [x] **`PUBLICATION.md`'s personal paragraph, which named a private project**,
   was removed on 2026-10-17 before the repository went public. The history keeps
   it, by your decision that day.
-- [ ] **Commit author email.** 364 commits carry your personal address. Publishing
-  the history publishes it. Your choice: accept it; rewrite the history to your
-  GitHub no-reply address (a force push, only on your explicit request); or
-  publish a new repository from a squashed tree.
-- [ ] **`mythos_optimization_addition.md`** is an operating note written for the
-  build model, not documentation, and contains a local path. Recommendation:
-  move it out of the repository before publishing. `BUILD-LOG.md`,
+- [x] **Commit author email.** Accepted: the history went public on
+  2026-10-17 as it was, by your decision, so every commit hash the ledger
+  cites still resolves; your personal address is on its commits.
+- [x] **`mythos_optimization_addition.md`** is an operating note written for the
+  build model, not documentation, and contains a local path. It stays: of the
+  four prep items offered on 2026-10-17 you chose the other three. The
+  recommendation was to move it out before publishing. `BUILD-LOG.md`,
   `HARDENING-PLAN.md` and `DECISIONS.md` describe the AI-assisted process
   (Claude and Codex lanes, cold-model gate runs) and are the project's record
   of how each thing was checked; recommendation: keep them, and say plainly in

@@ -2,19 +2,18 @@
 
 ## Status
 
-Norn is pre-release and has no supported version. Nothing has run on a real
-kernel or been reviewed by an outside party. The [README status](README.md)
+Norn is pre-release and has no supported version: the `v0.1.0-preview`
+pre-releases are previews, untested on any real network. Nothing has run on a
+real kernel or been reviewed by an outside party. The [README status](README.md)
 has the current project status.
 
 ## Reporting a vulnerability
 
-Please report vulnerabilities privately, never in a public issue. Once the
-repository is public, use its GitHub **Security** tab → **Report a
-vulnerability** (GitHub offers private reporting on public repositories only).
-Until then the repository is private, and anyone who can read it was invited by
-the owner and can reach the owner directly; the owner's contact is in their
-GitHub profile. There is no bounty. No response-time promise or disclosure
-deadline is established.
+Please report vulnerabilities privately, never in a public issue: use the
+repository's GitHub **Security** tab → **Report a vulnerability**. Private
+vulnerability reporting was enabled on 2026-10-17, the day the repository went
+public; a report there is seen only by the owner and you. There is no bounty.
+No response-time promise or disclosure deadline is established.
 
 In scope are the log and its verifier (replay, checkpoints, cosignatures,
 proofs, fork evidence and receipts); `nornd` enforcement in owner and watchdog

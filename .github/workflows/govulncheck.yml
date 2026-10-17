@@ -3,6 +3,8 @@ name: govulncheck
 # 2026-10-07) forbids a `schedule:` trigger until 2026-11-01, and a push
 # already runs ci.yml; a docclaims test holds both.
 on: [workflow_dispatch]
+permissions:
+  contents: read
 jobs:
   govulncheck:
     runs-on: ubuntu-latest

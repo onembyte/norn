@@ -66,3 +66,58 @@ func TestThePublicRepositoryCarriesItsNoticeAndHowItWasBuilt(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// A second review of the public repository, the same day, found what the
+// first pass missed: SECURITY.md sent reporters to a private-reporting form
+// GitHub had not been told to offer (it is now on) and still said the
+// repository was private; the v0.1 notes called D-072 and D-074 open and
+// counted 13 cold runs; ACTION-PLAN.md's checklist still said "Private
+// today"; and neither workflow limited its token itself. Each stale sentence
+// is refused by its words, so a new one has to be written to pass.
+func TestThePublicDocumentsSayWhatIsTrueSincePublication(t *testing.T) {
+	read := func(parts ...string) string {
+		raw, err := os.ReadFile(filepath.Join(append([]string{root(t)}, parts...)...))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return strings.Join(strings.Fields(string(raw)), " ")
+	}
+	for _, c := range []struct {
+		file          string
+		want, refused []string
+	}{
+		{"SECURITY.md",
+			[]string{"**Security** tab → **Report a vulnerability**", "enabled on 2026-10-17"},
+			[]string{"Once the repository is public", "Until then the repository is private"}},
+		{"RELEASE-NOTES-v0.1.md",
+			[]string{"No DECISION block is open", "`v0.1.0-preview`"},
+			[]string{"records five unresolved security questions", "records eight unresolved specification questions", "has run 13 times"}},
+		{"ACTION-PLAN.md",
+			[]string{"public since 2026-10-17"},
+			[]string{"**Visibility.** Private today"}},
+	} {
+		body := read(c.file)
+		for _, want := range c.want {
+			if !strings.Contains(body, want) {
+				t.Errorf("%s does not say %q", c.file, want)
+			}
+		}
+		for _, old := range c.refused {
+			if strings.Contains(body, old) {
+				t.Errorf("%s still says %q", c.file, old)
+			}
+		}
+	}
+	for _, name := range []string{"ci.yml", "govulncheck.yml"} {
+		raw, err := os.ReadFile(filepath.Join(root(t), ".github", "workflows", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(raw), "\npermissions:\n  contents: read\n") {
+			t.Errorf("%s does not limit its token to `contents: read` at the top level", name)
+		}
+		if strings.Contains(strings.Join(strings.Fields(strings.ReplaceAll(string(raw), "#", " ")), " "), "this private repo") {
+			t.Errorf("%s still calls the repository private", name)
+		}
+	}
+}

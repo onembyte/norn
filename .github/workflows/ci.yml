@@ -1,12 +1,18 @@
 name: ci
-# Owner's rule (~/.claude/CLAUDE.md, 2026-10-07): until 2026-11-01 this
-# private repo runs CI on Linux only -- macOS bills 10x per minute and used
-# most of the account's included minutes -- pull_request is dropped because
-# it double-runs a push, and a newer run on the same ref cancels an older one.
-# The full gate still runs on this Mac before every push.
+# Linux only, by the owner's Actions-budget rule (~/.claude/CLAUDE.md,
+# 2026-10-07): macOS bills 10x per minute and once used most of the account's
+# included minutes. The repository went public on 2026-10-17, where Actions
+# runs free; the rule is reviewed on 2026-11-01 and nothing here changes before
+# then. pull_request is dropped because it double-runs a push, and a newer run
+# on the same ref cancels an older one. The full gate still runs on the
+# owner's Mac before every push, and `make vet` and `make lint` there read the
+# Linux build too.
 # The actions are their v7 majors, all on Node 24 (checked against each
 # action.yml and its release notes, 2026-10-08; a docclaims test holds it).
 on: [push, workflow_dispatch]
+# The job token reads the repository and nothing else; no step writes.
+permissions:
+  contents: read
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true

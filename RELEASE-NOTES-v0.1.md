@@ -1,5 +1,7 @@
 # Norn v0.1
 
+*The draft of the v0.1 notes, for the tag that is the owner's row U8; refreshed 2026-10-17. What is published today is the `v0.1.0-preview` pre-releases: previews, untested on any real network, and not v0.1.*
+
 ## What it is
 
 Norn is a pre-release tool for making WireGuard peer keys traceable to an append-only, witnessed log. A stranger can build the CLI and verify the repository's example log offline. No supported version exists yet ([SECURITY.md](SECURITY.md)).
@@ -26,10 +28,10 @@ Nothing has run on a real kernel or real network, and there has been no outside 
 
 Before upgrading or enrolling anything, note this behavior from D-073: a device enrolled without an `ip` label is installed with its key and no routes. [ENFORCEMENT.md §5](ENFORCEMENT.md#5-endpoint-providers-owner-mode-only) describes grants and the operator options.
 
-Two open decisions can change behavior, each a DECISION block in [BUILD-LOG.md](BUILD-LOG.md). D-072 ("five protocol questions the audit raised") records five unresolved security questions, including watchdog behavior during a freeze and enforcement with no witness quorum. D-074 ("eight protocol questions cold gate run 13 raised") records eight unresolved specification questions from cold-model run 13.
+No DECISION block is open. The decisions that changed what a reader accepts or refuses since this draft was first written are each in [DECISIONS.md](DECISIONS.md): D-072 settled the audit's five questions (a fork shrinks the enforced set to what both branches agree on; one Ed25519 predicate; v1 keeps log-key retirement and `quorum none` behind explicit settings), D-074 the eight that cold-model run 13 raised, D-075 the two keys a security-audit row found admitted without a rule, D-076 the second cold build's readings, and D-077 to D-080 those of runs 14 to 17.
 
 ## How it was tested
 
 The contributor gate is `make vectors`, `make vectors-log`, `make test`, then `make vectors-check ref-test lint fmt-check vet`; run `make vectors-sums` when a vector changes ([CONTRIBUTING.md](CONTRIBUTING.md#gate)). The vectors use both Go and the Python reference, with the split described above.
 
-The cold-model gate has run 13 times. The latest run, recorded in [BUILD-LOG.md](BUILD-LOG.md) under "6.5l-viii — cold-model gate run 13", scored 1,353 of 1,353 checks, but found defects that change behavior; it did not pass D-068. The gate therefore remains open.
+The cold-model gate has run 17 times. The latest, run 17, recorded in [BUILD-LOG.md](BUILD-LOG.md) under "6.5l-x-f-c", answered `SPEC INSUFFICIENT` with 2 high, 4 medium and 6 low findings; D-080 records the owner's answers, and the rows fixing them are in the Hardening track. D-068 asks for two consecutive runs with no high or medium finding, and the count stands at 0 of 2, so the gate remains open.
