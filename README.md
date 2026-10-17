@@ -10,7 +10,7 @@
 > and Headscale get observe mode only, not yet run against a real tailscaled.
 > Changes nothing in WireGuard.
 
-*Status (2026-10-07): 56 Go packages, 1356 tests, a frozen `SPEC.md`, and a
+*Status (2026-10-17, preview): 56 Go packages, 1357 tests, a frozen `SPEC.md`, and a
 vector suite a second implementer can use without this repository. **14 of 38
 gate lines** in `PLAN.md` are ticked — every gate that needs a running lab, a
 measurement or a second pair of eyes is still open. No Norn has ever guarded a
@@ -165,5 +165,20 @@ provenances, including bytes produced by `transparency-dev/witness` and by
 ## Non-goals
 Not a VPN · not a coordination server · not availability protection · not internet-scale · not a blockchain.
 
+## How it was built
+
+Norn was written with AI assistance — Anthropic's Claude for most of the work,
+OpenAI's Codex for some test and vector rows — directed, reviewed and
+integrated by its author under gates the repository records: every rule is
+written test-first with a mutation control that shows the test can fail;
+every commit passes the full gate on the author's machine; `SPEC.md` is graded
+by fresh models given only the specification and the vectors
+(`SPEC-DEFECTS-*.md`), with the transcript audited; and a fourth verifier was
+built cold from the specification alone (`contrib/verify-py/`). `BUILD-LOG.md`
+is the ledger of all of it. No part of that substitutes for review by people
+who know this field, or for running it on real networks, neither of which has
+happened yet.
+
 ## License
-Apache-2.0
+Apache-2.0. See `LICENSE` and `NOTICE`; the licence grants no rights to the name
+"Norn".

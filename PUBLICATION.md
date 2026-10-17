@@ -215,15 +215,7 @@ guide to where the bugs are than any assurance I could write.
 Four of those eight are open, and the three that need the lab are the three that
 carry numbers. That ratio is the argument for Gate B.
 
-## 8. The career angle (one paragraph, for Franco)
-
-Fintech ZTNA teams have the exact problem Norn solves — auditable device admission
-with evidence — and almost none of them can articulate it. A repo that ships a
-threat model, measured enforcement, and CT-grade transparency for network access
-is a portfolio piece that speaks directly to that hiring conversation, and it sits
-on the same "no finding without proof" thesis as Gungnir.
-
-## 9. Risks to impact
+## 8. Risks to impact
 
 | Risk | Mitigation |
 |---|---|

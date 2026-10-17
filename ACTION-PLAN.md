@@ -272,11 +272,9 @@ Each box is a fact to check on the day, not a promise made today.
   `cmd/norn/govern.go` recognising an OpenSSH key file by its header; nothing
   under `cmd/norn/norn-witness/` exists; `testdata/vectors/keys.json` holds the
   fixtures' test seeds, published on purpose and described as test keys.
-- [ ] **`PUBLICATION.md` §8, "The career angle (one paragraph, for Franco)", names
-  Gungnir**, which is private by your decision. Remove that paragraph, or at
-  least the Gungnir sentence, before the repository is public — a public repo's
-  history keeps it, so remove it in a commit before the first public push, or
-  publish a fresh history.
+- [x] **`PUBLICATION.md`'s personal paragraph, which named a private project**,
+  was removed on 2026-10-17 before the repository went public. The history keeps
+  it, by your decision that day.
 - [ ] **Commit author email.** 364 commits carry your personal address. Publishing
   the history publishes it. Your choice: accept it; rewrite the history to your
   GitHub no-reply address (a force push, only on your explicit request); or

@@ -1,0 +1,16 @@
+Norn
+Copyright 2026 Franco Michetti
+
+This product includes software developed by Franco Michetti
+(https://github.com/onembyte/norn), distributed under the Apache License,
+Version 2.0 (see LICENSE).
+
+"Norn" is a trademark of Franco Michetti. The Apache License, Version 2.0,
+grants no rights to use it (section 6 of the License): a modified or
+redistributed version must not be presented as Norn itself.
+
+Bundled third-party material keeps its own licence and notices:
+
+- testdata/vectors/ed25519-cctv/ -- the Ed25519 vectors of C2SP/CCTV,
+  BSD-3-Clause, Copyright 2019 Google LLC and 2022 Filippo Valsorda; see its
+  LICENSE and PROVENANCE.md.
