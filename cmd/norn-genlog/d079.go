@@ -135,11 +135,11 @@ func writeD079GrownLog(root, origin string, key ed25519.PrivateKey, entries [][]
 		},
 		"codes": map[string]string{"older-head-over-full-tiles": "accept", "full-tile-gone": "unserved", "full-bundle-gone": "unserved", "corrupt-within-prefix": "tiles", "corrupt-beyond-prefix": "accept"},
 		"rules": map[string]map[string]string{
-			"older-head-over-full-tiles": {"section": "6", "says": "MAY fetch `tile/<L>/<N>` and use its first `W` hashes"},
+			"older-head-over-full-tiles": {"section": "6", "says": "MUST fetch `tile/<L>/<N>` before it answers `unserved`"},
 			"full-tile-gone":             {"section": "10.1", "says": "`unserved` only when neither the partial path nor the full one is served"},
 			"full-bundle-gone":           {"section": "10.1", "says": "`unserved` only when neither the partial path nor the full one is served"},
-			"corrupt-within-prefix":      {"section": "6", "says": "what it uses is compared with the tree it rebuilt exactly as the partial path would have been"},
-			"corrupt-beyond-prefix":      {"section": "6", "says": "MAY fetch `tile/<L>/<N>` and use its first `W` hashes"},
+			"corrupt-within-prefix":      {"section": "6", "says": "compared with the tree it rebuilt exactly as the partial path would have been"},
+			"corrupt-beyond-prefix":      {"section": "6", "says": "only its first `W` hashes or entries are then used"},
 		},
 		"comment": "The 162-entry fixture appended twice produces 324 entries, full tiles and deleted width-162 partial paths. The checkpoint is served's unchanged signed and cosigned head at 162. Apply each replacement or deletion over this directory; the case with no mutation accepts it as served.",
 	})

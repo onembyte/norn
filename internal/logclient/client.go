@@ -438,10 +438,12 @@ func checkTiles(f Fetcher, tree *tlog.Tree, unchanged map[string]bool) error {
 			// The partial tile may be gone, which tlog-tiles allows once the
 			// full one exists: its first Width hashes are the same bytes, and
 			// they are compared below exactly as the partial would be (D-079).
+			// A file at a full path is a full tile or it is malformed, as a
+			// full bundle's frame count already is (D-080).
 			if full, fullErr := f.Fetch(tlog.TilePath(tile.Level, tile.Index, tlog.TileWidth)); fullErr == nil {
-				if len(full) < len(tile.Data) {
-					return refuse(refusal.Tiles, "the full hash tile standing in for %s holds fewer "+
-						"than the %d hashes the head implies", tile.Path(), tile.Width)
+				if len(full) != sha256.Size*tlog.TileWidth {
+					return refuse(refusal.Tiles, "the full hash tile standing in for %s is %d bytes; "+
+						"a full tile is %d", tile.Path(), len(full), sha256.Size*tlog.TileWidth)
 				}
 				served, err = full[:len(tile.Data)], nil
 			}

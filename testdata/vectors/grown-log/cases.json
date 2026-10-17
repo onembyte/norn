@@ -39,11 +39,11 @@
   "comment": "The 162-entry fixture appended twice produces 324 entries, full tiles and deleted width-162 partial paths. The checkpoint is served's unchanged signed and cosigned head at 162. Apply each replacement or deletion over this directory; the case with no mutation accepts it as served.",
   "rules": {
     "corrupt-beyond-prefix": {
-      "says": "MAY fetch `tile/\u003cL\u003e/\u003cN\u003e` and use its first `W` hashes",
+      "says": "only its first `W` hashes or entries are then used",
       "section": "6"
     },
     "corrupt-within-prefix": {
-      "says": "what it uses is compared with the tree it rebuilt exactly as the partial path would have been",
+      "says": "compared with the tree it rebuilt exactly as the partial path would have been",
       "section": "6"
     },
     "full-bundle-gone": {
@@ -55,7 +55,7 @@
       "section": "10.1"
     },
     "older-head-over-full-tiles": {
-      "says": "MAY fetch `tile/\u003cL\u003e/\u003cN\u003e` and use its first `W` hashes",
+      "says": "MUST fetch `tile/\u003cL\u003e/\u003cN\u003e` before it answers `unserved`",
       "section": "6"
     }
   },

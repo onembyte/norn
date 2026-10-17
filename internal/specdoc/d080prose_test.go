@@ -63,3 +63,30 @@ func TestEvidenceIsCheckedUnderTheKeysTheReaderTrusts(t *testing.T) {
 		t.Error("§11.1 step 1 still names one log key")
 	}
 }
+
+// D-080 (3) with D10, row 6.5l-xv-g. §6 let a verifier fall back to the full
+// tile ("MAY") where §10.1 step 1 and grown-log/ already required it, and did
+// not say the full file must itself be well formed (cold gate run 17, D3 and
+// D10). §6 says both, and §10.1's steps 8 and 12 say what each code means for
+// a stand-in.
+func TestAStandInFullFileIsAFullFile(t *testing.T) {
+	doc := load(t)
+	for _, c := range []struct{ section, want string }{
+		{"6", "a verifier that cannot fetch `tile/<L>/<N>.p/<W>` MUST fetch `tile/<L>/<N>` before it answers `unserved`"},
+		{"6", "the file it fetches must itself be a well-formed full tile or bundle — exactly 32 × 256 bytes, or exactly 256 frames"},
+		{"10.1", "A full tile standing in for a deleted partial one (§6) is a full tile: 32 × 256 bytes, of which the first 32 × `W` are compared; a longer or shorter one is `tiles` (step 12)"},
+		{"10.1", "A full bundle standing in for a deleted partial one (§6) holds exactly 256 frames, of which the first `W` are the head's; any other count is `entries` (step 8)"},
+	} {
+		section, ok := doc.Section(c.section)
+		if !ok {
+			t.Fatalf("§%s is missing", c.section)
+		}
+		if !strings.Contains(strings.Join(strings.Fields(section.Body), " "), c.want) {
+			t.Errorf("§%s does not say %q", c.section, c.want)
+		}
+	}
+	six, _ := doc.Section("6")
+	if strings.Contains(strings.Join(strings.Fields(six.Body), " "), "MAY fetch `tile/<L>/<N>` and use its first `W` hashes") {
+		t.Error("§6 still says MAY")
+	}
+}

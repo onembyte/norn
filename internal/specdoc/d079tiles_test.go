@@ -13,10 +13,12 @@ func TestTheFullTileFallbackIsStated(t *testing.T) {
 	doc := load(t)
 	norm := func(s string) string { return strings.Join(strings.Fields(s), " ") }
 	for _, c := range []struct{ name, section, want string }{
-		{"§6 lets a verifier use the full tile", "6",
-			"a verifier that cannot fetch `tile/<L>/<N>.p/<W>` MAY fetch `tile/<L>/<N>` and use its first `W` hashes, and likewise the full entry bundle for a missing `tile/entries/<N>.p/<W>`"},
+		// D-080 (3) made the fallback MUST and the stand-in a full file; the
+		// sentence below is D-080's, which supersedes D-079's MAY.
+		{"§6 sends a verifier to the full tile", "6",
+			"a verifier that cannot fetch `tile/<L>/<N>.p/<W>` MUST fetch `tile/<L>/<N>` before it answers `unserved`, and likewise the full entry bundle for a missing `tile/entries/<N>.p/<W>`"},
 		{"§6 still compares what it uses", "6",
-			"what it uses is compared with the tree it rebuilt exactly as the partial path would have been"},
+			"only its first `W` hashes or entries are then used, compared with the tree it rebuilt exactly as the partial path would have been"},
 		{"§10.1 says unserved means neither path", "10.1",
 			"`unserved` only when neither the partial path nor the full one is served (D-079)"},
 	} {
