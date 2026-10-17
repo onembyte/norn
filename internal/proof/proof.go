@@ -124,6 +124,14 @@ func decode(raw []byte) (*Bundle, error) {
 	if b.Entry, ok = m["entry"].([]byte); !ok {
 		return nil, proofErrorf("entry must be a byte string")
 	}
+	// §8.1 types `entry` as an entry, and an entry is at most MAX_ENTRY_BYTES
+	// (§4.0): a longer one is malformed here, at step 1, before a log that
+	// committed it can carry it through the checkpoint and the proof to
+	// `binding` (D-080 (5), cold gate run 17's D7).
+	if len(b.Entry) > cbor.MaxEntryBytes {
+		return nil, proofErrorf("entry is %d bytes; an entry is at most %d (MAX_ENTRY_BYTES)",
+			len(b.Entry), cbor.MaxEntryBytes)
+	}
 	if b.Checkpoint, ok = m["checkpoint"].(string); !ok {
 		return nil, proofErrorf("checkpoint must be a text string")
 	}

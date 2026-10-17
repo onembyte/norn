@@ -90,3 +90,26 @@ func TestAStandInFullFileIsAFullFile(t *testing.T) {
 		t.Error("§6 still says MAY")
 	}
 }
+
+// D-080 (5) with D7, row 6.5l-xv-h. "Decodes under §16.1" did not say what
+// decoding covers, and readers split on whether it checks the request's
+// signature and network (cold gate run 17, D6); nothing bounded `entry`, so
+// an oversize one went to step 4 as `binding` in Go (D7). §8.1 says what
+// decoding is and that the entry is an entry, and §10.1's step 1 names it.
+func TestABundlesEntryIsAnEntryAndDecodingIsStructure(t *testing.T) {
+	doc := load(t)
+	for _, c := range []struct{ section, want string }{
+		{"8.1", "| `entry` | bytes | the entry itself, so the bundle stands alone; at most `MAX_ENTRY_BYTES` (§4.0), like any entry, and a longer one is `bundle` (D-080) |"},
+		{"8.1", "Decoding here is the request's structure and field rules, §3.1's point admission included; its signature and network are not part of it"},
+		{"8.1", "The entry itself must decode under §4.0's profile and §4.1's envelope — version 1, a text `t`, a map `body` — or it names no device"},
+		{"10.1", "or an `entry` longer than `MAX_ENTRY_BYTES` (D-080)"},
+	} {
+		section, ok := doc.Section(c.section)
+		if !ok {
+			t.Fatalf("§%s is missing", c.section)
+		}
+		if !strings.Contains(strings.Join(strings.Fields(section.Body), " "), c.want) {
+			t.Errorf("§%s does not say %q", c.section, c.want)
+		}
+	}
+}

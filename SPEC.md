@@ -1049,7 +1049,7 @@ why there is no domain prefix here — there is nothing for one to separate.
 | `v` | uint | `1` |
 | `device` | text | the `device_id` this bundle proves, in §2's grammar, as §16.1 requires of a request; a label outside it is `bundle` (D-079) |
 | `index` | uint | the entry's index in the log |
-| `entry` | bytes | the entry itself, so the bundle stands alone |
+| `entry` | bytes | the entry itself, so the bundle stands alone; at most `MAX_ENTRY_BYTES` (§4.0), like any entry, and a longer one is `bundle` (D-080) |
 | `proof` | array of 32-byte strings | the RFC 6962 §2.1.1 audit path — the inclusion proof — leaf to root, verified per RFC 9162 §2.1.3.2: exactly the hashes that procedure consumes |
 | `checkpoint` | text | the signed checkpoint note, verbatim |
 
@@ -1070,7 +1070,12 @@ honest one, and a consumer keying on `device` believes something no proof
 established. The id an `enroll` names is the one its request decodes to under
 §16.1: an entry whose request does not decode, or whose body names no
 `device_id`, names no device, and a bundle around it is `binding` whatever its
-label says (D-079).
+label says (D-079). Decoding here is the request's structure and field rules,
+§3.1's point admission included; its signature and network are not part of
+it — replay judges those, and a bundle proves inclusion, not acceptance. The
+entry itself must decode under §4.0's profile and §4.1's envelope — version 1,
+a text `t`, a map `body` — or it names no device, and the bundle is `binding`
+(D-080).
 
 The quorum is not optional here, and saying "verify the checkpoint note" was
 not enough. §8 sells a bundle as self-contained, checkable by somebody holding
@@ -1084,7 +1089,8 @@ entry framing and belongs to entries: a bundle *wraps* an entry that may
 itself be 65535 bytes, so the largest legal bundle is necessarily larger than
 the largest legal entry. A reader still MUST bound what it decodes — an
 unbounded parse is what §4.0's limits exist to prevent — but the bound is this
-artifact's, not the entry's.
+artifact's, not the entry's. The entry it carries is still an entry, bounded
+as one by the `entry` row above (D-080).
 
 **`MAX_BUNDLE_BYTES` is 81919**: `MAX_ENTRY_BYTES` plus 16384 for the
 checkpoint, the inclusion proof and the map framing around them. A bundle
@@ -1545,7 +1551,7 @@ three of its own, in this order:
 
 | step | code | the refusal |
 |---|---|---|
-| 1 | `bundle` | the bundle does not decode as §8.1's closed map, carries an unknown key, an unsupported version, or a `device` outside §2's grammar; or a `proof` element that is not exactly 32 bytes, as §8.1 types it (cold gate run 17, D8) |
+| 1 | `bundle` | the bundle does not decode as §8.1's closed map, carries an unknown key, an unsupported version, or a `device` outside §2's grammar; or a `proof` element that is not exactly 32 bytes, as §8.1 types it (cold gate run 17, D8), or an `entry` longer than `MAX_ENTRY_BYTES` (D-080) |
 | 2 | — | the checkpoint, as loop steps 2–7: `note`, `log-signature`, `checkpoint`, `origin`, `cosignature`, `quorum` |
 | 3 | `inclusion` | the index is outside the tree, or the inclusion proof does not chain the entry's leaf hash to the signed root, or the proof carries more or fewer hashes than RFC 9162 §2.1.3.2 consumes |
 | 4 | `binding` | the entry is not about the device the bundle names, or names none — an `enroll` whose request does not decode (§8.1's device↔entry binding) |
@@ -2149,7 +2155,13 @@ admits its holes, so:
   trust file and a proven fork for one that learned the key (§11.1, a `fork/`
   file with both readers to come); a full tile or bundle standing in for a
   deleted partial one that is not a full file is `tiles` or `entries` (§6,
-  `grown-log/` cases to come).
+  `grown-log/` cases to come). Two more are Go's alone today, since the
+  reference checks no bundle: decoding a bundle's entry is structure, field
+  rules and point admission, never the request's signature or network, and a
+  version-2 entry names no device (§8.1; the fourth cold build split on the
+  network check; sound `proofs/` bundles and a `proofs-bad/` one to come); and
+  an `entry` longer than `MAX_ENTRY_BYTES` is `bundle` at step 1 (§8.1, §10.1,
+  since 6.5l-xv-h; a `proofs-bad/` bundle to come).
 Everything else named in the table above ships, and the build fails if a path
 cited here is missing or a directory here is not named.
 
