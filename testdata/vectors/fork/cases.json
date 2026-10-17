@@ -214,6 +214,13 @@
     "bad-wrong-version": "version"
   },
   "comment": "Version-1 sound twins prove the fork, claims no split. The understated split is one below the true prefix and is accepted (§11.1). evidence that MUST NOT be acted on, checked against trust.cbor. bad-consistent is a log and its own earlier self -- every signature valid, both heads cosigned, the roots agreeing. bad-other-origin is a real fork of another network, which this anchor has no business accepting. `says` is a semantic hint, a phrase the refusal is about; `codes` names the SPEC §11.1 code each MUST be refused with, and the code is the contract. `policy-not-the-readers.cbor` is not listed here: it carries a policy the reader does not share and MUST still prove the fork, because the field is informational and the reader's own policy decides",
+  "rotated_key": {
+    "comment": "fresh holds only trust.cbor; informed verified and replayed served through the rotation, retaining the trust key and using the replayed policy. Both heads are signed by proofs-rotated's logkey2.",
+    "file": "evidence-rotated-key.cbor",
+    "fresh": "held",
+    "informed": "accept",
+    "signed_by": "efe54ffd513af32b5f82b092c79bf3ffb20ce096798e45285b0b55ef2562fdc0"
+  },
   "rules": {
     "bad-bool-size": {
       "says": "the `size` field is a boolean rather than a uint",
@@ -381,6 +388,10 @@
     },
     "bad-wrong-version": {
       "says": "| `version` | uint | `1` or `2` |",
+      "section": "11.1"
+    },
+    "evidence-rotated-key": {
+      "says": "trust file issued since; one holding only the older trust file answers `held`,",
       "section": "11.1"
     }
   },

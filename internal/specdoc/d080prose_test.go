@@ -17,14 +17,21 @@ func TestRunSeventeensPolicyReadingsAreWritten(t *testing.T) {
 	if !ok {
 		t.Fatal("§9.1 is missing")
 	}
-	// Until their vectors ship, §12.1 must say so, or §9.1's table claims
-	// vectors it does not have.
+	// Row 6.5l-xv-i shipped their vectors, so §12.1 cites them, and no
+	// longer lists D-080's rules as holes, which it did until then.
 	coverage, ok := doc.Section("12.1")
 	if !ok {
 		t.Fatal("§12.1 is missing")
 	}
-	if !strings.Contains(strings.Join(strings.Fields(coverage.Body), " "), "**D-080's rules, until row 6.5l-xv-i ships their vectors.**") {
-		t.Error("§12.1 does not list D-080's rules as not yet vectored")
+	covered := strings.Join(strings.Fields(coverage.Body), " ")
+	if strings.Contains(covered, "D-080's rules, until row 6.5l-xv-i ships their vectors") {
+		t.Error("§12.1 still lists D-080's rules as not yet vectored")
+	}
+	for _, path := range []string{"`policies/trailing-space.txt`", "`trust-good/policy-over-4096.cbor`",
+		"`fork/evidence-rotated-key.cbor`", "`grown-log/full-tile-truncated.bin`", "`proofs-bad/oversize-entry.bundle`"} {
+		if !strings.Contains(covered, path) {
+			t.Errorf("§12.1 does not cite %s", path)
+		}
 	}
 	body := strings.Join(strings.Fields(section.Body), " ")
 	for _, want := range []string{

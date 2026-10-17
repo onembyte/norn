@@ -2929,12 +2929,12 @@ func TestEveryServedAndBundleNegativeCitesTheRuleOfItsCode(t *testing.T) {
 			"unserved": {"any file a later step needs and cannot fetch"},
 		},
 		"proofs-bad": {
-			"bundle":        {"a closed map of exactly these six keys", "`v` | uint | `1`", "larger than this MUST be refused on length", "or a `device` outside §2's grammar", "or a `proof` element that is not exactly 32 bytes, as §8.1 types it"},
+			"bundle":        {"a closed map of exactly these six keys", "`v` | uint | `1`", "larger than this MUST be refused on length", "or a `device` outside §2's grammar", "or a `proof` element that is not exactly 32 bytes, as §8.1 types it", "or an `entry` longer than `MAX_ENTRY_BYTES` (D-080)"},
 			"log-signature": {"under the log keys the verifier trusts"},
 			"origin":        {"this network's origin"},
 			"quorum":        {"a satisfied witness quorum"},
 			"inclusion":     {"reach that checkpoint's root at `index`", "the proof carries more or fewer hashes than RFC 9162 §2.1.3.2 consumes"},
-			"binding":       {"`device` is the `device_id` the `entry` names", "an `enroll` whose request does not decode"},
+			"binding":       {"`device` is the `device_id` the `entry` names", "an `enroll` whose request does not decode", "entry itself must decode under §4.0's profile and §4.1's envelope — version 1,"},
 		},
 		"receipt-bad": {
 			"note":          {"a second `0x0A` after the final signature creates a forbidden blank line", "or no signature line, is `note`"},

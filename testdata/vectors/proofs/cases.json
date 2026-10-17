@@ -6,6 +6,8 @@
   },
   "checkpoint_quorum_time": 1760003607,
   "codes": {
+    "forged": "accept",
+    "halfsigned": "accept",
     "laptop-revoke": "accept",
     "nas-rotate": "accept"
   },
@@ -39,6 +41,14 @@
     "size": 127
   },
   "rules": {
+    "forged": {
+      "says": "§3.1's point admission included; its signature and network are not part of",
+      "section": "8.1"
+    },
+    "halfsigned": {
+      "says": "§3.1's point admission included; its signature and network are not part of",
+      "section": "8.1"
+    },
     "laptop-revoke": {
       "says": "types, the `device_id` in the body — and apply the rules below.",
       "section": "8.1"
@@ -63,6 +73,20 @@
       "index": 36,
       "name": "laptop-revoke",
       "says": "a revoke is bound through device_id in its body and passes every bundle check; condition 3 installs nothing because replay leaves laptop revoked at the served checkpoint, so installs omits laptop"
+    },
+    {
+      "device": "forged",
+      "file": "forged.bundle",
+      "index": 98,
+      "name": "forged",
+      "says": "inclusion accepts; replay refused the enrollment, so installs omits forged"
+    },
+    {
+      "device": "halfsigned",
+      "file": "halfsigned.bundle",
+      "index": 57,
+      "name": "halfsigned",
+      "says": "inclusion accepts; replay refused the enrollment, so installs omits halfsigned"
     }
   ]
 }

@@ -92,3 +92,10 @@ grown-log/cases.json#unhandled expected="handled" got="UNKNOWN CASE FORMAT"
 genesis-unapplied/cases.json#unhandled expected="handled" got="UNKNOWN CASE FORMAT"
 quorum-none/cases.json#unhandled expected="handled" got="UNKNOWN CASE FORMAT"
 replayed-policy/cases.json#unhandled expected="handled" got="UNKNOWN CASE FORMAT"
+
+# Row 6.5l-xv-i, Go half (2026-10-17): no failure, a gap again. This build
+# answers `proofs-bad/oversize-entry` (`bundle`) and `rotate-v2` (`binding`) as
+# written. It never walks `proofs/cases.json`'s `sound`, so not `forged` or
+# `halfsigned`; nor `fork/cases.json`'s new `rotated_key`; and `grown-log/`
+# stays unhandled above, so its three new full-file cases are unread. Its pass
+# count is no evidence for those six.

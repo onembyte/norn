@@ -49,7 +49,7 @@ func TestABundleAroundLaptopRevokeAcceptsUnderItsOwnLabel(t *testing.T) {
 	if err := json.Unmarshal(read("proofs/cases.json"), &m); err != nil {
 		t.Fatal(err)
 	}
-	if len(m.Sound) != 2 || m.Sound[1].Name != "laptop-revoke" || m.Sound[1].File != "laptop-revoke.bundle" || m.Sound[1].Device != b.Device || m.Sound[1].Index != b.Index || m.Codes["laptop-revoke"] != "accept" {
+	if len(m.Sound) != 4 || m.Sound[1].Name != "laptop-revoke" || m.Sound[1].File != "laptop-revoke.bundle" || m.Sound[1].Device != b.Device || m.Sound[1].Index != b.Index || m.Codes["laptop-revoke"] != "accept" {
 		t.Fatal("proofs manifest must list the laptop revoke beside the sound nas rotation")
 	}
 	if _, ok := m.Installs[b.Device]; ok || !strings.Contains(m.Sound[1].Says, "installs omits laptop") || !strings.Contains(m.Comment, "installs omits laptop") {

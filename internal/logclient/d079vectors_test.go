@@ -27,8 +27,8 @@ func checkD079GrownLogCase(t *testing.T, name string) {
 		t.Fatal(err)
 	}
 	wants := map[string]string{"older-head-over-full-tiles": "accept", "full-tile-gone": "unserved", "full-bundle-gone": "unserved", "corrupt-within-prefix": "tiles", "corrupt-beyond-prefix": "accept"}
-	if manifest.ServeOver != "grown-log" || len(manifest.Cases) != len(wants) {
-		t.Fatal("grown-log must serve itself and list all five cases")
+	if manifest.ServeOver != "grown-log" || len(manifest.Cases) != len(wants)+3 {
+		t.Fatal("grown-log must serve itself and list all eight cases")
 	}
 	head := readFile(t, filepath.Join(dir, "checkpoint"))
 	if head != readFile(t, filepath.Join(vectorRoot(), "served", "checkpoint")) {
