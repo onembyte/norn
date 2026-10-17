@@ -37,3 +37,29 @@ func TestRunSeventeensPolicyReadingsAreWritten(t *testing.T) {
 		}
 	}
 }
+
+// D-080 (2), row 6.5l-xv-f. §11.1 step 1 said "this network's log key",
+// singular, where §7, §8.1 and §10 name the trust file's key and every one a
+// replayed state has published; after a rotation, one reader proved a fork
+// that another refused (cold gate run 17, D2). Step 1 names §9.4's set, and
+// the opening says what the trust-file-only reader answers, as §8 does for a
+// bundle.
+func TestEvidenceIsCheckedUnderTheKeysTheReaderTrusts(t *testing.T) {
+	doc := load(t)
+	section, ok := doc.Section("11.1")
+	if !ok {
+		t.Fatal("§11.1 is missing")
+	}
+	body := strings.Join(strings.Fields(section.Body), " ")
+	for _, want := range []string{
+		"the log keys the reader trusts (§9.4: the trust file's, plus every `log_key` of a state it has accepted)",
+		"one holding only the older trust file answers `held`, which is the truth",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("§11.1 does not say %q", want)
+		}
+	}
+	if strings.Contains(body, "this network's origin, this network's log key, and a satisfied witness quorum") {
+		t.Error("§11.1 step 1 still names one log key")
+	}
+}

@@ -1601,6 +1601,14 @@ reader who has the network's trust file and nothing else: no running log, no
 connection, and **no reason to trust whoever handed them the file**. That is
 why the format is here rather than in `GOSSIP.md`.
 
+That reader checks the file under the keys and the policy its trust file names;
+a reader that has replayed the log checks it under what the log published
+(§9.4). As with a bundle (§8), evidence signed by a key the roots rotated in is
+checkable by a reader that has replayed the log through the rotation, or holds a
+trust file issued since; one holding only the older trust file answers `held`,
+which is the truth — it does not yet trust the key the evidence is signed with
+(D-080).
+
 Deterministic CBOR per §4.0, a closed map of exactly these seven keys at
 version 1, and of exactly eleven keys at version 2 — the four `split` keys
 added. A node writes version 2. A reader MUST accept both: a version-1 file
@@ -1622,9 +1630,10 @@ proves a fork exactly as it did, and claims no common prefix.
 
 A reader MUST, in this order:
 
-1. verify **both** checkpoints per §10 — this network's origin, this network's
-   log key, and a satisfied witness quorum **under the reader's own policy,
-   never the one in the file**. A log signing two heads by itself is a log
+1. verify **both** checkpoints per §10 — this network's origin, the log keys
+   the reader trusts (§9.4: the trust file's, plus every `log_key` of a state it
+   has accepted), and a satisfied witness quorum **under the reader's own
+   policy, never the one in the file** (D-080). A log signing two heads by itself is a log
    misbehaving in private; what makes a fork provable to a third party is that
    independent witnesses vouched for **both**.
 2. check `size` is **not above `held`'s own size** — an accuser can only speak for a size
@@ -2133,7 +2142,10 @@ admits its holes, so:
   reference and the fourth cold build already give this document's answer on
   each: blanks after a policy line's last field add no field (§9.1, a
   `policies/` pair and a root-signed `policy` entry to come); a trust file's
-  policy longer than 4096 bytes is valid (§9.1, a `trust-good/` file to come).
+  policy longer than 4096 bytes is valid (§9.1, a `trust-good/` file to come);
+  evidence signed by a rotated key is `held` for a reader holding only the
+  trust file and a proven fork for one that learned the key (§11.1, a `fork/`
+  file with both readers to come).
 Everything else named in the table above ships, and the build fails if a path
 cited here is missing or a directory here is not named.
 
