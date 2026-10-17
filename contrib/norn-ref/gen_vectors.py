@@ -23,6 +23,12 @@ from nornref import canonjson, cbor, enrollreq, entry, fixture, note, replay, tr
 _written: set[pathlib.Path] = set()
 
 
+TRAILING_WHITESPACE = {
+    "section": "9.1",
+    "says": "| trailing whitespace | spaces and tabs after the last field are not part of it and add no field (D-080) |",
+}
+
+
 def write(path: pathlib.Path, data: bytes | str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(data if isinstance(data, bytes) else data.encode("utf-8"))
@@ -626,6 +632,8 @@ def write_rules_log(out: pathlib.Path) -> None:
     repaired = dict(expired, body={"request": cbor.encode(request)}, sigs=[])
     fixture._signed(repaired, signer)
     b.add("25-enroll-without-expires", repaired)
+    text = "".join(line + " \n" for line in fixture.policy_text().splitlines())
+    b.add("26-policy-trailing-space", b.build("policy", {"text": text}, roots))
     items = b.items
     raw = [it.raw for it in items]
     anchor = fixture.anchor_for(raw)
@@ -656,6 +664,7 @@ def write_rules_log(out: pathlib.Path) -> None:
         ("4.3", "≥ `signer_thr` signers."),
         ("16.1", "requested expiry, unix seconds; MUST be > `ts`"),
         ("16.1", "| `expires` | uint | |"),
+        (TRAILING_WHITESPACE["section"], TRAILING_WHITESPACE["says"]),
     ]
     for it in items:
         write(out / "log-rules" / (it.name + ".cbor"), it.raw)
@@ -725,7 +734,20 @@ def write_trust_acceptances(out: pathlib.Path) -> None:
         trust.validate(doc)  # the oracle: a case that does not validate is a bug
         write(out / "trust-good" / f"{name}.cbor", trust.encode(doc))
         cases.append(name)
+    # The entry-text cap does not bound an out-of-band trust policy (D-080).
+    doc = fixture.trust_file()
+    text = doc["policy"]
+    doc["policy"] += "#" + "x" * (4097 - len(text.encode()) - 2) + "\n"
+    trust.validate(doc)
+    raw = trust.encode(doc)
+    if len(doc["policy"].encode()) != 4097 or len(raw) >= trust.MAX_TRUST_BYTES:
+        raise SystemExit("policy-over-4096 must exceed the entry cap inside a small trust file")
+    write(out / "trust-good" / "policy-over-4096.cbor", raw)
+    cases.append("policy-over-4096")
     write(out / "trust-good" / "cases.json", canonjson.dumps({
+        "says": {"policy-over-4096": "accepted: one ignored comment line grows only the policy text to 4097 bytes; the whole trust file stays below MAX_TRUST_BYTES"},
+        "rules": {"policy-over-4096": {
+            "section": "9.1", "says": "Its length is bounded only by `MAX_TRUST_BYTES`"}},
         "comment": "every file here MUST be accepted as a trust anchor. Each "
                    "exercises an optional member or an intentionally open URL "
                    "reading: URL syntax is application-specific, policy URLs "
@@ -950,7 +972,12 @@ def write_policies(out: pathlib.Path) -> None:
     from nornref import policy as policymod
     evaluations = fixture.policy_evaluations()
     cases = []
-    for name, text, accept, why in fixture.policy_grammar():
+    inputs = list(fixture.policy_grammar())
+    for name, suffix in (("trailing-space", "  "), ("trailing-tab", "\t")):
+        text = "".join(line + suffix + "\n" for line in fixture.policy_text().splitlines())
+        inputs.append((name, text, True,
+                       "trailing spaces and tabs add no field and leave the parsed policy unchanged"))
+    for name, text, accept, why in inputs:
         # The oracle is the reference parser: a case that does not behave as
         # its own table says is a generator bug, not a vector.
         try:
@@ -963,11 +990,15 @@ def write_policies(out: pathlib.Path) -> None:
                 f"policy case {name}: table says accept={accept}, parser says {parsed}")
         write(out / "policies" / f"{name}.txt", text.encode())
         case = {"name": name, "accept": accept, "why": why}
+        if name in ("trailing-space", "trailing-tab"):
+            case["says"] = why
         if evaluations.get(name):
             case["evaluate"] = evaluations[name]
         cases.append(case)
     grammar = {"section": "9.1", "says": "The rest of the grammar, stated because"}
-    policy_rules = {name: dict(grammar) for name, _, _, _ in fixture.policy_grammar()}
+    policy_rules = {name: dict(grammar) for name, _, _, _ in inputs}
+    for name in ("trailing-space", "trailing-tab"):
+        policy_rules[name] = dict(TRAILING_WHITESPACE)
     for name in ("bad-witness-name-not-ascii", "bad-group-name-plus",
                  "bad-witness-name-one-past-the-cap", "witness-name-at-the-cap"):
         policy_rules[name] = {

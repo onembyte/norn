@@ -17,9 +17,9 @@ NAMES = ["00-genesis", "01-enroll-nas", "02-enroll-laptop",
          "18-root-remove-known", "19-root-restore-known",
          "20-note-uppercase-kid", "21-note-without-surplus-kid",
          "22-enroll-by-roots", "23-enroll-with-signer",
-         "24-enroll-expires-zero", "25-enroll-without-expires"]
+         "24-enroll-expires-zero", "25-enroll-without-expires", "26-policy-trailing-space"]
 CODES = ["", "", "", "threshold", "", "stale-state", "", "decode", "", "", "", "",
-         "decode", "dup-entry", "", "unknown-key", "root-invariant", "", "", "", "decode", "", "threshold", "", "decode", ""]
+         "decode", "dup-entry", "", "unknown-key", "root-invariant", "", "", "", "decode", "", "threshold", "", "decode", "", ""]
 
 
 class RuleVectors(unittest.TestCase):

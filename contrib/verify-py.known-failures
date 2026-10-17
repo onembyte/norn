@@ -60,7 +60,12 @@ log-rules/04-revoke-nas-by-self.cbor expected="accept" got="dup-entry"
 # which records a refused entry's content, calls it a duplicate. The state line
 # moved with the six new entries.
 log-rules/23-enroll-with-signer.cbor expected="accept" got="dup-entry"
-log-rules/state.json expected=sha256:1f4d3db2bb8a678a1f2a91a720d2a399f940db21739a491778018a1b78069f02 got=sha256:d6cf88dbfd404e7477bddbbb653bc3859ad0e61bcd4b419a397053abeb05a9f8
+# Row 6.5l-xv-i, reference half (2026-10-17): entry 26, a root-signed `policy`
+# whose every line ends in a space, is applied by this build as written, and so
+# are `policies/trailing-space`, `trailing-tab` and `trust-good/policy-over-4096`
+# (3583 checks became 3592, all nine new ones passing). Only the state line
+# moved, with the entry.
+log-rules/state.json expected=sha256:3735bb78453f2d7154d7a57ea8c618d98908fa4b5ee9a679239c8011dde688a1 got=sha256:bd666f7b7e25c30b2d0c011e0458a150b258a993af05114159cc811f4cbb5883
 
 # Row 6.5l-xiv-d, Go half (2026-10-15): `heads-run16/`, heads with reader
 # histories and a request table with the consumer's network, a manifest shape

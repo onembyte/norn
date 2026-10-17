@@ -1,0 +1,8 @@
+¨atfpolicyavbtshç~cnetPnorn-testnet-001dbody¡dtextyölog norn/nzxxe3rnorsxg5domv2c2mbqge+bea4a666+AV6v97lmGyW99eHglI8syFAU2uY+/HuHHq0VYz9Rmio1 https://log.norn.example/testnet 
+witness pi norn-witness/pi+051d1c51+BHeagefoK0s3F5shdMl1Ahsd1ZCE9MC5F5gvM3cLTnZa http://10.0.0.153:8100 
+witness vps norn-witness/vps+46a6fd38+BIXCilOrHi0kMxynG/s1EyJ2aWFC1jZc4UlZRza6g8ou https://witness.example.net 
+witness friend norn-witness/friend+1404f742+BJjvlkRbihDdM/4Lb/YPiP+eoqk3VgrncrTgSXQNXr6B https://bastion.example.org/w 
+group home 2 pi vps friend 
+quorum home 
+dprev
+dsigs‚£ckidp65d0a10d64f7ef3acsigX@è¡ìzi‚3ğÖL-Ôø3QşözĞ{ğEœ~9RªŞIÁÅÓ EuiÑŸÃ2µàÆ|¢	Š^ÈGÜvdroledroot£ckidpd1a69ef8611af532csigX@"¿ÜR!å0,¤~ Ó½µí,QÎE +Õ?Â\ŒÎò$¿ÙXÛ”oëÏcÈ9K\¢kĞ{Šxªé<ó‘n|ïœqÙA	droledrooteafter
