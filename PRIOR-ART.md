@@ -86,6 +86,15 @@ rejects the *data structure* (no prefix tree — full replication instead).
 | innernet | coordination server | **yes** (experimental, unaudited) | none |
 | Nebula | offline CA signs certs; lighthouse only discovers | lighthouse: no. **CA: yes** | none; revocation = `pki.blocklist` in config |
 
+NetBird 0.81 (2026-10-15) added a certificate posture check ([release](https://github.com/netbirdio/netbird/releases/tag/v0.81.0),
+[documentation](https://docs.netbird.io/manage/access-control/posture-checks/device-certificates)): a peer must hold a certificate chaining to a CA the
+operator names and sign a fresh challenge with its key, every four hours, with
+TPM and Secure Enclave keys supported. The management server issues and judges
+that challenge, so a compromised one is not bound by it; and in NetBird's own
+words the check "accepts any certificate under the CA" and "does not tie the
+certificate to a user or a hostname". It is a posture check attached to access
+policies, and the row's **yes** stands.
+
 Nebula is the interesting one: certs from an offline CA are *almost* the right
 shape, but revocation is a config-file blocklist with no proof of delivery.
 **CVE-2026-61699** (nebula-mesh): the management agent silently discarded the

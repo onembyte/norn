@@ -25,6 +25,8 @@ claim is not a source for a stronger one. Norn's sources are in this tree.
 
   Source: `PRIOR-ART.md` §5 says the management server decides the peer set and can silently add a peer. It cites no document or link for NetBird.
 
+  NetBird 0.81 (2026-10-15) added a certificate posture check ([release](https://github.com/netbirdio/netbird/releases/tag/v0.81.0), [documentation](https://docs.netbird.io/manage/access-control/posture-checks/device-certificates)). The management server issues and judges that challenge, so it does not constrain a compromised management server; the documentation says the check does not tie the certificate to a user or a hostname.
+
 - Norn: no
 
   Source: `SPEC.md` §§5.1 and 13–13.1: replay authorises enrollments; providers cannot authorise keys. `internal/agent/gate_test.go`, `TestAnIntruderIsGoneAfterExactlyOneCycle`, checks eviction. `THREAT-MODEL.md` A1 and §5 distinguish observe, owner and watchdog; watchdog has a polling window.
@@ -33,6 +35,7 @@ Questions for the operator:
 
 - In your deployment, could the coordination server add a node while lock was enabled, without a trusted key signing it?
 - Could a Nebula lighthouse or NetBird management server admit a peer without the approval described here? What did "approved" mean in your setup?
+- If you used NetBird's certificate posture check (0.81 and later), did anything other than the management server enforce it?
 - Does Norn's "no" fairly describe observe and watchdog deployments, including packets inside the reconciliation window?
 
 ## Can the control plane widen a legitimate peer's routes?
