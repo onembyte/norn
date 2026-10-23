@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -141,6 +142,75 @@ func TestAnUnreachableWitnessDoesNotStopTheLog(t *testing.T) {
 	}
 	if strings.Count(got, "\n—") != 2 {
 		t.Errorf("the reachable witness's cosignature should still be here:\n%s", got)
+	}
+}
+
+// Tessera PR #1225 keeps a bad witness signature from costing the others theirs.
+// A witness signing another head must lose only its own line, while the log
+// publishes the checkpoint with every valid cosignature it collected.
+func TestABadCosignatureLeavesTheOthersOnTheCheckpoint(t *testing.T) {
+	signed, _ := aCheckpoint(t)
+	firstURL, _ := answering(t, "one")
+	secondURL, _ := witnessServer(t, func(w http.ResponseWriter, body string) {
+		_, checkpoint, _ := strings.Cut(body, "\n\n")
+		text, _, err := note.Split(checkpoint)
+		if err != nil {
+			t.Error(err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		lines := strings.Split(text, "\n")
+		size, err := strconv.ParseInt(lines[1], 10, 64)
+		if err != nil {
+			t.Error(err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		lines[1] = strconv.FormatInt(size+1, 10)
+		line, err := cosign.Sign(strings.Join(lines, "\n"), "witness.example/two",
+			key(t, "two"), someInstant)
+		if err != nil {
+			t.Error(err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(line + "\n"))
+	})
+	var mu sync.Mutex
+	var reported []error
+	s := NewSubmitter([]*Client{
+		clientFor(t, "one", firstURL),
+		clientFor(t, "two", secondURL),
+	}, &fakeProofs{}, func(err error) {
+		mu.Lock()
+		defer mu.Unlock()
+		reported = append(reported, err)
+	})
+
+	got, err := s.Cosign(signed)
+	if err != nil {
+		t.Fatalf("a bad cosignature stopped the log: %v", err)
+	}
+	if !strings.HasPrefix(got, signed) {
+		t.Error("the log's own checkpoint and signature must be left exactly as they were")
+	}
+	appended := strings.TrimPrefix(got, signed)
+	if strings.Count(appended, "\n") != 1 {
+		t.Errorf("expected exactly one cosignature appended:\n%s", appended)
+	}
+	if !strings.HasPrefix(appended, "— witness.example/one ") {
+		t.Errorf("the valid witness one's cosignature should still be here:\n%s", appended)
+	}
+	if strings.Contains(got, "— witness.example/two ") {
+		t.Errorf("witness two's cosignature over another checkpoint was published:\n%s", got)
+	}
+	if len(reported) != 1 {
+		t.Fatalf("expected exactly one refusal reported, got %d: %v", len(reported), reported)
+	}
+	if message := reported[0].Error(); !strings.Contains(message, "witness two") ||
+		!strings.Contains(message, "answer does not verify") {
+		t.Errorf("the refusal should name witness two and say its answer does not verify: %v", reported)
 	}
 }
 
