@@ -182,8 +182,9 @@ stopped, a node went degraded about ten minutes after the last
 cosignature, as the specification says it should; the run also showed
 that my setup let the log die without anyone being told, which I am
 fixing. Nothing has enforced on a real kernel yet, there are no
-performance measurements, and nobody outside has reviewed it. It is an
-untested preview (v0.1.0-preview.1).
+performance measurements, the specification has not yet passed its own
+gate (two clean cold readings in a row), and nobody outside has reviewed
+it. It is an untested preview (v0.1.0-preview.2).
 
 https://norn.francomichetti.com (a one-page summary)
 https://github.com/onembyte/norn (Apache-2.0; the threat model is in
@@ -421,8 +422,8 @@ Each box is a fact to check on the day, not a promise made today.
   two links, the site and the repository.
 - [ ] **The site is live** (row F13) before the WireGuard message links it; if
   not, drop its line.
-- [ ] **The release the message names** is the latest: `v0.1.0-preview.1` on
-  2026-10-23, `v0.1.0-preview.2` once F16 ships.
+- [x] **The release the message names** is the latest: `v0.1.0-preview.2`,
+  published 2026-10-23 on `15ccc1b`, where CI passed; recheck on the day.
 - [x] **wireguard.com rechecked** 2026-10-23: `/` and `/todo/` byte-identical to
   2026-10-12's fetch; recheck on the day.
 - [ ] WireGuard: `team@wireguard.com` only; not the list until after publication
