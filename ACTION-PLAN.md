@@ -1,7 +1,8 @@
 # Norn — how to test it, and how to present it
 
 Row H17 of `HARDENING-PLAN.md`. Drafted **2026-10-12**, at the owner's request,
-before every row it depends on is done; §5 lists what is still open, and the
+before every row it depends on is done; §2's message and §4's checks refreshed
+**2026-10-23** (BUILD-LOG row F15); §5 lists what is still open, and the
 row is not ticked until those are closed and the facts below are rechecked.
 **Nothing in this file has been sent, and nothing in it is sent by anyone but
 the owner.**
@@ -12,13 +13,15 @@ What exists and is checked by the gate: a frozen `SPEC.md`; a byte-exact vector
 suite with three provenances; the Go node agent, log server, witness wrapper and
 CLI; a Python reference implementation that produces the same states byte for
 byte; an independent verifier built cold from the specification alone
-(`contrib/verify-py/`, the third such build, which passes every check); a
+(`contrib/verify-py/`, the third such build, which passed every check at its
+seal; vectors added since are listed in `contrib/verify-py.known-failures`); a
 simulation of the attack scenarios. The
 README's status line has the current counts.
 
-What has not happened: nothing has run on a real kernel or a real network; no
-outside person has reviewed it; no number in any document comes from a real
-deployment. Steps 1–4 below can run today on any machine with Go. Steps 5–7
+What has happened once: U1, observe mode on two homelab nodes for about 42
+hours (2026-10-18 to 2026-10-19; BUILD-LOG row F3). What has not: nothing has
+enforced on a real kernel; no outside person has reviewed it; the only number
+from a real deployment is U1's stale-view transition. Steps 1–4 below can run today on any machine with Go. Steps 5–7
 are row U1 and need your mesh.
 
 ## 1. Your test plan
@@ -133,7 +136,19 @@ WireGuard itself is developed and patches are sent, and Norn proposes no patch;
 the list is for an announcement after the repository is public and reviewed
 (`PUBLICATION.md` §5, step 3). Not `security@`: this is not a WireGuard
 vulnerability. The page states no format; plain text, short, no attachments,
-one link, is the form a busy kernel team reads.
+is the form a busy kernel team reads. Two links, not one, since 2026-10-23: the
+site is the page the owner made for this email, and the repository is what a
+kernel developer opens; the site's line goes only once F13 has deployed it.
+
+**Rechecked 2026-10-23 (F15).** `/` and `/todo/` fetched again: byte-identical
+to the 2026-10-12 fetch (the same SHA-256), so every quote above holds. The
+mesh item goes on: "Build onto of wg-dynamic." Norn is not built on wg-dynamic,
+and the message now says so and asks. `/todo/` also lists "macOS and iOS Apps",
+"Testing Infrastructure", "Documentation" and "Web App for Provisioning",
+which the owner named on 2026-10-09 as where he would like to help, with
+wgctrl-go, the library Norn reads and writes the peer table through
+(`golang.zx2c4.com/wireguard/wgctrl`); the message's last paragraph says that
+in four sentences, and he can cut it.
 
 **The draft** (plain text; send from your own address):
 
@@ -153,29 +168,47 @@ Norn records every device enrollment, key rotation and revocation in an
 append-only log, cosigned by independent witnesses in the C2SP tlog
 formats. Each node replays that log and installs only the keys, and the
 allowed IPs, that the log proves. It changes nothing in WireGuard: it
-reads and writes the peer table through the normal interfaces, beside
-wg-quick, innernet or NetBird.
+reads and writes the peer table through wgctrl, beside wg-quick,
+innernet or NetBird. It does no endpoint discovery or NAT traversal, and
+it is not built on wg-dynamic as the item suggests; it sits beside
+whatever already does those.
 
-Where it stands: the specification is frozen and has a byte-exact
-test-vector suite; a Go implementation and a Python reference produce
-identical results; an independent verifier was written from the
-specification alone. It has not yet run on a real network, and nobody
-outside has reviewed it. Measurements on a real mesh come next.
+Where it stands, plainly: the specification is frozen and has a
+byte-exact test-vector suite; a Go implementation and a Python reference
+produce identical results, and an independent verifier was written from
+the specification alone. It has run once on real machines: two nodes at
+home, in observe mode (report only), for about 42 hours. With the log
+stopped, a node went degraded about ten minutes after the last
+cosignature, as the specification says it should; the run also showed
+that my setup let the log die without anyone being told, which I am
+fixing. Nothing has enforced on a real kernel yet, there are no
+performance measurements, and nobody outside has reviewed it. It is an
+untested preview (v0.1.0-preview.1).
 
-https://github.com/onembyte/norn (Apache-2.0); the threat model is in
-THREAT-MODEL.md.
+https://norn.francomichetti.com (a one-page summary)
+https://github.com/onembyte/norn (Apache-2.0; the threat model is in
+THREAT-MODEL.md)
 
 I am not proposing any change to WireGuard. What would help me most is
-whether this is the kind of tool that item had in mind, and whether
-there is a WireGuard behaviour or a threat I have not accounted for.
+whether this is the kind of tool that item had in mind, whether it should
+meet wg-dynamic somewhere, and whether there is a WireGuard behaviour or
+a threat I have not accounted for.
+
+Separately, I would like to help where it is useful. I hold an Apple
+Developer Program membership and would gladly work on the macOS and iOS
+apps; I would also take on testing infrastructure or documentation, and
+Norn uses wgctrl-go, so fixes there would come naturally. If one of
+those would actually help, I would be glad to know which.
 
 Thank you for WireGuard.
 
 Franco Michetti
 ```
 
-Update the "Where it stands" paragraph on the day you send it, from the
-README's status line: if U1 has run, say what it showed.
+On the day you send it, recheck "Where it stands" against the README's status
+line and §4 below: the release it names (`v0.1.0-preview.2` if F16 has
+shipped), whether a longer U1 run has happened, and whether the site is live.
+If the site is not deployed yet, drop its line.
 
 ## 3. The message to the KEYTRANS working group (row U8)
 
@@ -258,14 +291,17 @@ Each box is a fact to check on the day, not a promise made today.
   reporting off, which `SECURITY.md` sends reporters to; it is on.
 - [x] **License.** `LICENSE` is Apache-2.0.
 - [ ] **README status line.** Dated 2026-10-17; the counts in it are guarded by
-  the build, the date is not.
+  the build, the date is not (2026-10-23: 56 packages, 1376 tests, both current).
 - [ ] **`RELEASE-NOTES-v0.1.md`.** Refreshed on 2026-10-17 (D-072 to D-080
   decided, 17 cold-model runs); refresh it again when you tag v0.1 (U8).
 - [ ] **`make verify-py` green.** Green since the fourth cold build (6.5l-xii-f,
   2026-10-12); recheck on the day, since a vector added after its seal is
-  recorded in `contrib/verify-py.known-failures`.
-- [ ] **Which numbers come from a real deployment.** None, today. Every message
-  says so, and stays true to it.
+  recorded in `contrib/verify-py.known-failures`. 2026-10-23: green, 3603
+  checks, 3577 pass, the 26 failures all the recorded ones.
+- [ ] **Which numbers come from a real deployment.** One, since U1: a node went
+  degraded 600.1 s after the last cosignature with the log stopped, on two
+  homelab nodes in observe mode (row F3). Every message says how little that
+  is, and stays true to it.
 
 **What the 2026-10-12 audit of the tracked files and history found**
 - No private key material is tracked. The only private-key marker is
@@ -292,7 +328,14 @@ Each box is a fact to check on the day, not a promise made today.
   they route nowhere and need no change.
 
 **The messages**
-- [ ] Plain text, no attachments, one link, from your own address.
+- [ ] Plain text, no attachments, from your own address; the WireGuard message's
+  two links, the site and the repository.
+- [ ] **The site is live** (row F13) before the WireGuard message links it; if
+  not, drop its line.
+- [ ] **The release the message names** is the latest: `v0.1.0-preview.1` on
+  2026-10-23, `v0.1.0-preview.2` once F16 ships.
+- [x] **wireguard.com rechecked** 2026-10-23: `/` and `/todo/` byte-identical to
+  2026-10-12's fetch; recheck on the day.
 - [ ] WireGuard: `team@wireguard.com` only; not the list until after publication
   and review; never `security@` for this.
 - [ ] KEYTRANS: subscribed first; the Note Well line is true; the archive read.
@@ -301,9 +344,11 @@ Each box is a fact to check on the day, not a promise made today.
 ## 5. What is still open before this row is done
 
 `HARDENING-PLAN.md` H17 needs every row H0–H19 done, or blocked on a decision
-it states. Open today: H6 (D-068's two consecutive clean cold-model runs: run
-15 waits on the triage of the fourth cold build's readings, 6.5l-xii-g; run
-14's fixes and that build are in); H15 (the Phase 6 gate audit, after H6); and the owner's rows U1–U9.
-H21's problem statement (`standards/`) waits on U8's answer by design. When those
-close, this file's facts are rechecked, the row is ticked, and the loop stops
-itself as H17 (d) says.
+it states. Open on 2026-10-23: H6 (D-068's two consecutive clean cold-model
+runs: 0 of 2 after run 17; a fresh run 18 is BUILD-LOG row F14, on the owner's
+yes); H15 (the Phase 6 gate audit, after H6); and the owner's rows U1–U9, U1's
+seven days among them. On 2026-10-22 the owner set U10's gate aside: the
+WireGuard message is BUILD-LOG row F15, sent by him once the site is live, and
+it says what has and has not run. H21's problem statement (`standards/`) waits
+on U8's answer by design. When those close, this file's facts are rechecked,
+the row is ticked, and the loop stops itself as H17 (d) says.
