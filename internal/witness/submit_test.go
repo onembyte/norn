@@ -1,6 +1,7 @@
 package witness
 
 import (
+	"encoding/base64"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -121,6 +122,55 @@ func TestEveryWitnessThatAnswersIsOnTheCheckpoint(t *testing.T) {
 		if from != 0 {
 			t.Errorf("first contact asked for a proof from %d, want 0", from)
 		}
+	}
+}
+
+// A witness must not put a forgery under another listed witness's identity
+// onto the head: §10 would let that one line veto the whole checkpoint.
+func TestAnotherWitnesssLineNeverReachesTheCheckpoint(t *testing.T) {
+	signed, body := aCheckpoint(t)
+	one, err := cosign.Sign(body, "witness.example/one", key(t, "one"), someInstant)
+	if err != nil {
+		t.Fatal(err)
+	}
+	two, err := cosign.Sign(body, "witness.example/two", key(t, "two"), someInstant)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, encoded, _ := strings.Cut(strings.TrimPrefix(two, note.SigPrefix), " ")
+	payload, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload[len(payload)-1] ^= 1
+	forged := note.SignatureLine("witness.example/two", payload)
+	firstURL, _ := witnessServer(t, func(w http.ResponseWriter, _ string) {
+		_, _ = w.Write([]byte(one + "\n" + forged + "\n"))
+	})
+	secondURL, _ := answering(t, "two")
+	var mu sync.Mutex
+	var reported []error
+	s := NewSubmitter([]*Client{clientFor(t, "one", firstURL), clientFor(t, "two", secondURL)},
+		&fakeProofs{}, func(err error) {
+			mu.Lock()
+			defer mu.Unlock()
+			reported = append(reported, err)
+		})
+
+	got, err := s.Cosign(signed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, line := range []string{one, two} {
+		if count := strings.Count(got, line+"\n"); count != 1 {
+			t.Errorf("%s appears %d times, want exactly once", strings.Fields(line)[1], count)
+		}
+	}
+	if strings.Contains(got, forged+"\n") {
+		t.Error("the forged line under witness two's name and key id reached the checkpoint")
+	}
+	if len(reported) != 0 {
+		t.Errorf("reported %d errors, want none: %v", len(reported), reported)
 	}
 }
 

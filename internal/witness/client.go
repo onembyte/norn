@@ -180,7 +180,8 @@ func (c *Client) refusal(status int, raw []byte) error {
 			"configured to witness this network", c.name())
 	case http.StatusForbidden:
 		return witnessErrorf("%s does not trust the key this checkpoint is signed "+
-			"with; it is configured for a different log key", c.name())
+			"with, or a line under the log key it trusts does not verify; check the "+
+			"configured key for this origin and the checkpoint's signature", c.name())
 	case http.StatusBadRequest:
 		return witnessErrorf("%s says the submitted checkpoint is older than the size "+
 			"we claimed to start from, which is this log's own bug", c.name())
@@ -243,11 +244,28 @@ func (c *Client) check(signed, answer string) ([]string, error) {
 		return nil, witnessErrorf("%s's answer does not verify over the checkpoint we "+
 			"submitted: %v", c.name(), err)
 	}
-	if len(cosignatures) != len(lines) {
-		return nil, witnessErrorf("%s returned %d lines but only %d are cosignatures by "+
-			"keys this network attributes to it", c.name(), len(lines), len(cosignatures))
+	_, signatures, err := note.Split(signed + strings.Join(lines, "\n") + "\n")
+	if err != nil {
+		return nil, witnessErrorf("parsing %s's answer: %v", c.name(), err)
 	}
-	return lines, nil
+	// tlog-witness: "The client MUST ignore any signatures from unknown keys."
+	// Keep only this witness's verified name-and-id pairs: under §10, a forged
+	// line for another listed witness would let this witness veto every head.
+	var kept []string
+	for i, sig := range signatures[len(signatures)-len(lines):] {
+		for _, cosignature := range cosignatures {
+			id := note.KeyIDFor(cosignature.Name, cosignature.Public, note.AlgCosignature)
+			if sig.Name == cosignature.Name && string(sig.KeyID) == string(id) {
+				kept = append(kept, lines[i])
+				break
+			}
+		}
+	}
+	if len(kept) == 0 {
+		return nil, witnessErrorf("%s returned no cosignature by its configured keys; "+
+			"check this network's witness keys against the keys the witness publishes", c.name())
+	}
+	return kept, nil
 }
 
 func (c *Client) client() *http.Client {

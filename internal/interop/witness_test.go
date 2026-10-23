@@ -12,6 +12,7 @@ package interop
 import (
 	"crypto/ed25519"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -62,6 +63,15 @@ func witnessBin(t *testing.T, name, envVar string) string {
 // `transparency-dev/witness`, unmodified, at a pinned commit, with no Norn
 // code in it and none of its code in Norn's go.mod.
 func TestAnUnmodifiedWitnessCosignsANornCheckpoint(t *testing.T) {
+	witnessCosignsANornCheckpoint(t, false)
+}
+
+func TestAWitnessWithAnMLDSAKeyStillCosignsANornCheckpoint(t *testing.T) {
+	witnessCosignsANornCheckpoint(t, true)
+}
+
+func witnessCosignsANornCheckpoint(t *testing.T, withMLDSA bool) {
+	t.Helper()
 	omniwitness := witnessBin(t, "omniwitness", "NORN_WITNESS_BIN")
 	generateKeys := witnessBin(t, "generate_keys", "NORN_WITNESS_KEYGEN")
 
@@ -129,9 +139,25 @@ func TestAnUnmodifiedWitnessCosignsANornCheckpoint(t *testing.T) {
 		anchor.Origin, anchor.LogKey, logURL)), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	start(t, omniwitness, "--listen", strings.TrimPrefix(witnessURL, "http://"),
+	witnessArgs := []string{"--listen", strings.TrimPrefix(witnessURL, "http://"),
 		"--metrics_listen", "", "--private_key_path", secPath,
-		"--additional_logs", logsYAML)
+		"--additional_logs", logsYAML}
+	if withMLDSA {
+		out, err := exec.Command(generateKeys, "-mldsa", "-origin", "norn-witness/interop", "-print").Output()
+		if err != nil {
+			t.Fatalf("generate_keys -mldsa: %v", err)
+		}
+		lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+		if len(lines) != 2 {
+			t.Fatalf("generate_keys -mldsa printed %d lines, want the private then the public key", len(lines))
+		}
+		mldsaPath := filepath.Join(work, "witness-mldsa.sec")
+		if err := os.WriteFile(mldsaPath, []byte(lines[0]+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		witnessArgs = append(witnessArgs, "--private_key_path", mldsaPath)
+	}
+	start(t, omniwitness, witnessArgs...)
 	waitFor(t, witnessURL+"/add-checkpoint")
 
 	// 4. The log, which knows where its witness is because the trust file says
@@ -167,6 +193,34 @@ func TestAnUnmodifiedWitnessCosignsANornCheckpoint(t *testing.T) {
 			t.Fatalf("no witness cosignature appeared on the checkpoint:\n%s", served)
 		}
 		time.Sleep(100 * time.Millisecond)
+	}
+
+	if withMLDSA {
+		body, signatures, err := note.Split(served)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(signatures) != 2 {
+			t.Fatalf("checkpoint carries %d signature lines, want only the log and Ed25519 witness", len(signatures))
+		}
+		// And the witness really did answer with both keys: ask it again for
+		// the same head, which needs no proof, and count its lines. Without
+		// this the test passes against a witness that ignored its second key.
+		size := strings.Split(body, "\n")[1]
+		resp, err := http.Post(witnessURL+"/add-checkpoint", "text/plain",
+			strings.NewReader("old "+size+"\n\n"+served))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		answer, err := io.ReadAll(resp.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if resp.StatusCode != http.StatusOK || strings.Count(string(answer), "\n") != 2 {
+			t.Fatalf("the witness should answer with an Ed25519 and an ML-DSA-44 line, "+
+				"got %d:\n%s", resp.StatusCode, answer)
+		}
 	}
 
 	// 6. And Norn's own verifier accepts it -- quorum and all. This is the

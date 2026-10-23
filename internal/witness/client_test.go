@@ -4,6 +4,7 @@ import (
 	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/binary"
 	"errors"
 	"io"
 	"net/http"
@@ -171,6 +172,39 @@ func TestEveryReturnedCosignatureIsKept(t *testing.T) {
 	}
 }
 
+// An operator adding an ML-DSA key must not cost the network the Ed25519
+// cosignature it already trusts, even when both keys use the same name.
+func TestALineFromAnUnknownKeyIsIgnored(t *testing.T) {
+	signed, body := aCheckpoint(t)
+	real := cosignWith(t, body)
+	const name = "witness.example/w1"
+	public := make([]byte, 1312)
+	for i := range public {
+		public[i] = byte(i)
+	}
+	id := sha256.Sum256(append([]byte(name+"\n\x06"), public...))
+	payload := append([]byte(nil), id[:4]...)
+	payload = binary.BigEndian.AppendUint64(payload, uint64(someInstant.Unix()))
+	for i := range 2420 {
+		payload = append(payload, byte(i))
+	}
+	unknown := "— " + name + " " + base64.StdEncoding.EncodeToString(payload)
+	client := serve(t, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(real + unknown + "\n"))
+	})
+
+	lines, err := client.Add(signed, 0, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(lines) != 1 {
+		t.Fatalf("kept %d lines, want only the trusted Ed25519 cosignature", len(lines))
+	}
+	if lines[0]+"\n" != real {
+		t.Errorf("the trusted cosignature changed: got %q, want %q", lines[0]+"\n", real)
+	}
+}
+
 // A witness that answers with a cosignature over some *other* checkpoint --
 // or a middlebox that rewrites one -- must be caught here. Serving it would
 // publish a head every verifier then refuses, with nothing to say why.
@@ -259,6 +293,9 @@ func TestEveryDocumentedStatusIsNamed(t *testing.T) {
 			}
 			if !strings.Contains(err.Error(), tc.says) {
 				t.Errorf("the error should say %q: %v", tc.says, err)
+			}
+			if tc.status == http.StatusForbidden && !strings.Contains(err.Error(), "does not verify") {
+				t.Errorf("the error should say %q: %v", "does not verify", err)
 			}
 		})
 	}
