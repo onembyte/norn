@@ -245,9 +245,25 @@ func writeRunSixteenDeviceBundles(root, signed string, entries [][]byte) error {
 	}{
 		{"nas-rotate", "nas", "rotate", "a rotate is bound through device_id in its body", 35},
 		{"laptop-revoke", "laptop", "revoke", "a revoke is bound through device_id in its body and passes every bundle check; condition 3 installs nothing because replay leaves laptop revoked at the served checkpoint, so installs omits laptop", 36},
+		{"laptop-since-revoked", "laptop", "enroll", "an accepted enrollment is bound through the embedded request device_id and passes every bundle check; condition 3 installs nothing because replay leaves laptop revoked at the served checkpoint, so installs omits laptop", 2},
 	} {
 		env, err := entry.Decode(entries[c.index])
-		if err != nil || env.T != c.kind || env.Body["device_id"] != c.device {
+		if err != nil {
+			return err
+		}
+		device := env.Body["device_id"]
+		if env.T == "enroll" {
+			raw, ok := env.Body["request"].([]byte)
+			if !ok {
+				return fmt.Errorf("fixture index %d carries no request", c.index)
+			}
+			request, err := enrollreq.Decode(raw)
+			if err != nil {
+				return err
+			}
+			device = request.DeviceID
+		}
+		if env.T != c.kind || device != c.device {
 			return fmt.Errorf("fixture index %d is not %s's %s: %v", c.index, c.device, c.kind, err)
 		}
 		path, err := tree.InclusionProof(c.index)
@@ -268,7 +284,11 @@ func writeRunSixteenDeviceBundles(root, signed string, entries [][]byte) error {
 		}
 		sound = append(sound, map[string]any{"name": c.name, "file": file, "device": c.device, "index": c.index, "says": c.says})
 		codes[c.name] = "accept"
-		rules[c.name] = map[string]string{"section": "8.1", "says": "types, the `device_id` in the body — and apply the rules below."}
+		phrase := "types, the `device_id` in the body — and apply the rules below."
+		if c.kind == "enroll" {
+			phrase = "replay of the log up to that checkpoint yields the device as `active`, and"
+		}
+		rules[c.name] = map[string]string{"section": "8.1", "says": phrase}
 	}
 	manifestPath := filepath.Join(root, "proofs", "cases.json")
 	raw, err := os.ReadFile(manifestPath)
@@ -279,11 +299,11 @@ func writeRunSixteenDeviceBundles(root, signed string, entries [][]byte) error {
 	if err := json.Unmarshal(raw, &manifest); err != nil {
 		return err
 	}
-	// The device list still means the activating entries. Keep both sound
-	// device changes separate: acceptance as a bundle does not imply active.
+	// The device list still means the activating entries. Keep the sound
+	// device entries separate: acceptance as a bundle does not imply active.
 	manifest["sound"] = sound
 	manifest["codes"] = codes
 	manifest["rules"] = rules
-	manifest["comment"] = manifest["comment"].(string) + "; sound includes nas-rotate and laptop-revoke, both accepted as bundles. Condition 3 installs the replayed nas key and nothing for laptop: installs omits laptop because replay leaves it revoked at the served checkpoint"
+	manifest["comment"] = manifest["comment"].(string) + "; sound includes nas-rotate, laptop-revoke and laptop-since-revoked, all accepted as bundles. Condition 3 installs the replayed nas key and nothing for laptop: installs omits laptop because replay leaves it revoked at the served checkpoint"
 	return writeRunFourteenJSON(manifestPath, manifest)
 }

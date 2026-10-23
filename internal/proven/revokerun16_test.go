@@ -25,6 +25,10 @@ func TestASoundRevokeBundleInstallsNothingWhileNasInstallsItsReplayedKey(t *test
 	}
 	var manifest struct {
 		Installs map[string]string
+		Sound    []struct {
+			Name, File, Device string
+			Index              int64
+		}
 	}
 	if err := json.Unmarshal(read(t, "proofs/cases.json"), &manifest); err != nil {
 		t.Fatal(err)
@@ -33,8 +37,8 @@ func TestASoundRevokeBundleInstallsNothingWhileNasInstallsItsReplayedKey(t *test
 		t.Fatal("the served checkpoint must leave laptop revoked at size 162")
 	}
 	for _, rejection := range result.State.Rejected {
-		if rejection.Index == 36 {
-			t.Fatal("replay must accept laptop's self-revoke at index 36")
+		if rejection.Index == 36 || rejection.Index == 2 {
+			t.Fatal("replay must accept laptop's enrollment at index 2 and self-revoke at index 36")
 		}
 	}
 	for _, tc := range []struct {
@@ -43,9 +47,21 @@ func TestASoundRevokeBundleInstallsNothingWhileNasInstallsItsReplayedKey(t *test
 		installed    bool
 	}{
 		{"laptop-revoke.bundle", "laptop", 36, false},
+		{"laptop-since-revoked.bundle", "laptop", 2, false},
 		{"nas.bundle", "nas", 1, true},
 	} {
-		t.Run(tc.device, func(t *testing.T) {
+		t.Run(tc.file, func(t *testing.T) {
+			if tc.device == "laptop" {
+				found := false
+				for _, c := range manifest.Sound {
+					if c.File == tc.file && c.Name+".bundle" == tc.file && c.Device == tc.device && c.Index == tc.index {
+						found = true
+					}
+				}
+				if !found {
+					t.Fatal("sound must explicitly list " + tc.file)
+				}
+			}
 			b, err := proof.Decode(read(t, "proofs/"+tc.file))
 			if err != nil {
 				t.Fatal(err)

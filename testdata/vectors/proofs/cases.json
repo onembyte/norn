@@ -9,9 +9,10 @@
     "forged": "accept",
     "halfsigned": "accept",
     "laptop-revoke": "accept",
+    "laptop-since-revoked": "accept",
     "nas-rotate": "accept"
   },
-  "comment": "the served log and its proof bundles, produced by the Go implementation and validated by upstream libraries; see SPEC 12. `installs` is the wg_pk, in hex, that a node installs for each device once its bundle checks out: the key replay gives (SPEC 8.1 condition 3), which is not always the key in the bundle's entry. `nas` rotated after it enrolled, so its bundle proves the enrol and names the old key; sound includes nas-rotate and laptop-revoke, both accepted as bundles. Condition 3 installs the replayed nas key and nothing for laptop: installs omits laptop because replay leaves it revoked at the served checkpoint",
+  "comment": "the served log and its proof bundles, produced by the Go implementation and validated by upstream libraries; see SPEC 12. `installs` is the wg_pk, in hex, that a node installs for each device once its bundle checks out: the key replay gives (SPEC 8.1 condition 3), which is not always the key in the bundle's entry. `nas` rotated after it enrolled, so its bundle proves the enrol and names the old key; sound includes nas-rotate, laptop-revoke and laptop-since-revoked, all accepted as bundles. Condition 3 installs the replayed nas key and nothing for laptop: installs omits laptop because replay leaves it revoked at the served checkpoint",
   "devices": [
     "astral",
     "badgrant",
@@ -53,6 +54,10 @@
       "says": "types, the `device_id` in the body — and apply the rules below.",
       "section": "8.1"
     },
+    "laptop-since-revoked": {
+      "says": "replay of the log up to that checkpoint yields the device as `active`, and",
+      "section": "8.1"
+    },
     "nas-rotate": {
       "says": "types, the `device_id` in the body — and apply the rules below.",
       "section": "8.1"
@@ -73,6 +78,13 @@
       "index": 36,
       "name": "laptop-revoke",
       "says": "a revoke is bound through device_id in its body and passes every bundle check; condition 3 installs nothing because replay leaves laptop revoked at the served checkpoint, so installs omits laptop"
+    },
+    {
+      "device": "laptop",
+      "file": "laptop-since-revoked.bundle",
+      "index": 2,
+      "name": "laptop-since-revoked",
+      "says": "an accepted enrollment is bound through the embedded request device_id and passes every bundle check; condition 3 installs nothing because replay leaves laptop revoked at the served checkpoint, so installs omits laptop"
     },
     {
       "device": "forged",

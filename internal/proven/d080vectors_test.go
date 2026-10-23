@@ -33,7 +33,7 @@ func TestD080ShippedIncludedButRefusedEnrollmentsInstallNothing(t *testing.T) {
 		index uint64
 	}{{"forged", 98}, {"halfsigned", 57}} {
 		t.Run(c.id, func(t *testing.T) {
-			for _, name := range []string{"nas", c.id, "laptop-revoke"} {
+			for _, name := range []string{"nas", c.id, "laptop-revoke", "laptop-since-revoked"} {
 				raw, err := os.ReadFile(filepath.Join(vectorRoot(), "proofs", name+".bundle"))
 				if err != nil {
 					t.Fatal(err)
