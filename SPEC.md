@@ -443,6 +443,15 @@ Signature counting: a key contributes at most once; a key counts only for the ro
 it currently holds; a device key counts only for its own `device_id` — for
 `enroll` that is the `device_pk` **inside the embedded request** (§4.3).
 
+**Grants are not compared across devices (D-081).** Replay does not compare
+one device's grant with another's: an `enroll` whose grant (§4.0) overlaps an
+active device's grant is accepted, no reason code refuses it, and both
+records keep their labels and so their grants. A grant bounds what its own
+peer may claim (§13.1); it reserves nothing against other devices. What a
+node installs for two peers whose allowed-ips overlap is not a replay rule;
+`ENFORCEMENT.md` narrates how `nornd` gives neither peer the overlapping
+prefix and reports the pair.
+
 #### Why `enroll` embeds a request instead of carrying a device signature
 
 Every other entry a device is party to — `rotate`, self-`revoke` — is built **by**
@@ -517,6 +526,23 @@ the record is itself an entry that advances it.
 than a point in the whole log, `prev` demands one object's exact version.
 `prev` is what stops a stale authorisation; `after` remains for ordering across
 objects.
+
+**No entry names the authority it was signed under (D-081).** Authority is
+judged where the entry lands: its signatures against the state before it
+(§4.2) and its thresholds there (§4.3). The context the signer signed in is
+recoverable, not named: `after`, where present, is the log size the signer
+observed, and replaying the first `after` entries gives the state it saw;
+`prev` binds the change to the preceding version of the object it changes.
+v1 has no field naming a signer-set, root-set, `params`, policy or log-key
+version that must still be current when the entry lands. Such a field
+refuses an entry whenever one of those changed after it was signed — an
+unrelated signer added, a threshold lowered, the witness policy replaced or a
+log key added — so every entry it would add to the refusals is one whose signers
+still qualify where it takes effect, and every governance change would void
+every signed entry still waiting to land. What it would be there to catch is
+refused already: an entry whose signers no longer qualify, because a signer
+was removed or a threshold raised, fails §4.3 at landing (`threshold`), and
+a change to the entry's own object fails `prev` (`stale-state`).
 
 ### 4.5 `params`
 

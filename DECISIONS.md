@@ -1413,3 +1413,46 @@ refused for a fault the log's state already records. Rejected for D7:
 every other one is refused at step 1.
 Rows: 6.5l-xv-e (1 and 4), 6.5l-xv-f (2), 6.5l-xv-g (3), 6.5l-xv-h (5),
 6.5l-xv-i (the vectors), then run 18.
+
+## D-081 · An entry names no authority version; grants are not compared across devices (row F6, 2026-10-23)
+The owner's answers of 2026-10-23 to the DECISION F6 (`BUILD-LOG.md`,
+"DECISION TAKEN — F6"): **1-A, 2-A** ("f6 go on recomentadion"), given after
+the analysis was put to him (global rule 14a). The question came from the
+IETF KEYTRANS list on 2026-10-18: bind each event "to a policy checkpoint and
+the preceding event", since "recording the policy reference makes the
+authorization context explicit".
+**(1)** SPEC §4.4: v1 keeps authority bound by position. Signatures and
+thresholds are judged in the state before the entry (§4.2, §4.3); `after`
+records the log size the signer observed, from which the state it signed in
+is recoverable by replay; `prev` binds the change to the preceding version of
+its object (D-077). No field names a signer-set, root-set, `params`, policy
+or log-key version that must still be current, and §4.4 now says why.
+**Why.** Six cases, worked through in the block: an entry whose signers
+stopped qualifying before it landed (a signer removed, a threshold raised) is
+already `threshold`, and one whose device record changed is already
+`stale-state`. A named version adds refusals only where the context changed
+and the authority still suffices (an unrelated signer added, a threshold
+lowered, the witness policy replaced or a log key added), so every entry it newly
+refuses has signers that still qualify where it takes effect, and every
+governance change would void every signed entry still queued. A withheld
+`enroll` that lands after another device was granted the same prefix is
+accepted either way. Text only: nothing a conforming implementation accepts
+or refuses changes, so no vectors, and run 18's subject changes by these
+sentences alone. Rejected: B, an optional named version refused as
+`stale-state` when not current — new decode rules, both implementations and
+vectors before run 18, for refusals that protect nothing; C, signatures that
+must qualify both at the state `after` names and at landing — replay must keep
+or rebuild past states, and it refuses entries a holder of the key could
+simply re-sign; D, defer with no SPEC sentence — the question was asked in
+public, the answer is v1's design, and the specification is where a second
+implementer looks.
+**(2)** SPEC §4.3: replay does not compare one device's grant with another's;
+an `enroll` whose grant overlaps an active device's grant is accepted, and
+both keep their grants. **Why.** It is the one case of the six that no
+authority reference reaches, and it costs availability rather than handing
+over an address: `nornd` gives neither peer the overlapping prefix and
+reports the pair (`ENFORCEMENT.md`, informative under D-064), and receipts
+and staleness show the delay. A replay refusal would add a reason code and
+its vectors and change what implementations accept. Rejected: refuse an
+overlapping grant at replay.
+Row: F6. The thread follow-up that carries this answer is drafted in F7.

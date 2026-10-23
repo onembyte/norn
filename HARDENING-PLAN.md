@@ -185,6 +185,12 @@ incident that produced it. Read that section before the first firing.
   `MAX_TRUST_BYTES`; a bundle's request decodes by structure, field rules and
   point admission, not its signature or network, and an entry over
   `MAX_ENTRY_BYTES` is `bundle`.** Rows 6.5l-xv-e to -i; `DECISIONS.md` D-080.
+- **D-081 (taken 2026-10-23, the owner's answers to F6): an entry names no
+  signer-set, root-set, `params`, policy or log-key version; authority is
+  judged where the entry lands, `after` records what the signer observed and
+  `prev` binds the change to its object's version, and §4.4 says why; replay
+  does not compare one device's grant with another's, and §4.3 says so.**
+  Text only, no vectors; row F6; `DECISIONS.md` D-081.
 - **D-072 (taken 2026-10-09, the owner's answers):** a proven fork freezes
   authorization at the common prefix both branches agree on and keeps
   enforcing it — the set shrinks, never grows, and fails closed when no split

@@ -291,7 +291,7 @@ Each box is a fact to check on the day, not a promise made today.
   reporting off, which `SECURITY.md` sends reporters to; it is on.
 - [x] **License.** `LICENSE` is Apache-2.0.
 - [ ] **README status line.** Dated 2026-10-17; the counts in it are guarded by
-  the build, the date is not (2026-10-23: 56 packages, 1376 tests, both current).
+  the build, the date is not (2026-10-23: 56 packages, 1377 tests, both current).
 - [ ] **`RELEASE-NOTES-v0.1.md`.** Refreshed on 2026-10-17 (D-072 to D-080
   decided, 17 cold-model runs); refresh it again when you tag v0.1 (U8).
 - [ ] **`make verify-py` green.** Green since the fourth cold build (6.5l-xii-f,
