@@ -95,6 +95,17 @@ words the check "accepts any certificate under the CA" and "does not tie the
 certificate to a user or a hostname". It is a posture check attached to access
 policies, and the row's **yes** stands.
 
+NetBird [PR #8299](https://github.com/netbirdio/netbird/pull/8299) (merged
+2026-10-22) makes the management server push fresh network maps to a peer and
+the peers that reach it when an integrated validator approves or revokes it
+outside a login or sync, for example during a periodic EDR sync; before, a
+newly approved peer kept an empty map until an unrelated update or reconnect.
+In open-source NetBird the validator is a no-op. Distribution still comes
+from the management server, so the row's **yes** stands. A Norn node learns
+enrollments and revocations by replaying the log on its own cycle;
+`TestARevokeEntryEvictsTheDevice` and `TestAnEnrollEntryInstallsTheDevice` pin
+both.
+
 Nebula is the interesting one: certs from an offline CA are *almost* the right
 shape, but revocation is a config-file blocklist with no proof of delivery.
 **CVE-2026-61699** (nebula-mesh): the management agent silently discarded the

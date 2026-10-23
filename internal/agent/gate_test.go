@@ -1,7 +1,9 @@
 package agent
 
 import (
+	"crypto/ecdh"
 	"crypto/ed25519"
+	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"net/netip"
@@ -13,6 +15,7 @@ import (
 
 	"github.com/onembyte/norn/internal/cosign"
 	"github.com/onembyte/norn/internal/endpoint"
+	"github.com/onembyte/norn/internal/enrollreq"
 	"github.com/onembyte/norn/internal/entry"
 	"github.com/onembyte/norn/internal/freshness"
 	"github.com/onembyte/norn/internal/logclient"
@@ -142,6 +145,33 @@ func appendRevoke(t *testing.T, store *tlogstore.Store, deviceID string, after u
 	}
 }
 
+// appendEnroll writes a real `enroll` entry, signed by the two signers the
+// fixture leaves active. A never-named device has no previous version (§4.4).
+func appendEnroll(t *testing.T, store *tlogstore.Store, request *enrollreq.Request, after uint64) {
+	t.Helper()
+	doc := anchor(t)
+	body, err := enrollreq.Encode(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	env := &entry.Envelope{
+		V: entry.Version, T: "enroll", Net: doc.Net, TS: 1_760_500_000, After: &after,
+		Body: map[string]any{"request": body},
+	}
+	for _, name := range []string{"signer1", "signer3"} {
+		if err := entry.Sign(env, fixtureKey(t, name), "signer"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	raw, err := entry.Encode(env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Append(raw); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func holds(peers []peertable.Peer, key peertable.Key) bool {
 	for _, peer := range peers {
 		if peer.Key == key {
@@ -187,6 +217,86 @@ func TestARevokeEntryEvictsTheDevice(t *testing.T) {
 			peers, _ = fake.Peers()
 			if holds(peers, target) {
 				t.Fatal("a revoked device kept its place in the peer table")
+			}
+		})
+	}
+}
+
+// Enrollment is the other half of revocation: a node learns a new device
+// from the log on its next cycle, with no coordinator event to wake it up.
+func TestAnEnrollEntryInstallsTheDevice(t *testing.T) {
+	for _, mode := range []reconcile.Mode{reconcile.Owner, reconcile.Watchdog} {
+		t.Run(string(mode), func(t *testing.T) {
+			dir, store, _ := writableLog(t)
+			rec := &recorder{}
+			fake := peertable.NewFake()
+			a := newAgent(t, mode, dir, fake, rec)
+
+			public, private, err := ed25519.GenerateKey(rand.Reader)
+			if err != nil {
+				t.Fatal(err)
+			}
+			wg, err := ecdh.X25519().GenerateKey(rand.Reader)
+			if err != nil {
+				t.Fatal(err)
+			}
+			target, err := peertable.KeyFromBytes(wg.PublicKey().Bytes())
+			if err != nil {
+				t.Fatal(err)
+			}
+			route := netip.MustParsePrefix("10.9.3.7/32")
+			request, err := enrollreq.New(anchor(t).Net, "new-device", public,
+				wg.PublicKey().Bytes(), 1_760_500_000, map[string]string{"ip": route.String()}, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := enrollreq.Sign(request, private); err != nil {
+				t.Fatal(err)
+			}
+			a.cfg.Provider = endpoint.Static{Peers: map[string]endpoint.Hints{
+				request.DeviceID: {AllowedIPs: []netip.Prefix{route}},
+			}}
+
+			// Watchdog must remove the key before the log authorises it,
+			// even when somebody else has already installed its route.
+			peer := peertable.Peer{Key: target, AllowedIPs: []netip.Prefix{route}}
+			if mode == reconcile.Watchdog {
+				fake.Inject(peer)
+			}
+			if err := a.Once(); err != nil {
+				t.Fatal(err)
+			}
+			if _, exists := a.last.State.Devices[request.DeviceID]; exists {
+				t.Fatal("the fixture has already named the new device")
+			}
+			peers, _ := fake.Peers()
+			if holds(peers, target) {
+				t.Fatal("an unenrolled device is in the peer table")
+			}
+			evicted := rec.kinds()[reconcile.EvictedPeer]
+			if mode == reconcile.Watchdog && evicted != 1 {
+				t.Fatalf("events = %v, want one EVICTED_PEER before enrollment", rec.kinds())
+			}
+
+			appendEnroll(t, store, request, uint64(store.Size()))
+			if mode == reconcile.Watchdog {
+				fake.Inject(peer)
+			}
+			if err := a.Once(); err != nil {
+				t.Fatal(err)
+			}
+			peers, _ = fake.Peers()
+			if !holds(peers, target) {
+				t.Fatalf("a newly enrolled device is not in the peer table; last rejection: %+v",
+					a.last.State.Rejected[len(a.last.State.Rejected)-1])
+			}
+			for _, installed := range peers {
+				if installed.Key == target && (len(installed.AllowedIPs) != 1 || installed.AllowedIPs[0] != route) {
+					t.Fatalf("the enrolled device's routes = %v, want %s", installed.AllowedIPs, route)
+				}
+			}
+			if got := rec.kinds()[reconcile.EvictedPeer]; got != evicted {
+				t.Fatalf("%d new EVICTED_PEER events after enrollment", got-evicted)
 			}
 		})
 	}

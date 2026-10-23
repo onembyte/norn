@@ -27,6 +27,8 @@ claim is not a source for a stronger one. Norn's sources are in this tree.
 
   NetBird 0.81 (2026-10-15) added a certificate posture check ([release](https://github.com/netbirdio/netbird/releases/tag/v0.81.0), [documentation](https://docs.netbird.io/manage/access-control/posture-checks/device-certificates)). The management server issues and judges that challenge, so it does not constrain a compromised management server; the documentation says the check does not tie the certificate to a user or a hostname.
 
+  NetBird [PR #8299](https://github.com/netbirdio/netbird/pull/8299) (merged 2026-10-22) makes the management server push fresh network maps to a peer and the peers that reach it when an integrated validator approves or revokes it outside a login or sync, for example during a periodic EDR sync; before, a newly approved peer kept an empty map until an unrelated update or reconnect, and in open-source NetBird the validator is a no-op. Distribution still comes from the management server, so the row's **yes** stands; a Norn node learns enrollments and revocations by replaying the log on its own cycle, pinned by `TestARevokeEntryEvictsTheDevice` and `TestAnEnrollEntryInstallsTheDevice`.
+
 - Norn: no
 
   Source: `SPEC.md` §§5.1 and 13–13.1: replay authorises enrollments; providers cannot authorise keys. `internal/agent/gate_test.go`, `TestAnIntruderIsGoneAfterExactlyOneCycle`, checks eviction. `THREAT-MODEL.md` A1 and §5 distinguish observe, owner and watchdog; watchdog has a polling window.
