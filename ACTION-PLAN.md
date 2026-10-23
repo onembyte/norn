@@ -18,7 +18,7 @@ seal; vectors added since are listed in `contrib/verify-py.known-failures`); a
 simulation of the attack scenarios. The
 README's status line has the current counts.
 
-What has happened once: U1, observe mode on two homelab nodes for about 42
+What has happened once: U1, observe mode on two homelab nodes for about 39
 hours (2026-10-18 to 2026-10-19; BUILD-LOG row F3). What has not: nothing has
 enforced on a real kernel; no outside person has reviewed it; the only number
 from a real deployment is U1's stale-view transition. Steps 1–4 below can run today on any machine with Go. Steps 5–7
@@ -177,7 +177,7 @@ Where it stands, plainly: the specification is frozen and has a
 byte-exact test-vector suite; a Go implementation and a Python reference
 produce identical results, and an independent verifier was written from
 the specification alone. It has run once on real machines: two nodes at
-home, in observe mode (report only), for about 42 hours. With the log
+home, in observe mode (report only), for about 39 hours. With the log
 stopped, a node went degraded about ten minutes after the last
 cosignature, as the specification says it should; the run also showed
 that my setup let the log die without anyone being told, which I am

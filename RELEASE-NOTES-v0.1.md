@@ -1,6 +1,6 @@
 # Norn v0.1
 
-*The draft of the v0.1 notes, for the tag that is the owner's row U8; refreshed 2026-10-17. What is published today is the `v0.1.0-preview` pre-releases: previews, untested on any real network, and not v0.1.*
+*The draft of the v0.1 notes, for the tag that is the owner's row U8; refreshed 2026-10-23. What is published today is the `v0.1.0-preview` pre-releases: previews, untested on any real network, and not v0.1.*
 
 ## What it is
 
@@ -24,14 +24,14 @@ These are conditional protocol and software guarantees, not field measurements. 
 
 ## What has not happened
 
-Nothing has run on a real kernel or real network, and there has been no outside review. PLAN.md has 38 gate lines: 14 are ticked and 24 remain open. In particular, the lab, the observe soak, enforcement measurements, and outside review are the owner's open rows U1–U7 in [HARDENING-PLAN.md Stage G](HARDENING-PLAN.md#stage-g--yours-not-looped-user). The v0.1 tag is also the owner's row U8.
+Norn has run once on a real network: two nodes in observe mode, which reads the peer table and never writes it, for about 39 hours (row U1, 2026-10-18 to 2026-10-19). Nothing has enforced on a real kernel, and there has been no outside review. PLAN.md has 38 gate lines: 14 are ticked and 24 remain open. In particular, the lab, the observe soak, enforcement measurements, and outside review are the owner's open rows U1–U7 in [HARDENING-PLAN.md Stage G](HARDENING-PLAN.md#stage-g--yours-not-looped-user). The v0.1 tag is also the owner's row U8.
 
 Before upgrading or enrolling anything, note this behavior from D-073: a device enrolled without an `ip` label is installed with its key and no routes. [ENFORCEMENT.md §5](ENFORCEMENT.md#5-endpoint-providers-owner-mode-only) describes grants and the operator options.
 
-No DECISION block is open. The decisions that changed what a reader accepts or refuses since this draft was first written are each in [DECISIONS.md](DECISIONS.md): D-072 settled the audit's five questions (a fork shrinks the enforced set to what both branches agree on; one Ed25519 predicate; v1 keeps log-key retirement and `quorum none` behind explicit settings), D-074 the eight that cold-model run 13 raised, D-075 the two keys a security-audit row found admitted without a rule, D-076 the second cold build's readings, and D-077 to D-080 those of runs 14 to 17.
+No DECISION block is open. The decisions that changed what a reader accepts or refuses since this draft was first written are each in [DECISIONS.md](DECISIONS.md): D-072 settled the audit's five questions (a fork shrinks the enforced set to what both branches agree on; one Ed25519 predicate; v1 keeps log-key retirement and `quorum none` behind explicit settings), D-074 the eight that cold-model run 13 raised, D-075 the two keys a security-audit row found admitted without a rule, D-076 the second cold build's readings, D-077 to D-080 those of runs 14 to 17, and D-081 a question from the IETF KEYTRANS list (no entry names the authority it was signed under; text only).
 
 ## How it was tested
 
 The contributor gate is `make vectors`, `make vectors-log`, `make test`, then `make vectors-check ref-test lint fmt-check vet`; run `make vectors-sums` when a vector changes ([CONTRIBUTING.md](CONTRIBUTING.md#gate)). The vectors use both Go and the Python reference, with the split described above.
 
-The cold-model gate has run 17 times. The latest, run 17, recorded in [BUILD-LOG.md](BUILD-LOG.md) under "6.5l-x-f-c", answered `SPEC INSUFFICIENT` with 2 high, 4 medium and 6 low findings; D-080 records the owner's answers, and the rows fixing them are in the Hardening track. D-068 asks for two consecutive runs with no high or medium finding, and the count stands at 0 of 2, so the gate remains open.
+The cold-model gate has run 18 times. Run 17 answered `SPEC INSUFFICIENT` with 2 high, 4 medium and 6 low findings, fixed under D-080. The latest, run 18, recorded in [BUILD-LOG.md](BUILD-LOG.md) under "F14" and in [SPEC-DEFECTS-18.md](SPEC-DEFECTS-18.md), answered `SPEC INSUFFICIENT` with 3 high, 1 medium and 12 low findings, not yet verified on the implementations (row 6.5l-xvi-a). D-068 asks for two consecutive runs with no high or medium finding, and the count stands at 0 of 2, so the gate remains open.
