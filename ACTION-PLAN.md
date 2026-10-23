@@ -280,6 +280,95 @@ Before sending, replace "agree byte for byte" with what U1 showed, if it has
 run, and read the list's archive for the month to make sure the question has
 not just been asked.
 
+### 3.1 The follow-up to the thread (row F7)
+
+**Why one is owed.** The scope question went to the list on 2026-10-18 and
+drew seven messages (the owner's PDF of the thread is in `norn-site/`, outside
+this repository). F5 checked the reply sent on 2026-10-19 against
+`draft-ietf-keytrans-protocol-05`: accurate on KT, with one overstatement, two
+omissions and one concession made too early. The last message (2026-10-20)
+shared links and asked nothing, so this is not urgent, and sending it at all
+is the owner's call. It carries the mapping (`standards/KEYTRANS-MAPPING.md`),
+F6's answer (D-081, `SPEC.md` §4.4) and F5's corrections; each sentence was
+checked against the draft's text or SPEC.
+
+**How to send it.** As a reply to the 2026-10-20 message, Felix and the list
+kept in copy, in plain text. Before sending: read the list's archive for
+anything posted in the thread since; open the link; edit it as yours. The
+section numbers are `-05`'s; if a newer revision has appeared, check each one
+against it. The paragraph "A notation question" is optional: it is a
+reading of the draft's own notation found while checking item 3 (F7's
+journal), useful to its authors but not needed for the rest.
+
+```text
+Subject: Re: Scope question: transparent authorization for WireGuard peer keys
+
+Hi Orie (cc Felix, list),
+
+Thank you for the links. I have written up the single-label mapping as a
+short document, checked against draft-ietf-keytrans-protocol-05:
+
+https://github.com/onembyte/norn/blob/master/standards/KEYTRANS-MAPPING.md
+
+Writing it out, I found I need to correct one point in my last message, add
+two I left out, and take back one concession.
+
+1. Fork detection. I wrote that KT "would supply the consistency and fork
+detection that Norn gets from witnessed checkpoints". KT supplies the
+consistency proofs, but a tree head is signed by the log and carries at
+most one auditor's signature, and that only in third-party auditing mode
+(§11.4); beyond that, detecting a split view rests on clients comparing
+tree heads over an anonymous or peer channel (§10.2). Norn requires a
+k-of-N witness quorum on every checkpoint, so the mapping gives that up.
+My own fourth difference said as much; the earlier sentence contradicted it.
+
+2. Writers. Access control, who may update a label included, is left to
+the application (§13.2), and in third-party management the service
+operator authorizes every new version (§15.1). Under the mapping the
+operator could not forge a value, since replay refuses anything the
+signatures do not authorize, but deciding which writes to accept would be
+its role, so refusing one would not be misbehavior. A Norn log can refuse
+a submission too, but authorizing is not its role, and once it has issued
+a receipt, leaving the entry out past the deadline is provable misbehavior.
+
+3. Catch-up. An update response returns the versions created in one log
+entry (§13.5), but to the label owner, on the update path. A node
+rebuilding the history still makes one fixed-version search per version.
+
+4. The policy reference. I wrote that an entry should name the signer set
+or policy version it was signed against. Having worked through the cases,
+I now think v1 should not, and the specification now says why (SPEC.md
+§4.4). Authority is judged where the entry lands. The context it was signed
+in is recoverable rather than named: the entry's "after" field records the
+log size the signer observed, so replay up to it gives the state the signer
+saw, and "prev" binds each change to the version of the object it was made
+against. A named version that must still be current would refuse an entry
+when something unrelated changed (a signer added, a threshold lowered, the
+witness policy replaced) while its signers still qualify, and every
+governance change would void every signed entry still waiting. What it
+would catch is refused already: an entry whose signers no longer qualify
+fails the threshold check where it lands, and a change to its own object
+fails the "prev" check. That clients must still verify the applicable
+policy was satisfied, as you wrote, is what replay does at each position.
+
+A notation question while I was there, in case it is useful: §2.1 adopts
+the TLS presentation language, where a vector's bound counts bytes, not
+elements (RFC 8446 §3.4). Read that way, UpdateRequest.values<0..2^8-1>
+admits 255 bytes of encoded values in one update, less than the genesis
+entry in Norn's test vectors (533 bytes). Since §2.1 lets an implementation
+choose its own encoding for transmission, this is no obstacle to the
+mapping, but I was not sure whether the bound is meant as a count.
+
+Where this leaves me: Norn v1 keeps tlog-tiles with tlog-witness as its
+transport, and a KT profile remains possible future work. If I go on with
+the problem statement, it will say that what it adds is the authorization
+layer rather than another log. Would that be useful to the group, or would
+a short profile of KT for this case serve better?
+
+Best regards,
+Franco Michetti
+```
+
 ## 4. Before anything is sent
 
 Each box is a fact to check on the day, not a promise made today.
@@ -291,7 +380,7 @@ Each box is a fact to check on the day, not a promise made today.
   reporting off, which `SECURITY.md` sends reporters to; it is on.
 - [x] **License.** `LICENSE` is Apache-2.0.
 - [ ] **README status line.** Dated 2026-10-17; the counts in it are guarded by
-  the build, the date is not (2026-10-23: 56 packages, 1377 tests, both current).
+  the build, the date is not (2026-10-23: 56 packages, 1378 tests, both current).
 - [ ] **`RELEASE-NOTES-v0.1.md`.** Refreshed on 2026-10-17 (D-072 to D-080
   decided, 17 cold-model runs); refresh it again when you tag v0.1 (U8).
 - [ ] **`make verify-py` green.** Green since the fourth cold build (6.5l-xii-f,

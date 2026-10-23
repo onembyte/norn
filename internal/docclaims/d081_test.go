@@ -93,3 +93,19 @@ func TestAnEntryNamesNoAuthorityVersionAndTheSpecSaysWhy(t *testing.T) {
 		t.Error("the F6 block does not record the owner's two answers")
 	}
 }
+
+// F7's mapping study was written while F6 was open and said so in its last
+// row. Once D-081 answered it, the public study must carry the answer.
+func TestTheKeytransMappingCarriesTheF6Answer(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "standards", "KEYTRANS-MAPPING.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	mapping := strings.Join(strings.Fields(string(raw)), " ")
+	if strings.Contains(mapping, "open decision F6") {
+		t.Error("standards/KEYTRANS-MAPPING.md still calls F6 an open decision")
+	}
+	if !strings.Contains(mapping, "names no signer-set, root-set, `params`, policy or log-key version (SPEC §4.4, D-081)") {
+		t.Error("standards/KEYTRANS-MAPPING.md does not give D-081's answer")
+	}
+}
