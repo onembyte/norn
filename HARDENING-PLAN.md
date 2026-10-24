@@ -185,6 +185,12 @@ incident that produced it. Read that section before the first firing.
   `MAX_TRUST_BYTES`; a bundle's request decodes by structure, field rules and
   point admission, not its signature or network, and an entry over
   `MAX_ENTRY_BYTES` is `bundle`.** Rows 6.5l-xv-e to -i; `DECISIONS.md` D-080.
+- **D-082 (taken 2026-10-24, the owner's answers to G8): a head a node already
+  holds keeps the policy and `T` it was accepted under, and a restart
+  verifies its mirror under them; a trust file carries the network's initial
+  `log_key` and `policy`, later keys come from replay, and a compromised log
+  key is remedied by a new network; the frozen set is kept by key; a bundle's
+  binding is structural.** Rows G3 to G9; `DECISIONS.md` D-082.
 - **D-081 (taken 2026-10-23, the owner's answers to F6): an entry names no
   signer-set, root-set, `params`, policy or log-key version; authority is
   judged where the entry lands, `after` records what the signer observed and

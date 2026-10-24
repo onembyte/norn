@@ -1456,3 +1456,59 @@ and staleness show the delay. A replay refusal would add a reason code and
 its vectors and change what implementations accept. Rejected: refuse an
 overlapping grant at replay.
 Row: F6. The thread follow-up that carries this answer is drafted in F7.
+
+## D-082 · Cold run 18's four open readings: a re-read head, a reissued trust file, the frozen set after a rotation, a bundle's binding (row G8, 2026-10-24)
+The owner's answers of 2026-10-24 to the DECISION G8 (`BUILD-LOG.md`,
+"DECISION TAKEN — G8"): **1-A, 2-A, 3-A, 4-A** ("Yes conrinue", confirmed as
+the four recommendations), given after the analysis was put to him (global
+rule 14a). Each reading was first checked on Go, the reference and the fourth
+cold build with the reader's own inputs (rows G3 to G6).
+**(1) A head a node already holds keeps the policy and `T` it was accepted
+under.** "This checkpoint" in §5.3 is the tree head (origin, size, root),
+whatever cosignature lines arrive with it; reading it again never judges it
+under a policy its own range published, and never moves its `T`. A new head is
+judged under the most recently replayed policy, as before (§9.4). A node keeps
+the acceptance policy and `T` with its mirror, and a restart verifies the
+mirror under them and the log keys it has learned (§13.2). **Why.** It is what
+§5.3 and §9.4 already promised; it makes two reads of one head give one
+answer; and it removes the one-interval return of an expired device that
+re-judging under a raised quorum caused (G3). Refusing the carrying head a
+cycle late undid nothing the node had done. Changes Go (the agent's re-read and
+restore) and one shipped answer: `served-superseded/`'s informed reader
+accepts. Rejected: B, re-judge every read under the latest policy and say so;
+C, B with a `T` that never moves backwards.
+**(2) A trust file's `log_key` and `policy` are the network's initial
+values.** A trust file issued later for the same network carries them
+unchanged, and a reader trusts later log keys and policies only by replaying
+(§9.4); §8's and §11.1's "a trust file issued since" become a reader that has
+replayed the log through the rotation. A compromised log key is contained by
+the witness quorum (A9) and remedied by a new network (§11's reset), not by a
+re-provisioned trust file for the same network; D-072 (d)'s "remedied by a new
+trust file" and runbook R7 now say so. Separating the keys a verifier trusts
+now from replay's initial values, verifier-side retirement, stays for v1.1, as
+D-072 (d) recorded. **Why.** Replay needs a fixed starting point, and the
+genesis entry names no log key (§4.3), so the trust file is it; a file that
+carried the rotated key replayed the log to another state under D-078 (3),
+refused the network's own heads and split a reset node from its peers (G4).
+Text, runbook and wording only; nothing a conforming implementation accepts
+changes. Rejected: B, a new trust-file member for current and retired keys now
+(a format change in all three implementations, better done as v1.1's design);
+C, drop `anchor.log_key` from the `dup-key` comparisons (reopens D-078 (3) and
+leaves the policy invariant divergent).
+**(3) The frozen set is kept by key.** §11 rule 3: each device with its
+`wg_pk` and routes as of the common prefix, and only while its `wg_pk` at the
+held head is that same key; a device whose key changed after the split is
+removed. **Why.** It is what Go does and why: the old key may be the reason the
+device rotated (G5). Text and a Go test naming the case. Rejected: install the
+prefix's key (it may have leaked); install the held head's key (no prefix
+proved it).
+**(4) A bundle's binding is structural.** §8.1: the entry's envelope members
+and their types (§4.1, closed) and, for an `enroll`, its request under §16.1
+must decode; values judged against the anchor, such as `net`, and a type's
+body rules beyond its device id are replay's. **Why.** D-080's own principle,
+"a bundle proves inclusion, not acceptance", and what Go already does; each
+wider rule is one more place for two implementations to differ and needs its
+own vectors (G6). Text and five vectors (four sound bundles and one
+`binding`); the fourth cold build's answers on two of them become recorded
+debts. Rejected: B, the reader's wide reading; C, B with `net`.
+Row: G8; the changes are G9's.
