@@ -135,7 +135,12 @@ var checkRefusals = []checkCase{
 		w.bundle.Checkpoint = signAs(t, w.tree.Checkpoint(w.origin).Marshal(), w.origin, w.key)
 	}},
 	{"the index is outside the tree", refusal.Inclusion, func(t *testing.T, w *witnessed) {
-		w.bundle.Index = 40
+		tree, err := tlog.Build(w.entries[7:8])
+		if err != nil {
+			t.Fatal(err)
+		}
+		w.bundle.Checkpoint = w.head(t, tree.Checkpoint(w.origin).Marshal())
+		w.bundle.Entry, w.bundle.Proof, w.bundle.Index = w.entries[7], nil, 1
 	}},
 	{"the proof does not chain to the root", refusal.Inclusion, func(t *testing.T, w *witnessed) {
 		w.bundle.Proof[0][0] ^= 0x01

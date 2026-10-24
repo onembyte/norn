@@ -1,0 +1,32 @@
+{
+  "cases": [
+    {
+      "file": "cosignature-time-at-the-cap.checkpoint",
+      "layer": "served",
+      "name": "cosignature-time-at-the-cap",
+      "says": "at most 2⁶³−1",
+      "serve_over": "../served"
+    },
+    {
+      "file": "size-at-the-cap.checkpoint",
+      "layer": "checkpoint",
+      "name": "size-at-the-cap",
+      "says": "at most 2⁶³−1"
+    }
+  ],
+  "codes": {
+    "cosignature-time-at-the-cap": "accept",
+    "size-at-the-cap": "accept"
+  },
+  "comment": "The served case adds one pi cosignature at 9223372036854775807 to the unchanged served head. The size case changes only the body size and renews the log signature and all cosignatures; verify it at the checkpoint layer only, never by requesting entries or tiles.",
+  "rules": {
+    "cosignature-time-at-the-cap": {
+      "says": "at most 2⁶³−1",
+      "section": "7"
+    },
+    "size-at-the-cap": {
+      "says": "at most 2⁶³−1",
+      "section": "6"
+    }
+  }
+}

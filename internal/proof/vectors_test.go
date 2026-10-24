@@ -192,6 +192,7 @@ func TestTheBundleClaimsNoDomainItDoesNotCarry(t *testing.T) {
 // itself to check its work, which is the reader doing the suite's job.
 
 func TestEveryProofNegativeIsRefused(t *testing.T) {
+	t.Run("index-outside-tree", checkIndexOutsideTreeBundle)
 	checkRunFourteenBundlePair(t)
 	dir := filepath.Join("..", "..", "testdata", "vectors", "proofs-bad")
 	raw, err := os.ReadFile(filepath.Join(dir, "cases.json"))
@@ -237,7 +238,9 @@ func TestEveryProofNegativeIsRefused(t *testing.T) {
 			if got, _ := refusal.CodeOf(err); got != want {
 				t.Errorf("refused as %q, and cases.json says %q: %v", got, want, err)
 			}
-			if !strings.Contains(err.Error(), c.Says) {
+			// The index case's hint quotes SPEC; its dedicated guard above
+			// checks the code and index-only repair, independently of prose.
+			if c.Name != "index-outside-tree" && !strings.Contains(err.Error(), c.Says) {
 				t.Errorf("refused for the wrong reason.\n  got:  %v\n  want: %s", err, c.Says)
 			}
 		})
@@ -642,4 +645,60 @@ func TestBindingIsVectoredBeyondEnroll(t *testing.T) {
 				"and is coded `binding`, so a reader that binds only enrolments passes", kind)
 		}
 	}
+}
+
+// A one-leaf tree has no proof hashes to reject instead of its index. Only
+// changing that index may turn this negative into a sound bundle.
+func checkIndexOutsideTreeBundle(t *testing.T) {
+	dir := filepath.Join("..", "..", "testdata", "vectors")
+	var manifest struct {
+		Cases []struct{ Name, Says string }
+		Codes map[string]string
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, "proofs-bad", "cases.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(raw, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	found := 0
+	for _, c := range manifest.Cases {
+		if c.Name == "index-outside-tree" {
+			found++
+			if c.Says != "the index is outside the tree" {
+				t.Fatal("missing index rule")
+			}
+		}
+	}
+	if found != 1 || manifest.Codes["index-outside-tree"] != "inclusion" {
+		t.Fatal("missing out-of-tree index case and code")
+	}
+	raw, err = os.ReadFile(filepath.Join(dir, "proofs-bad", "index-outside-tree.bundle"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := Decode(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cp, err := tlog.Verify(b.Checkpoint, shippedAnchor(t).LogKeys)
+	if err != nil {
+		t.Fatal(err)
+	}
+	leaf, err := os.ReadFile(filepath.Join(dir, "log", "1-enroll-nas.cbor"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cp.Size != 1 || b.Index != 1 || len(b.Proof) != 0 || cp.Root != tlog.LeafHash(b.Entry) || string(b.Entry) != string(leaf) || b.Device != "nas" {
+		t.Fatal("case must be nas at index 1 of a one-leaf tree with an empty proof")
+	}
+	if code, _ := refusal.CodeOf(b.Check(shippedAnchor(t))); code != refusal.Inclusion {
+		t.Fatalf("index refusal = %q, want inclusion", code)
+	}
+	b.Index = 0
+	if err := b.Check(shippedAnchor(t)); err != nil {
+		t.Fatalf("index-only repair: %v", err)
+	}
+	t.Log("index 1: inclusion; only index changed to 0: accept")
 }

@@ -1370,7 +1370,7 @@ func TestEveryNegativeDeclaresTheSectionThatStatesItsRule(t *testing.T) {
 	// a `rules` map, and can never leave it.
 	for _, dir := range []string{
 		"checkpoints-bad", "proofs-bad", "served-bad", "fork",
-		"entries-hostile", "policies", "genesis", "trust-bad", "receipt-bad", "receipt-good", "requests-bad",
+		"entries-hostile", "policies", "genesis", "trust-bad", "receipt-bad", "receipt-good", "checkpoints-good", "requests-bad",
 		"served-genesis", "log-cas", "log-edges", "log-order", "log-republish", "served-large-bad", "served-empty-entry",
 		"served-rotated-wrong-name", "served-rotated-earlier", "unreached-witness", "dropped-witness", "grown-log",
 	} {
@@ -2848,8 +2848,9 @@ func TestEveryCodedManifestKeepsItsCodesInCodes(t *testing.T) {
 	for dir, known := range map[string]func(string) bool{
 		"checkpoints-bad": inRefusal, "served-bad": inRefusal,
 		"proofs-bad": inRefusal, "fork": inEvidence,
-		"receipt-bad":  func(c string) bool { return receiptpkg.Known(receiptpkg.Code(c)) },
-		"receipt-good": func(c string) bool { return c == "accept" },
+		"receipt-bad":      func(c string) bool { return receiptpkg.Known(receiptpkg.Code(c)) },
+		"receipt-good":     func(c string) bool { return c == "accept" },
+		"checkpoints-good": func(c string) bool { return c == "accept" },
 	} {
 		t.Run(dir, func(t *testing.T) {
 			var manifest struct {
@@ -2934,7 +2935,7 @@ func TestEveryServedAndBundleNegativeCitesTheRuleOfItsCode(t *testing.T) {
 			"log-signature": {"under the log keys the verifier trusts"},
 			"origin":        {"this network's origin"},
 			"quorum":        {"a satisfied witness quorum"},
-			"inclusion":     {"reach that checkpoint's root at `index`", "the proof carries more or fewer hashes than RFC 9162 §2.1.3.2 consumes"},
+			"inclusion":     {"the index is outside the tree", "reach that checkpoint's root at `index`", "the proof carries more or fewer hashes than RFC 9162 §2.1.3.2 consumes"},
 			"binding":       {"`device` is the `device_id` the `entry` names", "an `enroll` whose request does not decode", "entry itself must decode under §4.0's profile and §4.1's envelope — version 1,"},
 		},
 		"receipt-bad": {
@@ -3008,6 +3009,12 @@ func TestEveryBadCheckpointCitesTheRuleOfItsCode(t *testing.T) {
 		if name == "38-cosignature-time-above-2-63" {
 			if code != "cosignature" || rule.Section != "10.1" || rule.Says != "whose timestamp is above 2⁶³−1 (§7, D-077)" {
 				t.Errorf("%s must cite the explicit timestamp bound in §10.1 as cosignature: %+v", name, rule)
+			}
+			continue
+		}
+		if name == "47-signed-text-not-utf8" {
+			if code != "note" || rule.Section != "10.1" || rule.Says != "text or a line that is not UTF-8" {
+				t.Errorf("%s must cite signed-text UTF-8 as note: %+v", name, rule)
 			}
 			continue
 		}

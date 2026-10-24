@@ -433,6 +433,7 @@ func onlyFile(t *testing.T, root string) string {
 // `log-signature`.
 
 func TestEveryBadCheckpointIsRefusedWithItsCode(t *testing.T) {
+	t.Run("47-signed-text-not-utf8", checkSignedTextNotUTF8Checkpoint)
 	checkBlankFirstLineCheckpoint(t)
 	checkRunFourteenCheckpointPairs(t)
 	var manifest struct {

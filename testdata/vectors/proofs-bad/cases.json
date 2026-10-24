@@ -1,6 +1,10 @@
 {
   "cases": [
     {
+      "name": "index-outside-tree",
+      "says": "the index is outside the tree"
+    },
+    {
       "name": "one-past-the-cap",
       "says": "input exceeds"
     },
@@ -93,6 +97,7 @@
     "device-not-a-device-id": "bundle",
     "device-not-in-entry": "binding",
     "foreign-checkpoint": "log-signature",
+    "index-outside-tree": "inclusion",
     "no-quorum": "quorum",
     "no-quorum-tampered-proof": "quorum",
     "one-past-the-cap": "bundle",
@@ -128,6 +133,10 @@
     "foreign-checkpoint": {
       "says": "under the log keys the verifier trusts",
       "section": "8.1"
+    },
+    "index-outside-tree": {
+      "says": "the index is outside the tree",
+      "section": "10.1"
     },
     "no-quorum": {
       "says": "a satisfied witness quorum",

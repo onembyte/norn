@@ -1,6 +1,12 @@
 {
   "cases": [
     {
+      "file": "malformed-partial-tile.bin",
+      "name": "malformed-partial-with-good-full",
+      "path": "tile/0/000.p/162",
+      "says": "a fetched malformed partial is tiles"
+    },
+    {
       "name": "older-head-over-full-tiles",
       "says": "accept the older signed head using the full tile and bundle"
     },
@@ -55,9 +61,10 @@
     "full-tile-gone": "unserved",
     "full-tile-trailing-bytes": "tiles",
     "full-tile-truncated": "tiles",
+    "malformed-partial-with-good-full": "tiles",
     "older-head-over-full-tiles": "accept"
   },
-  "comment": "The 162-entry fixture appended twice produces 324 entries, full tiles and deleted width-162 partial paths. The checkpoint is served's unchanged signed and cosigned head at 162. Apply each replacement or deletion over this directory; the case with no mutation accepts it as served.",
+  "comment": "The 162-entry fixture appended twice produces 324 entries, full tiles and deleted width-162 partial paths. The checkpoint is served's unchanged signed and cosigned head at 162. Apply each addition, replacement or deletion over this directory; the case with no mutation accepts it as served.",
   "rules": {
     "corrupt-beyond-prefix": {
       "says": "only its first `W` hashes or entries are then used",
@@ -85,6 +92,10 @@
     },
     "full-tile-truncated": {
       "says": "a longer or shorter one is `tiles` (step 12)",
+      "section": "10.1"
+    },
+    "malformed-partial-with-good-full": {
+      "says": "a served hash tile disagrees with the rebuilt tree",
       "section": "10.1"
     },
     "older-head-over-full-tiles": {

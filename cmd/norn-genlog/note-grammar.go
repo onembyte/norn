@@ -165,3 +165,37 @@ func signatureBlindCheckpoints(root string, names []string) ([]string, error) {
 	}
 	return blind, nil
 }
+
+// Write after the earlier framing batches so their numbered order is retained.
+func writeSignedTextNotUTF8Checkpoint(root, signed string, signers []cosignpkg.Signer) error {
+	body := mustBody(signed)
+	origin := strings.SplitN(body, "\n", 2)[0]
+	key, err := seedKey(root, "logkey")
+	if err != nil {
+		return err
+	}
+	// The prior UTF-8 negative breaks a signature name. This one changes
+	// only the final origin byte and authenticates those exact malformed bytes.
+	invalidBody := []byte(body)
+	invalidBody[strings.IndexByte(body, '\n')-1] = 0xff
+	invalidHead, err := note.Sign(string(invalidBody), origin, key)
+	if err != nil {
+		return err
+	}
+	for i, signer := range signers {
+		line, err := cosignpkg.Sign(string(invalidBody), signer.Name, signer.Key, time.Unix(CosignedAt+int64(i*CosignSpread), 0))
+		if err != nil {
+			return err
+		}
+		invalidHead += line + "\n"
+	}
+
+	const name = "47-signed-text-not-utf8"
+	if err := os.WriteFile(filepath.Join(root, "checkpoints-bad", name+".checkpoint"), []byte(invalidHead), 0o644); err != nil {
+		return err
+	}
+	return extendRunFourteenManifest(root, "checkpoints-bad",
+		[]map[string]string{{"name": name, "says": "the signed origin contains 0xff, signed and cosigned over those exact bytes"}},
+		map[string]string{name: "note"},
+		map[string]map[string]string{name: {"section": "10.1", "says": "text or a line that is not UTF-8"}}, true)
+}

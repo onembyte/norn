@@ -111,3 +111,10 @@ replayed-policy/cases.json#unhandled expected="handled" got="UNKNOWN CASE FORMAT
 # a wrong leaf as `entry`. It answers the four new `trust-bad/` anchors, the two
 # new policies with `all-members`' rows and the seven-group grant as written.
 receipt-good/cases.json#unhandled expected="handled" got="UNKNOWN CASE FORMAT"
+
+# Row G7, build G (2026-10-24): run 18's `checkpoints-good/`, a served head with
+# a cosignature at 2⁶³−1 and a checkpoint whose size line is 2⁶³−1, a manifest
+# shape this build never saw (as `receipt-good/` above). It answers the new
+# `proofs-bad/index-outside-tree` and `checkpoints-bad/47` as written;
+# `grown-log/` stays unhandled above, so its new malformed partial is unread.
+checkpoints-good/cases.json#unhandled expected="handled" got="UNKNOWN CASE FORMAT"

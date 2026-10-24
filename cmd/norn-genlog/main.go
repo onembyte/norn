@@ -244,10 +244,16 @@ func run(root string) error {
 	if err := writeRunFourteen(root, origin, key, entries, signed, anchor, signers); err != nil {
 		return err
 	}
+	if err := writeGoodCheckpoints(root, signed, signers); err != nil {
+		return err
+	}
 	if err := writeNoteGrammarCheckpoints(root, signed, signers); err != nil {
 		return err
 	}
 	if err := writeRunFifteen(root, signed); err != nil {
+		return err
+	}
+	if err := writeSignedTextNotUTF8Checkpoint(root, signed, signers); err != nil {
 		return err
 	}
 	if err := writeRunSixteen(root, signed, entries); err != nil {

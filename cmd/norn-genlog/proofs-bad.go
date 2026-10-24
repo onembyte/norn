@@ -248,8 +248,23 @@ func writeBadProofs(root, origin string, key ed25519.PrivateKey, entries [][]byt
 		}
 	}
 
+	// With one leaf and no proof hashes, an unchecked index reaches the
+	// root without a path that can independently refuse it (run 18, L3).
+	singleHead, err := signedHeadOver(root, origin, key, entries[1:2], signers)
+	if err != nil {
+		return err
+	}
+	outside, err := proof.Build("nas", 1, entries[1], nil, singleHead)
+	if err != nil {
+		return err
+	}
+	if err := write("index-outside-tree", outside); err != nil {
+		return err
+	}
+
 	// Every negative names the section that states its rule (run 10).
 	bundleRules := map[string]map[string]string{
+		"index-outside-tree":        {"section": "10.1", "says": "the index is outside the tree"},
 		"one-past-the-cap":          {"section": "8.1", "says": "larger than this MUST be refused on length"},
 		"open-schema":               {"section": "8.1", "says": "a closed map of exactly these six keys"},
 		"wrong-version":             {"section": "8.1", "says": "`v` | uint | `1`"},
@@ -272,6 +287,7 @@ func writeBadProofs(root, origin string, key ed25519.PrivateKey, entries [][]byt
 	// the binding -- the entry is another one's), and
 	// no-quorum-tampered-proof (the quorum, then the inclusion proof).
 	bundleCodes := map[string]refusal.Code{
+		"index-outside-tree":        refusal.Inclusion,
 		"one-past-the-cap":          refusal.Bundle,
 		"open-schema":               refusal.Bundle,
 		"wrong-version":             refusal.Bundle,
@@ -287,6 +303,7 @@ func writeBadProofs(root, origin string, key ed25519.PrivateKey, entries [][]byt
 		"wrong-log-key":             refusal.LogSignature,
 	}
 	bundleCases := []map[string]string{
+		{"name": "index-outside-tree", "says": "the index is outside the tree"},
 		{"name": "one-past-the-cap", "says": "input exceeds"},
 		{"name": "open-schema", "says": "unknown field"},
 		{"name": "wrong-version", "says": "unsupported version"},

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	cosignpkg "github.com/onembyte/norn/internal/cosign"
 	"github.com/onembyte/norn/internal/forkevidence"
@@ -124,23 +125,30 @@ func writeD079GrownLog(root, origin string, key ed25519.PrivateKey, entries [][]
 			return err
 		}
 	}
+	// Serve the bad partial as an additive overlay, leaving the good full
+	// tile in place. A fetched malformed partial is not a missing path.
+	if err := os.WriteFile(filepath.Join(dir, "malformed-partial-tile.bin"), []byte(strings.Repeat("Z", 162*32)), 0o644); err != nil {
+		return err
+	}
 	return writeRunFourteenJSON(filepath.Join(dir, "cases.json"), map[string]any{
 		"serve_over": "grown-log",
 		"cases": []map[string]any{
+			{"name": "malformed-partial-with-good-full", "path": "tile/0/000.p/162", "file": "malformed-partial-tile.bin", "says": "a fetched malformed partial is tiles"},
 			{"name": "older-head-over-full-tiles", "says": "accept the older signed head using the full tile and bundle"},
 			{"name": "full-tile-gone", "path": "tile/0/000", "remove": true, "says": "neither partial nor full hash tile is served"},
 			{"name": "full-bundle-gone", "path": "tile/entries/000", "remove": true, "says": "neither partial nor full entry bundle is served"},
 			{"name": "corrupt-within-prefix", "path": "tile/0/000", "file": "corrupt-within-prefix.bin", "says": "one changed byte in hash 10 inside the older head's prefix"},
 			{"name": "corrupt-beyond-prefix", "path": "tile/0/000", "file": "corrupt-beyond-prefix.bin", "says": "one changed byte in hash 200 beyond the older head's prefix"},
 		},
-		"codes": map[string]string{"older-head-over-full-tiles": "accept", "full-tile-gone": "unserved", "full-bundle-gone": "unserved", "corrupt-within-prefix": "tiles", "corrupt-beyond-prefix": "accept"},
+		"codes": map[string]string{"malformed-partial-with-good-full": "tiles", "older-head-over-full-tiles": "accept", "full-tile-gone": "unserved", "full-bundle-gone": "unserved", "corrupt-within-prefix": "tiles", "corrupt-beyond-prefix": "accept"},
 		"rules": map[string]map[string]string{
-			"older-head-over-full-tiles": {"section": "6", "says": "MUST fetch `tile/<L>/<N>` before it answers `unserved`"},
-			"full-tile-gone":             {"section": "10.1", "says": "`unserved` only when neither the partial path nor the full one is served"},
-			"full-bundle-gone":           {"section": "10.1", "says": "`unserved` only when neither the partial path nor the full one is served"},
-			"corrupt-within-prefix":      {"section": "6", "says": "compared with the tree it rebuilt exactly as the partial path would have been"},
-			"corrupt-beyond-prefix":      {"section": "6", "says": "only its first `W` hashes or entries are then used"},
+			"malformed-partial-with-good-full": {"section": "10.1", "says": "a served hash tile disagrees with the rebuilt tree"},
+			"older-head-over-full-tiles":       {"section": "6", "says": "MUST fetch `tile/<L>/<N>` before it answers `unserved`"},
+			"full-tile-gone":                   {"section": "10.1", "says": "`unserved` only when neither the partial path nor the full one is served"},
+			"full-bundle-gone":                 {"section": "10.1", "says": "`unserved` only when neither the partial path nor the full one is served"},
+			"corrupt-within-prefix":            {"section": "6", "says": "compared with the tree it rebuilt exactly as the partial path would have been"},
+			"corrupt-beyond-prefix":            {"section": "6", "says": "only its first `W` hashes or entries are then used"},
 		},
-		"comment": "The 162-entry fixture appended twice produces 324 entries, full tiles and deleted width-162 partial paths. The checkpoint is served's unchanged signed and cosigned head at 162. Apply each replacement or deletion over this directory; the case with no mutation accepts it as served.",
+		"comment": "The 162-entry fixture appended twice produces 324 entries, full tiles and deleted width-162 partial paths. The checkpoint is served's unchanged signed and cosigned head at 162. Apply each addition, replacement or deletion over this directory; the case with no mutation accepts it as served.",
 	})
 }

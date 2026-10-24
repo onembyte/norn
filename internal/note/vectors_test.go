@@ -216,3 +216,47 @@ func TestASignatureNameThatIsNotUTF8IsAVector(t *testing.T) {
 			"encoding is not the only fault: %v", err)
 	}
 }
+
+// The earlier UTF-8 vector breaks a stranger's name. This one breaks only
+// the signed text, retaining a well-framed block and a genuine log signature.
+func TestSignedTextThatIsNotUTF8IsAVector(t *testing.T) {
+	signed := badCheckpoint(t, "47-signed-text-not-utf8")
+	text, block, ok := strings.Cut(signed, "\n\n")
+	if !ok || utf8.ValidString(text) || !utf8.ValidString(block) {
+		t.Fatal("only the signed text must be invalid UTF-8")
+	}
+	if _, _, err := Split(signed); err == nil {
+		t.Fatal("non-UTF-8 signed text split")
+	}
+	honest, err := os.ReadFile(filepath.Join(vectorRoot(), "served", "checkpoint"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _, err := Split(string(honest))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []byte(body)
+	at := strings.IndexByte(body, '\n') - 1
+	want[at] = 0xff
+	if text+"\n" != string(want) {
+		t.Fatal("only the final origin byte may be 0xff")
+	}
+	_, sigs, err := Split(body + "\n" + block)
+	if err != nil {
+		t.Fatalf("signature block does not frame: %v", err)
+	}
+	v := logVerifier(t)
+	matched := 0
+	for _, sig := range sigs {
+		if sig.Name == v.Name && string(sig.KeyID) == string(v.ID()) {
+			matched++
+			if !ed25519.Verify(v.Public, []byte(text+"\n"), sig.Sig) {
+				t.Fatal("log did not sign the exact malformed text")
+			}
+		}
+	}
+	if matched != 1 || len(sigs) != 4 {
+		t.Fatal("need one log signature and three cosignatures")
+	}
+}
