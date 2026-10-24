@@ -8,15 +8,15 @@ import (
 
 // Row 6.5l-xv-i, Go half (lane BX): every file it ships is cited by its full
 // path in §12.1, and its manifest's rule quotes one raw line of the section it
-// names.
+// names. D-082 (4) adds five structural binding cases to the same contract.
 func TestD080GoCasesAreIndexedAndCiteRawRules(t *testing.T) {
 	doc := load(t)
 	coverage, _ := doc.Section("12.1")
 	for dir, files := range map[string][]string{
 		"fork":       {"evidence-rotated-key.cbor"},
 		"grown-log":  {"full-tile-trailing-bytes.bin", "full-tile-truncated.bin", "full-bundle-trailing-bytes.bin"},
-		"proofs-bad": {"oversize-entry.bundle", "rotate-v2.bundle"},
-		"proofs":     {"forged.bundle", "halfsigned.bundle"},
+		"proofs-bad": {"oversize-entry.bundle", "rotate-v2.bundle", "rotate-no-ts.bundle"},
+		"proofs":     {"forged.bundle", "halfsigned.bundle", "enroll-other-net.bundle", "rotate-small-order-pk.bundle", "rotate-open-body.bundle", "enroll-open-body.bundle"},
 	} {
 		var m struct {
 			Rules map[string]struct{ Section, Says string }

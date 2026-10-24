@@ -77,7 +77,7 @@ func TestABundleAroundLaptopRevokeAcceptsUnderItsOwnLabel(t *testing.T) {
 					says = c.Says
 				}
 			}
-			if len(m.Sound) != 5 || !found || m.Codes[tc.name] != "accept" {
+			if len(m.Sound) != 9 || !found || m.Codes[tc.name] != "accept" {
 				t.Fatal("proofs manifest must list both laptop cases beside the sound nas rotation")
 			}
 			if _, ok := m.Installs[b.Device]; ok || !strings.Contains(says, "installs omits laptop") || !strings.Contains(m.Comment, "installs omits laptop") {

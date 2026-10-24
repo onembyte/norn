@@ -564,9 +564,9 @@ func (a *Agent) anchorFor(held *logclient.Result) logclient.Anchor {
 func (a *Agent) anchorUnder(st *state.State) logclient.Anchor {
 	// D-020: the roots can rotate the log key inside the log, and a node
 	// learns the new one by replaying a log it already accepted. The trust
-	// file's key is kept alongside rather than replaced -- that overlap is the
-	// whole point, so a node whose trust file is current is never worse off
-	// than one whose is stale.
+	// file's initial key is kept alongside rather than replaced. Every trust
+	// file for this network names that same initial key and policy; later
+	// keys and policies are trusted only through replay (D-082 (2), §9.4).
 	keys := []string{a.cfg.Anchor.LogKey}
 	policy := a.cfg.Anchor.Policy
 	if st != nil {

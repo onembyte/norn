@@ -91,6 +91,10 @@
     {
       "name": "rotate-v2",
       "says": "the bundled entry does not decode"
+    },
+    {
+      "name": "rotate-no-ts",
+      "says": "missing envelope key \"ts\""
     }
   ],
   "codes": {
@@ -109,6 +113,7 @@
     "request-undecodable": "binding",
     "revoke-entry-other-device": "binding",
     "rotate-entry-other-device": "binding",
+    "rotate-no-ts": "binding",
     "rotate-v2": "binding",
     "short-proof-hash": "bundle",
     "tampered-proof": "inclusion",
@@ -182,8 +187,12 @@
       "says": "`device` is the `device_id` the `entry` names",
       "section": "8.1"
     },
+    "rotate-no-ts": {
+      "says": "`ts`, a map `body`, well-formed `sigs` — or it names no device",
+      "section": "8.1"
+    },
     "rotate-v2": {
-      "says": "entry itself must decode under §4.0's profile and §4.1's envelope — version 1,",
+      "says": "set of members, each of its type: `v` 1,",
       "section": "8.1"
     },
     "short-proof-hash": {

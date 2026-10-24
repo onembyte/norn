@@ -1,8 +1,14 @@
 {
   "bundle": "nas.bundle",
-  "comment": "proofs/nas.bundle with its checkpoint replaced by served-rotated's: the same head, signed by the log key the roots published at since_index (SPEC 9.4). A reader holding only trust.cbor MUST refuse it as `fresh` says; a reader that trusts the published key -- it replayed the rotation, or holds a trust file issued since -- MUST accept it (SPEC 8, 8.1, D-074 (a)). Both answers are correct",
+  "comment": "proofs/nas.bundle with its checkpoint replaced by served-rotated's: the same head, signed by the log key the roots published at since_index (SPEC 9.4). A reader holding only trust.cbor MUST refuse it as `fresh` says; a reader that trusts the published key -- it replayed the rotation -- MUST accept it (SPEC 8, 8.1, D-074 (a), D-082 (2)). Both answers are correct",
   "fresh": "log-signature",
   "informed": "accept",
+  "rules": {
+    "informed": {
+      "says": "reader that has replayed the log through the rotation; one holding only",
+      "section": "8"
+    }
+  },
   "signed_by": "efe54ffd513af32b5f82b092c79bf3ffb20ce096798e45285b0b55ef2562fdc0",
   "since_index": 27
 }

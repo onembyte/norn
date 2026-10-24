@@ -16,8 +16,8 @@ import (
 // the key the roots published -- which is the bundle a log makes once the
 // overlap has passed. Like served-rotated/ it has two correct answers: a
 // reader holding only trust.cbor refuses it as `log-signature`, and one that
-// trusts the published key, having replayed the rotation or holding a newer
-// trust file, accepts it.
+// trusts the published key, having replayed the rotation, accepts it. A later
+// trust file for the same network still names its initial key (D-082 (2)).
 func writeRotatedBundle(root string) error {
 	raw, err := os.ReadFile(filepath.Join(root, "proofs", "nas.bundle"))
 	if err != nil {
@@ -67,8 +67,11 @@ func writeRotatedBundle(root string) error {
 		"comment": "proofs/nas.bundle with its checkpoint replaced by served-rotated's: the " +
 			"same head, signed by the log key the roots published at since_index (SPEC 9.4). " +
 			"A reader holding only trust.cbor MUST refuse it as `fresh` says; a reader that " +
-			"trusts the published key -- it replayed the rotation, or holds a trust file " +
-			"issued since -- MUST accept it (SPEC 8, 8.1, D-074 (a)). Both answers are correct",
+			"trusts the published key -- it replayed the rotation -- MUST accept it " +
+			"(SPEC 8, 8.1, D-074 (a), D-082 (2)). Both answers are correct",
+		"rules": map[string]map[string]string{
+			"informed": {"section": "8", "says": "reader that has replayed the log through the rotation; one holding only"},
+		},
 	}
 	blob, err := json.MarshalIndent(cases, "", "  ")
 	if err != nil {

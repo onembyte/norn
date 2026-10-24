@@ -24,9 +24,9 @@ func TestBundlesAndReceiptsVerifyUnderEveryTrustedLogKey(t *testing.T) {
 			"lines naming no trusted key are ignored",
 		}},
 		{"8", []string{
-			"a bundle made after a rotation is checkable by a reader that has replayed the log through the rotation, or holds a trust file issued since",
-			"one holding only an older `norn.trust` sees `log-signature`",
-			"Retiring a log key is a trust-file change",
+			"a bundle made after a rotation is checkable by a reader that has replayed the log through the rotation; one holding only `norn.trust` sees `log-signature`",
+			"A trust file issued later for the same network names the same initial key (§9.4)",
+			"v1 retires no log key, in the log or out of it",
 		}},
 		{"8.1", []string{
 			"under the log keys the verifier trusts (§9.4: the trust file's, plus every `log_key` of a state it has accepted) and the policy of that state",

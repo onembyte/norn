@@ -6,11 +6,15 @@
   },
   "checkpoint_quorum_time": 1760003607,
   "codes": {
+    "enroll-open-body": "accept",
+    "enroll-other-net": "accept",
     "forged": "accept",
     "halfsigned": "accept",
     "laptop-revoke": "accept",
     "laptop-since-revoked": "accept",
-    "nas-rotate": "accept"
+    "nas-rotate": "accept",
+    "rotate-open-body": "accept",
+    "rotate-small-order-pk": "accept"
   },
   "comment": "the served log and its proof bundles, produced by the Go implementation and validated by upstream libraries; see SPEC 12. `installs` is the wg_pk, in hex, that a node installs for each device once its bundle checks out: the key replay gives (SPEC 8.1 condition 3), which is not always the key in the bundle's entry. `nas` rotated after it enrolled, so its bundle proves the enrol and names the old key; sound includes nas-rotate, laptop-revoke and laptop-since-revoked, all accepted as bundles. Condition 3 installs the replayed nas key and nothing for laptop: installs omits laptop because replay leaves it revoked at the served checkpoint",
   "devices": [
@@ -42,6 +46,14 @@
     "size": 127
   },
   "rules": {
+    "enroll-open-body": {
+      "says": "Binding is structural: what replay judges against the anchor",
+      "section": "8.1"
+    },
+    "enroll-other-net": {
+      "says": "Binding is structural: what replay judges against the anchor",
+      "section": "8.1"
+    },
     "forged": {
       "says": "§3.1's point admission included; its signature and network are not part of",
       "section": "8.1"
@@ -60,6 +72,14 @@
     },
     "nas-rotate": {
       "says": "types, the `device_id` in the body — and apply the rules below.",
+      "section": "8.1"
+    },
+    "rotate-open-body": {
+      "says": "Binding is structural: what replay judges against the anchor",
+      "section": "8.1"
+    },
+    "rotate-small-order-pk": {
+      "says": "Binding is structural: what replay judges against the anchor",
       "section": "8.1"
     }
   },
@@ -99,6 +119,34 @@
       "index": 57,
       "name": "halfsigned",
       "says": "inclusion accepts; replay refused the enrollment, so installs omits halfsigned"
+    },
+    {
+      "device": "nas",
+      "file": "enroll-other-net.bundle",
+      "index": 1,
+      "name": "enroll-other-net",
+      "says": "enroll envelope net is another network; inclusion accepts, replay refuses"
+    },
+    {
+      "device": "nas",
+      "file": "rotate-small-order-pk.bundle",
+      "index": 1,
+      "name": "rotate-small-order-pk",
+      "says": "rotate incoming device_pk has order 8; inclusion accepts, replay refuses"
+    },
+    {
+      "device": "nas",
+      "file": "rotate-open-body.bundle",
+      "index": 1,
+      "name": "rotate-open-body",
+      "says": "rotate body has unknown x; inclusion accepts, replay refuses"
+    },
+    {
+      "device": "nas",
+      "file": "enroll-open-body.bundle",
+      "index": 1,
+      "name": "enroll-open-body",
+      "says": "enroll body is {request, x}; inclusion accepts, replay refuses"
     }
   ]
 }

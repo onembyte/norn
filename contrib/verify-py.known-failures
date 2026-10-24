@@ -118,3 +118,10 @@ receipt-good/cases.json#unhandled expected="handled" got="UNKNOWN CASE FORMAT"
 # `proofs-bad/index-outside-tree` and `checkpoints-bad/47` as written;
 # `grown-log/` stays unhandled above, so its new malformed partial is unread.
 checkpoints-good/cases.json#unhandled expected="handled" got="UNKNOWN CASE FORMAT"
+
+# Row G9, part a (2026-10-24): no failure, a gap, as at 6.5l-xiv-j. D-082 (4)
+# adds four bundles to `proofs/cases.json`'s `sound`, which this build never
+# walks; read directly, it answers `binding` for `enroll-other-net` (it checks
+# the envelope's `net`) and `enroll-open-body` (it requires `{request}`), where
+# §8.1 now says `accept`, and answers the other three as written. Its pass count
+# is no evidence for those two.

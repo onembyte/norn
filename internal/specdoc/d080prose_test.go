@@ -60,7 +60,7 @@ func TestEvidenceIsCheckedUnderTheKeysTheReaderTrusts(t *testing.T) {
 	body := strings.Join(strings.Fields(section.Body), " ")
 	for _, want := range []string{
 		"the log keys the reader trusts (§9.4: the trust file's, plus every `log_key` of a state it has accepted)",
-		"one holding only the older trust file answers `held`, which is the truth",
+		"one holding only the trust file answers `held`, which is the truth",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("§11.1 does not say %q", want)
@@ -108,7 +108,7 @@ func TestABundlesEntryIsAnEntryAndDecodingIsStructure(t *testing.T) {
 	for _, c := range []struct{ section, want string }{
 		{"8.1", "| `entry` | bytes | the entry itself, so the bundle stands alone; at most `MAX_ENTRY_BYTES` (§4.0), like any entry, and a longer one is `bundle` (D-080) |"},
 		{"8.1", "Decoding here is the request's structure and field rules, §3.1's point admission included; its signature and network are not part of it"},
-		{"8.1", "The entry itself must decode under §4.0's profile and §4.1's envelope — version 1, a text `t`, a map `body` — or it names no device"},
+		{"8.1", "The entry itself must decode under §4.0's profile and §4.1's envelope — its closed set of members, each of its type: `v` 1, a text `t`, a 16-byte `net`, a uint `ts`, a map `body`, well-formed `sigs` — or it names no device"},
 		{"10.1", "or an `entry` longer than `MAX_ENTRY_BYTES` (D-080)"},
 	} {
 		section, ok := doc.Section(c.section)

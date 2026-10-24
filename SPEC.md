@@ -1057,12 +1057,12 @@ an audit trail, or a bug report.
 
 Holding `norn.trust` means holding the log key it names. After the roots rotate
 the key in the log (§9.4), a bundle made after a rotation is checkable by a
-reader that has replayed the log through the rotation, or holds a trust file
-issued since; one holding only an older `norn.trust` sees `log-signature`,
-which is the truth — that reader does not yet trust the key the bundle is
-signed with. Receipts (§7) are checked the same way. Retiring a log key is a
-trust-file change, not something a reader infers from the log (D-072 (d),
-D-074 (a)).
+reader that has replayed the log through the rotation; one holding only
+`norn.trust` sees `log-signature`, which is the truth — that reader does not
+yet trust the key the bundle is signed with. Receipts (§7) are checked the same
+way. A trust file issued later for the same network names the same initial key
+(§9.4), so it changes none of this; v1 retires no log key, in the log or out of
+it (D-072 (d), D-074 (a), D-082 (2)).
 
 ### 8.1 Bundle format (normative)
 
@@ -1099,9 +1099,12 @@ established. The id an `enroll` names is the one its request decodes to under
 label says (D-079). Decoding here is the request's structure and field rules,
 §3.1's point admission included; its signature and network are not part of
 it — replay judges those, and a bundle proves inclusion, not acceptance. The
-entry itself must decode under §4.0's profile and §4.1's envelope — version 1,
-a text `t`, a map `body` — or it names no device, and the bundle is `binding`
-(D-080).
+entry itself must decode under §4.0's profile and §4.1's envelope — its closed
+set of members, each of its type: `v` 1, a text `t`, a 16-byte `net`, a uint
+`ts`, a map `body`, well-formed `sigs` — or it names no device, and the bundle is
+`binding` (D-080). Binding is structural: what replay judges against the anchor
+or the state, such as `net` against `anchor.net`, and a type's body rules beyond
+the field that names the device, are not part of it (D-082 (4)).
 
 The quorum is not optional here, and saying "verify the checkpoint note" was
 not enough. §8 sells a bundle as self-contained, checkable by somebody holding
@@ -1394,8 +1397,19 @@ that stops early strands exactly those nodes — the ones least able to complain
 and a monitor watching the checkpoint's signature can see it happen.
 
 A node keeps the trust file's key **alongside** what it has learned rather than
-replacing it. A node whose trust file is current must never be worse off than
-one whose trust file is stale.
+replacing it.
+
+**Every trust file for a network names the same initial `log_key` and `policy`**
+(D-082 (2)). Replay's anchor (§5) takes them as the values the network started
+with, and the genesis entry names no log key (§4.3), so a trust file issued
+after a rotation that named the later key would replay the same log to another
+state: the `log_key` entry that published it is `dup-key`, every one whose
+`prev` chains through it is `stale-state`, and its reader learns no key and
+refuses the network's heads signed by any key but the one it names. A reader
+trusts a later key or policy only by replaying the entry that publishes it. A
+compromised log key is contained by the witness quorum, which no stolen log key
+alone satisfies; v1 remedies it with a new network, a new genesis and trust
+file, and has no verifier-side retirement (D-072 (d)).
 
 The same is true of every key a `log_key` entry has taught it: a learned key is
 **never retired**. Keys accumulate across rotations, so a log that resumes
@@ -1599,7 +1613,10 @@ that are not consistent MUST:
    file (KEYTRANS rule),
 3. keep enforcing, in every cycle, the **frozen set**: the devices proven at
    the common prefix **and** proven at the head the node itself holds, each
-   with the routes its enrollment granted as of the common prefix. The
+   with its `wg_pk` and the routes its enrollment granted as of the common
+   prefix, and only while its `wg_pk` at the held head is that same key: a
+   device whose key changed after the split is removed, since the old key may
+   be the reason it rotated (D-082 (3)). The
    **common prefix**: the largest size at which both branches have the same
    root — the last state both agree on, and therefore the last one a node can
    call authorized once it knows the log signs whatever suits it. Relative to
@@ -1638,10 +1655,9 @@ why the format is here rather than in `GOSSIP.md`.
 That reader checks the file under the keys and the policy its trust file names;
 a reader that has replayed the log checks it under what the log published
 (§9.4). As with a bundle (§8), evidence signed by a key the roots rotated in is
-checkable by a reader that has replayed the log through the rotation, or holds a
-trust file issued since; one holding only the older trust file answers `held`,
-which is the truth — it does not yet trust the key the evidence is signed with
-(D-080).
+checkable by a reader that has replayed the log through the rotation; one
+holding only the trust file answers `held`, which is the truth — it does not
+yet trust the key the evidence is signed with (D-080, D-082 (2)).
 
 Deterministic CBOR per §4.0, a closed map of exactly these seven keys at
 version 1, and of exactly eleven keys at version 2 — the four `split` keys
@@ -1782,6 +1798,11 @@ naming that rule is how the generators and the placement guards check it.
 | `served-large/` | a Go-generated 300-entry served log; `cases.json` records its full and partial level-0 and level-1 tile paths and widths, plus a separate `paths` table for hash-tile and entry-bundle path functions at group boundaries beyond this log |
 | `proofs/<device>.bundle` | one §8.1 proof bundle per active device, each proving the entry that made that device active; `cases.json` gives the origin, the log-key seed, the device list and, under `installs`, the key a node installs for each device (§8.1 condition 3) |
 | `proofs/at-the-cap.bundle` | a valid bundle of exactly 81919 bytes (`MAX_BUNDLE_BYTES`), grown only with real cosignatures from the unlisted `stranger` key; `cases.json` names it under `at_the_cap` and requires acceptance |
+| `proofs/enroll-other-net.bundle` | D-082 (4): an `enroll` whose envelope `net` is another network's, with nas's valid request for this network; `accept`, since binding does not compare the envelope network against the anchor |
+| `proofs/rotate-small-order-pk.bundle` | D-082 (4): a `rotate` naming nas with an order-8 incoming `device_pk`; `accept`, since that body field's point admission belongs to replay |
+| `proofs/rotate-open-body.bundle` | D-082 (4): a `rotate` naming nas with an unknown body key `x`; `accept`, since binding does not enforce the type's closed body schema |
+| `proofs/enroll-open-body.bundle` | D-082 (4): an `enroll` whose body is `{request, x}`, carrying nas's valid request; `accept`, since binding decodes the request without closing the entry's body |
+| `proofs-bad/rotate-no-ts.bundle` | D-082 (4): a version-1 `rotate` naming nas with no envelope `ts`; `binding`. Each of these five bundles has a real inclusion proof under its own log-signed, quorum-cosigned two-leaf head; the four accepted bundles appear in `proofs/cases.json` under `sound`, with `codes` and `rules`, and change no `installs` |
 | `proofs/nas-rotate.bundle` | the fixture's real `log/35-rotate-nas` in a bundle labelled `nas`, accepted through the body's `device_id`; `cases.json` lists it separately under `sound`, with `codes` and `rules`, leaving the activating-entry device list unchanged |
 | `proofs/laptop-revoke.bundle` | the fixture's real `log/36-revoke-self-laptop` in a bundle labelled `laptop`, accepted through the body's `device_id`; `cases.json` lists it under `sound`, with `codes` and `rules`. Condition 3 installs nothing because replay leaves laptop revoked at the served checkpoint, so `installs` omits it. `proofs/laptop-since-revoked.bundle` proves laptop's accepted enrollment at index 2 through the embedded request's `device_id`, but condition 3 installs nothing after its revoke |
 | `proofs/forged.bundle` | `log/98-bad-forged-device-sig` under its own label `forged`, with a real inclusion proof at the served head: accepted, because binding decodes structure rather than verifying the request signature; listed under `sound`, with `codes` and `rules`. Replay refused it, so `installs` omits forged |
@@ -1805,7 +1826,7 @@ naming that rule is how the generators and the placement guards check it.
 | `proven/cases.json` | the devices admitted at four evaluation times (§5.3), including the boundary where `expires` equals `T`; and under `grants`, every active device's §4.0 grant, which the evaluation time does not change |
 | `fork/` | `evidence.cbor` and the `conflicting.checkpoint` it is about (§11.1), plus ten more sound files including `evidence-at-same-size.cbor` (the served held head and a different root at the same size, both signed and cosigned, with an empty proof). `cases.json` names all eleven under `sound` and codes all forty-two refusals; `rotated_key` names `evidence-rotated-key.cbor` with fresh `held` and informed `accept`, using `proofs-rotated/`'s reader names and rotated key. Refusals include `bad-simple-size` (`cbor`, a simple value outside §4.0's allow-list) and `bad-policy-unparseable-and-foreign-held` (`policy`, before `held`) |
 | `anchors/` | OpenTimestamps proofs written by `python-opentimestamps`: `checkpoint-<size>.ots`, `sample.ots` over an arbitrary digest, and a calendar's reply. **`cases.json` states each proof's digest in hex and names the bytes that produce it** — for the checkpoint proof, `served/checkpoint` through the newline that terminates the blank separator line, which is the §6 range and *not* the three-line body. Without it a reader has to parse the OpenTimestamps container, a format this document does not describe, before it can tell which of two byte ranges was stamped |
-| `proofs-bad/<name>.bundle` | twenty-three bundles that MUST be refused (§8.1), including `one-past-the-cap.bundle`: exactly 81920 bytes, otherwise sound, refused as `bundle`. `cases.json` gives the log key, code and rule for each refusal |
+| `proofs-bad/<name>.bundle` | twenty-four bundles that MUST be refused (§8.1), including `one-past-the-cap.bundle`: exactly 81920 bytes, otherwise sound, refused as `bundle`. `cases.json` gives the log key, code and rule for each refusal |
 | `detect/` | the stored-checkpoint sequences §10 needs, each branch with its own tiles, plus `staleness.json` for §8.1's condition 4 |
 | `served-genesis/` | §10.1's `genesis` for a reader that holds no checkpoint: `cases.json` serves `detect/other-genesis` (this network's log key, origin and witnesses over a history whose entry 0 is not the anchored genesis) and `detect/empty` (a cosigned head over no entries), each with its code and the §10.1 phrase that refuses it |
 | `served-rotated/` | the served head signed by a published `log_key` (§9.4), with `cases.json` giving the key, its `since_index` and its `overlap`. Serve it over `served/`'s tiles |
@@ -1870,6 +1891,11 @@ this table drifted out of date the moment one was.
 | §6, §10.1 a stand-in full tile cannot be partial (D-080 (3)) | `grown-log/older-head-over-full-tiles`: accepted | `grown-log/full-tile-truncated.bin` replaces full `tile/0/000` with only the head's 162 hashes: `tiles` |
 | §6, §10.1 a stand-in full bundle has exactly 256 frames (D-080 (3)) | `grown-log/older-head-over-full-tiles`: accepted | `grown-log/full-bundle-trailing-bytes.bin` replaces full `tile/entries/000` with its 256 frames plus two bytes: `entries` |
 | §8.1, §10.1 the wrapped entry's size is bounded at step 1 (D-080 (5)) | `proofs/nas-rotate.bundle`: accepted | `proofs-bad/oversize-entry.bundle`: a rotate naming nas padded to exactly 65536 bytes, in a signed and quorum-cosigned two-leaf tree with its real inclusion proof, below MAX_BUNDLE_BYTES: `bundle` |
+| §8.1 binding leaves envelope network comparison to replay (D-082 (4)) | `proofs/enroll-other-net.bundle`: nas's valid request inside an `enroll` whose envelope `net` is another network's; accepted | comparing `net` with `anchor.net` incorrectly answers `binding` |
+| §8.1 binding leaves rotate point admission to replay (D-082 (4)) | `proofs/rotate-small-order-pk.bundle`: nas rotate with an order-8 incoming `device_pk`; accepted | enforcing that body field's point admission incorrectly answers `binding` |
+| §8.1 binding leaves the rotate body schema to replay (D-082 (4)) | `proofs/rotate-open-body.bundle`: nas rotate with unknown body member `x`; accepted | closing the body in binding incorrectly answers `binding` |
+| §8.1 binding leaves the enroll body schema to replay (D-082 (4)) | `proofs/enroll-open-body.bundle`: body `{request, x}` with nas's valid request; accepted | closing the entry body in binding incorrectly answers `binding` |
+| §8.1 binding requires the complete envelope (D-082 (4)) | adding only `ts` to the wrapped rotate restores structural binding | `proofs-bad/rotate-no-ts.bundle`: version 1 and no `ts`, under a genuine signed and quorum-cosigned head with a real inclusion path; `binding` |
 | §8.1 binding requires a version-1 entry envelope (D-080 (5)) | `proofs/nas-rotate.bundle`: accepted | `proofs-bad/rotate-v2.bundle`: the same rotate naming nas with version 2, in a signed and quorum-cosigned two-leaf tree with its real inclusion proof: `binding` |
 | §8.1 binding decodes without checking the request signature (D-080 (5)) | `proofs/forged.bundle` proves `log/98-bad-forged-device-sig` under `forged` at the served head: accepted | relabelling it is `binding`; replay never accepted the entry, so condition 3 installs nothing, as for `proofs/laptop-revoke.bundle` |
 | §8.1 binding decodes without checking the request network (D-080 (5)) | `proofs/halfsigned.bundle` proves `log/57-bad-request-net` under `halfsigned` at the served head: accepted | relabelling it is `binding`; replay never accepted the entry, so condition 3 installs nothing, as for `proofs/laptop-revoke.bundle` |
@@ -2030,7 +2056,7 @@ this table drifted out of date the moment one was.
 | §10.1 a matched witness key with the other valid payload length | `served/checkpoint` | `checkpoints-bad/28-witness-key-other-algorithm-length` appends a 68-byte line whose name and cosignature key ID match the listed witness `pi`. A reader that skips it as "not a cosignature" still counts three good lines and accepts; its code is `cosignature`, the witness side of `24` (SEC-027) |
 | §8.1 a bundle's checkpoint is checked per §10 | `proofs/`, whose checkpoints carry the quorum | `proofs-bad/no-quorum` (the log's signature and nobody else's) and `proofs-bad/wrong-origin` (this network's key over another network's origin line) |
 | §8.1 condition 3, the key a node installs | `proofs/cases.json`'s `installs`: for every device, the `wg_pk` replay gives. `nas` rotated after it enrolled, so `proofs/nas.bundle` proves an entry naming a key `nas` no longer uses and `installs` names the other one. A reader that requires the bundle's key to match installs nothing for `nas` (cold gate run 11, D14) | — |
-| §8 proof bundles | `proofs/`, one per active device | `proofs-bad/`, **23 proof refusals**: `one-past-the-cap` (otherwise sound, refused on length), a wrong entry, a foreign checkpoint, a tampered proof, a checkpoint signed by a key the anchor does not name, one with no witness quorum and one whose checkpoint names another origin — each differing from a valid bundle in exactly one thing, except `no-quorum-tampered-proof` and `proofs-bad/wrong-version-and-untrusted-checkpoint`, which differ in two so that §10.1's order decides. `rotate-entry-other-device` and `revoke-entry-other-device` prove a real `rotate` and `revoke` under another device's label: §8.1 binds those through the body's `device_id`, and until cold gate run 12 (D20) every bundle proved an `enroll`, so a reader that bound only enrolments passed |
+| §8 proof bundles | `proofs/`, one per active device | `proofs-bad/`, **24 proof refusals**: `one-past-the-cap` (otherwise sound, refused on length), a wrong entry, a foreign checkpoint, a tampered proof, a checkpoint signed by a key the anchor does not name, one with no witness quorum and one whose checkpoint names another origin — each differing from a valid bundle in exactly one thing, except `no-quorum-tampered-proof` and `proofs-bad/wrong-version-and-untrusted-checkpoint`, which differ in two so that §10.1's order decides. `rotate-entry-other-device` and `revoke-entry-other-device` prove a real `rotate` and `revoke` under another device's label: §8.1 binds those through the body's `device_id`, and until cold gate run 12 (D20) every bundle proved an `enroll`, so a reader that bound only enrolments passed |
 | §8.1 RFC 6962 inclusion proof's right edge | `proofs/right-edge.json`: the last leaf, index 126, of a 127-entry tree | —; this positive proof distinguishes the RFC right-edge rule from a parity-only inclusion reader (cold gate run 12, D13b) |
 | §10 the signature decides before the origin | — | `proofs-bad/foreign-checkpoint` MUST be refused as `log-signature` and `proofs-bad/wrong-origin` as `origin`; `checkpoints-bad/03-wrong-origin`, signed under another origin's name, is `log-signature` too. A reader that checks the origin first answers `origin` for the first and the last |
 | §10.1 and §11.1 the order of the checks | — | every negative in `checkpoints-bad/`, `served-bad/`, `proofs-bad/`, `fork/` and `detect/` names its code, and these fail two steps so the order decides — the codes make an ordering observable, and a file with both faults is what observes it: `checkpoints-bad/01-unsigned` is `note`, not `log-signature` (framing before signature); `checkpoints-bad/03-wrong-origin` and `proofs-bad/foreign-checkpoint` are `log-signature`, not `origin` (the signature decides before the origin); `checkpoints-bad/30-noncanonical-size-under-untrusted-signer` is `log-signature`, not `checkpoint` (the signature before the body — every other body fault in the directory is signed by the log, cold gate run 13, D4); `served-bad/tampered-entry-bundle` is `head`, not `tiles` (head before tiles); `detect/tampered-bundle-under-a-stored-head` is `head`, not `fork` (head before the branch comparison — a reader that compares first accuses an honest log over one corrupt byte, permanently); `proofs-bad/no-quorum-tampered-proof` is `quorum`, not `inclusion`, and `proofs-bad/wrong-entry` is `inclusion`, not `binding` (a bundle's checkpoint, then its proof, then its binding); `fork/bad-oversize-and-not-cbor` is `oversize`, not `cbor`; `fork/bad-version-and-unknown-key` is `version`, not `schema`; `fork/bad-short-held-root-and-size-above-held` is `schema`, not `size`; `fork/bad-policy-unparseable-and-foreign-held` is `policy`, not `held` (the carried policy does not parse and held is a foreign head; closed-code step 4 precedes step 5, cold gate run 13, D4); and `fork/bad-other-origin` is `held`, not `conflicting` |

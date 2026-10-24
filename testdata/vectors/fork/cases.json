@@ -391,7 +391,7 @@
       "section": "11.1"
     },
     "evidence-rotated-key": {
-      "says": "trust file issued since; one holding only the older trust file answers `held`,",
+      "says": "holding only the trust file answers `held`, which is the truth — it does not",
       "section": "11.1"
     }
   },

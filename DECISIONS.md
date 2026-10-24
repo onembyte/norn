@@ -1024,6 +1024,8 @@ of the same kind as 021r-b's, answered by the same new cold run.
 **(d) v1: a `log_key` entry is for planned rotation;** a compromised log key is
 contained by the witness quorum and remedied by a new trust file (R7, A2).
 Verifier-side retirement is recorded for v1.1.
+*(2026-10-24, D-082 (2): the remedy is a new network, not a new trust file
+for the same one, since every trust file for a network names its initial key.)*
 **(e) `nornd` refuses `owner` and `watchdog` under an effective `quorum none`**
 unless `allow_no_quorum` is set; `observe` always runs; a policy lowered to none
 while running alarms on the degraded cadence until restart.

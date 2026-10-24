@@ -702,11 +702,11 @@ func TestAFreezeMarkerIsHonouredOnlyForItsOwnNetwork(t *testing.T) {
 	}
 }
 
-// rotatedAnchor is this network's trust file after a log-key rotation: the
-// same origin, a different log key, and the policy's `log` line to match
-// (§9.1). It is what an operator provisions after R7, and it is **not** a
-// new network -- §11's reset is a new trust file for a different origin, not
-// a rotated one for the same.
+// rotatedAnchor stands for an operator's mistake: the same network with a
+// rotated log key and a matching policy log line (§9.1). D-082 (2) requires
+// every trust file for a network to name its initial key and policy; this
+// file replays the log to another state and cannot remedy a compromise.
+// It is still the same network, so it must not clear a freeze (§11).
 func rotatedAnchor(t *testing.T) *trust.Trust {
 	t.Helper()
 	doc := *anchor(t)

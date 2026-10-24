@@ -27,7 +27,10 @@ func writeD080(root, origin string, key ed25519.PrivateKey, entries [][]byte, si
 	if err := writeD080GrownLog(root); err != nil {
 		return err
 	}
-	return writeD080Bundles(root, origin, key, entries, signed, signers)
+	if err := writeD080Bundles(root, origin, key, entries, signed, signers); err != nil {
+		return err
+	}
+	return writeD082Bundles(root, origin, key, entries, signers)
 }
 
 func writeD080Evidence(root, origin string, signers []cosignpkg.Signer) error {
@@ -78,7 +81,7 @@ func writeD080Evidence(root, origin string, signers []cosignpkg.Signer) error {
 		"signed_by": hex.EncodeToString(key.Public().(ed25519.PublicKey)),
 		"comment":   "fresh holds only trust.cbor; informed verified and replayed served through the rotation, retaining the trust key and using the replayed policy. Both heads are signed by proofs-rotated's logkey2.",
 	}
-	m["rules"].(map[string]any)["evidence-rotated-key"] = map[string]string{"section": "11.1", "says": "trust file issued since; one holding only the older trust file answers `held`,"}
+	m["rules"].(map[string]any)["evidence-rotated-key"] = map[string]string{"section": "11.1", "says": "holding only the trust file answers `held`, which is the truth — it does not"}
 	return writeRunFourteenJSON(filepath.Join(root, "fork/cases.json"), m)
 }
 
@@ -181,7 +184,7 @@ func writeD080Bundles(root, origin string, key ed25519.PrivateKey, entries [][]b
 		{"name": "oversize-entry", "says": "MAX_ENTRY_BYTES"}, {"name": "rotate-v2", "says": "the bundled entry does not decode"},
 	}, map[string]string{"oversize-entry": "bundle", "rotate-v2": "binding"}, map[string]map[string]string{
 		"oversize-entry": {"section": "10.1", "says": "or an `entry` longer than `MAX_ENTRY_BYTES` (D-080)"},
-		"rotate-v2":      {"section": "8.1", "says": "entry itself must decode under §4.0's profile and §4.1's envelope — version 1,"},
+		"rotate-v2":      {"section": "8.1", "says": "set of members, each of its type: `v` 1,"},
 	}, false); err != nil {
 		return err
 	}
