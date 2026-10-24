@@ -23,6 +23,43 @@ class Build(unittest.TestCase):
     def test_validate_accepts_the_fixture(self):
         trust.validate(self.trust)
 
+    def test_a_witness_url_must_be_text(self):
+        damaged = copy.deepcopy(self.trust)
+        damaged["witnesses"][0]["url"] = 1
+        with self.assertRaisesRegex(trust.TrustError, "witness fields must be text"):
+            trust.parse(cbor.encode(damaged))
+        damaged["witnesses"][0]["url"] = ""
+        trust.validate(damaged)
+
+    def test_every_typed_trust_member_is_checked(self):
+        # §9.1 states these types explicitly. Python's bool is an int, and a
+        # string is iterable, so equality and iteration do not enforce them.
+        faults = [
+            ("version", True), ("net", "x" * 16), ("origin", 1),
+            ("name", 1), ("genesis_hash", "x" * 32), ("log_key", 1),
+            ("log_urls", "https://log.example"), ("log_urls", [b"https://log.example"]),
+            ("witnesses", {"name": "pi"}), ("witnesses", [1]), ("policy", 1),
+        ]
+        for field, value in faults:
+            with self.subTest(field=field, value=value):
+                damaged = copy.deepcopy(self.trust)
+                damaged[field] = value
+                with self.assertRaises(trust.TrustError):
+                    trust.validate(damaged)
+        for field in ("name", "key", "url"):
+            with self.subTest(witness=field):
+                damaged = copy.deepcopy(self.trust)
+                damaged["witnesses"][0][field] = 1
+                with self.assertRaises(trust.TrustError):
+                    trust.validate(damaged)
+        for field, value in [("type", 1), ("mode", 1), ("max_lag", "60"),
+                             ("max_lag", True), ("max_lag", -1), ("max_lag", 1 << 63)]:
+            with self.subTest(anchor=field, value=value):
+                damaged = copy.deepcopy(self.trust)
+                damaged["anchor"][field] = value
+                with self.assertRaises(trust.TrustError):
+                    trust.validate(damaged)
+
     def test_origin_case_is_the_only_fault(self):
         # Cold gate run 13, D18: one letter of the origin changes case, and the
         # log key's note name and the policy's `log` line agree with it, so
@@ -127,6 +164,36 @@ class Build(unittest.TestCase):
                 with self.assertRaises(trust.TrustError):
                     trust.validate(damaged)
 
+    def test_the_run_eighteen_trust_negatives_repair_one_field(self):
+        root = pathlib.Path(__file__).resolve().parents[3] / "testdata/vectors"
+        for name in ("56-policy-log-key-renamed", "57-log-url-bytes",
+                     "58-anchor-max-lag-text", "59-witness-url-uint"):
+            with self.subTest(name=name):
+                raw = (root / "trust-bad" / f"{name}.cbor").read_bytes()
+                damaged = cbor.decode(raw)
+                self.assertEqual(damaged, dict(fixture.trust_rejections())[name])
+                with self.assertRaises(trust.TrustError):
+                    trust.parse(raw)
+                if name.startswith("56"):
+                    renamed = next(line.split()[1] for line in damaged["policy"].splitlines()
+                                   if line.startswith("log "))
+                    a, b = note.parse_vkey(renamed), note.parse_vkey(damaged["log_key"])
+                    self.assertEqual((a.public, a.alg), (b.public, b.alg))
+                    self.assertNotEqual(a.name, b.name)
+                    damaged["policy"] = damaged["policy"].replace(renamed, damaged["log_key"], 1)
+                elif name.startswith("57"):
+                    self.assertIsInstance(damaged["log_urls"][0], bytes)
+                    damaged["log_urls"][0] = damaged["log_urls"][0].decode()
+                elif name.startswith("58"):
+                    self.assertEqual(damaged["anchor"]["max_lag"], "86400")
+                    damaged["anchor"]["max_lag"] = 86400
+                else:
+                    self.assertIs(type(damaged["witnesses"][0]["url"]), int)
+                    self.assertEqual(damaged["witnesses"][0]["url"], 1)
+                    damaged["witnesses"][0]["url"] = self.trust["witnesses"][0]["url"]
+                self.assertEqual(damaged, self.trust)
+                trust.parse(cbor.encode(damaged))
+
 
 class Fingerprint(unittest.TestCase):
     def setUp(self):
@@ -195,3 +262,26 @@ class ReceiptVector(unittest.TestCase):
         signed = note.sign(text, doc["origin"], fixture.KEYS["logkey"])
         with self.assertRaises(note.NoteError):
             note.verify(signed, [doc["witnesses"][0]["key"]])
+
+
+class PositiveReceiptVector(unittest.TestCase):
+    def test_the_capped_receipt_has_a_valid_note_and_the_genesis_leaf(self):
+        # The reference has no receipt verifier. Verify the real log signature
+        # and inspect the bound and leaf in the authenticated four-line body.
+        import base64
+        import json
+        from nornref import entry
+        root = pathlib.Path(__file__).resolve().parents[3] / "testdata/vectors"
+        manifest = json.loads((root / "receipt-good/cases.json").read_text())
+        self.assertEqual(len(manifest["cases"]), 1)
+        case = manifest["cases"][0]
+        self.assertEqual((case["name"], case["file"], case["now"]),
+                         ("deadline-at-the-cap", "deadline-at-the-cap.note", 0))
+        self.assertEqual(manifest["codes"][case["name"]], "accept")
+        leaf = entry.leaf_hash((root / "log/0-genesis.cbor").read_bytes())
+        self.assertEqual(case["leaf_hash"], leaf.hex())
+        doc = fixture.trust_file()
+        self.assertEqual(leaf, doc["genesis_hash"])
+        text = note.verify((root / "receipt-good" / case["file"]).read_text(), [doc["log_key"]])
+        self.assertEqual(text.splitlines(), ["norn/receipt/v1", doc["origin"],
+                                            base64.b64encode(leaf).decode(), "9223372036854775807"])

@@ -358,6 +358,10 @@ func TestEveryTrustMemberRuleHasItsCase(t *testing.T) {
 		{"anchor-missing-member", "when `anchor` is present all three members are required"},
 		{"anchor-unknown-member", "the anchor map is closed"},
 		{"anchor-unknown-mode", "an unknown enforcement mode is not safely ignorable"},
+		{"policy-log-key-renamed", "the policy log key is compared as verifier-key text"},
+		{"log-url-bytes", "log_urls is an array of text"},
+		{"anchor-max-lag-text", "anchor.max_lag is uint seconds"},
+		{"witness-url-uint", "a present witness url is text"},
 		{"policy-log-key-mismatch", "the policy's `log` line names this network's log"},
 	} {
 		t.Run(c.suffix, func(t *testing.T) {

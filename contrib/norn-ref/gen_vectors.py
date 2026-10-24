@@ -40,7 +40,7 @@ def write(path: pathlib.Path, data: bytes | str) -> None:
 OWNED = frozenset({
     "keys.json", "entries", "log", "genesis", "state.json",
     "trust.cbor", "trust.toml", "trust.fingerprint", "trust-bad", "trust-good",
-    "receipt.note", "receipt.json", "receipt-bad", "requests", "requests-bad", "policies",
+    "receipt.note", "receipt.json", "receipt-bad", "receipt-good", "requests", "requests-bad", "policies",
     "entries-hostile", "proven", "log-empty", "log-admission", "log-cas", "log-edges", "log-order", "log-republish", "log-rules", "genesis-good",
     "receipt-rotated",
 })
@@ -175,6 +175,7 @@ def write_proven(out: pathlib.Path, final: Any, entries: list[bytes]) -> None:
     space = "U+0020 is removed from both of its ends and nothing else is."
     canonical = "every group in lowercase hexadecimal (an embedded dotted quad is written as"
     forms = [
+        ("1:2:3:4:5:6:7::/128", ["1:2:3:4:5:6:7:0/128"], "at most one `::`"),
         ("9.0.0.0/8, 1::/16", ["1::/16", "9.0.0.0/8"], "duplicates removed, sorted as text"),
         ("1:2:3:4:5:6:7::8/128", [], "address as RFC 4291 §2.2 writes it: groups of one to four hexadecimal digits in"),
         ("1:0:0:2:3:0:0:4/128", ["1::2:3:0:0:4/128"], "IPv6 address in RFC 5952 form with"),
@@ -423,6 +424,10 @@ def write_trust_rejections(out: pathlib.Path) -> None:
     mode = {"section": "9.1", "says": "`mode` MUST be"}
     size = {"section": "9.1", "says": "MAX_TRUST_BYTES"}
     trust_rules = {
+        "56-policy-log-key-renamed": {"section": "9.1", "says": "as verifier-key text"},
+        "57-log-url-bytes": {"section": "9.1", "says": "array of text"},
+        "58-anchor-max-lag-text": {"section": "9.1", "says": "`max_lag` is **uint seconds**"},
+        "59-witness-url-uint": {"section": "9.1", "says": "`url`, when present, is text"},
         "55-log-key-small-order": {"section": "3.1", "says": "enrollment request (§16), and a trust file's `log_key` and `witnesses` (§9)."},
         "54-witness-name-not-ascii": {"section": "9.1", "says": "A witness or group name follows §7's key-name grammar"},
         "52-name-one-past-the-cap": name,
@@ -778,6 +783,20 @@ def write_trust(out: pathlib.Path) -> None:
         "text_sha256": __import__("hashlib").sha256(text.encode()).digest(),
     }) + "\n")
 
+    # The inclusive bound needs an accepted file too: every above-bound
+    # negative also passes a reader whose bound is a second too strict.
+    name = "deadline-at-the-cap"
+    capped_text = note.receipt_text(doc["origin"], genesis_leaf, (1 << 63) - 1)
+    write(out / "receipt-good" / (name + ".note"),
+          note.sign(capped_text, doc["origin"], fixture.KEYS["logkey"]))
+    says = "at most 2⁶³−1"
+    write(out / "receipt-good" / "cases.json", canonjson.dumps({
+        "cases": [{"name": name, "file": name + ".note", "leaf_hash": genesis_leaf,
+                   "now": 0, "says": says}],
+        "codes": {name: "accept"},
+        "rules": {name: {"section": "7", "says": says}},
+    }) + "\n")
+
     # Cold gate run 11, D4. §7 showed the deadline as a bare <uint> with no
     # canonicality rule and no vector, while §6 is emphatic that the
     # checkpoint's size line has exactly one spelling -- so `ReceiptDeadlineLax`
@@ -997,6 +1016,9 @@ def write_policies(out: pathlib.Path) -> None:
         cases.append(case)
     grammar = {"section": "9.1", "says": "The rest of the grammar, stated because"}
     policy_rules = {name: dict(grammar) for name, _, _, _ in inputs}
+    policy_rules["all-members"] = {"section": "9.1", "says": "`all` is `n`"}
+    policy_rules["bad-log-vkey-algorithm-distinct"] = {
+        "section": "9.1", "says": "A `log` vkey MUST use algorithm `0x01`"}
     for name in ("trailing-space", "trailing-tab"):
         policy_rules[name] = dict(TRAILING_WHITESPACE)
     for name in ("bad-witness-name-not-ascii", "bad-group-name-plus",

@@ -99,3 +99,10 @@ replayed-policy/cases.json#unhandled expected="handled" got="UNKNOWN CASE FORMAT
 # `halfsigned`; nor `fork/cases.json`'s new `rotated_key`; and `grown-log/`
 # stays unhandled above, so its three new full-file cases are unread. Its pass
 # count is no evidence for those six.
+
+# Row G7, build P1 (2026-10-24): run 18's `receipt-good/`, one receipt at the
+# inclusive deadline 2⁶³−1, a manifest shape this build never saw (as
+# `unreached-witness/` above); its receipt reader accepts the cap and refuses
+# a wrong leaf as `entry`. It answers the four new `trust-bad/` anchors, the two
+# new policies with `all-members`' rows and the seven-group grant as written.
+receipt-good/cases.json#unhandled expected="handled" got="UNKNOWN CASE FORMAT"

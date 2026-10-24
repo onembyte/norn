@@ -88,7 +88,7 @@ def validate(doc: dict[str, Any]) -> None:
         raise TrustError(f"missing fields: {missing}")
     if set(doc) - set(REQUIRED) - set(OPTIONAL):
         raise TrustError("unknown fields")
-    if doc["version"] != VERSION:
+    if type(doc["version"]) is not int or doc["version"] != VERSION:
         raise TrustError(f"unsupported version: {doc['version']}")
     if not isinstance(doc["net"], bytes) or len(doc["net"]) != 16:
         raise TrustError("net must be 16 bytes")
@@ -98,6 +98,8 @@ def validate(doc: dict[str, Any]) -> None:
         raise TrustError("genesis_hash must be 32 bytes")
     if not isinstance(doc["name"], str) or not 1 <= len(doc["name"].encode()) <= 64:
         raise TrustError("name must be 1-64 bytes")
+    if not isinstance(doc["log_key"], str):
+        raise TrustError("log_key must be text")
     try:
         log_key = note.parse_vkey(doc["log_key"])
     except note.NoteError as exc:
@@ -116,14 +118,18 @@ def validate(doc: dict[str, Any]) -> None:
     # can use (c2sp.org/tlog-cosignature).
     if log_key.alg != note.ALG_ED25519:
         raise TrustError("log_key is a cosignature key; the log signs checkpoints")
-    if not doc["log_urls"] or not all(isinstance(u, str) and u for u in doc["log_urls"]):
+    if (not isinstance(doc["log_urls"], list) or not doc["log_urls"]
+            or not all(isinstance(u, str) and u for u in doc["log_urls"])):
         raise TrustError("log_urls must be a non-empty list of strings")
-    if not doc["witnesses"]:
+    if not isinstance(doc["witnesses"], list) or not doc["witnesses"]:
         raise TrustError("at least one witness is required")
     seen: set[str] = set()
     for witness in doc["witnesses"]:
-        if set(witness) - {"name", "key", "url"} or "name" not in witness or "key" not in witness:
+        if (not isinstance(witness, dict) or set(witness) - {"name", "key", "url"}
+                or "name" not in witness or "key" not in witness):
             raise TrustError("each witness needs a name and a key")
+        if not all(isinstance(value, str) for value in witness.values()):
+            raise TrustError("witness fields must be text")
         try:
             witness_key = note.parse_vkey(witness["key"])
             if witness_key.alg != note.ALG_COSIGNATURE:
@@ -166,7 +172,8 @@ def validate(doc: dict[str, Any]) -> None:
             raise TrustError("anchor needs exactly type, max_lag and mode")
         if not isinstance(anchor["type"], str):
             raise TrustError("anchor.type must be text")
-        if isinstance(anchor["max_lag"], bool) or not isinstance(anchor["max_lag"], int):
+        if (type(anchor["max_lag"]) is not int
+                or not 0 <= anchor["max_lag"] <= (1 << 63) - 1):
             raise TrustError("anchor.max_lag must be a uint of seconds")
         # An unknown `type` is ignorable -- anchoring is advisory (D-009) -- but
         # an unknown `mode` is not: guessing what an unrecognised enforcement

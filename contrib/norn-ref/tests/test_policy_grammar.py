@@ -34,6 +34,35 @@ class LinesMayFollowQuorumButNamesKeepTheirMeaning(unittest.TestCase):
         self.assertEqual((root / f"{name}.txt").read_bytes(), text.encode())
         return text, shipped.get("evaluate", [])
 
+    def test_all_members_parses_with_both_singletons_refused_in_the_table(self):
+        text, evaluations = self._vector("all-members", True, "`all` is `n`")
+        policy.parse(text)
+        self.assertIn("group home all pi vps\nquorum home\n", text)
+        # Grammar and the stated evaluation rows only: this reference has no evaluator.
+        self.assertEqual([(e["cosigners"], e["satisfied"]) for e in evaluations],
+                         [(["pi"], False), (["vps"], False), (["pi", "vps"], True)])
+        self.assertTrue(all(e["why"] for e in evaluations))
+
+    def test_a_distinct_log_key_fails_only_its_algorithm(self):
+        text, _ = self._vector("bad-log-vkey-algorithm-distinct", False,
+                               "A `log` vkey MUST use algorithm `0x01`")
+        with self.assertRaises(policy.PolicyError):
+            policy.parse(text)
+        keys = []
+        for line in text.splitlines():
+            fields = line.split()
+            if fields[0] == "log":
+                old = fields[1]
+                key = note.parse_vkey(old)
+                self.assertEqual(key.alg, note.ALG_COSIGNATURE)
+                repaired = text.replace(old, note.vkey(key.name, key.public), 1)
+                keys.append(key.public)
+            elif fields[0] == "witness":
+                keys.append(note.parse_vkey(fields[2]).public)
+        self.assertGreaterEqual(len(keys), 2)
+        self.assertEqual(len(keys), len(set(keys)))
+        policy.parse(repaired)
+
     def test_a_final_comment_needs_a_line_feed(self):
         text, _ = self._vector(
             "bad-final-comment-no-lf", False,

@@ -1387,6 +1387,11 @@ def policy_grammar() -> list[tuple[str, str, bool, str]]:
     bad_witness_id = _witness_vkey_with_wrong_id("pi")
 
     return [
+        ("all-members", f"{pi}\n{vps}\ngroup home all pi vps\nquorum home\n", True,
+         "all is n"),
+        ("bad-log-vkey-algorithm-distinct",
+         f"log {note.vkey(ORIGIN, KEYS['logkey'].public, note.ALG_COSIGNATURE)}\n{pi}\nquorum pi\n",
+         False, "log verifier key must use algorithm 0x01"),
         ("bad-witness-name-not-ascii",
          f"witness zürich {witness_vkey('pi')}\nquorum zürich\n", False,
          "a witness or group name follows the key-name grammar"),
@@ -1620,6 +1625,11 @@ def policy_evaluations() -> dict[str, list[dict[str, Any]]]:
     suite took a policy and a set of cosigners and asked for a verdict.
     """
     return {
+        "all-members": [
+            {"cosigners": ["pi"], "satisfied": False, "why": "all requires vps as well as pi"},
+            {"cosigners": ["vps"], "satisfied": False, "why": "all requires pi as well as vps"},
+            {"cosigners": ["pi", "vps"], "satisfied": True, "why": "both members of all cosigned"},
+        ],
         "directive-after-quorum": [
             {"cosigners": [], "satisfied": False, "why": "nobody cosigned"},
             {"cosigners": ["pi"], "satisfied": True,
@@ -1671,7 +1681,19 @@ def trust_rejections() -> list[tuple[str, dict[str, Any]]]:
     reuse = note.vkey("different-name", KEYS["logkey"].public, note.ALG_COSIGNATURE)
     reused_log = dict(base, witnesses=[{"name":"w", "key":reuse}],
                       policy=f"witness w {reuse}\nquorum w\n")
-    return [("55-log-key-small-order", damaged(
+    return [
+        # The policy log key keeps its public key and algorithm; only its
+        # verifier name and the id derived from that name change (run 18, L7).
+        ("56-policy-log-key-renamed", damaged(
+            policy=base["policy"].replace(base["log_key"],
+                note.vkey("renamed/log", KEYS["logkey"].public), 1))),
+        ("57-log-url-bytes", damaged(log_urls=[base["log_urls"][0].encode()]
+                                    + base["log_urls"][1:])),
+        ("58-anchor-max-lag-text", damaged(anchor=dict(base["anchor"], max_lag="86400"))),
+        ("59-witness-url-uint", damaged(
+            witnesses=[dict(base["witnesses"][0], url=1)]
+            + [dict(w) for w in base["witnesses"][1:]])),
+        ("55-log-key-small-order", damaged(
             log_key=note.vkey(ORIGIN, ORDER_EIGHT),
             # With no policy log line, only trust-level point admission can
             # refuse the key; note.vkey recomputes its id under the origin.

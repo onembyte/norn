@@ -65,6 +65,52 @@ func TestEveryPolicyGrammarCaseIsDecidedTheSameWay(t *testing.T) {
 			t.Fatalf("algorithm repair: %v", err)
 		}
 	})
+	t.Run("distinct log algorithm", func(t *testing.T) {
+		text := policyText(t, "bad-log-vkey-algorithm-distinct")
+		if _, err := Parse(text); err == nil {
+			t.Fatal("cosignature log key accepted")
+		}
+		var logKey string
+		seen := map[string]bool{}
+		for _, line := range strings.Split(text, "\n") {
+			fields := strings.Fields(line)
+			if len(fields) == 0 {
+				continue
+			}
+			at := 1
+			if fields[0] == "witness" {
+				at = 2
+			} else if fields[0] != "log" {
+				continue
+			}
+			key, err := note.ParseVerifierKey(fields[at])
+			if err != nil {
+				t.Fatal(err)
+			}
+			if seen[string(key.Public)] {
+				t.Fatal("a duplicate public key masks the algorithm fault")
+			}
+			seen[string(key.Public)] = true
+			if fields[0] == "log" {
+				if key.Alg != note.AlgCosignature {
+					t.Fatal("log key is not algorithm 0x04")
+				}
+				logKey = fields[at]
+			}
+		}
+		if logKey == "" || len(seen) < 2 {
+			t.Fatal("distinct log and witness keys are required")
+		}
+		key, err := note.ParseVerifierKey(logKey)
+		if err != nil {
+			t.Fatal(err)
+		}
+		repaired := strings.Replace(text, logKey, note.VerifierKey(key.Name, key.Public), 1)
+		if _, err := Parse(repaired); err != nil {
+			t.Fatalf("algorithm repair: %v", err)
+		}
+		t.Log("algorithm-only repair accepted")
+	})
 	cases := policyCases(t)
 	var accepted, refused int
 	for _, c := range cases {
@@ -157,7 +203,20 @@ func TestEveryPolicyEvaluationCaseGetsTheStatedVerdict(t *testing.T) {
 	}
 
 	var evaluated int
+	foundAll := false
 	for _, c := range doc.Cases {
+		if c.Name == "all-members" {
+			foundAll = true
+			if !c.Accept || len(c.Evaluate) != 3 {
+				t.Fatal("all-members needs its three evaluation rows")
+			}
+			for i, want := range []string{"pi", "vps", "pi+vps"} {
+				e := c.Evaluate[i]
+				if strings.Join(e.Cosigners, "+") != want || e.Satisfied != (i == 2) || e.Why == "" {
+					t.Fatal("all-members must refuse either singleton and accept both")
+				}
+			}
+		}
 		if len(c.Evaluate) == 0 {
 			continue
 		}
@@ -166,17 +225,26 @@ func TestEveryPolicyEvaluationCaseGetsTheStatedVerdict(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		if c.Name == "all-members" && !strings.Contains(string(body), "group home all pi vps\nquorum home\n") {
+			t.Fatal("all-members does not require both pi and vps")
+		}
 		rules, err := Parse(string(body))
 		if err != nil {
 			t.Fatalf("%s must parse before it can be evaluated: %v", c.Name, err)
 		}
 		for _, e := range c.Evaluate {
 			t.Run(c.Name+"/"+strings.Join(e.Cosigners, "+"), func(t *testing.T) {
+				if c.Name == "all-members" {
+					t.Logf("cosigners %v: satisfied=%v", e.Cosigners, rules.Satisfied(e.Cosigners))
+				}
 				if got := rules.Satisfied(e.Cosigners); got != e.Satisfied {
 					t.Errorf("quorum satisfied = %v, want %v (%s)", got, e.Satisfied, e.Why)
 				}
 			})
 		}
+	}
+	if !foundAll {
+		t.Error("missing multi-member all evaluation")
 	}
 	if evaluated == 0 {
 		t.Error("no policy case carries an `evaluate` table, so the suite still only " +

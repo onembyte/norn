@@ -1370,7 +1370,7 @@ func TestEveryNegativeDeclaresTheSectionThatStatesItsRule(t *testing.T) {
 	// a `rules` map, and can never leave it.
 	for _, dir := range []string{
 		"checkpoints-bad", "proofs-bad", "served-bad", "fork",
-		"entries-hostile", "policies", "genesis", "trust-bad", "receipt-bad", "requests-bad",
+		"entries-hostile", "policies", "genesis", "trust-bad", "receipt-bad", "receipt-good", "requests-bad",
 		"served-genesis", "log-cas", "log-edges", "log-order", "log-republish", "served-large-bad", "served-empty-entry",
 		"served-rotated-wrong-name", "served-rotated-earlier", "unreached-witness", "dropped-witness", "grown-log",
 	} {
@@ -2848,7 +2848,8 @@ func TestEveryCodedManifestKeepsItsCodesInCodes(t *testing.T) {
 	for dir, known := range map[string]func(string) bool{
 		"checkpoints-bad": inRefusal, "served-bad": inRefusal,
 		"proofs-bad": inRefusal, "fork": inEvidence,
-		"receipt-bad": func(c string) bool { return receiptpkg.Known(receiptpkg.Code(c)) },
+		"receipt-bad":  func(c string) bool { return receiptpkg.Known(receiptpkg.Code(c)) },
+		"receipt-good": func(c string) bool { return c == "accept" },
 	} {
 		t.Run(dir, func(t *testing.T) {
 			var manifest struct {
