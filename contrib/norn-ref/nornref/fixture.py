@@ -2917,6 +2917,11 @@ def edges_log() -> list[LogItem]:
     wrong = note.vkey("edge-witness", KEYS["spare"].public)
     b.add("11-policy-witness-note-key", b.build("policy", {"text": f"witness w {wrong}\nquorum w\n"}, [("root1", "root"), ("root2", "root")]), "decode")
     b.add("12-note-after-refusals", b.build("note", {"text": "replay continues"}, signer))
+    # A distinct valid key leaves only the log-role algorithm to refuse the policy.
+    wrong = note.vkey("edge-log", KEYS["spare"].public, note.ALG_COSIGNATURE)
+    text = f"log {wrong}\nwitness pi {witness_vkey('pi')}\nquorum pi\n"
+    b.add("13-policy-log-cosignature-key", b.build("policy", {"text": text},
+          [("root1", "root"), ("root2", "root")]), "decode")
     return b.items
 
 
@@ -2969,6 +2974,24 @@ def order_log() -> list[LogItem]:
     identity = note.vkey("order-log", b"\x01" + bytes(31))
     add("policy-log-identity", "policy", {"text": f"log {identity}\nquorum none\n"},
         roots, "decode")
+    # These sibling types have their own body checks. Each stale predecessor
+    # survives repairing the body, and each malformed body survives repairing prev.
+    add("signer-add-body-before-prev", "signer_add", {"pk": KEYS["signer3"].public[:31]},
+        roots, "decode", prev=5)
+    add("root-add-body-before-prev", "root_add", {"pk": KEYS["spare"].public[:31]},
+        roots, "decode", prev=5)
+    add("signer-remove-body-before-prev", "signer_remove", {"kid": "not-a-kid"},
+        roots, "decode", prev=7)
+    add("root-remove-body-before-prev", "root_remove", {"kid": "not-a-kid"},
+        roots, "decode", prev=7)
+    add("signer-thr-body-before-prev", "signer_thr", {"thr": True},
+        roots, "decode", prev=9)
+    add("root-thr-body-before-prev", "root_thr", {"thr": True},
+        roots, "decode", prev=9)
+    add("log-key-fields-before-prev", "log_key", {"pk": KEYS["logkey2"].public[:31], "overlap": 60},
+        roots, "decode", prev=4)
+    add("root-remove-prev-before-unknown-key", "root_remove", {"kid": KEYS["spare"].id},
+        roots, "stale-state", prev=7)
     return b.items
 
 

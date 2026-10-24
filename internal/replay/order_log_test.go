@@ -28,11 +28,19 @@ func TestEveryOrderCaseMatchesAndExposesOnlyItsNamedFaults(t *testing.T) {
 		"13-signer-thr-prev-before-bad-thr":        {ReasonStaleState, ReasonBadThr},
 		"14-log-key-prev-before-dup-key":           {ReasonStaleState, ReasonDupKey},
 		"15-policy-log-identity":                   {ReasonDecode, ""},
+		"16-signer-add-body-before-prev":           {ReasonDecode, ReasonStaleState},
+		"17-root-add-body-before-prev":             {ReasonDecode, ReasonStaleState},
+		"18-signer-remove-body-before-prev":        {ReasonDecode, ReasonStaleState},
+		"19-root-remove-body-before-prev":          {ReasonDecode, ReasonStaleState},
+		"20-signer-thr-body-before-prev":           {ReasonDecode, ReasonStaleState},
+		"21-root-thr-body-before-prev":             {ReasonDecode, ReasonStaleState},
+		"22-log-key-fields-before-prev":            {ReasonDecode, ReasonStaleState},
+		"23-root-remove-prev-before-unknown-key":   {ReasonStaleState, ReasonUnknownKey},
 	}
 	dir := vectorRoot() + "/log-order"
 	anchor, raw, m := loadCase(t, dir)
-	if len(raw) != 16 {
-		t.Fatalf("got %d entries, want 16", len(raw))
+	if len(raw) != 24 {
+		t.Fatalf("got %d entries, want 24", len(raw))
 	}
 	final := Replay(anchor, raw)
 	want, err := os.ReadFile(dir + "/state.json")
@@ -103,7 +111,19 @@ func TestEveryOrderCaseMatchesAndExposesOnlyItsNamedFaults(t *testing.T) {
 				case ReasonNoDeviceSig:
 					sign(e, "nas", "device")
 				case ReasonDecode:
-					if e.T == "params" {
+					if e.T == "signer_add" {
+						e.Body["pk"] = publicOf(t, "signer3")
+					} else if e.T == "root_add" {
+						e.Body["pk"] = publicOf(t, "spare")
+					} else if e.T == "signer_remove" {
+						e.Body["kid"] = entry.Kid(publicOf(t, "signer1"))
+					} else if e.T == "root_remove" {
+						e.Body["kid"] = entry.Kid(publicOf(t, "root3"))
+					} else if e.T == "signer_thr" || e.T == "root_thr" {
+						e.Body["thr"] = uint64(1)
+					} else if e.T == "log_key" {
+						e.Body["pk"] = publicOf(t, "logkey2")
+					} else if e.T == "params" {
 						e.Body = map[string]any{"mmd": uint64(46)}
 					} else if it.Name == "15-policy-log-identity" {
 						e.Body["text"] = "log " + note.VerifierKey("norn-log", publicOf(t, "logkey")) + "\nquorum none\n"
@@ -136,7 +156,11 @@ func TestEveryOrderCaseMatchesAndExposesOnlyItsNamedFaults(t *testing.T) {
 						e.Body["pk"] = publicOf(t, "logkey2")
 					}
 				case ReasonUnknownKey:
-					e.Body["kid"] = entry.Kid(publicOf(t, "signer1"))
+					key := "signer1"
+					if e.T == "root_remove" {
+						key = "root3"
+					}
+					e.Body["kid"] = entry.Kid(publicOf(t, key))
 				case ReasonBadThr:
 					e.Body["thr"] = uint64(1)
 				default:
@@ -163,6 +187,7 @@ func TestEveryOrderCaseMatchesAndExposesOnlyItsNamedFaults(t *testing.T) {
 				if got := lastOutcome(result, it.Index); got != want {
 					t.Fatalf("repair: got %q, want %q", got, want)
 				}
+				t.Logf("repair outcome = %q", want)
 				if want != "" {
 					result.Size, result.Rejected = before.Size, before.Rejected
 					got, err := result.MarshalCanonical()

@@ -45,14 +45,15 @@ class D080Vectors(unittest.TestCase):
         folder = ROOT / "log-rules"
         self.assertTrue((folder / f"{name}.cbor").is_file(), f"missing log-rules/{name}.cbor")
         manifest = json.loads((folder / "manifest.json").read_text())
-        self.assertEqual(manifest["entries"][-2]["name"], "25-enroll-without-expires")
-        self.assertEqual(manifest["entries"][-1], {"index": 26, "name": name, "reason": ""})
+        self.assertEqual(len(manifest["entries"]), 29)
+        self.assertEqual(manifest["entries"][25]["name"], "25-enroll-without-expires")
+        self.assertEqual(manifest["entries"][26], {"index": 26, "name": name, "reason": ""})
         self.rule(manifest["rules"][name], TRAILING)
         a = manifest["anchor"]
         anchor = replay.Anchor(bytes.fromhex(a["net"]), bytes.fromhex(a["genesis_hash"]), a["log_key"], a["policy"])
         raw = [(folder / (c["name"] + ".cbor")).read_bytes() for c in manifest["entries"]]
-        env = cbor.decode(raw[-1])
-        before = replay.replay(anchor, raw[:-1])
+        env = cbor.decode(raw[26])
+        before = replay.replay(anchor, raw[:26])
         self.assertEqual(env["t"], "policy")
         self.assertEqual(env["prev"], before.versions["policy"])
         self.assertEqual(len(env["sigs"]), before.root_thr)

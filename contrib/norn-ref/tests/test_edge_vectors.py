@@ -30,6 +30,38 @@ def request_case(name):
 
 
 class ReplayEdges(unittest.TestCase):
+    def test_the_policy_log_algorithm_repairs_without_changing_its_key(self):
+        directory = ROOT / "log-edges"
+        manifest, raw, state = replay_case(directory)
+        self.assertEqual(len(raw), 14)
+        name = "13-policy-log-cosignature-key"
+        self.assertEqual(manifest["entries"][13], {"index": 13, "name": name, "reason": "decode"})
+        self.assertEqual(manifest["codes"][name], "decode")
+        self.assertEqual((directory / (name + ".reason")).read_text(), "decode\n")
+        env = cbor.decode(raw[13])
+        text = env["body"]["text"]
+        keys_in_text = [note.parse_vkey(fields[1] if fields[0] == "log" else fields[2])
+                        for line in text.splitlines() if (fields := line.split())[0] in ("log", "witness")]
+        self.assertGreaterEqual(len(keys_in_text), 2)
+        self.assertEqual(len(keys_in_text), len({key.public for key in keys_in_text}))
+        self.assertTrue(all(keys.valid_point(key.public) for key in keys_in_text))
+        old = next(line.split()[1] for line in text.splitlines() if line.startswith("log "))
+        key = note.parse_vkey(old)
+        self.assertEqual(key.alg, note.ALG_COSIGNATURE)
+        with self.assertRaises(policy.PolicyError):
+            policy.parse(text)
+        env["body"]["text"] = text.replace(old, note.vkey(key.name, key.public), 1)
+        policy.parse(env["body"]["text"])
+        env["sigs"] = []
+        fixture._signed(env, [("root1", "root"), ("root2", "root")])
+        a = manifest["anchor"]
+        anchor = replay.Anchor(bytes.fromhex(a["net"]), bytes.fromhex(a["genesis_hash"]), a["log_key"], a["policy"])
+        before = replay.replay(anchor, raw[:13])
+        self.assertEqual(env["prev"], before.versions["policy"])
+        repaired = replay.replay(anchor, raw[:13] + [entry.encode(env)])
+        self.assertEqual(repaired.rejected, before.rejected)
+        self.assertEqual(repaired.policy, env["body"]["text"])
+
     def test_admission_log_matches_its_manifest_and_state_byte_for_byte(self):
         directory = ROOT / "log-admission"
         manifest, raw, state = replay_case(directory)

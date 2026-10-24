@@ -557,6 +557,7 @@ def write_edges_log(out: pathlib.Path) -> None:
         "08-revoke-unknown-open-body": {"section": "5.1", "says": "body well-formed and closed"},
         "10-enroll-request-identity": {"section": "3.1", "says": "MUST be a valid point wherever a key is admitted"},
         "11-policy-witness-note-key": {"section": "9.1", "says": "a `witness` vkey MUST use algorithm `0x04`"},
+        "13-policy-log-cosignature-key": {"section": "9.1", "says": "A `log` vkey MUST use algorithm `0x01`"},
     }
     for it in items:
         write(out / "log-edges" / (it.name + ".cbor"), it.raw)
@@ -589,6 +590,14 @@ def write_order_log(out: pathlib.Path) -> None:
         "13-signer-thr-prev-before-bad-thr": ("5.1", "(`stale-state`) · `1 ≤ thr ≤ len(set)` (`bad-thr`)"),
         "14-log-key-prev-before-dup-key": ("5.1", "`prev` is `versions.log_key` (`stale-state`) · `pk` is not the public key of any witness"),
         "15-policy-log-identity": ("3.1", "every verifier key a `policy` entry's text carries (§5)"),
+        "16-signer-add-body-before-prev": ("5.1", "body well-formed and closed (`decode`) · `prev`"),
+        "17-root-add-body-before-prev": ("5.1", "body well-formed and closed (`decode`) · `prev`"),
+        "18-signer-remove-body-before-prev": ("5.1", "body well-formed and closed (`decode`) · `prev`"),
+        "19-root-remove-body-before-prev": ("5.1", "body well-formed and closed (`decode`) · `prev`"),
+        "20-signer-thr-body-before-prev": ("5.1", "body well-formed and closed (`decode`) · `prev`"),
+        "21-root-thr-body-before-prev": ("5.1", "body well-formed and closed (`decode`) · `prev`"),
+        "22-log-key-fields-before-prev": ("5.1", "`pk` 32 bytes, `overlap` a uint (`decode`) · `prev`"),
+        "23-root-remove-prev-before-unknown-key": ("5.1", "`prev` is `versions.roots` (`stale-state`) · `kid` is a root (`unknown-key`)"),
     }
     items = fixture.order_log()
     raw = [it.raw for it in items]
@@ -639,6 +648,13 @@ def write_rules_log(out: pathlib.Path) -> None:
     b.add("25-enroll-without-expires", repaired)
     text = "".join(line + " \n" for line in fixture.policy_text().splitlines())
     b.add("26-policy-trailing-space", b.build("policy", {"text": text}, roots))
+    b.add("27-params-by-signers", b.build("params", {"mmd": 46},
+          signer + [("signer2", "signer")]), "threshold")
+    request = fixture._request("consent-probe", "spare", "spare", 20_000)
+    # The envelope consent is genuine; only the embedded request is forged.
+    request["sig"] = bytes(64)
+    b.add("28-enroll-envelope-device-sig", b.build("enroll", {"request": cbor.encode(request)},
+          signer + [("spare", "device")]), "no-device-sig")
     items = b.items
     raw = [it.raw for it in items]
     anchor = fixture.anchor_for(raw)
@@ -670,6 +686,8 @@ def write_rules_log(out: pathlib.Path) -> None:
         ("16.1", "requested expiry, unix seconds; MUST be > `ts`"),
         ("16.1", "| `expires` | uint | |"),
         (TRAILING_WHITESPACE["section"], TRAILING_WHITESPACE["says"]),
+        ("5.1", "`root` signatures → reject (`threshold`)"),
+        ("5.1", "the request's signature verifies under its **own** `device_pk` (`no-device-sig`)"),
     ]
     for it in items:
         write(out / "log-rules" / (it.name + ".cbor"), it.raw)

@@ -17,9 +17,10 @@ NAMES = ["00-genesis", "01-enroll-nas", "02-enroll-laptop",
          "18-root-remove-known", "19-root-restore-known",
          "20-note-uppercase-kid", "21-note-without-surplus-kid",
          "22-enroll-by-roots", "23-enroll-with-signer",
-         "24-enroll-expires-zero", "25-enroll-without-expires", "26-policy-trailing-space"]
+         "24-enroll-expires-zero", "25-enroll-without-expires", "26-policy-trailing-space",
+         "27-params-by-signers", "28-enroll-envelope-device-sig"]
 CODES = ["", "", "", "threshold", "", "stale-state", "", "decode", "", "", "", "",
-         "decode", "dup-entry", "", "unknown-key", "root-invariant", "", "", "", "decode", "", "threshold", "", "decode", "", ""]
+         "decode", "dup-entry", "", "unknown-key", "root-invariant", "", "", "", "decode", "", "threshold", "", "decode", "", "", "threshold", "no-device-sig"]
 
 
 class RuleVectors(unittest.TestCase):
@@ -128,6 +129,22 @@ class RuleVectors(unittest.TestCase):
                     entry.sign(env, fixture.KEYS["signer1"], "signer")
                     self.assertEqual(entry.encode(env), raw[25])
                     check(raw[:i], raw[25])
+                elif i in (27, 28):
+                    self.assertGreaterEqual(len(replay._valid_kids(env, "signer", before.signers)), before.signer_thr)
+                    if i == 27:
+                        self.assertEqual(len(env["sigs"]), 2)
+                        self.assertEqual({sig["role"] for sig in env["sigs"]}, {"signer"})
+                        self.assertEqual(replay._valid_kids(env, "root", before.roots), set())
+                        fixture._signed(env, [("root1", "root"), ("root2", "root")])
+                    else:
+                        req = enrollreq.decode(env["body"]["request"])
+                        self.assertFalse(enrollreq.verify(req))
+                        self.assertTrue(replay._device_signed(env, req["device_pk"]))
+                        enrollreq.sign(req, fixture.KEYS["spare"])
+                        env["body"]["request"] = cbor.encode(req)
+                        env["sigs"] = []
+                        fixture._signed(env, [("spare", "device"), ("signer1", "signer")])
+                    check(raw[:i], entry.encode(env))
                 else:
                     self.fail("refusal has no repair")
         self.assertEqual((final.to_json() + "\n").encode(), (ROOT / "state.json").read_bytes())

@@ -29,7 +29,7 @@ func TestARootSignedPolicyWithTrailingSpacesApplies(t *testing.T) {
 		t.Fatal(err)
 	}
 	anchor, inputs, manifest := loadCase(t, dir)
-	if len(inputs) != 27 || manifest.Entries[25].Name != "25-enroll-without-expires" || manifest.Entries[26].Name != name || manifest.Entries[26].Reason != "" {
+	if len(inputs) != 29 || manifest.Entries[25].Name != "25-enroll-without-expires" || manifest.Entries[26].Name != name || manifest.Entries[26].Reason != "" {
 		t.Fatal("case must follow entry 25 and apply")
 	}
 	before := Replay(anchor, inputs[:26])

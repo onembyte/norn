@@ -19,7 +19,11 @@ def load_log(directory):
 def check_edge_log(self):
     directory = ROOT / 'log-edges'
     manifest, anchor, raw = load_log(directory)
-    self.assertEqual(len(raw), 13)
+    self.assertEqual(len(raw), 14)
+    self.assertEqual({it['name']: it['reason'] for it in manifest['entries'] if it['reason']}, {
+        name: 'decode' for name in ('01-enroll-device-id-newline', '07-rotate-unknown-open-body',
+                                   '08-revoke-unknown-open-body', '10-enroll-request-identity',
+                                   '11-policy-witness-note-key', '13-policy-log-cosignature-key')})
     state = replay.replay(anchor, raw)
     self.assertEqual(state.to_json() + '\n', (directory / 'state.json').read_text())
     self.assertEqual(state.rejected, [{'index': it['index'], 'reason': it['reason']}
@@ -52,6 +56,18 @@ def check_edge_log(self):
                 outcome = replay.replay(anchor, raw[:i] + [entry.encode(env)])
                 self.assertEqual(outcome.rejected[-1], {'index': i, 'reason': 'unknown-device'})
                 env['body']['device_id'] = 'nas2'
+            elif it['name'] == '13-policy-log-cosignature-key':
+                text = env['body']['text']
+                old = next(line.split()[1] for line in text.splitlines() if line.startswith('log '))
+                key = note.parse_vkey(old)
+                self.assertEqual(key.alg, note.ALG_COSIGNATURE)
+                with self.assertRaises(policy.PolicyError):
+                    policy.parse(text)
+                env['body']['text'] = text.replace(old, note.vkey(key.name, key.public), 1)
+                policy.parse(env['body']['text'])
+                before = replay.replay(anchor, raw[:i])
+                self.assertEqual(env['prev'], before.versions['policy'])
+                self.assertGreaterEqual(len(replay._valid_kids(cbor.decode(raw[i]), 'root', before.roots)), before.root_thr)
             else:
                 env['body']['text'] = 'witness w ' + note.vkey('edge-witness', f.KEYS['spare'].public, note.ALG_COSIGNATURE) + '\nquorum w\n'
             before = replay.replay(anchor, raw[:i])

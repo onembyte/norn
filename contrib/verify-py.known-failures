@@ -65,7 +65,12 @@ log-rules/23-enroll-with-signer.cbor expected="accept" got="dup-entry"
 # are `policies/trailing-space`, `trailing-tab` and `trust-good/policy-over-4096`
 # (3583 checks became 3592, all nine new ones passing). Only the state line
 # moved, with the entry.
-log-rules/state.json expected=sha256:3735bb78453f2d7154d7a57ea8c618d98908fa4b5ee9a679239c8011dde688a1 got=sha256:bd666f7b7e25c30b2d0c011e0458a150b258a993af05114159cc811f4cbb5883
+# Row G7, build P2 (2026-10-24): entries 27 (a `params` carried by signers
+# alone, `threshold`) and 28 (an `enroll` whose envelope carries the device's
+# signature and whose request's own does not verify, `no-device-sig`) are
+# answered as written, and so are `log-edges/13` and `log-order/16`-`23`;
+# only the state line moved, with the two entries.
+log-rules/state.json expected=sha256:da3e02ffbb2dc86e62a14720b0bb2eef760b11ab19b603bca8dc4e7a1955c912 got=sha256:8bb3830f3a13debc3245a0843244e1835e51f4c9d168ba6981c9d7366bdf7a1e
 
 # Row 6.5l-xiv-d, Go half (2026-10-15): `heads-run16/`, heads with reader
 # histories and a request table with the consumer's network, a manifest shape

@@ -11,14 +11,15 @@ import (
 	"github.com/onembyte/norn/internal/enrollreq"
 	"github.com/onembyte/norn/internal/entry"
 	"github.com/onembyte/norn/internal/note"
+	"github.com/onembyte/norn/internal/policy"
 )
 
 // Each negative has one defect. Its repaired request or body must replay.
 func checkEdgeLog(t *testing.T) {
 	dir := vectorRoot() + "/log-edges"
 	anchor, raw, m := loadCase(t, dir)
-	if len(raw) != 13 {
-		t.Fatalf("got %d edge entries, want 13", len(raw))
+	if len(raw) != 14 {
+		t.Fatalf("got %d edge entries, want 14", len(raw))
 	}
 	st := Replay(anchor, raw)
 	want, err := os.ReadFile(dir + "/state.json")
@@ -35,7 +36,18 @@ func checkEdgeLog(t *testing.T) {
 	if len(st.Devices["nas"].Labels) != 0 {
 		t.Error("re-enrollment kept old labels")
 	}
+	codes := map[string]string{
+		"01-enroll-device-id-newline":   ReasonDecode,
+		"07-rotate-unknown-open-body":   ReasonDecode,
+		"08-revoke-unknown-open-body":   ReasonDecode,
+		"10-enroll-request-identity":    ReasonDecode,
+		"11-policy-witness-note-key":    ReasonDecode,
+		"13-policy-log-cosignature-key": ReasonDecode,
+	}
 	for _, it := range m.Entries {
+		if it.Reason != codes[it.Name] {
+			t.Fatal("manifest differs from the stated edge answer")
+		}
 		t.Run(it.Name, func(t *testing.T) {
 			if got := lastOutcome(st, it.Index); got != it.Reason {
 				t.Fatalf("got %q, want %q", got, it.Reason)
@@ -86,6 +98,54 @@ func checkEdgeLog(t *testing.T) {
 					t.Fatalf("body repair: got %q, want unknown-device", got)
 				}
 				env.Body["device_id"] = "nas2"
+			case it.Name == "13-policy-log-cosignature-key":
+				text := env.Body["text"].(string)
+				var logKey string
+				publics := map[string]bool{}
+				for _, line := range strings.Split(text, "\n") {
+					fields := strings.Fields(line)
+					if len(fields) == 0 || (fields[0] != "log" && fields[0] != "witness") {
+						continue
+					}
+					keyText := fields[1]
+					if fields[0] == "witness" {
+						keyText = fields[2]
+					} else {
+						logKey = keyText
+					}
+					key, err := note.ParseVerifierKey(keyText)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if publics[string(key.Public)] {
+						t.Fatal("algorithm fault must not repeat a public key")
+					}
+					publics[string(key.Public)] = true
+				}
+				key, err := note.ParseVerifierKey(logKey)
+				if err != nil || key.Alg != note.AlgCosignature {
+					t.Fatal("expected a valid 0x04 log verifier")
+				}
+				if _, err := policy.Parse(text); err == nil {
+					t.Fatal("cosignature log key parsed")
+				}
+				env.Body["text"] = strings.Replace(text, logKey, note.VerifierKey(key.Name, key.Public), 1)
+				if _, err := policy.Parse(env.Body["text"].(string)); err != nil {
+					t.Fatal(err)
+				}
+				before := Replay(anchor, raw[:it.Index])
+				if env.Prev == nil || *env.Prev != before.Versions["policy"] {
+					t.Fatal("entry needs current policy prev")
+				}
+				r := &replayer{verify: realVerify}
+				// Count signatures on the original text before re-signing the repair.
+				original, err := entry.Decode(raw[it.Index])
+				if err != nil {
+					t.Fatal(err)
+				}
+				if r.countRole(before, original, "root") < before.RootThr {
+					t.Fatal("entry needs current root quorum")
+				}
 			case strings.Contains(it.Name, "witness-note-key"):
 				env.Body["text"] = "witness w " + note.CosignerVerifierKey("edge-witness", publicOf(t, "spare")) + "\nquorum w\n"
 			default:
@@ -117,6 +177,7 @@ func checkEdgeLog(t *testing.T) {
 			if got := lastOutcome(Replay(anchor, appended(t, raw[:it.Index], env)), it.Index); got != "" {
 				t.Fatalf("repaired entry rejected %q", got)
 			}
+			t.Log("repaired entry applies")
 		})
 	}
 }

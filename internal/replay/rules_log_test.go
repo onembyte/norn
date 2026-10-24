@@ -16,8 +16,8 @@ import (
 // These outcomes are the rules in §4.0, §4.3, §4.4 and §5.1, independent of
 // the manifest. The repairs retain the original content wherever possible.
 func TestEveryRuleCaseMatchesAndEachRefusalRepairs(t *testing.T) {
-	names := []string{"00-genesis", "01-enroll-nas", "02-enroll-laptop", "03-revoke-nas-by-laptop", "04-revoke-nas-by-self", "05-signer-add-without-prev", "06-signer-add-prev-zero", "07-note-without-ts", "08-note-with-ts", "09-enroll-empty-label-value", "10-policy-preannounces-log-key", "11-log-key-preannounced", "12-copy-enroll-unsorted-sigs", "13-copy-enroll-sorted-sigs", "14-root-threshold-full", "15-root-remove-unknown-before-invariant", "16-root-remove-known-at-full-threshold", "17-root-threshold-repaired", "18-root-remove-known", "19-root-restore-known", "20-note-uppercase-kid", "21-note-without-surplus-kid", "22-enroll-by-roots", "23-enroll-with-signer", "24-enroll-expires-zero", "25-enroll-without-expires", "26-policy-trailing-space"}
-	codes := []string{"", "", "", ReasonThreshold, "", ReasonStaleState, "", ReasonDecode, "", "", "", "", ReasonDecode, ReasonDupEntry, "", ReasonUnknownKey, ReasonRootInvariant, "", "", "", ReasonDecode, "", ReasonThreshold, "", ReasonDecode, "", ""}
+	names := []string{"00-genesis", "01-enroll-nas", "02-enroll-laptop", "03-revoke-nas-by-laptop", "04-revoke-nas-by-self", "05-signer-add-without-prev", "06-signer-add-prev-zero", "07-note-without-ts", "08-note-with-ts", "09-enroll-empty-label-value", "10-policy-preannounces-log-key", "11-log-key-preannounced", "12-copy-enroll-unsorted-sigs", "13-copy-enroll-sorted-sigs", "14-root-threshold-full", "15-root-remove-unknown-before-invariant", "16-root-remove-known-at-full-threshold", "17-root-threshold-repaired", "18-root-remove-known", "19-root-restore-known", "20-note-uppercase-kid", "21-note-without-surplus-kid", "22-enroll-by-roots", "23-enroll-with-signer", "24-enroll-expires-zero", "25-enroll-without-expires", "26-policy-trailing-space", "27-params-by-signers", "28-enroll-envelope-device-sig"}
+	codes := []string{"", "", "", ReasonThreshold, "", ReasonStaleState, "", ReasonDecode, "", "", "", "", ReasonDecode, ReasonDupEntry, "", ReasonUnknownKey, ReasonRootInvariant, "", "", "", ReasonDecode, "", ReasonThreshold, "", ReasonDecode, "", "", ReasonThreshold, ReasonNoDeviceSig}
 	dir := vectorRoot() + "/log-rules"
 	anchor, raw, m := loadCase(t, dir)
 	if len(raw) != len(names) {
@@ -256,6 +256,53 @@ func TestEveryRuleCaseMatchesAndEachRefusalRepairs(t *testing.T) {
 				}
 				paired(sign([]string{"signer1"}, "signer"), 25)
 				check(raw[:i], raw[25], "")
+			case 27, 28:
+				e, err := entry.Decode(raw[i])
+				if err != nil {
+					t.Fatal(err)
+				}
+				r := &replayer{verify: realVerify}
+				if r.countRole(before, e, "signer") < before.SignerThr {
+					t.Fatal("entry needs a valid current signer quorum")
+				}
+				if i == 27 {
+					if len(e.Sigs) != 2 || r.countRole(before, e, "root") != 0 {
+						t.Fatal("governance must carry only the two signer signatures")
+					}
+					for _, key := range []string{"root1", "root2"} {
+						if err := entry.Sign(e, privateKey(t, key), "root"); err != nil {
+							t.Fatal(err)
+						}
+					}
+				} else {
+					req, err := enrollreq.Decode(e.Body["request"].([]byte))
+					if err != nil {
+						t.Fatal(err)
+					}
+					if enrollreq.Verify(req) || !r.deviceSigned(e, req.DevicePK) {
+						t.Fatal("request must be broken beside valid envelope consent")
+					}
+					if err := enrollreq.Sign(req, privateKey(t, "spare")); err != nil {
+						t.Fatal(err)
+					}
+					e.Body["request"], err = enrollreq.Encode(req)
+					if err != nil {
+						t.Fatal(err)
+					}
+					e.Sigs = nil
+					if err := entry.Sign(e, privateKey(t, "spare"), "device"); err != nil {
+						t.Fatal(err)
+					}
+					if err := entry.Sign(e, privateKey(t, "signer1"), "signer"); err != nil {
+						t.Fatal(err)
+					}
+				}
+				encoded, err := entry.Encode(e)
+				if err != nil {
+					t.Fatal(err)
+				}
+				check(raw[:i], encoded, "")
+				t.Log("only the missing roots or embedded signature repaired; entry applies")
 			default:
 				t.Fatal("refusal has no repair")
 			}

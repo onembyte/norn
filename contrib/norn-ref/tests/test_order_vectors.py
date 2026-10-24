@@ -22,6 +22,14 @@ CASES = {
     "13-signer-thr-prev-before-bad-thr": ("stale-state", "bad-thr"),
     "14-log-key-prev-before-dup-key": ("stale-state", "dup-key"),
     "15-policy-log-identity": ("decode", ""),
+    "16-signer-add-body-before-prev": ("decode", "stale-state"),
+    "17-root-add-body-before-prev": ("decode", "stale-state"),
+    "18-signer-remove-body-before-prev": ("decode", "stale-state"),
+    "19-root-remove-body-before-prev": ("decode", "stale-state"),
+    "20-signer-thr-body-before-prev": ("decode", "stale-state"),
+    "21-root-thr-body-before-prev": ("decode", "stale-state"),
+    "22-log-key-fields-before-prev": ("decode", "stale-state"),
+    "23-root-remove-prev-before-unknown-key": ("stale-state", "unknown-key"),
 }
 
 
@@ -32,7 +40,7 @@ class ReplayOrderVectors(unittest.TestCase):
         anchor = replay.Anchor(bytes.fromhex(a["net"]), bytes.fromhex(a["genesis_hash"]),
                                a["log_key"], a["policy"])
         raw = [(ROOT / (e["name"] + ".cbor")).read_bytes() for e in manifest["entries"]]
-        self.assertEqual(len(raw), 16)
+        self.assertEqual(len(raw), 24)
         self.assertEqual({e["name"]: e["reason"] for e in manifest["entries"] if e["reason"]},
                          {name: codes[0] for name, codes in CASES.items()})
         final = replay.replay(anchor, raw)
@@ -66,7 +74,15 @@ class ReplayOrderVectors(unittest.TestCase):
                     elif fault == "no-device-sig":
                         entry.sign(env, fixture.KEYS["nas"], "device")
                     elif fault == "decode":
-                        if env["t"] == "params":
+                        if env["t"] in ("signer_add", "root_add", "log_key"):
+                            key = {"signer_add": "signer3", "root_add": "spare", "log_key": "logkey2"}[env["t"]]
+                            env["body"]["pk"] = fixture.KEYS[key].public
+                        elif env["t"] in ("signer_remove", "root_remove"):
+                            key = "root3" if env["t"] == "root_remove" else "signer1"
+                            env["body"]["kid"] = fixture.KEYS[key].id
+                        elif env["t"] in ("signer_thr", "root_thr"):
+                            env["body"]["thr"] = 1
+                        elif env["t"] == "params":
                             env["body"] = {"mmd": 46}
                         elif name.endswith("log-identity"):
                             env["body"]["text"] = "log " + fixture.log_vkey() + "\nquorum none\n"
@@ -87,7 +103,8 @@ class ReplayOrderVectors(unittest.TestCase):
                         else:
                             env["body"]["pk"] = fixture.KEYS["logkey2"].public
                     elif fault == "unknown-key":
-                        env["body"]["kid"] = fixture.KEYS["signer1"].id
+                        key = "root3" if env["t"] == "root_remove" else "signer1"
+                        env["body"]["kid"] = fixture.KEYS[key].id
                     elif fault == "bad-thr":
                         env["body"]["thr"] = 1
                     else:
