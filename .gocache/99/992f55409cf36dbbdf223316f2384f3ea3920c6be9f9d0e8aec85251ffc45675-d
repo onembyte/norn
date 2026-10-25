@@ -1,5 +1,0 @@
-./acceptance.go
-./mirror.go
-./acceptance_test.go
-./mirror_test.go
-./prune_test.go

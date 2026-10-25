@@ -1,5 +1,0 @@
-./client.go
-./configure.go
-./conn_unix.go
-./doc.go
-./parse.go

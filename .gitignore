@@ -18,3 +18,4 @@ build/
 # is a private key, and it was committed by accident once (4.4, scrubbed from
 # history 2026-09-22). Never again.
 /cmd/norn/norn-witness/
+/.gocache/

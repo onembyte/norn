@@ -1,7 +1,0 @@
-./config.go
-./doc.go
-./main.go
-./metrics.go
-./mono.go
-./mono_other.go
-./statedir.go
