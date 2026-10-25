@@ -883,9 +883,13 @@ plan before the first line of code, and stops at **[decision]** and **[user]**.
 | G11 | U1 survives a reboot | ⏸ the owner reboots each node when it suits him (the NAS runs other services): everything comes back with nobody touching it, and the time to fresh is measured from the journals | ⬜ |
 | G12 | The record | the site and the artifact refreshed with U1's week and run 19; the site's deploy ⏸ on the owner's yes | ⬜ |
 | G13 | Run 19's M1, checked | added 2026-10-25 after G10: §11 rule 3's formula against its own prose (a device revoked and re-enrolled with the same key after the split; a device rotated away and back to the same key), with the reader's two fork histories, on Go and the cold build; whether D-082 (3)'s new sentence opened it **Done 2026-10-25** (a throwaway probe here; Codex at its weekly limit): holds on Go; both of the reader's evidence files prove a fork at split 2, and in both histories `nas` is at version 1 with key K at the prefix and at version 3 with key K at the held head; Go keeps it, the formula's reading, so a key revoked after the split and re-enrolled comes back while frozen; no Python build has a frozen set; D-082 (3)'s key test is what allows it. Goes to G15 | ✅ |
-| G14 | Run 19's lows, sorted | as G7: each held, a vector, a sentence, or nothing; the builds red first, a control each | ⬜ |
-| G15 | Decisions and fixes for run 19 | ⏸ a DECISION block for whatever G13 shows changes what a node keeps or installs; then the fixes, red first, the full gate | ⬜ |
+| G14 | Run 19's lows, sorted | as G7: each held, a vector, a sentence, or nothing; the builds red first, a control each **Brief ready 2026-10-25, then waiting** for Codex's weekly reset (2026-10-30 15:00): `norn-lanes/BRIEF-CN.md`, a probe lane as CH was for run 18, with the reader's survivor inputs staged in `norn-lanes/out/cn/inputs/`; the decision G13 raised does not depend on it, so G15's block goes ahead | ⬜ |
+| G15 | Decisions and fixes for run 19 | ⏸ a DECISION block for whatever G13 shows changes what a node keeps or installs; then the fixes, red first, the full gate **Block written 2026-10-25, then ⏸**: "DECISION NEEDED — G15" below, the frozen set for a device changed after the split with its key back at the end; recommended A, the same version at both ends; waits on the owner's answer | ⬜ |
 | G16 | Cold gate run 20 | ⏸ on the owner's yes: a fresh seal of the commit that closes G15, run as G10 was, its prompt told where the harness keeps its own tool output (G10's audit) | ⬜ |
+
+- **G14 and G15 — run 19's lows wait for Codex; its medium goes to the owner.**
+  - **G14.** Sorting nineteen lows is the work lane CH did for run 18, and Codex is at its weekly limit until 2026-10-30 15:00. The brief (`norn-lanes/BRIEF-CN.md`) and the reader's 33 survivor inputs (`norn-lanes/out/cn/inputs/`) are ready, and the lane starts after the reset. Nothing in G15's question depends on it.
+  - **G15.** The block "DECISION NEEDED — G15" below the tables: whether the frozen set keeps a device whose record changed after the split when its key is back at the end. Recommended A, the same version at both ends; B and C are written out. It also says plainly that G8's recommendation 3-A, which the owner accepted, wrote down a key test that misses this case. One PushNotification.
 
 - **G13 — run 19's M1 holds on Go: the frozen set keeps a device whose record changed after the split if its key ended the same.**
   - **How.** Codex is at its weekly limit (next reset 2026-10-30), and the check is one call, so it ran here: a throwaway probe (`norn-lanes/out/g13/zz_probe_g13_m1_test.go`, kept out of the commit) reads each of the reader's two histories (`sealed-run19/work/survivors/frozen.prose-reading/` and `frozen.rotate-away-and-back/`: four entries from the fixture's genesis, a conflicting entry at index 2, signed and cosigned heads, version-2 evidence), checks the evidence with `forkevidence.Check` under `trust.cbor`, and calls the real `frozenSet` with the split at 2.
@@ -4085,6 +4089,23 @@ code does not have.
 ---
 
 ---
+
+## DECISION NEEDED — G15: after a fork, a device whose record changed after the split but whose key ended the same (cold gate run 19's M1; written 2026-10-25)
+
+**The question.** §11 rule 3, as D-082 (3) wrote it on 2026-10-24, keeps in the frozen set each device proven at the common prefix and at the held head "with its `wg_pk` and the routes its enrollment granted as of the common prefix, and only while its `wg_pk` at the held head is that same key". Run 19 found two histories on a node's own branch where that test and the rule's own prose part (G13, on Go):
+- `nas` is revoked after the split and then re-enrolled with the same key;
+- `nas` is rotated after the split to K2, then back to K.
+
+Either way `nas` is active at the prefix at version 1 with K and active at the held head at version 3 with K. The key test keeps it, and so does Go. The prose says "whatever this node's branch revoked after it stays out" and "whatever either branch added after the split is removed", and removes it.
+
+**Why it matters.** After a proven fork, nothing the log wrote after the split can be trusted, on either branch. If `nas` was revoked after the split because K leaked, and the log then re-enrolled it with K, a node that keeps it reinstalls the leaked key for as long as it stays frozen, which lasts until an operator installs a new trust file. My G8 recommendation, 3-A, which you accepted, put Go's key test into the text. It covered a key that changed after the split and missed one that changes and comes back.
+
+**Options.**
+- **A (recommended).** Keep a device only when no entry changed it after the split: the same record, by version, at the common prefix and at the held head, which implies the same key and routes. Any revocation, re-enrollment or rotation after the split removes the device while the node is frozen. In SPEC, D-082 (3)'s key test in §11 rule 3 becomes the version test. In Go, `frozenSet` compares the device's version at the two ends, red first, with Go tests built from the reader's two histories; the frozen set has no static vector. This changes what a node keeps only in these two cases: today, a rotation to a different key already removes the device.
+- **B.** Keep D-082 (3)'s key test and rewrite the prose to match it, so a key revoked after the split and brought back is kept. No code changes. Not recommended, for the reason above.
+- **C.** Keep a device whose key is the same at both ends, unless a revocation of it lies after the split. This closes the revoke case and leaves rotate-and-back. It is narrower than A, adds a rule, and gains nothing a frozen node needs.
+
+**What the loop does with your answer.** A: G15's fixes (the §11 sentence, Go's `frozenSet` and its tests, the D-082 guard, D-083 recording the change), red first, then cold run 20 at G16 on your yes. B: the §11 prose only. Answer "A", "B", "C" or anything else.
 
 ## DECISION TAKEN — G8: run 18's four readings that change what a node accepts, installs or answers (written and answered 2026-10-24, recorded as D-082)
 
