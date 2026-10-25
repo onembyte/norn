@@ -192,7 +192,21 @@ Every `T_g` (30 seconds by default) a node pulls `/norn/checkpoint` from up
 to `r = 3` random proven peers, including when its direct log answers. An
 unusable or stale log triggers an immediate peer round. The node runs §15's
 source-neutral verification on each answer. Consistency proofs are computed
-locally from tiles, so a peer serves data, never claims.
+locally from tiles, so a peer serves data, never claims. Reading a held tree
+head again — the same origin, size and root — keeps its acceptance policy and
+`T`, whatever cosignature lines arrive from the log or a peer (§5.3,
+D-082 (1)). A new head faces the most recently replayed policy.
+
+The mirror keeps that acceptance in a local `acceptance-<head-hash>.json`
+record: version 1, the checkpoint body, the verbatim policy and `T` as Unix
+seconds (`null` for no witness clock). JSON follows the node's clock file;
+this is local state, not a wire format. Each record is written durably before
+the checkpoint. Naming it by the tree head keeps the previous checkpoint's
+acceptance intact if publication is interrupted; once the new checkpoint is
+published, the other records are removed, so the directory holds one. At restart the node verifies
+the mirror under that policy and its trusted log keys, and restores that `T`.
+An older mirror with no record keeps the trust-file-first restore path, with
+the published-policy retry on a log-signature or quorum refusal.
 A peer is addressed through its allowed-ips, so under `routes = "granted"` only
 devices with a grant can be asked.
 

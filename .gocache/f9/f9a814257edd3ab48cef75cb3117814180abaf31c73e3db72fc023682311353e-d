@@ -1,0 +1,5 @@
+./bundle.go
+./doc.go
+./sign.go
+./tlog.go
+./tree.go

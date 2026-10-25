@@ -1,0 +1,17 @@
+./proof.go
+./cap_test.go
+./codes_test.go
+./d079_test.go
+./d079vectors_test.go
+./d080entry_test.go
+./d080vectors_test.go
+./d082vectors_test.go
+./installs_test.go
+./proof_test.go
+./revokerun16_test.go
+./rotated_test.go
+./rotaterun16_test.go
+./run14_test.go
+./run16_test.go
+./run17_test.go
+./vectors_test.go

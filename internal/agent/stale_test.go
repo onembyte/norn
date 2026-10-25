@@ -406,7 +406,8 @@ func TestAQuorumShortCheckpointKeepsTheTableAndAlarms(t *testing.T) {
 
 // unwitnessedLog is the fixture's log grown by one entry, signed by the log
 // and cosigned by nobody -- what a network looks like when its witnesses are
-// unreachable.
+// unreachable. It must grow: the same tree head with its lines stripped is the
+// head the node already holds, which keeps its acceptance (D-082 (1)).
 func unwitnessedLog(t *testing.T, entries [][]byte) string {
 	t.Helper()
 	doc := anchor(t)
@@ -420,5 +421,6 @@ func unwitnessedLog(t *testing.T, entries [][]byte) string {
 			t.Fatal(err)
 		}
 	}
+	appendRevoke(t, store, "nas", uint64(len(entries)))
 	return dir
 }

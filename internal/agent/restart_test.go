@@ -308,16 +308,19 @@ func TestARestartAfterALogKeyRotationStillVerifies(t *testing.T) {
 
 // The other thing a node learns from its log is the witness policy. The
 // fixture's roots raise the quorum to three of three; a restarted node that
-// fell back to the trust file's two of three would accept a head only two
+// fell back to the trust file's two of three would accept a new head only two
 // witnesses vouched for -- the raise would bind only nodes that never
 // restart.
 func TestARestartKeepsARaisedQuorum(t *testing.T) {
-	dir, store, _ := writableLog(t)
+	dir, store, entries := writableLog(t)
 	runDir := t.TempDir()
 	if err := restartable(t, dir, runDir, peertable.NewFake(), &recorder{}).Once(); err != nil {
 		t.Fatal(err)
 	}
 
+	// D-082 (1) keeps a held head's acceptance across restart. Grow the log
+	// so this tests the learned quorum on a new head, not a re-read.
+	appendRevoke(t, store, "nas", uint64(len(entries)))
 	reHead(t, dir, store, "logkey", 2)
 	restarted := restartable(t, dir, runDir, peertable.NewFake(), &recorder{})
 	err := restarted.Once()

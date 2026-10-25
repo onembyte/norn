@@ -814,7 +814,10 @@ The policy is the one under which this checkpoint was accepted: the trust
 policy for a first read, or the most recently replayed policy for a reader that
 already has one (§9.4). A `policy` entry in this checkpoint's replay range MUST
 NOT change this checkpoint's `T`; it takes effect when the reader checks the
-next checkpoint.
+next checkpoint. **This checkpoint** is its tree head — origin, size and root — whatever
+cosignature lines arrive with it: a reader that holds that tree head keeps the
+policy and the `T` it accepted it under, and reading it again, from the log or
+from a peer, changes neither (D-082 (1)).
 
 Three things that decision needs and the rest of this document does not supply:
 
@@ -1832,7 +1835,7 @@ naming that rule is how the generators and the placement guards check it.
 | `served-rotated/` | the served head signed by a published `log_key` (§9.4), with `cases.json` giving the key, its `since_index` and its `overlap`. Serve it over `served/`'s tiles |
 | `proofs-rotated/` | `nas.bundle`, `proofs/nas.bundle` with its checkpoint signed by the published `log_key`, and `cases.json` giving that key and both answers: `log-signature` to a reader holding only `trust.cbor`, accepted by one that trusts the published key (§8, §8.1) |
 | `receipt-rotated/` | `cases.json` naming `receipt-bad/untrusted-log-key.note` — the shipped receipt, signed by the published `log_key` — and the same two answers (§7, §8) |
-| `served-superseded/` | the served head cosigned by two of three witnesses, for §9.4's policy half. Serve it over `served/`'s tiles |
+| `served-superseded/` | the served head cosigned by two of three witnesses, read fresh and by a reader holding `served/`'s head: both accept, and the held head keeps its `T` (§5.3, D-082 (1)). Serve it over `served/`'s tiles |
 | `unreached-witness/` | two heads over `served/`'s tiles under its own `trust.cbor`: the policy lists pi, vps and friend, while its quorum is pi and vps alone (2 of 2). `cases.json` codes `honest-head` as `accept` and `forged-friend` as `cosignature`, with a section and rule for each |
 | `served-bad/` | §6's refusals for a served log, which is a directory rather than a file: each case names the path to replace or delete over an honest copy of the log named by `serve_over` (`served-large/` here) |
 | `served-empty-entry/` | a four-entry log with one zero-length frame at index 2 among real entries: its checkpoint is accepted, replay rejects that entry as `decode`, and `state.json` is the expected replayed state; `cases.json` names both answers |
@@ -1910,7 +1913,7 @@ this table drifted out of date the moment one was.
 | §4.0/§4.3 schemas | `enroll-laptop`, `enroll-unicode-labels` | `bad-kid-format`, `bad-missing-sigs`, `bad-empty-sigs`, `bad-unknown-role`, `bad-unknown-envelope-key`, `bad-unknown-body-key` (a `note`), `bad-rotate-unknown-body-key` and `bad-revoke-unknown-body-key` (each otherwise valid, so the extra key is the only refusal), `bad-device_id-uppercase`, `bad-device_id-leading-dot`, `bad-pk-length`, `bad-sig-length`, `bad-text-too-long`, `bad-unsorted-sigs` |
 | §4.2 signatures, hashes, preimage | 16 entry mirrors | **`bad-forged-signer-sig`, `bad-forged-device-sig`** — syntactically perfect signatures that do not verify. Without these an implementation that never calls Ed25519 reproduces the whole manifest |
 | §4.0 the whole input is consumed | — | `bad-trailing-byte`: an accepted `log_key` entry with one byte after it. Its signatures still verify and its `entry_hash` differs, so a decoder that stops at the end of the item applies the same governance entry twice |
-| §9.4 the policy supersedes | `served-superseded/`: two of three cosignatures — enough for the trust file, short of what the roots published | the informed reader is the stricter one here: its `cases.json` states `fresh` `accept` and `informed` `quorum`, so a reader that refuses it for any other reason — `log-signature`, because it replaced the trust key — fails (cold gate run 13, D16) |
+| §5.3, §9.4 a held head keeps its acceptance (D-082 (1)) | `served-superseded/`: two of three cosignatures — enough for the trust file; the informed reader already holds the same tree from `served/` | `cases.json` states `accept` for both readers; the informed reader keeps `served/`'s `T = 1760003607`, not the two-line note's `1760003600`. A larger head still faces the latest replayed policy, covered by the agent tests |
 | §10 the stored checkpoint, §11's duties | `detect/`: accepting a head that grows, refusing one that shrinks **without** accusing, and proving a fork at the same size, on a shorter branch, and on a **longer** one (`detect/fork-on-a-longer-branch`: a grown head whose history differs below the stored size — the most ordinary equivocation there is, which a reader that compares only same-size or shorter heads accepts). Every case that is not accepted names its §10.1 code | the shorter-branch case is what a forking log looks like when it hides behind "a log does not shrink". It also pins §10's **order**: under a size-rule-first reading it comes out `refuse` rather than `fork`, so no evidence is written and no alarm is raised |
 | §8.1 condition 4 | `detect/staleness.json`, including `elapsed` exactly on `staleness` | a node with no corroborated instant reports `unknown` rather than guessing |
 | §9.4 rotation | `served-rotated/`: the same head under a key the roots published — refused by a reader holding only `trust.cbor`, accepted by one that has replayed the rotation | a key that vouched for itself is what the ordering forbids |
@@ -2336,9 +2339,10 @@ is not running cannot bound an external writer's rogue-key window.
 A node's stored checkpoint (§10), the log keys and policy it learned from the
 state it verified (§9.4), and the evidence of a fork it proved (§11) persist
 across a restart and a reboot (D-069). At startup the persisted checkpoint is
-verified again under the trust file, and under what its own entries publish
-when a key or policy was rotated in the log; one that does not verify is
-reported and ignored. Every candidate checkpoint is compared against the stored
+verified again under the policy it was accepted under, which persists with it,
+and the trust file's log key and the log keys its own state publishes (§9.4),
+and it keeps the `T` it was accepted with (§5.3, D-082 (1)); one that does not
+verify is reported and ignored. Every candidate checkpoint is compared against the stored
 checkpoint before anything is adopted, so an older head of the node's own log
 is refused after a restart as it was before one. The restored checkpoint is
 held, not enforced: as above, a node on which no checkpoint has verified since

@@ -7,9 +7,8 @@ import (
 	"testing"
 )
 
-// D-082 (row G9), parts 2–4. Each answer belongs in its own SPEC section,
+// D-082 (row G9), all four parts. Each answer belongs in its own SPEC section,
 // beside the rule it clarifies; the decision, plan and ledger must agree.
-// The later lane adds part 1's head and restart sentences here.
 func TestRunEighteensTrustFrozenSetAndBindingDecisionsAreRecorded(t *testing.T) {
 	read := func(name string) string {
 		raw, err := os.ReadFile(filepath.Join("..", "..", name))
@@ -34,6 +33,12 @@ func TestRunEighteensTrustFrozenSetAndBindingDecisionsAreRecorded(t *testing.T) 
 		from, to string
 		phrases  []string
 	}{
+		{"### 5.3 ", "## 6. ", []string{
+			"**This checkpoint** is its tree head — origin, size and root — whatever cosignature lines arrive with it: a reader that holds that tree head keeps the policy and the `T` it accepted it under, and reading it again, from the log or from a peer, changes neither (D-082 (1)).",
+		}},
+		{"### 13.2 ", "### 13.3 ", []string{
+			"At startup the persisted checkpoint is verified again under the policy it was accepted under, which persists with it, and the trust file's log key and the log keys its own state publishes (§9.4), and it keeps the `T` it was accepted with (§5.3, D-082 (1)); one that does not verify is reported and ignored.",
+		}},
 		{"## 8. ", "### 8.1 ", []string{
 			"reader that has replayed the log through the rotation; one holding only `norn.trust` sees `log-signature`",
 			"A trust file issued later for the same network names the same initial key (§9.4)",

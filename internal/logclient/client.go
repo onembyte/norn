@@ -99,6 +99,10 @@ type Result struct {
 	// the time either, and a node with no witness clock must say so rather
 	// than fall back to its own (A11).
 	QuorumTime *time.Time
+	// AcceptancePolicy is the policy that accepted this tree head. Replay
+	// may publish its successor, but that successor cannot re-judge this head
+	// or move its QuorumTime when it is read again (D-082 (1)).
+	AcceptancePolicy string
 	// Tree is the log as served, rebuilt from those entries. A node keeps it
 	// so it can speak for its own branch later -- which is what tells a fork
 	// apart from a rollback.
@@ -128,10 +132,11 @@ type Anchor struct {
 	// said to compare it nothing did: the note name and key id bind the
 	// *signer*, not the subject.
 	Origin string
-	// Policy is the network's `c2sp.org/tlog-policy`, verbatim from the trust
-	// file. It says which witnesses must have cosigned before this node will
-	// believe a checkpoint -- §10.1 step 7, and the difference between "the log
-	// operator says this is the log" and "somebody else saw this too".
+	// Policy is the `c2sp.org/tlog-policy` for a new head: the trust file's,
+	// or the most recently replayed one (§9.4). It says which witnesses must
+	// have cosigned before this node believes a checkpoint -- §10.1 step 7,
+	// and the difference between "the log operator says this is the log" and
+	// "somebody else saw this too".
 	Policy string
 	// Stored is the head this node already holds, if any. §10 requires a new
 	// checkpoint to be at least as large and to contain it.
@@ -141,6 +146,12 @@ type Anchor struct {
 	// stops a log -- or a peer -- serving a correctly signed, correctly
 	// cosigned view of its own past.
 	Stored *tlog.Checkpoint
+	// StoredResult carries the stored head's acceptance and signed evidence.
+	// A re-read keeps these even if the fetched note has fewer cosignatures;
+	// fork evidence must not lose the signatures this node already holds.
+	// Supply it alongside Stored for the same tree head. Stored alone carries
+	// only §10's comparison, not the policy and time of an earlier acceptance.
+	StoredResult *Result
 	// Held is the node's own tree for the stored head, when it has one.
 	//
 	// Without it a log that forks by serving a **shorter** branch can only be
@@ -282,6 +293,15 @@ func verifyHead(f Fetcher, anchor Anchor) (string, tlog.Checkpoint, []cosign.Cos
 		return "", none, nil, nil, refuse(refusal.Origin, "the checkpoint is for origin %q, and this anchor is for %q",
 			cp.Origin, anchor.Origin)
 	}
+	// A tree head already accepted is still that head, however many witness
+	// lines arrived this time. Its log signature was checked above, but its
+	// acceptance and evidence belong to the first read (D-082 (1)).
+	if stored := storedAcceptance(anchor, cp); stored != nil {
+		if stored.SignedCheckpoint != "" {
+			raw = []byte(stored.SignedCheckpoint)
+		}
+		return string(raw), cp, stored.Cosignatures, stored.QuorumTime, nil
+	}
 
 	// Then the witnesses. A log can sign anything it likes, including two
 	// different histories for two different nodes; what it cannot do is get a
@@ -291,6 +311,16 @@ func verifyHead(f Fetcher, anchor Anchor) (string, tlog.Checkpoint, []cosign.Cos
 		return "", none, nil, nil, err
 	}
 	return string(raw), cp, cosignatures, quorumTime, nil
+}
+
+// storedAcceptance requires the whole tree identity, not just its size or
+// root. A different head must face the current policy and §10's comparison.
+func storedAcceptance(anchor Anchor, cp tlog.Checkpoint) *Result {
+	if anchor.Stored != nil && cp == *anchor.Stored && anchor.StoredResult != nil &&
+		cp == anchor.StoredResult.Checkpoint {
+		return anchor.StoredResult
+	}
+	return nil
 }
 
 // checkGenesis is §10.1's `genesis` (D-074 (g)): a log with no entry 0, or
@@ -352,8 +382,12 @@ func finish(f Fetcher, anchor Anchor, raw string, cp tlog.Checkpoint, cosignatur
 	// The fold is applied to what it has not seen: all of it for a fresh one,
 	// the entries past its size for one resumed.
 	state := fold.Apply(entries[fold.State().Size:]...)
+	acceptancePolicy := anchor.Policy
+	if stored := storedAcceptance(anchor, cp); stored != nil {
+		acceptancePolicy = stored.AcceptancePolicy
+	}
 	return &Result{Checkpoint: cp, SignedCheckpoint: raw, Tree: tree,
-		Cosignatures: cosignatures, QuorumTime: quorumTime,
+		Cosignatures: cosignatures, QuorumTime: quorumTime, AcceptancePolicy: acceptancePolicy,
 		State: state, Served: entries, fold: fold}, nil
 }
 

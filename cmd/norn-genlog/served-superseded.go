@@ -16,11 +16,10 @@ import (
 // writeSupersededHead ships §9.4's policy case: the served head cosigned by
 // exactly two witnesses.
 //
-// The fixture's roots raise the quorum from two of three to three of three, so
-// this head satisfies the trust file's policy and not the one the log
-// publishes. Like `served-rotated/` it has two correct answers, and this time
-// the informed reader is the stricter one: raising a quorum has to bind the
-// nodes that were already watching, or it protects only the ones who were not.
+// The fixture's roots raise the quorum from two of three to three of three.
+// A fresh reader accepts under trust; the informed reader already verified
+// served/ and holds this same tree. D-082 (1) keeps its acceptance and T,
+// even though this note omits a line. A larger head would face the new quorum.
 func writeSupersededHead(root, origin, signed string, key ed25519.PrivateKey,
 	signers []cosignpkg.Signer) error {
 
@@ -53,17 +52,17 @@ func writeSupersededHead(root, origin, signed string, key ed25519.PrivateKey,
 	meta := map[string]any{
 		"serve_over":  "served",
 		"cosigned_by": []string{signers[0].Name, signers[1].Name},
-		// Cold gate run 13, D16: the informed refusal's code. Without it a reader
-		// that replaced the trust key with the learned one refused this head for
-		// log-signature instead of quorum, and passed.
-		"fresh":    "accept",
-		"informed": "quorum",
+		"fresh":       "accept",
+		"informed":    "accept",
+		// The informed reader holds served's three-line note, whose two-of-three
+		// acceptance is seven seconds later than this two-line note's would be.
+		"informed_quorum_time": QuorumTimeOf(2),
 		"comment": "the served head cosigned by two of the three witnesses. A reader " +
 			"holding only trust.cbor (`fresh`) requires two and MUST accept it; a reader " +
-			"that has replayed this log (`informed`) has seen its roots raise the quorum " +
-			"to three and MUST refuse it as quorum (SPEC 9.4, 10.1). Serve it in place " +
-			"of served/checkpoint over the same tiles. Two correct answers again, and " +
-			"here the informed reader is the stricter one",
+			"that verified and replayed served/ and holds its head (`informed`) MUST " +
+			"accept the same tree and keep its stored policy and T=1760003607, not " +
+			"1760003600 (SPEC 5.3, D-082 (1)). Serve it in place of served/checkpoint " +
+			"over the same tiles. The raised quorum binds a new head, not a re-read",
 	}
 	blob, err := json.MarshalIndent(meta, "", "  ")
 	if err != nil {

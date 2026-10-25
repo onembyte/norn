@@ -1,0 +1,3 @@
+./sim.go
+./scenarios_test.go
+./t3_test.go

@@ -1,10 +1,11 @@
 {
-  "comment": "the served head cosigned by two of the three witnesses. A reader holding only trust.cbor (`fresh`) requires two and MUST accept it; a reader that has replayed this log (`informed`) has seen its roots raise the quorum to three and MUST refuse it as quorum (SPEC 9.4, 10.1). Serve it in place of served/checkpoint over the same tiles. Two correct answers again, and here the informed reader is the stricter one",
+  "comment": "the served head cosigned by two of the three witnesses. A reader holding only trust.cbor (`fresh`) requires two and MUST accept it; a reader that verified and replayed served/ and holds its head (`informed`) MUST accept the same tree and keep its stored policy and T=1760003607, not 1760003600 (SPEC 5.3, D-082 (1)). Serve it in place of served/checkpoint over the same tiles. The raised quorum binds a new head, not a re-read",
   "cosigned_by": [
     "norn-witness/pi",
     "norn-witness/vps"
   ],
   "fresh": "accept",
-  "informed": "quorum",
+  "informed": "accept",
+  "informed_quorum_time": 1760003607,
   "serve_over": "served"
 }

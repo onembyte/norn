@@ -8,16 +8,10 @@ import (
 	"github.com/onembyte/norn/internal/refusal"
 )
 
-// Cold gate run 13, D16. §12.1 says `served-rotated/` pins that the anchor key
-// is kept alongside the keys a node learns, and `served-superseded/` that a
-// raised quorum binds the nodes already watching -- but neither manifest asked.
-// `served-rotated/` stated only "refuse fresh, accept informed", so a reader
-// that replaced the trust key with the learned one passed while refusing the
-// head its log is actually serving; and `served-superseded/`'s informed refusal
-// had no code, so the same reader refused it for `log-signature` instead of
-// `quorum` and passed again. The answers live in the manifests now, and this
-// reads each back against the verifier: fresh is `trust.cbor` alone, informed
-// is the reader that replayed `served/`.
+// The manifests pin both readers: fresh has trust.cbor alone; informed has
+// verified and replayed served/ and holds its head. D-082 (1) keeps that
+// head's acceptance even when served-superseded omits a witness line. The
+// rotated-key case still pins that learned log keys join the trust key.
 func TestTheRotationManifestsStateEveryAnswer(t *testing.T) {
 	checkRunFourteenLearnedKeys(t)
 	fresh := shippedLogAnchor(t)
@@ -27,6 +21,7 @@ func TestTheRotationManifestsStateEveryAnswer(t *testing.T) {
 		t.Fatal(err)
 	}
 	informed := fresh
+	informed.Stored, informed.Held, informed.StoredResult = &held.Checkpoint, held.Tree, held
 	informed.LogKeys = append(append([]string(nil), fresh.LogKeys...), KeysFrom(fresh.Origin, held.State)...)
 	if published := PolicyFrom(held.State); published != "" {
 		informed.Policy = published
@@ -42,6 +37,7 @@ func TestTheRotationManifestsStateEveryAnswer(t *testing.T) {
 		Fresh               string `json:"fresh"`
 		Informed            string `json:"informed"`
 		InformedReadsServed string `json:"informed_reads_served"`
+		InformedQuorumTime  int64  `json:"informed_quorum_time"`
 	}
 
 	for _, c := range []struct {
@@ -51,12 +47,12 @@ func TestTheRotationManifestsStateEveryAnswer(t *testing.T) {
 		// The rotated head, and the head the log is serving under the anchor
 		// key: an informed reader keeps that key alongside and accepts both.
 		{"served-rotated", "log-signature", "accept", "accept"},
-		// Two of three cosigned: enough for the trust file, not for the
-		// replayed policy that raised the quorum to three.
-		{"served-superseded", "accept", "quorum", ""},
+		// This tree is already held: neither its acceptance nor its T changes.
+		{"served-superseded", "accept", "accept", ""},
 	} {
 		t.Run(c.dir, func(t *testing.T) {
 			answers.Fresh, answers.Informed, answers.InformedReadsServed = "", "", ""
+			answers.InformedQuorumTime = 0
 			raw := readFile(t, filepath.Join(vectorRoot(), c.dir, "cases.json"))
 			if err := json.Unmarshal([]byte(raw), &answers); err != nil {
 				t.Fatal(err)
@@ -73,6 +69,17 @@ func TestTheRotationManifestsStateEveryAnswer(t *testing.T) {
 			}
 			if got := answer(head, informed); got != c.informed {
 				t.Errorf("an informed reader answers %q; cases.json says %q", got, c.informed)
+			}
+			if c.dir == "served-superseded" {
+				result, err := Verify(Dir(head), informed)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if answers.InformedQuorumTime != 1760003607 || result.QuorumTime == nil ||
+					result.QuorumTime.Unix() != answers.InformedQuorumTime {
+					t.Errorf("informed reader must keep served's T=1760003607: manifest=%d result=%v",
+						answers.InformedQuorumTime, result.QuorumTime)
+				}
 			}
 			if c.readsServed != "" {
 				if got := answer(honest, informed); got != c.readsServed {

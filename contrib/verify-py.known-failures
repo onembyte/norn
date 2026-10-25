@@ -125,3 +125,10 @@ checkpoints-good/cases.json#unhandled expected="handled" got="UNKNOWN CASE FORMA
 # the envelope's `net`) and `enroll-open-body` (it requires `{request}`), where
 # §8.1 now says `accept`, and answers the other three as written. Its pass count
 # is no evidence for those two.
+
+# Row G9, part b (2026-10-25): D-082 (1). `served-superseded/`'s informed reader
+# now holds `served/`'s head and keeps the policy and `T` it accepted it under,
+# so re-reading the same tree with one witness line removed is `accept`. This
+# build's informed reader judges every read under the latest replayed policy,
+# the reading D-082 (1) rejected, and answers `quorum`.
+served-superseded#informed expected="accept" got="quorum"

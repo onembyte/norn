@@ -556,6 +556,7 @@ func (a *Agent) anchorFor(held *logclient.Result) logclient.Anchor {
 	anchor := a.anchorUnder(held.State)
 	checkpoint := held.Checkpoint
 	anchor.Stored, anchor.Held = &checkpoint, held.Tree
+	anchor.StoredResult = held
 	return anchor
 }
 
@@ -808,8 +809,9 @@ func (a *Agent) Once() error {
 		// want serving the mesh, because it is the one nobody is worried
 		// about. A failure here is worth reporting and not worth stopping a
 		// cycle for -- enforcement does not depend on it.
-		if err := mirror.Write(filepath.Join(a.stateDir(), proven.MirrorDir),
-			result.Checkpoint, result.SignedCheckpoint, result.Served); err != nil {
+		if err := mirror.WriteAccepted(filepath.Join(a.stateDir(), proven.MirrorDir),
+			result.Checkpoint, result.SignedCheckpoint, result.Served,
+			mirror.Acceptance{Policy: result.AcceptancePolicy, QuorumTime: result.QuorumTime}); err != nil {
 			a.emit(Event{Kind: MirrorFailed, Message: err.Error()})
 		}
 	}

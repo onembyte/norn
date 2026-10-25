@@ -50,6 +50,10 @@ func mirrorErrorf(format string, args ...any) error {
 // both halves, and a mirror built from an unverified note would replicate
 // whatever a bad log served.
 func Write(dir string, cp tlog.Checkpoint, signedCheckpoint string, entries [][]byte) error {
+	return writeMirror(dir, cp, signedCheckpoint, entries, nil)
+}
+
+func writeMirror(dir string, cp tlog.Checkpoint, signedCheckpoint string, entries [][]byte, acceptance *Acceptance) error {
 	tree, err := tlog.Build(entries)
 	if err != nil {
 		return mirrorErrorf("rebuilding the tree: %v", err)
@@ -63,6 +67,15 @@ func Write(dir string, cp tlog.Checkpoint, signedCheckpoint string, entries [][]
 	}
 	if cp.Root != tree.Head() {
 		return mirrorErrorf("the entries do not hash to the head the checkpoint claims")
+	}
+
+	// Persist acceptance even when this is an unchanged legacy mirror. The
+	// tree has been checked above, and the checkpoint is published only after
+	// this succeeds, just as it is after the tiles below.
+	if acceptance != nil {
+		if err := writeAcceptance(dir, cp, *acceptance); err != nil {
+			return err
+		}
 	}
 
 	keep := make(map[string]bool)
@@ -117,6 +130,13 @@ func Write(dir string, cp tlog.Checkpoint, signedCheckpoint string, entries [][]
 	// than it holds rather than more -- the same ordering the log itself uses.
 	if err := write(dir, "checkpoint", []byte(signedCheckpoint)); err != nil {
 		return err
+	}
+	// Only now, with this head published, can the previous head's record go:
+	// a crash before the line above leaves the old checkpoint with its own.
+	if acceptance != nil {
+		if err := pruneAcceptance(dir, acceptanceName(cp)); err != nil {
+			return err
+		}
 	}
 	if !cleanup {
 		return nil

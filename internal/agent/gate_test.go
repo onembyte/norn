@@ -682,8 +682,11 @@ func TestTheAgentFollowsAPolicyRotation(t *testing.T) {
 			"tested; state.policy is %q", a.last.State.Policy)
 	}
 
-	// The log publishes a head two of the three witnesses cosigned: enough for
-	// the trust file's policy, short of the one the roots published.
+	// The log grows and publishes a head two of the three witnesses cosigned:
+	// enough for the trust file's policy, short of the one the roots
+	// published. It must be a new head: the held one, read again with fewer
+	// lines, keeps the policy it was accepted under (D-082 (1)).
+	appendRevoke(t, store, "nas", uint64(a.last.Checkpoint.Size))
 	signed, err := store.SignedCheckpoint()
 	if err != nil {
 		t.Fatal(err)
