@@ -350,6 +350,7 @@ func TestReceiptLeafHashRejectsNonzeroPadBits(t *testing.T) {
 
 func TestReceiptBadVectorsMatchTheirDeclaredCodes(t *testing.T) {
 	t.Run("run fourteen body boundaries", checkReceiptBoundaries)
+	t.Run("matched log lines", checkMatchedReceiptLines)
 	root := filepath.Join("..", "..", "testdata", "vectors")
 	var manifest struct {
 		Cases []struct {
@@ -463,4 +464,64 @@ func anchorLogKey(t *testing.T, root string) []string {
 		t.Fatal(err)
 	}
 	return []string{doc.LogKey}
+}
+
+// Signature repairs preserve the authenticated body and change only the faulted
+// signature byte or the appended payload byte.
+func checkMatchedReceiptLines(t *testing.T) {
+	root := filepath.Join("..", "..", "testdata", "vectors")
+	keys := anchorLogKey(t, root)
+	leaf, origin, _ := receiptFacts(t, root)
+	honest, err := os.ReadFile(filepath.Join(root, "receipt.note"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	goodText, goodLines, err := note.Split(string(honest))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"two-log-lines.note", "payload-69.note"} {
+		t.Run(name, func(t *testing.T) {
+			raw, err := os.ReadFile(filepath.Join(root, "receipt-bad", name))
+			if err != nil {
+				t.Fatal(err)
+			}
+			text, lines, err := note.Split(string(raw))
+			if err != nil {
+				t.Fatalf("must frame before signature refusal: %v", err)
+			}
+			if text != goodText {
+				t.Fatal("signature fault changed the body")
+			}
+			for _, line := range lines {
+				if line.Name != goodLines[0].Name || string(line.KeyID) != string(goodLines[0].KeyID) {
+					t.Fatal("line does not select trusted log key")
+				}
+			}
+			if _, err := Check(string(raw), keys, origin, leaf, time.Time{}); err == nil {
+				t.Fatal("bad log signature accepted")
+			} else if code, ok := CodeOf(err); !ok || code != LogSignature {
+				t.Fatalf("want log-signature: %v", err)
+			}
+			if name == "two-log-lines.note" {
+				if len(lines) != 2 || len(lines[1].Sig) != 64 || string(lines[0].Sig) != string(goodLines[0].Sig) || string(lines[1].Sig[:63]) != string(lines[0].Sig[:63]) || lines[1].Sig[63] == lines[0].Sig[63] {
+					t.Fatal("expected one good line and a one-byte forgery")
+				}
+				lines[1].Sig = append([]byte(nil), lines[0].Sig...)
+			} else {
+				if len(lines) != 1 || len(lines[0].Sig) != 65 || string(lines[0].Sig[:64]) != string(goodLines[0].Sig) {
+					t.Fatal("expected valid payload plus one byte")
+				}
+				lines[0].Sig = lines[0].Sig[:64]
+			}
+			repair := text + "\n"
+			for _, line := range lines {
+				repair += note.SignatureLine(line.Name, append(append([]byte(nil), line.KeyID...), line.Sig...)) + "\n"
+			}
+			if _, err := Check(repair, keys, origin, leaf, time.Time{}); err != nil {
+				t.Fatalf("signature-only repair: %v", err)
+			}
+			t.Log("signature-only repair accepted")
+		})
+	}
 }

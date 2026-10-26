@@ -34,6 +34,22 @@ class LinesMayFollowQuorumButNamesKeepTheirMeaning(unittest.TestCase):
         self.assertEqual((root / f"{name}.txt").read_bytes(), text.encode())
         return text, shipped.get("evaluate", [])
 
+    def test_extra_witness_and_log_fields_are_the_only_fault(self):
+        for directive in ("witness", "log"):
+            with self.subTest(directive=directive):
+                text, _ = self._vector("bad-" + directive + "-extra-field", False,
+                                       "and a line with more is an **error**")
+                with self.assertRaises(policy.PolicyError):
+                    policy.parse(text)
+                lines = text.split("\n")
+                affected = [i for i, line in enumerate(lines)
+                            if line.startswith(directive + " ") and line.endswith(" extra")]
+                self.assertEqual(len(affected), 1)
+                i = affected[0]
+                self.assertEqual(len(lines[i].split()), 5 if directive == "witness" else 4)
+                lines[i] = lines[i][:-len(" extra")]
+                policy.parse("\n".join(lines))
+
     def test_all_members_parses_with_both_singletons_refused_in_the_table(self):
         text, evaluations = self._vector("all-members", True, "`all` is `n`")
         policy.parse(text)

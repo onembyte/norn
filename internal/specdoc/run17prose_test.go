@@ -44,7 +44,7 @@ func TestRunSeventeensProseFindingsAreFixed(t *testing.T) {
 			"§3.1's point admission refuses a 31-byte key at the same step",
 			"So the rule is pinned, through the entry's code."},
 		{"D11 receipt count includes the new framing case", "12.1",
-			"**21 `receipt-bad/` cases**",
+			"**23 `receipt-bad/` cases**",
 			"**19 `receipt-bad/` cases**"},
 		{"D11 the trust file's witness names", "12.1",
 			"so neither isolates it (cold gate run 17, D11)",

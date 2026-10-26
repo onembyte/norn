@@ -1,0 +1,1 @@
+{"cases":[{"name":"bare-surrogate","says":"UTF-8"}],"comment":"bare text strings that MUST be refused as invalid UTF-8, with no entry schema above the decoder","rules":{"bare-surrogate":{"says":"valid UTF-8","section":"4.0"}}}

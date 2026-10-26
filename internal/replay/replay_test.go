@@ -153,6 +153,7 @@ func TestMalformedReservedHintsSurviveEnrollmentReplay(t *testing.T) {
 
 func TestEveryGenesisCaseAbortsAndMatchesItsState(t *testing.T) {
 	t.Run("closed body", checkClosedGenesisBody)
+	t.Run("type with genesis body", checkGenesisTypeWithGenesisBody)
 	dirs, err := filepath.Glob(filepath.Join(vectorRoot(), "genesis", "*"))
 	if err != nil {
 		t.Fatal(err)
@@ -1287,4 +1288,63 @@ func TestAnEmptyLogReplaysToTheZeroStateWithNothingRejected(t *testing.T) {
 		t.Errorf("an empty log does not replay to the shipped zero state.\n got: %s\nwant: %s",
 			got, want)
 	}
+}
+
+// The anchor and bootstrap signatures must already be right for the wrong
+// type, or either would mask the entry-zero type predicate.
+func checkGenesisTypeWithGenesisBody(t *testing.T) {
+	anchor, raw, _ := loadCase(t, filepath.Join(vectorRoot(), "genesis", "27-type-with-genesis-body"))
+	if len(raw) != 1 || !bytes.Equal(anchor.GenesisHash, entry.LeafHash(raw[0])) {
+		t.Fatal("anchor must pin this entry's leaf")
+	}
+	env, err := entry.Decode(raw[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if env.T != "note" {
+		t.Fatal("expected wrong type")
+	}
+	for _, sig := range env.Sigs {
+		preimage, err := entry.Preimage(env)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if sig.Role != "root" || !ed25519.Verify(publicOf(t, keyNameForGenesisSignature(t, sig.Kid)), preimage, sig.Sig) {
+			t.Fatal("wrong-type bootstrap signature must verify")
+		}
+	}
+	if len(env.Sigs) != 2 {
+		t.Fatal("expected honest root quorum")
+	}
+	if st := Replay(anchor, raw); st.Size != 0 || lastOutcome(st, 0) != ReasonBadGenesis {
+		t.Fatal("wrong type accepted")
+	}
+	env.T = "genesis"
+	env.Sigs = nil
+	for _, key := range []string{"root1", "root2"} {
+		if err := entry.Sign(env, privateKey(t, key), "root"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	repaired, err := entry.Encode(env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	anchor.GenesisHash = entry.LeafHash(repaired)
+	st := Replay(anchor, [][]byte{repaired})
+	if st.Size != 1 || len(st.Rejected) != 0 {
+		t.Fatalf("type-only repair with renewed signatures and pin: %+v", st.Rejected)
+	}
+	t.Log("type-only repair with renewed signatures and pin accepted")
+}
+
+func keyNameForGenesisSignature(t *testing.T, kid string) string {
+	t.Helper()
+	for _, name := range []string{"root1", "root2"} {
+		if entry.Kid(publicOf(t, name)) == kid {
+			return name
+		}
+	}
+	t.Fatal("bootstrap signer is not a fixture root")
+	return ""
 }

@@ -107,6 +107,31 @@ class SignAndVerify(unittest.TestCase):
         text = note.verify(signed, [note.vkey(self.name, self.key.public)])
         self.assertEqual(text, self.TEXT)
 
+    def test_every_line_selecting_a_listed_key_must_verify(self):
+        signed = note.sign(self.TEXT, self.name, self.key)
+        raw = note.key_id(self.name, self.key.public) + bytes(64)
+        forged = note.SIG_PREFIX + self.name + " " + base64.b64encode(raw).decode() + "\n"
+        with self.assertRaises(note.NoteError):
+            note.verify(signed + forged, [note.vkey(self.name, self.key.public)])
+
+    def test_a_strangers_payload_length_is_ignored_after_framing(self):
+        signed = note.sign(self.TEXT, self.name, self.key)
+        raw = note.key_id("stranger", self.key.public) + bytes(68)
+        stranger = note.SIG_PREFIX + "stranger " + base64.b64encode(raw).decode() + "\n"
+        self.assertEqual(len(raw), 72)
+        self.assertEqual(note.verify(signed + stranger, [note.vkey(self.name, self.key.public)]),
+                         self.TEXT)
+
+    def test_a_matched_payload_length_is_checked_by_verify_not_split(self):
+        signed = note.sign(self.TEXT, self.name, self.key)
+        text, lines = note.split(signed)
+        raw = lines[0][1] + b"x"
+        long_line = note.SIG_PREFIX + self.name + " " + base64.b64encode(raw).decode() + "\n"
+        malformed = text + "\n" + long_line
+        self.assertEqual(note.split(malformed), (self.TEXT, [(self.name, raw)]))
+        with self.assertRaises(note.NoteError):
+            note.verify(malformed, [note.vkey(self.name, self.key.public)])
+
     def test_verify_rejects_tampered_text(self):
         signed = note.sign(self.TEXT, self.name, self.key).replace("1760000000", "1799999999")
         with self.assertRaises(note.NoteError):

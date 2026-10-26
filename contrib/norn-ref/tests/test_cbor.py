@@ -105,7 +105,7 @@ class ResourceLimits(unittest.TestCase):
 
 
 class HostileInputVectors(unittest.TestCase):
-    """`entries-hostile/` is a shared file; both implementations answer from it.
+    """Both implementations answer from `entries-hostile/` and `entries-utf8/`.
 
     Cold gate run 8 (D15): the profile's banned items were reachable only
     through an entry, where a later rule refuses them too and the reason code
@@ -116,15 +116,37 @@ class HostileInputVectors(unittest.TestCase):
 
     def test_every_case_behaves_as_its_table_says(self):
         from nornref import fixture
-        for name, raw, says in fixture.hostile_inputs():
-            with self.subTest(name):
-                if says is None:
-                    cbor.decode(raw)  # at a limit: MUST be accepted
-                    continue
-                with self.assertRaises(cbor.ProfileError) as caught:
-                    cbor.decode(raw)
-                self.assertIn(says, str(caught.exception),
-                              f"{name} was refused for the wrong rule")
+        vectors = Path(__file__).resolve().parents[3] / "testdata/vectors"
+        root = vectors / "entries-utf8"
+        manifest = json.loads((root / "cases.json").read_text())
+        self.assertIn("bare-surrogate", {case["name"] for case in manifest["cases"]})
+        raw = (root / "bare-surrogate.cbor").read_bytes()
+        self.assertEqual(raw.hex(), "63eda080")
+        with self.assertRaises(cbor.ProfileError):
+            cbor.decode(raw)
+        repair = bytearray(raw); repair[1:3] = bytes.fromhex("ee80")
+        self.assertEqual(cbor.decode(bytes(repair)), "\ue000")
+        self.assertEqual(manifest["cases"], [
+            {"name": name, "says": says} for name, _, says in fixture.utf8_inputs()
+        ])
+        self.assertEqual(manifest["rules"]["bare-surrogate"],
+                         {"section": "4.0", "says": "valid UTF-8"})
+        self.assertFalse((root / "manifest.json").exists())
+        hostile = fixture.hostile_inputs()
+        self.assertEqual(len(hostile), 17)
+        self.assertNotIn("bare-surrogate", {name for name, _, _ in hostile})
+        for directory, inputs in (("entries-hostile", hostile),
+                                  ("entries-utf8", fixture.utf8_inputs())):
+            for name, raw, says in inputs:
+                self.assertEqual((vectors / directory / (name + ".cbor")).read_bytes(), raw)
+                with self.subTest(directory=directory, name=name):
+                    if says is None:
+                        cbor.decode(raw)  # at a limit: MUST be accepted
+                        continue
+                    with self.assertRaises(cbor.ProfileError) as caught:
+                        cbor.decode(raw)
+                    self.assertIn(says, str(caught.exception),
+                                  f"{name} was refused for the wrong rule")
 
 
 class AllowListVectors(unittest.TestCase):

@@ -18,6 +18,25 @@ import (
 // that is not valid.
 
 func TestHostileInputIsRefusedByTheProfile(t *testing.T) {
+	t.Run("bare-surrogate repair", func(t *testing.T) {
+		raw, err := os.ReadFile(filepath.Join("..", "..", "testdata", "vectors", "entries-utf8", "bare-surrogate.cbor"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(raw, []byte{0x63, 0xed, 0xa0, 0x80}) {
+			t.Fatalf("surrogate input: %x", raw)
+		}
+		if _, err := Decode(raw); !errors.Is(err, ErrProfile) {
+			t.Fatalf("surrogate accepted: %v", err)
+		}
+		repair := append([]byte(nil), raw...)
+		repair[1] = 0xee
+		repair[2] = 0x80
+		if got, err := Decode(repair); err != nil || got != "\ue000" {
+			t.Fatalf("scalar-text repair: %v, %v", got, err)
+		}
+		t.Log("scalar-text repair accepted")
+	})
 	dir := filepath.Join("..", "..", "testdata", "vectors", "entries-hostile")
 	raw, err := os.ReadFile(filepath.Join(dir, "cases.json"))
 	if err != nil {
@@ -187,36 +206,40 @@ func TestTheKeyLimitVectorsSitExactlyOnTheCap(t *testing.T) {
 // above it to intervene first.
 
 func TestEveryForbiddenProfileItemHasADecoderCase(t *testing.T) {
-	dir := filepath.Join("..", "..", "testdata", "vectors", "entries-hostile")
-	raw, err := os.ReadFile(filepath.Join(dir, "cases.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var doc struct {
-		Cases []struct {
-			Name, Says string
-			Accepted   bool `json:"accepted"`
-		} `json:"cases"`
-	}
-	if err := json.Unmarshal(raw, &doc); err != nil {
-		t.Fatal(err)
-	}
+	root := filepath.Join("..", "..", "testdata", "vectors")
 	have := map[string]bool{}
-	for _, c := range doc.Cases {
-		have[c.Name] = true
+	for _, dir := range []string{"entries-hostile", "entries-utf8"} {
+		raw, err := os.ReadFile(filepath.Join(root, dir, "cases.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var doc struct {
+			Cases []struct {
+				Name, Says string
+				Accepted   bool `json:"accepted"`
+			} `json:"cases"`
+		}
+		if err := json.Unmarshal(raw, &doc); err != nil {
+			t.Fatal(err)
+		}
+		for _, c := range doc.Cases {
+			have[dir+"/"+c.Name] = true
+		}
 	}
 	// One per banned item, by the name §4.0 uses for it.
 	for _, want := range []string{
-		"bare-null", "bare-undefined", "bare-float", "bare-negative-integer",
-		"bare-tag", "bare-indefinite-text", "bare-nontext-map-key",
-		"bare-invalid-utf8", "bare-simple",
+		"entries-hostile/bare-null", "entries-hostile/bare-undefined",
+		"entries-hostile/bare-float", "entries-hostile/bare-negative-integer",
+		"entries-hostile/bare-tag", "entries-hostile/bare-indefinite-text",
+		"entries-hostile/bare-nontext-map-key", "entries-hostile/bare-invalid-utf8",
+		"entries-hostile/bare-simple", "entries-utf8/bare-surrogate",
 	} {
 		if !have[want] {
-			t.Errorf("§4.0 bans this and `entries-hostile/%s` does not ship, so the "+
+			t.Errorf("§4.0 bans this and `%s` does not ship, so the "+
 				"rule is reachable only through an entry -- where a later rule "+
 				"refuses it first and the reason code is the same either way", want)
 		}
-		raw, err := os.ReadFile(filepath.Join(dir, want+".cbor"))
+		raw, err := os.ReadFile(filepath.Join(root, want+".cbor"))
 		if err != nil {
 			t.Error(err)
 			continue

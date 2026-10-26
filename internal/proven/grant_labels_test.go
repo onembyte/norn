@@ -25,7 +25,7 @@ func checkGrantLabels(t *testing.T) {
 	if err := json.Unmarshal(raw, &doc); err != nil {
 		t.Fatal(err)
 	}
-	if doc.Comment == "" || len(doc.Cases) < 44 {
+	if doc.Comment == "" || len(doc.Cases) < 47 {
 		t.Fatal("grant label boundaries are missing")
 	}
 	spec, err := os.ReadFile(filepath.Join("..", "..", "SPEC.md"))
@@ -39,13 +39,20 @@ func checkGrantLabels(t *testing.T) {
 		labels[c.Label] = true
 
 		t.Run(c.Label, func(t *testing.T) {
-			expected := map[string]string{"1:2:3:4:5:6:7::/128": "1:2:3:4:5:6:7:0/128", "1:0:0:2:3:0:0:4/128": "1::2:3:0:0:4/128", "10.0.0.1/8, 10.0.0.2/8": "10.0.0.0/8", "9.0.0.0/8, 1::/16": "1::/16,9.0.0.0/8", "1:2:3:4:5:6:7::8/128": ""}
+			expected := map[string]string{"10.0.0.0/8,  fd00::/64": "10.0.0.0/8,fd00::/64", "  10.0.0.0/8  ": "10.0.0.0/8", "::1.2.3.4/128": "::102:304/128", "1:2:3:4:5:6:7::/128": "1:2:3:4:5:6:7:0/128", "1:0:0:2:3:0:0:4/128": "1::2:3:0:0:4/128", "10.0.0.1/8, 10.0.0.2/8": "10.0.0.0/8", "9.0.0.0/8, 1::/16": "1::/16,9.0.0.0/8", "1:2:3:4:5:6:7::8/128": ""}
 			if want, ok := expected[c.Label]; ok && strings.Join(c.Grant, ",") != want {
 				t.Fatalf("manifest grant = %v, want %s", c.Grant, want)
 			}
 			got := Grant(map[string]string{"ip": c.Label})
 			if strings.Join(got, ",") != strings.Join(c.Grant, ",") {
 				t.Errorf("grant = %v, want %v: %s", got, c.Grant, c.Says)
+			}
+			repairs := map[string]string{"10.0.0.0/8,  fd00::/64": "10.0.0.0/8,fd00::/64", "  10.0.0.0/8  ": "10.0.0.0/8", "::1.2.3.4/128": "::102:304/128"}
+			if repair, ok := repairs[c.Label]; ok {
+				if got := Grant(map[string]string{"ip": repair}); strings.Join(got, ",") != strings.Join(c.Grant, ",") {
+					t.Fatalf("canonical label repair: %v", got)
+				}
+				t.Log("canonical label repair accepted")
 			}
 			if c.Label == "1:2:3:4:5:6:7::/128" {
 				expanded := Grant(map[string]string{"ip": "1:2:3:4:5:6:7:0/128"})
@@ -59,7 +66,7 @@ func checkGrantLabels(t *testing.T) {
 			}
 		})
 	}
-	for _, label := range []string{"1:2:3:4:5:6:7::/128", "9.0.0.0/8, 1::/16", "1:2:3:4:5:6:7::8/128", "9.0.0.0/8, 10.0.0.0/8", "2001:db8:0:1:1:1:1:1/128", "2001:db8:0:0:1:1:1:1/128", "1:0:0:2:3:0:0:4/128", "10.0.0.1/8, 10.0.0.2/8"} {
+	for _, label := range []string{"10.0.0.0/8,  fd00::/64", "  10.0.0.0/8  ", "::1.2.3.4/128", "1:2:3:4:5:6:7::/128", "9.0.0.0/8, 1::/16", "1:2:3:4:5:6:7::8/128", "9.0.0.0/8, 10.0.0.0/8", "2001:db8:0:1:1:1:1:1/128", "2001:db8:0:0:1:1:1:1/128", "1:0:0:2:3:0:0:4/128", "10.0.0.1/8, 10.0.0.2/8"} {
 		if !labels[label] {
 			t.Errorf("missing grant form %q", label)
 		}

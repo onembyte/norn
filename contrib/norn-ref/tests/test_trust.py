@@ -273,15 +273,17 @@ class PositiveReceiptVector(unittest.TestCase):
         from nornref import entry
         root = pathlib.Path(__file__).resolve().parents[3] / "testdata/vectors"
         manifest = json.loads((root / "receipt-good/cases.json").read_text())
-        self.assertEqual(len(manifest["cases"]), 1)
-        case = manifest["cases"][0]
-        self.assertEqual((case["name"], case["file"], case["now"]),
-                         ("deadline-at-the-cap", "deadline-at-the-cap.note", 0))
-        self.assertEqual(manifest["codes"][case["name"]], "accept")
+        self.assertEqual([c["name"] for c in manifest["cases"]],
+                         ["deadline-at-the-cap", "deadline-zero-no-clock"])
         leaf = entry.leaf_hash((root / "log/0-genesis.cbor").read_bytes())
-        self.assertEqual(case["leaf_hash"], leaf.hex())
         doc = fixture.trust_file()
         self.assertEqual(leaf, doc["genesis_hash"])
-        text = note.verify((root / "receipt-good" / case["file"]).read_text(), [doc["log_key"]])
-        self.assertEqual(text.splitlines(), ["norn/receipt/v1", doc["origin"],
-                                            base64.b64encode(leaf).decode(), "9223372036854775807"])
+        for case, deadline in zip(manifest["cases"], ("9223372036854775807", "0")):
+            with self.subTest(name=case["name"]):
+                self.assertEqual(case["file"], case["name"] + ".note")
+                self.assertEqual(case["now"], 0)
+                self.assertEqual(manifest["codes"][case["name"]], "accept")
+                self.assertEqual(case["leaf_hash"], leaf.hex())
+                text = note.verify((root / "receipt-good" / case["file"]).read_text(), [doc["log_key"]])
+                self.assertEqual(text.splitlines(), ["norn/receipt/v1", doc["origin"],
+                                                    base64.b64encode(leaf).decode(), deadline])

@@ -132,3 +132,14 @@ checkpoints-good/cases.json#unhandled expected="handled" got="UNKNOWN CASE FORMA
 # build's informed reader judges every read under the latest replayed policy,
 # the reading D-082 (1) rejected, and answers `quorum`.
 served-superseded#informed expected="accept" got="quorum"
+
+# Row G14, build P1 (2026-10-26): run 19's L13, a bare text string holding an
+# encoded surrogate (`63eda080`). In `entries-hostile/` it would end this
+# build's run, whose harness looks every case there up in a fixed table and
+# raises on a new name; so it ships in `entries-utf8/`, a manifest shape this
+# build never saw (as `unreached-witness/` above). Read directly, it refuses
+# the bytes as invalid UTF-8. It answers run 19's other P1 vectors as written:
+# the two `receipt-bad/` signature faults, the two `policies/` field counts,
+# the three grant labels and `genesis/27`; `receipt-good/` stays unhandled
+# above, so its deadline-zero positive is unread.
+entries-utf8/cases.json#unhandled expected="handled" got="UNKNOWN CASE FORMAT"

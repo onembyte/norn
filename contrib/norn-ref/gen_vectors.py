@@ -41,7 +41,7 @@ OWNED = frozenset({
     "keys.json", "entries", "log", "genesis", "state.json",
     "trust.cbor", "trust.toml", "trust.fingerprint", "trust-bad", "trust-good",
     "receipt.note", "receipt.json", "receipt-bad", "receipt-good", "requests", "requests-bad", "policies",
-    "entries-hostile", "proven", "log-empty", "log-admission", "log-cas", "log-edges", "log-order", "log-republish", "log-rules", "genesis-good",
+    "entries-hostile", "entries-utf8", "proven", "log-empty", "log-admission", "log-cas", "log-edges", "log-order", "log-republish", "log-rules", "genesis-good",
     "receipt-rotated",
 })
 
@@ -172,7 +172,7 @@ def write_proven(out: pathlib.Path, final: Any, entries: list[bytes]) -> None:
     zero = "place of the length, a zone, a leading zero, any other whitespace or any other"
     mask = "A bare address, a netmask or hostmask in"
     whitespace = "any other whitespace or any other"
-    space = "U+0020 is removed from both of its ends and nothing else is."
+    space = "leading and trailing U+0020s are removed and nothing else is."
     canonical = "every group in lowercase hexadecimal (an embedded dotted quad is written as"
     forms = [
         ("1:2:3:4:5:6:7::/128", ["1:2:3:4:5:6:7:0/128"], "at most one `::`"),
@@ -193,6 +193,10 @@ def write_proven(out: pathlib.Path, final: Any, entries: list[bytes]) -> None:
           for char in ("\t", "\r", "\v", "\u001c", "\u001f", "\u0085",
                        "\u00a0", "\u200b", "\u3000")],
         ("10.9.1.0/24 ", ["10.9.1.0/24"], space),
+        ("10.0.0.0/8,  fd00::/64", ["10.0.0.0/8", "fd00::/64"], space),
+        ("  10.0.0.0/8  ", ["10.0.0.0/8"], space),
+        ("::1.2.3.4/128", ["::102:304/128"],
+         "every group in lowercase hexadecimal (an embedded dotted quad is written as"),
         (" 10.9.1.0/24 ,fd00::5/64", ["10.9.1.0/24", "fd00::/64"], space),
         ("10.9.1/24", [], "dotted quad — four decimal octets 0–255, none with a leading zero"),
         ("1.2.3.4/33", [], "The length is decimal without a leading zero, at most 32"),
@@ -332,6 +336,7 @@ def write_genesis_aborts(out: pathlib.Path) -> None:
     step7 = {"section": "5.1", "says": "genesis signatures are counted against the `roots`"}
     genesis_rules = {
         "01-hash-mismatch": step4, "02-not-genesis": step3, "03-wrong-net": step3,
+        "27-type-with-genesis-body": step3,
         "26-body-unknown-key": {"section": "4.0", "says": "unknown keys → reject"},
         "25-prev-present": {"section":"5.1", "says":"`prev` MUST be absent"},
         "04-after-nonzero": step5, "05-root-thr-above-set": step6,
@@ -808,11 +813,19 @@ def write_trust(out: pathlib.Path) -> None:
     write(out / "receipt-good" / (name + ".note"),
           note.sign(capped_text, doc["origin"], fixture.KEYS["logkey"]))
     says = "at most 2⁶³−1"
+    zero_name = "deadline-zero-no-clock"
+    zero_says = "A zero time skips this local expiry judgment."
+    write(out / "receipt-good" / (zero_name + ".note"),
+          note.sign(note.receipt_text(doc["origin"], genesis_leaf, 0),
+                    doc["origin"], fixture.KEYS["logkey"]))
     write(out / "receipt-good" / "cases.json", canonjson.dumps({
         "cases": [{"name": name, "file": name + ".note", "leaf_hash": genesis_leaf,
-                   "now": 0, "says": says}],
-        "codes": {name: "accept"},
-        "rules": {name: {"section": "7", "says": says}},
+                   "now": 0, "says": says},
+                  {"name": zero_name, "file": zero_name + ".note", "leaf_hash": genesis_leaf,
+                   "now": 0, "says": zero_says}],
+        "codes": {name: "accept", zero_name: "accept"},
+        "rules": {name: {"section": "7", "says": says},
+                  zero_name: {"section": "7", "says": zero_says}},
     }) + "\n")
 
     # Cold gate run 11, D4. §7 showed the deadline as a bare <uint> with no
@@ -863,6 +876,18 @@ def write_trust(out: pathlib.Path) -> None:
     # reader holding only that file trusts no other key (§7, §9.4).
     add_case("untrusted-log-key.note", good_text, "log-signature",
              "The note MUST verify under a log key the verifier trusts", signer="logkey2")
+
+    _, log_lines = note.split(signed)
+    log_name, payload = log_lines[0]
+    forged = payload[:-1] + bytes([payload[-1] ^ 1])
+    forged_line = note.SIG_PREFIX + log_name + " " + base64.b64encode(forged).decode() + "\n"
+    add_case("two-log-lines.note", good_text, "log-signature",
+             "The note MUST verify under a log key the verifier trusts",
+             raw_signed=signed + forged_line)
+    long_line = note.SIG_PREFIX + log_name + " " + base64.b64encode(payload + b"\x00").decode() + "\n"
+    add_case("payload-69.note", good_text, "log-signature",
+             "The note MUST verify under a log key the verifier trusts",
+             raw_signed=good_text + "\n" + long_line)
 
     body_lines = good_text.splitlines()
     add_case("fifth-line.note", good_text + "extra\n", "receipt",
@@ -1035,6 +1060,8 @@ def write_policies(out: pathlib.Path) -> None:
     grammar = {"section": "9.1", "says": "The rest of the grammar, stated because"}
     policy_rules = {name: dict(grammar) for name, _, _, _ in inputs}
     policy_rules["all-members"] = {"section": "9.1", "says": "`all` is `n`"}
+    for name in ("bad-witness-extra-field", "bad-log-extra-field"):
+        policy_rules[name] = {"section": "9.1", "says": "and a line with more is an **error**"}
     policy_rules["bad-log-vkey-algorithm-distinct"] = {
         "section": "9.1", "says": "A `log` vkey MUST use algorithm `0x01`"}
     for name in ("trailing-space", "trailing-tab"):
@@ -1280,6 +1307,21 @@ def write_requests(out: pathlib.Path) -> None:
                    "and MUST be accepted, which is what bounds it from below. Neither limit is "
                    "reachable by a valid entry, so these are the only vectors that reach them",
         "cases": hostile,
+    }) + "\n")
+
+
+    utf8 = []
+    for name, raw, says in fixture.utf8_inputs():
+        write(out / "entries-utf8" / f"{name}.cbor", raw)
+        utf8.append({"name": name, "says": says})
+    write(out / "entries-utf8" / "cases.json", canonjson.dumps({
+        "rules": {
+            name: {"section": "4.0", "says": "valid UTF-8"}
+            for name, _, _ in fixture.utf8_inputs()
+        },
+        "comment": "bare text strings that MUST be refused as invalid UTF-8, "
+                   "with no entry schema above the decoder",
+        "cases": utf8,
     }) + "\n")
 
 

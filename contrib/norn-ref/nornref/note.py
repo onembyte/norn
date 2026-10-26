@@ -148,8 +148,8 @@ def split(signed: str) -> tuple[str, list[tuple[str, bytes]]]:
             raise NoteError("signature is not base64") from exc
         if base64.b64encode(raw).decode("ascii") != blob:
             raise NoteError("signature base64 is not canonical")
-        if len(raw) != 68:
-            raise NoteError("signature must be 4-byte key id plus 64-byte signature")
+        if len(raw) < 4:
+            raise NoteError("signature must contain at least a 4-byte key id")
         signatures.append((name, raw))
     if not signatures:
         raise NoteError("note has no signature lines")
@@ -157,15 +157,24 @@ def split(signed: str) -> tuple[str, list[tuple[str, bytes]]]:
 
 
 def verify(signed: str, vkeys: list[str]) -> str:
-    """Return the note text if any listed key signed it; raise otherwise."""
+    """Return text if at least one line selects a listed key and all such
+    lines have the plain note length and verify. Unmatched framed lines are
+    ignored whatever their length (SPEC §7 step 2 and §9).
+    """
     text, signatures = split(signed)
     trusted = [parse_vkey(v) for v in vkeys]
+    matched = False
     for name, raw in signatures:
         for verifier in trusted:
             if verifier.name == name and verifier.id == raw[:4]:
-                if keys.verify(verifier.public, text.encode("utf-8"), raw[4:]):
-                    return text
-    raise NoteError("no valid signature from a trusted key")
+                matched = True
+                if len(raw) != 68:
+                    raise NoteError("signature must be 4-byte key id plus 64-byte signature")
+                if not keys.verify(verifier.public, text.encode("utf-8"), raw[4:]):
+                    raise NoteError("bad signature from a trusted key")
+    if not matched:
+        raise NoteError("no signature from a trusted key")
+    return text
 
 
 def receipt_text(origin: str, leaf_hash: bytes, deadline: int) -> str:

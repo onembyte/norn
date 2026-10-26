@@ -111,6 +111,32 @@ func TestEveryPolicyGrammarCaseIsDecidedTheSameWay(t *testing.T) {
 		}
 		t.Log("algorithm-only repair accepted")
 	})
+	for _, directive := range []string{"witness", "log"} {
+		t.Run("bad-"+directive+"-extra-field", func(t *testing.T) {
+			text := policyText(t, "bad-"+directive+"-extra-field")
+			if _, err := Parse(text); err == nil {
+				t.Fatal("extra field accepted")
+			}
+			lines := strings.Split(text, "\n")
+			changed := 0
+			for i, line := range lines {
+				if strings.HasPrefix(line, directive+" ") && strings.HasSuffix(line, " extra") {
+					if len(strings.Fields(line)) != map[string]int{"witness": 5, "log": 4}[directive] {
+						t.Fatal("fault must follow the optional URL")
+					}
+					lines[i] = strings.TrimSuffix(line, " extra")
+					changed++
+				}
+			}
+			if changed != 1 {
+				t.Fatal("expected exactly one extra field")
+			}
+			if _, err := Parse(strings.Join(lines, "\n")); err != nil {
+				t.Fatalf("field-only repair: %v", err)
+			}
+			t.Log("field-only repair accepted")
+		})
+	}
 	cases := policyCases(t)
 	var accepted, refused int
 	for _, c := range cases {

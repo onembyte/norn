@@ -20,6 +20,36 @@ class GenesisAborts(unittest.TestCase):
         self.assertEqual(state.roots, {})
         return state
 
+    def test_a_genesis_body_does_not_supply_the_entry_type(self):
+        import json
+        from pathlib import Path
+        from nornref import keys
+        root = Path(__file__).resolve().parents[3] / "testdata/vectors/genesis"
+        index = json.loads((root / "cases.json").read_text())
+        name = "27-type-with-genesis-body"
+        self.assertIn(name, index["cases"])
+        directory = root / name
+        manifest = json.loads((directory / "manifest.json").read_text())
+        anchor = replay.Anchor(**{k: bytes.fromhex(v) if k in ("net", "genesis_hash") else v
+                                  for k, v in manifest["anchor"].items()})
+        raw = (directory / "00-genesis.cbor").read_bytes()
+        self.assertEqual(anchor.genesis_hash, entry.leaf_hash(raw))
+        env = cbor.decode(raw)
+        self.assertEqual(env["t"], "note")
+        self.assertEqual(env["body"], fixture.genesis()["body"])
+        self.assertEqual(len(env["sigs"]), 2)
+        roots = {fixture.KEYS[n].id: fixture.KEYS[n].public for n in ("root1", "root2")}
+        for sig in env["sigs"]:
+            self.assertEqual(sig["role"], "root")
+            self.assertTrue(keys.verify(roots[sig["kid"]], entry.preimage(env), sig["sig"]))
+        state = self._abort(raw, anchor)
+        self.assertEqual(state.to_json() + "\n", (directory / "state.json").read_text())
+        env["t"] = "genesis"; env["sigs"] = []
+        fixture._signed(env, [("root1", "root"), ("root2", "root")])
+        repaired = entry.encode(env)
+        result = replay.replay(fixture.anchor_for([repaired]), [repaired])
+        self.assertEqual((result.size, result.rejected), (1, []))
+
     def _boolean_threshold_aborts(self, case, field):
         cases = {name: (raw, anchor) for name, raw, anchor in fixture.genesis_aborts()}
         raw, anchor = cases[case]

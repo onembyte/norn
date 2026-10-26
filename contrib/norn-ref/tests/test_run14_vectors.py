@@ -92,11 +92,14 @@ class RunFourteen(unittest.TestCase):
         doc = json.loads((ROOT / 'proven/grant-labels.json').read_text())
         from nornref.state import grant_from_label
         self.assertTrue(doc['comment'])
-        self.assertGreaterEqual(len(doc['cases']), 44)
-        self.assertTrue({'1:2:3:4:5:6:7::/128', '9.0.0.0/8, 1::/16', '1:2:3:4:5:6:7::8/128', '9.0.0.0/8, 10.0.0.0/8', '2001:db8:0:1:1:1:1:1/128',
+        self.assertGreaterEqual(len(doc['cases']), 47)
+        self.assertTrue({'10.0.0.0/8,  fd00::/64', '  10.0.0.0/8  ', '::1.2.3.4/128', '1:2:3:4:5:6:7::/128', '9.0.0.0/8, 1::/16', '1:2:3:4:5:6:7::8/128', '9.0.0.0/8, 10.0.0.0/8', '2001:db8:0:1:1:1:1:1/128',
                          '2001:db8:0:0:1:1:1:1/128', '1:0:0:2:3:0:0:4/128',
                          '10.0.0.1/8, 10.0.0.2/8'} <= {c['label'] for c in doc['cases']})
-        expected = {'1:2:3:4:5:6:7::/128': ['1:2:3:4:5:6:7:0/128'],
+        expected = {'10.0.0.0/8,  fd00::/64': ['10.0.0.0/8', 'fd00::/64'],
+                    '  10.0.0.0/8  ': ['10.0.0.0/8'],
+                    '::1.2.3.4/128': ['::102:304/128'],
+                    '1:2:3:4:5:6:7::/128': ['1:2:3:4:5:6:7:0/128'],
                     '9.0.0.0/8, 1::/16': ['1::/16', '9.0.0.0/8'],
                     '1:2:3:4:5:6:7::8/128': [],
                     '1:0:0:2:3:0:0:4/128': ['1::2:3:0:0:4/128'],
@@ -108,6 +111,11 @@ class RunFourteen(unittest.TestCase):
         for case in doc['cases']:
             with self.subTest(label=case['label']):
                 self.assertEqual(grant_from_label(case['label']), case['grant'])
+                repairs = {'10.0.0.0/8,  fd00::/64': '10.0.0.0/8,fd00::/64',
+                           '  10.0.0.0/8  ': '10.0.0.0/8',
+                           '::1.2.3.4/128': '::102:304/128'}
+                if case['label'] in repairs:
+                    self.assertEqual(grant_from_label(repairs[case['label']]), case['grant'])
             with self.subTest(rule=case['label']):
                 self.assertTrue(case['says'])
                 self.assertNotIn('\n', case['says'])
@@ -179,8 +187,8 @@ class RunFourteen(unittest.TestCase):
         def read(path):
             return (ROOT / path).read_bytes()
         def verify_log(head, keys):
-            # This reference's note splitter accepts plain signatures only.
-            # Witness lines are checked by Go; exercise the log's note here.
+            # Witness cosignatures are checked by Go; project these heads
+            # onto the log signatures this reference can verify.
             text, separator, block = head.partition('\n\n')
             lines = [line for line in block.splitlines()
                      if not line.startswith('— norn-witness/')]

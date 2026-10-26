@@ -36,8 +36,8 @@ func TestEveryPositiveReceiptBindsItsLeafAtTheInclusiveBound(t *testing.T) {
 	if err := json.Unmarshal(raw, &wire); err != nil {
 		t.Fatal(err)
 	}
-	if len(wire.Cases) != 1 || wire.Cases[0].Name != "deadline-at-the-cap" {
-		t.Fatal("missing deadline-at-the-cap positive")
+	if len(wire.Cases) != 2 || wire.Cases[0].Name != "deadline-at-the-cap" || wire.Cases[1].Name != "deadline-zero-no-clock" {
+		t.Fatal("missing deadline-at-the-cap or deadline-zero-no-clock positive")
 	}
 	anchorRaw, err := os.ReadFile(filepath.Join(root, "trust.cbor"))
 	if err != nil {
@@ -67,8 +67,14 @@ func TestEveryPositiveReceiptBindsItsLeafAtTheInclusiveBound(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !strings.Contains(string(signed), "\n9223372036854775807\n\n") {
-				t.Fatal("deadline is not exactly 2^63-1")
+			deadline := uint64(1<<63 - 1)
+			deadlineText := "9223372036854775807"
+			if c.Name == "deadline-zero-no-clock" {
+				deadline = 0
+				deadlineText = "0"
+			}
+			if !strings.Contains(string(signed), "\n"+deadlineText+"\n\n") {
+				t.Fatal("wrong case-specific deadline")
 			}
 			// The ordinary receipt is the paired guard: the authenticated
 			// body changes only its deadline, with the same log and leaf.
@@ -96,8 +102,19 @@ func TestEveryPositiveReceiptBindsItsLeafAtTheInclusiveBound(t *testing.T) {
 			if err != nil {
 				t.Fatalf("positive receipt: %v", err)
 			}
-			if got.Deadline != 1<<63-1 || string(got.LeafHash) != string(leaf[:]) {
+			if got.Deadline != deadline || string(got.LeafHash) != string(leaf[:]) {
 				t.Fatal("accepted receipt lost its deadline or leaf")
+			}
+			if c.Name == "deadline-zero-no-clock" {
+				if _, err := Check(string(signed), []string{anchor.LogKey}, anchor.Origin, leaf[:], time.Unix(1, 0)); err == nil {
+					t.Fatal("nonzero clock must expire deadline zero")
+				} else if code, ok := CodeOf(err); !ok || code != Expired {
+					t.Fatalf("nonzero clock: %v", err)
+				}
+				if _, err := Check(string(signed), []string{anchor.LogKey}, anchor.Origin, leaf[:], time.Time{}); err != nil {
+					t.Fatalf("zero-clock repair: %v", err)
+				}
+				t.Log("nonzero clock expired; zero-clock repair accepted")
 			}
 			wrong := leaf
 			wrong[0] ^= 1
@@ -109,7 +126,7 @@ func TestEveryPositiveReceiptBindsItsLeafAtTheInclusiveBound(t *testing.T) {
 			if _, err := Check(string(signed), []string{anchor.LogKey}, anchor.Origin, leaf[:], time.Time{}); err != nil {
 				t.Fatalf("leaf-only repair: %v", err)
 			}
-			t.Log("deadline 9223372036854775807 accepted; wrong leaf refused as entry; leaf-only repair accepted")
+			t.Logf("deadline %d accepted; wrong leaf refused as entry; leaf-only repair accepted", deadline)
 		})
 	}
 }

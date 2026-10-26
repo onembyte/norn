@@ -1284,6 +1284,14 @@ def genesis_aborts() -> list[tuple[str, bytes, "replay.Anchor"]]:
 
     bad_body("26-body-unknown-key", extra="closed body")
 
+    # The genuine genesis body, quorum and pin leave only the type predicate.
+    wrong_type = genesis()
+    wrong_type["t"] = "note"
+    wrong_type["sigs"] = []
+    _signed(wrong_type, [("root1", "root"), ("root2", "root")])
+    raw = entry.encode(wrong_type)
+    cases.append(("27-type-with-genesis-body", raw, anchor_for([raw])))
+
     assert good_anchor  # the good anchor is exercised by the log fixture
     return cases
 
@@ -1387,6 +1395,10 @@ def policy_grammar() -> list[tuple[str, str, bool, str]]:
     bad_witness_id = _witness_vkey_with_wrong_id("pi")
 
     return [
+        ("bad-witness-extra-field", f"{log}\n{pi} extra\nquorum pi\n", False,
+         "directive has more fields than its production permits"),
+        ("bad-log-extra-field", f"{log} extra\n{pi}\nquorum pi\n", False,
+         "directive has more fields than its production permits"),
         ("all-members", f"{pi}\n{vps}\ngroup home all pi vps\nquorum home\n", True,
          "all is n"),
         ("bad-log-vkey-algorithm-distinct",
@@ -2722,6 +2734,13 @@ def hostile_inputs() -> list[tuple[str, bytes, str]]:
         ("past-the-size-limit", past_size, "exceeds"),
         ("at-the-key-limit", at_key, None),
         ("past-the-key-limit", past_key, f"map key must be 1-{cbor.MAX_KEY_LEN} bytes"),
+    ]
+
+
+def utf8_inputs() -> list[tuple[str, bytes, str]]:
+    """Bare UTF-8 refusals outside the cold build's fixed hostile-case table."""
+    return [
+        ("bare-surrogate", bytes.fromhex("63eda080"), "UTF-8"),
     ]
 
 
