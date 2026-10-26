@@ -51,8 +51,8 @@ func TestRunEighteensTrustFrozenSetAndBindingDecisionsAreRecorded(t *testing.T) 
 			"v1 remedies it with a new network, a new genesis and trust file, and has no verifier-side retirement (D-072 (d))",
 		}},
 		{"## 11. ", "### 11.1 ", []string{
-			"each with its `wg_pk` and the routes its enrollment granted as of the common prefix, and only while its `wg_pk` at the held head is that same key",
-			"a device whose key changed after the split is removed, since the old key may be the reason it rotated (D-082 (3))",
+			"each with its `wg_pk` and the routes its enrollment granted as of the common prefix, and only while its record at the held head is the one at the prefix — the same `version` (§5.3) at both ends, so the same key and routes",
+			"a device that any entry revoked, re-enrolled or rotated after the split is removed, whatever key it ends with, since nothing written after the split is trusted and the old key may be the reason it rotated (D-082 (3), D-083)",
 		}},
 		{"### 11.1 ", "## 12. ", []string{
 			"reader that has replayed the log through the rotation; one holding only the trust file answers `held`",

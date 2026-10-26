@@ -1617,9 +1617,12 @@ that are not consistent MUST:
 3. keep enforcing, in every cycle, the **frozen set**: the devices proven at
    the common prefix **and** proven at the head the node itself holds, each
    with its `wg_pk` and the routes its enrollment granted as of the common
-   prefix, and only while its `wg_pk` at the held head is that same key: a
-   device whose key changed after the split is removed, since the old key may
-   be the reason it rotated (D-082 (3)). The
+   prefix, and only while its record at the held head is the one at the
+   prefix — the same `version` (§5.3) at both ends, so the same key and
+   routes: a device that any entry revoked, re-enrolled or rotated after the
+   split is removed, whatever key it ends with, since nothing written after
+   the split is trusted and the old key may be the reason it rotated
+   (D-082 (3), D-083). The
    **common prefix**: the largest size at which both branches have the same
    root — the last state both agree on, and therefore the last one a node can
    call authorized once it knows the log signs whatever suits it. Relative to

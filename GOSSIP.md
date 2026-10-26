@@ -246,11 +246,13 @@ can re-verify it offline: `norn verify-evidence <file>`. This is the artifact
 that goes to the witness operators, the log operator's boss, or a blog post.
 
 A node that verifies the evidence freezes just as the detector does: it keeps
-only peers proven at the common prefix and at its own held head, removes the
-rest, and adds none. A device enrolled after the split on the victim's branch
-therefore loses access; a pre-split device revoked at that head stays out. If
-the node cannot establish the prefix from its own branch, it drops every peer
-and says why in its frozen alarm. It consumes no new authorization state and
+only peers proven at the common prefix and at its own held head with the same
+device record version at both ends, removes the rest, and adds none. A device
+enrolled after the split on the victim's branch therefore loses access; a
+pre-split device revoked, re-enrolled or rotated after the split stays out,
+even if its key comes back (D-083). If the node cannot establish the prefix
+from its own branch, it drops every peer and says why in its frozen alarm.
+It consumes no new authorization state and
 keeps enforcing and alarming until a new trust file (`SPEC.md` §11 and §13.2).
 Version-1 evidence claims no prefix and therefore makes the node fail closed.
 

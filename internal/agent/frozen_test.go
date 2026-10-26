@@ -46,20 +46,25 @@ func provenKeysIn(t *testing.T, st *state.State, held *logclient.Result) map[pee
 // D-072 (a), §11 rule 3. A node that has proved a fork keeps enforcing the
 // devices proven at the common prefix AND at the head it holds: whatever
 // was added after the split goes, and whatever this branch revoked after it
-// stays out. The split is chosen in the fixture so that both kinds of device
-// exist; otherwise the test would prove nothing about either.
+// stays out. A record changed after the split stays out even if its key
+// returns (D-083). The split includes an unchanged device, one added after
+// it and one revoked after it; otherwise the intersection would prove nothing.
 func TestTheFrozenSetIsThePrefixIntersectedWithTheHeldHead(t *testing.T) {
 	a, held := heldServed(t)
 	atHead := provenKeysIn(t, held.State, held)
 
 	var split int64
 	var atSplit map[peertable.Key]string
+	var splitState *state.State
 	for s := int64(1); s < held.Checkpoint.Size; s++ {
-		prefix := provenKeysIn(t, replay.Replay(a.replayAnchor(), held.Served[:s]), held)
+		prefixState := replay.Replay(a.replayAnchor(), held.Served[:s])
+		prefix := provenKeysIn(t, prefixState, held)
 		kept, added, revoked := 0, 0, 0
-		for key := range atHead {
-			if _, ok := prefix[key]; ok {
-				kept++
+		for key, id := range atHead {
+			if prefixID, ok := prefix[key]; ok {
+				if prefixID == id && prefixState.Devices[id].Version == held.State.Devices[id].Version {
+					kept++
+				}
 			} else {
 				added++
 			}
@@ -72,7 +77,7 @@ func TestTheFrozenSetIsThePrefixIntersectedWithTheHeldHead(t *testing.T) {
 		// All three kinds must exist at the chosen split, or a frozen set that
 		// keeps nothing -- or keeps everything -- would pass.
 		if kept > 0 && added > 0 && revoked > 0 {
-			split, atSplit = s, prefix
+			split, atSplit, splitState = s, prefix, prefixState
 			break
 		}
 	}
@@ -94,12 +99,13 @@ func TestTheFrozenSetIsThePrefixIntersectedWithTheHeldHead(t *testing.T) {
 		got[peer.Key] = true
 	}
 	for key, id := range atHead {
-		_, kept := atSplit[key]
-		if kept && !got[key] {
-			t.Errorf("%s is proven at the split and at the held head, and was dropped", id)
+		prefixID, present := atSplit[key]
+		unchanged := present && prefixID == id && splitState.Devices[id].Version == held.State.Devices[id].Version
+		if unchanged && !got[key] {
+			t.Errorf("%s is proven at both ends with an unchanged record, and was dropped", id)
 		}
-		if !kept && got[key] {
-			t.Errorf("%s was enrolled after the split and is still enforced", id)
+		if !unchanged && got[key] {
+			t.Errorf("%s was enrolled or changed after the split and is still enforced", id)
 		}
 	}
 	for key, id := range atSplit {

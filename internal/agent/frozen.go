@@ -6,24 +6,24 @@ import (
 	"github.com/onembyte/norn/internal/endpoint"
 	"github.com/onembyte/norn/internal/logclient"
 	"github.com/onembyte/norn/internal/peertable"
+	"github.com/onembyte/norn/internal/proven"
 	"github.com/onembyte/norn/internal/replay"
 )
 
 // frozenSet is §11 rule 3 (D-072 (a)): what a node that has proved its log
 // forked keeps enforcing. It is the devices proven at the common prefix --
-// this node's own entries replayed to `split` -- whose keys are also proven
-// at the head it holds, with the routes their enrollment granted as of the
-// prefix.
+// this node's own entries replayed to `split` -- and at the head it holds,
+// with the same record version at both ends, so the same key and routes.
 //
 // The prefix is the last state both branches agree on, so it is the last one
 // a node can still call authorized once it knows the log signs whatever suits
 // it; a split view's rogue was enrolled after it, on the victim's branch, and
 // goes. The intersection with the held head is what keeps the set from
 // growing: a device this branch revoked after the split is in the prefix and
-// stays out. It is by key, not by device: a device that rotated after the
-// split is in the prefix under its old key and at the head under its new one,
-// and neither key is proven at both -- the old one may be the reason it
-// rotated.
+// stays out. Nothing written after the split is trusted: a device revoked,
+// re-enrolled or rotated after it stays out even if its key comes back. The
+// version is the last accepted entry naming that device (§5.3), so equality
+// proves its record did not change; the old key may be why it rotated (D-083).
 //
 // When the prefix cannot be established -- no split claimed, or this node's
 // branch does not reach it or has another root there -- it returns no peers
@@ -53,15 +53,27 @@ func (a *Agent) frozenSet(held *logclient.Result, split int64, splitRoot [32]byt
 	// is not proven there either (§5.3).
 	prefix := *held
 	prefix.State = replay.Replay(a.replayAnchor(), held.Served[:split])
-	atPrefix, report := a.desired(&prefix, own)
-	atHead, _ := a.desired(held, own)
-	proven := make(map[peertable.Key]bool, len(atHead))
-	for _, peer := range atHead {
-		proven[peer.Key] = true
+	at := proven.EvaluationTime(held)
+	versions := make(map[string]uint64)
+	for _, id := range proven.Devices(prefix.State, at) {
+		versions[id] = prefix.State.Devices[id].Version
 	}
+	unchanged := make(map[peertable.Key]bool)
+	for _, id := range proven.Devices(held.State, at) {
+		device := held.State.Devices[id]
+		if version, ok := versions[id]; ok && version == device.Version {
+			if key, err := keyOf(device.WgPk); err == nil {
+				unchanged[key] = true
+			}
+		}
+	}
+	// The peers and the report are still the prefix's: an unchanged record
+	// gives the same peer at both ends, and a provider naming a device
+	// enrolled after the split is naming one the prefix does not prove.
+	atPrefix, report := a.desired(&prefix, own)
 	kept := atPrefix[:0]
 	for _, peer := range atPrefix {
-		if proven[peer.Key] {
+		if unchanged[peer.Key] {
 			kept = append(kept, peer)
 		}
 	}

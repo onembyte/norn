@@ -47,15 +47,17 @@ func frozenNode(t *testing.T, mode reconcile.Mode, stateDir string) (*Agent, *pe
 }
 
 // wantFrozen is §11 rule 3 computed independently of the agent: the keys
-// proven at forkAt and at the held head.
+// proven at forkAt and at the held head with the same device record version.
 func wantFrozen(t *testing.T, a *Agent) map[peertable.Key]bool {
 	t.Helper()
 	held := a.held()
 	atHead := provenKeysIn(t, held.State, held)
-	atSplit := provenKeysIn(t, replay.Replay(a.replayAnchor(), held.Served[:forkAt]), held)
+	prefix := replay.Replay(a.replayAnchor(), held.Served[:forkAt])
+	atSplit := provenKeysIn(t, prefix, held)
 	want := map[peertable.Key]bool{}
-	for key := range atHead {
-		if _, ok := atSplit[key]; ok {
+	for key, id := range atHead {
+		if prefixID, ok := atSplit[key]; ok && prefixID == id &&
+			prefix.Devices[id].Version == held.State.Devices[id].Version {
 			want[key] = true
 		}
 	}
