@@ -185,6 +185,12 @@ incident that produced it. Read that section before the first firing.
   `MAX_TRUST_BYTES`; a bundle's request decodes by structure, field rules and
   point admission, not its signature or network, and an entry over
   `MAX_ENTRY_BYTES` is `bundle`.** Rows 6.5l-xv-e to -i; `DECISIONS.md` D-080.
+- **D-083 (taken 2026-10-25, the loop's decision on the owner's instruction):
+  the frozen set keeps a device only when its record is the same at the
+  common prefix and at the held head — the same `version` at both ends —
+  so a device revoked, re-enrolled or rotated after the split is removed
+  while the node is frozen, whatever key it ends with.** Rows G13 to G15;
+  `DECISIONS.md` D-083.
 - **D-082 (taken 2026-10-24, the owner's answers to G8): a head a node already
   holds keeps the policy and `T` it was accepted under, and a restart
   verifies its mirror under them; a trust file carries the network's initial

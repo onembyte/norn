@@ -1514,3 +1514,30 @@ own vectors (G6). Text and five vectors (four sound bundles and one
 `binding`); the fourth cold build's answers on two of them become recorded
 debts. Rejected: B, the reader's wide reading; C, B with `net`.
 Row: G8; the changes are G9's.
+
+## D-083 · The frozen set keeps a device only when no entry changed it after the split (row G15, 2026-10-25)
+The owner's instruction of 2026-10-25 ("read g15 1 11 and 16, deside and
+then notify me"): the loop decided, as it had recommended in the block
+"DECISION TAKEN — G15" (`BUILD-LOG.md`): **A**. Cold gate run 19's one M
+finding (G13): D-082 (3) kept a device in the frozen set when its `wg_pk` at
+the held head was the key it had at the common prefix, so a device revoked
+after the split and re-enrolled with the same key, or rotated away and back
+to it, was kept, and a leaked key revoked after the split came back for as
+long as the node stayed frozen.
+**(1) §11 rule 3: a device is in the frozen set when it is proven at the
+common prefix and at the held head with the same record at both ends — the
+same `version` (§5.3, the index of the entry that last changed it) — which
+implies the same `wg_pk` and routes.** Any revocation, re-enrollment or
+rotation after the split removes it while the node is frozen, whatever key
+it ends with. **Why.** After a proven fork nothing the log wrote after the
+split is trusted, on either branch, and the rule's own prose already said so
+("whatever this node's branch revoked after it stays out"); the key test was
+the loop's shortcut for it and missed a key that comes back. The change in
+what a node keeps is confined to those two histories: a rotation to a
+different key already removed the device. Go's `frozenSet` compares the
+device's version at the two ends; Go tests are built from run 19's two
+histories; the frozen set has no static vector (§12.1, node behaviour).
+Rejected: B, keep the key test and rewrite the prose to match it (a leaked
+key comes back); C, the key test plus a check for a revocation after the
+split (narrower than A, one more rule, and still keeps rotate-and-back).
+Row: G15; the changes are G15's second half.
