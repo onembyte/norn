@@ -45,7 +45,7 @@ class D080Vectors(unittest.TestCase):
         folder = ROOT / "log-rules"
         self.assertTrue((folder / f"{name}.cbor").is_file(), f"missing log-rules/{name}.cbor")
         manifest = json.loads((folder / "manifest.json").read_text())
-        self.assertEqual(len(manifest["entries"]), 29)
+        self.assertEqual(len(manifest["entries"]), 37)
         self.assertEqual(manifest["entries"][25]["name"], "25-enroll-without-expires")
         self.assertEqual(manifest["entries"][26], {"index": 26, "name": name, "reason": ""})
         self.rule(manifest["rules"][name], TRAILING)
@@ -62,12 +62,17 @@ class D080Vectors(unittest.TestCase):
             self.assertTrue(entry.verify_sig(env, sig, before.roots[sig["kid"]]))
         text = env["body"]["text"]
         self.assertEqual(text, "".join(line + " \n" for line in fixture.policy_text().splitlines()))
+        # Entry 33 intentionally supersedes this policy. Its own prefix
+        # must still preserve every trailing-space and version obligation.
+        at_policy = replay.replay(anchor, raw[:27])
+        self.assertFalse(any(r["index"] == 26 for r in at_policy.rejected))
+        self.assertEqual(at_policy.versions["policy"], 26)
+        self.assertEqual(at_policy.policy, text)
+        policy.parse(at_policy.policy)
+        self.assertEqual(at_policy.policy.replace(" \n", "\n"), fixture.policy_text())
         final = replay.replay(anchor, raw)
-        self.assertFalse(any(r["index"] == 26 for r in final.rejected))
-        self.assertEqual(final.versions["policy"], 26)
-        self.assertEqual(final.policy, text)
-        policy.parse(final.policy)
-        self.assertEqual(final.policy.replace(" \n", "\n"), fixture.policy_text())
+        self.assertEqual(final.versions["policy"], 33)
+        self.assertEqual(final.policy, cbor.decode(raw[33])["body"]["text"])
         self.assertEqual((final.to_json() + "\n").encode(), (folder / "state.json").read_bytes())
 
     def test_a_trust_policy_above_the_entry_text_cap_is_valid(self):

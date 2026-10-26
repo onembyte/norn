@@ -3,12 +3,16 @@ package replay
 import (
 	"bytes"
 	"crypto/ed25519"
+	"encoding/json"
 	"os"
+	"strings"
 	"testing"
 
+	"github.com/onembyte/norn/internal/cbor"
 	"github.com/onembyte/norn/internal/enrollreq"
 	"github.com/onembyte/norn/internal/entry"
 	"github.com/onembyte/norn/internal/note"
+	"github.com/onembyte/norn/internal/policy"
 )
 
 // The expected answers come from §5.1, independently of the manifest. Each
@@ -36,11 +40,61 @@ func TestEveryOrderCaseMatchesAndExposesOnlyItsNamedFaults(t *testing.T) {
 		"21-root-thr-body-before-prev":             {ReasonDecode, ReasonStaleState},
 		"22-log-key-fields-before-prev":            {ReasonDecode, ReasonStaleState},
 		"23-root-remove-prev-before-unknown-key":   {ReasonStaleState, ReasonUnknownKey},
+		"24-enroll-body-before-request-signature":  {ReasonDecode, ReasonNoDeviceSig},
+		"25-enroll-body-before-threshold":          {ReasonDecode, ReasonThreshold},
+		"26-enroll-body-before-prev":               {ReasonDecode, ReasonStaleState},
+		"27-enroll-body-before-dup-id":             {ReasonDecode, ReasonDupID},
+		"28-enroll-body-before-dup-wg":             {ReasonDecode, ReasonDupWg},
+		"29-log-key-body-before-prev":              {ReasonDecode, ReasonStaleState},
+		"30-log-key-body-before-witness-key":       {ReasonDecode, ReasonDupKey},
+		"31-log-key-body-before-active-log-key":    {ReasonDecode, ReasonDupKey},
+		"32-policy-body-before-prev":               {ReasonDecode, ReasonStaleState},
+		"33-policy-body-before-dup-key":            {ReasonDecode, ReasonDupKey},
+		"34-policy-cap-before-prev":                {ReasonDecode, ReasonStaleState},
+		"35-policy-cap-before-dup-key":             {ReasonDecode, ReasonDupKey},
+		"36-revoke-body-before-not-active":         {ReasonDecode, ReasonNotActive},
+		"37-rotate-body-before-not-active":         {ReasonDecode, ReasonNotActive},
+		"38-envelope-invalid-note":                 {ReasonDecode, ""},
+		"39-byte-copy-before-envelope":             {ReasonDupEntry, ""},
 	}
 	dir := vectorRoot() + "/log-order"
 	anchor, raw, m := loadCase(t, dir)
-	if len(raw) != 24 {
-		t.Fatalf("got %d entries, want 24", len(raw))
+	if len(raw) != 42 {
+		t.Fatalf("got %d entries, want 42", len(raw))
+	}
+	metadataBytes, err := os.ReadFile(dir + "/manifest.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var metadata struct {
+		Codes map[string]string
+		Rules map[string]struct{ Section, Says string }
+	}
+	if err := json.Unmarshal(metadataBytes, &metadata); err != nil {
+		t.Fatal(err)
+	}
+	if len(metadata.Codes) != len(cases) || len(metadata.Rules) != len(cases) {
+		t.Fatal("order codes or rules incomplete")
+	}
+	specBytes, err := os.ReadFile("../../SPEC.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, codes := range cases {
+		rule := metadata.Rules[name]
+		heading := "### "
+		if !strings.Contains(rule.Section, ".") {
+			heading = "## "
+		}
+		_, section, found := strings.Cut(string(specBytes), heading+rule.Section+" ")
+		section, _, _ = strings.Cut(section, "\n##")
+		onLine := false
+		for _, line := range strings.Split(section, "\n") {
+			onLine = onLine || strings.Contains(line, rule.Says)
+		}
+		if metadata.Codes[name] != codes[0] || !found || rule.Says == "" || !onLine {
+			t.Fatalf("%s has wrong code or raw SPEC citation", name)
+		}
 	}
 	final := Replay(anchor, raw)
 	want, err := os.ReadFile(dir + "/state.json")
@@ -69,6 +123,14 @@ func TestEveryOrderCaseMatchesAndExposesOnlyItsNamedFaults(t *testing.T) {
 			codes, ok := cases[it.Name]
 			if !ok || codes[0] != it.Reason {
 				t.Fatal("manifest differs from the stated answer")
+			}
+			reason, err := os.ReadFile(dir + "/" + it.Name + ".reason")
+			if err != nil || string(reason) != codes[0]+"\n" {
+				t.Fatal("reason file differs")
+			}
+			if it.Name >= "24-" {
+				checkRunNineteenOrder(t, anchor, raw, it.Index, it.Name, codes)
+				return
 			}
 			before := Replay(anchor, raw[:it.Index])
 			decode := func() *entry.Envelope {
@@ -218,5 +280,203 @@ func TestEveryOrderCaseMatchesAndExposesOnlyItsNamedFaults(t *testing.T) {
 	}
 	if negatives != len(cases) {
 		t.Fatalf("got %d refusals, want %d", negatives, len(cases))
+	}
+}
+
+// The new pairs isolate closedness, the text cap and refused-byte ordering.
+func checkRunNineteenOrder(t *testing.T, anchor Anchor, raw [][]byte, i int, name string, codes [2]string) {
+	t.Helper()
+	before := Replay(anchor, raw[:i])
+	decode := func() map[string]any {
+		value, err := cbor.Decode(raw[i])
+		if err != nil {
+			t.Fatal(err)
+		}
+		return value.(map[string]any)
+	}
+	check := func(env map[string]any, want string) {
+		t.Helper()
+		env["sigs"] = []any{}
+		encoded, err := cbor.Encode(env)
+		if err != nil {
+			t.Fatal(err)
+		}
+		e, err := entry.Decode(encoded)
+		if err != nil {
+			t.Fatal(err)
+		}
+		keys, role := []string{"signer1", "nas"}, "signer"
+		if e.T == "policy" || e.T == "log_key" {
+			keys, role = []string{"root1", "root2"}, "root"
+		}
+		if strings.HasPrefix(name, "25-") && want != "" {
+			keys = nil
+		}
+		for _, key := range keys {
+			r := role
+			if key == "nas" {
+				r = "device"
+			}
+			if err := entry.Sign(e, privateKey(t, key), r); err != nil {
+				t.Fatal(err)
+			}
+		}
+		result := Replay(anchor, appended(t, raw[:i], e))
+		if got := lastOutcome(result, i); got != want {
+			t.Fatalf("%s repair = %q, want %q", name, got, want)
+		}
+		t.Logf("repair outcome = %q", want)
+		if want != "" {
+			result.Size, result.Rejected = before.Size, before.Rejected
+			got, err := result.MarshalCanonical()
+			if err != nil {
+				t.Fatal(err)
+			}
+			expected, err := before.MarshalCanonical()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(got, expected) {
+				t.Fatal("refusal changed state")
+			}
+		}
+	}
+	if strings.HasPrefix(name, "38-") || strings.HasPrefix(name, "39-") {
+		predecessor := i
+		if strings.HasPrefix(name, "39-") {
+			predecessor--
+		}
+		if !bytes.Equal(raw[predecessor], raw[predecessor+1]) || decode()["v"] != uint64(2) {
+			t.Fatal("expected exact copy of a decodable v2 envelope")
+		}
+		if lastOutcome(Replay(anchor, raw[:predecessor+1]), predecessor) != ReasonDecode || lastOutcome(Replay(anchor, raw[:predecessor+2]), predecessor+1) != ReasonDupEntry {
+			t.Fatal("byte copy must precede envelope validation")
+		}
+		env := decode()
+		env["v"] = uint64(1)
+		check(env, "")
+		return
+	}
+	original := decode()
+	body := original["body"].(map[string]any)
+	if original["after"] != uint64(i) {
+		t.Fatal("case must be rebuilt at its own prefix")
+	}
+	if strings.Contains(name, "cap-before") {
+		text := body["text"].(string)
+		if len(text) != 4097 {
+			t.Fatal("expected 4097-byte text")
+		}
+		if _, err := policy.Parse(text); err != nil {
+			t.Fatal(err)
+		}
+	} else if _, ok := body["x"]; !ok {
+		t.Fatal("missing isolated extra body key")
+	}
+	kind := original["t"].(string)
+	if kind == "rotate" || kind == "revoke" {
+		if before.Devices[body["device_id"].(string)].Status != "revoked" {
+			t.Fatal("target must be known and revoked")
+		}
+	}
+	repairFirst := func(env map[string]any) {
+		body := env["body"].(map[string]any)
+		if strings.Contains(name, "cap-before") {
+			text := body["text"].(string)
+			if !strings.HasSuffix(text, "x\n") {
+				t.Fatal("expected comment padding")
+			}
+			body["text"] = text[:len(text)-2] + "\n"
+		} else {
+			delete(body, "x")
+		}
+	}
+	repairSecond := func(env map[string]any) {
+		body := env["body"].(map[string]any)
+		switch codes[1] {
+		case ReasonStaleState:
+			id, _ := body["device_id"].(string)
+			if kind == "enroll" {
+				req, err := enrollreq.Decode(body["request"].([]byte))
+				if err != nil {
+					t.Fatal(err)
+				}
+				id = req.DeviceID
+			}
+			delete(env, "prev")
+			if prev := before.Previous(kind, id); prev != nil {
+				env["prev"] = *prev
+			}
+		case ReasonThreshold:
+			// The final check signs the repaired threshold case with signer1.
+		case ReasonNoDeviceSig, ReasonDupID, ReasonDupWg:
+			req, err := enrollreq.Decode(body["request"].([]byte))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if codes[1] == ReasonDupID {
+				req.DeviceID = "order-repair"
+				delete(env, "prev")
+			}
+			if codes[1] == ReasonDupWg {
+				req.WGPK = bytes.Repeat([]byte{0x5a}, 32)
+			}
+			key := "spare"
+			if bytes.Equal(req.DevicePK, publicOf(t, "nas")) {
+				key = "nas"
+			}
+			if bytes.Equal(req.DevicePK, publicOf(t, "laptop")) {
+				key = "laptop"
+			}
+			if err := enrollreq.Sign(req, privateKey(t, key)); err != nil {
+				t.Fatal(err)
+			}
+			body["request"], err = enrollreq.Encode(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+		case ReasonDupKey:
+			if kind == "log_key" {
+				body["pk"] = publicOf(t, "logkey2")
+			} else {
+				old := note.CosignerVerifierKey("order-witness", publicOf(t, "logkey"))
+				text := body["text"].(string)
+				if !strings.Contains(text, old) {
+					t.Fatal("missing conflicting witness key")
+				}
+				body["text"] = strings.Replace(text, old, note.CosignerVerifierKey("order-witness", publicOf(t, "spare")), 1)
+			}
+		case ReasonNotActive:
+			body["device_id"] = "nas"
+			env["prev"] = before.Devices["nas"].Version
+		default:
+			t.Fatal("missing second repair")
+		}
+	}
+	env := decode()
+	repairFirst(env)
+	check(env, codes[1])
+	repairSecond(env)
+	check(env, "")
+	env = decode()
+	repairSecond(env)
+	if codes[1] == ReasonThreshold {
+		// Closedness still precedes a now-sufficient signer count.
+		encoded, err := cbor.Encode(env)
+		if err != nil {
+			t.Fatal(err)
+		}
+		e, err := entry.Decode(encoded)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := entry.Sign(e, privateKey(t, "signer1"), "signer"); err != nil {
+			t.Fatal(err)
+		}
+		if lastOutcome(Replay(anchor, appended(t, raw[:i], e)), i) != codes[0] {
+			t.Fatal("second-only repair changed the first fault")
+		}
+	} else {
+		check(env, codes[0])
 	}
 }

@@ -18,8 +18,8 @@ import (
 func checkEdgeLog(t *testing.T) {
 	dir := vectorRoot() + "/log-edges"
 	anchor, raw, m := loadCase(t, dir)
-	if len(raw) != 14 {
-		t.Fatalf("got %d edge entries, want 14", len(raw))
+	if len(raw) != 15 {
+		t.Fatalf("got %d edge entries, want 15", len(raw))
 	}
 	st := Replay(anchor, raw)
 	want, err := os.ReadFile(dir + "/state.json")
@@ -32,6 +32,18 @@ func checkEdgeLog(t *testing.T) {
 	}
 	if !bytes.Equal(got, want) {
 		t.Error("edge state differs from state.json")
+	}
+	e, err := entry.Decode(raw[14])
+	if err != nil {
+		t.Fatal(err)
+	}
+	req, err := enrollreq.Decode(e.Body["request"].([]byte))
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := Replay(anchor, raw[:14])
+	if _, exists := before.Devices[req.DeviceID]; exists || !enrollreq.Verify(req) || req.Labels["note"] != "next\u0085line" || st.Devices[req.DeviceID].Labels["note"] != "next\u0085line" || m.Entries[14].Name != "14-enroll-c1-label" || !bytes.Contains(got, []byte{0xc2, 0x85}) || bytes.Contains(got, []byte(`\u0085`)) {
+		t.Fatal("C1 enrollment must carry verbatim UTF-8 into state")
 	}
 	if len(st.Devices["nas"].Labels) != 0 {
 		t.Error("re-enrollment kept old labels")

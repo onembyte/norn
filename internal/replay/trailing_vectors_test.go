@@ -29,7 +29,7 @@ func TestARootSignedPolicyWithTrailingSpacesApplies(t *testing.T) {
 		t.Fatal(err)
 	}
 	anchor, inputs, manifest := loadCase(t, dir)
-	if len(inputs) != 29 || manifest.Entries[25].Name != "25-enroll-without-expires" || manifest.Entries[26].Name != name || manifest.Entries[26].Reason != "" {
+	if len(inputs) != 37 || manifest.Entries[25].Name != "25-enroll-without-expires" || manifest.Entries[26].Name != name || manifest.Entries[26].Reason != "" {
 		t.Fatal("case must follow entry 25 and apply")
 	}
 	before := Replay(anchor, inputs[:26])
@@ -50,14 +50,16 @@ func TestARootSignedPolicyWithTrailingSpacesApplies(t *testing.T) {
 	if text != strings.ReplaceAll(anchor.Policy, "\n", " \n") {
 		t.Fatal("policy differs beyond trailing spaces")
 	}
-	final := Replay(anchor, inputs)
-	if got := lastOutcome(final, 26); got != "" {
+	// Entry 33 supersedes this policy, so its storage and grammar are
+	// checked at its own prefix before comparing the complete final state.
+	atPolicy := Replay(anchor, inputs[:27])
+	if got := lastOutcome(atPolicy, 26); got != "" {
 		t.Fatalf("Go = %q, want applied", got)
 	}
-	if final.Versions["policy"] != 26 || final.Policy != text {
+	if atPolicy.Versions["policy"] != 26 || atPolicy.Policy != text {
 		t.Fatal("policy was not stored verbatim at version 26")
 	}
-	got, err := policy.Parse(final.Policy)
+	got, err := policy.Parse(atPolicy.Policy)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,6 +69,14 @@ func TestARootSignedPolicyWithTrailingSpacesApplies(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatal("stored policy parses differently from space-free text")
+	}
+	final := Replay(anchor, inputs)
+	replacement, err := entry.Decode(inputs[33])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if final.Versions["policy"] != 33 || final.Policy != replacement.Body["text"] {
+		t.Fatal("replacement policy was not retained through the later params")
 	}
 	stateJSON, err := final.MarshalCanonical()
 	if err != nil {

@@ -24,6 +24,11 @@ def replay_case(directory):
     return manifest, raw, state
 
 
+def replay_case_prefix(manifest, raw):
+    a = manifest["anchor"]
+    return replay.replay(replay.Anchor(bytes.fromhex(a["net"]), bytes.fromhex(a["genesis_hash"]), a["log_key"], a["policy"]), raw)
+
+
 def request_case(name):
     text = (ROOT / "requests-bad" / (name + ".txt")).read_text().strip()
     return cbor.decode(bech32m.decode(text)[1])
@@ -33,7 +38,19 @@ class ReplayEdges(unittest.TestCase):
     def test_the_policy_log_algorithm_repairs_without_changing_its_key(self):
         directory = ROOT / "log-edges"
         manifest, raw, state = replay_case(directory)
-        self.assertEqual(len(raw), 14)
+        self.assertEqual(len(raw), 15)
+        self.assertEqual(manifest["entries"][14], {"index": 14, "name": "14-enroll-c1-label", "reason": ""})
+        self.assertNotIn("14-enroll-c1-label", manifest["codes"])
+        self.assertEqual(manifest["rules"]["14-enroll-c1-label"], {"section": "14.2", "says": "Everything else is emitted verbatim as UTF-8."})
+        req = enrollreq.decode(cbor.decode(raw[14])["body"]["request"])
+        self.assertTrue(enrollreq.verify(req))
+        self.assertEqual(req["labels"], {"note": "next\u0085line"})
+        self.assertNotIn(req["device_id"], replay_case_prefix(manifest, raw[:14]).devices)
+        self.assertEqual(state.devices[req["device_id"]]["labels"], req["labels"])
+        canonical = (state.to_json() + "\n").encode()
+        self.assertIn(b"next\xc2\x85line", canonical)
+        self.assertNotIn(b"\\u0085", canonical)
+        self.assertEqual(canonical, (directory / "state.json").read_bytes())
         name = "13-policy-log-cosignature-key"
         self.assertEqual(manifest["entries"][13], {"index": 13, "name": name, "reason": "decode"})
         self.assertEqual(manifest["codes"][name], "decode")

@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 import unittest
 
-from nornref import cbor, entry, enrollreq, fixture, replay
+from nornref import cbor, entry, enrollreq, fixture, replay, policy, note
 
 ROOT = Path(__file__).resolve().parents[3] / "testdata" / "vectors" / "log-rules"
 NAMES = ["00-genesis", "01-enroll-nas", "02-enroll-laptop",
@@ -18,9 +18,9 @@ NAMES = ["00-genesis", "01-enroll-nas", "02-enroll-laptop",
          "20-note-uppercase-kid", "21-note-without-surplus-kid",
          "22-enroll-by-roots", "23-enroll-with-signer",
          "24-enroll-expires-zero", "25-enroll-without-expires", "26-policy-trailing-space",
-         "27-params-by-signers", "28-enroll-envelope-device-sig"]
+         "27-params-by-signers", "28-enroll-envelope-device-sig", '29-enroll-unknown-body-key', '30-note-long-hex-kid', '31-revoke-uppercase-device-id', '32-rotate-uppercase-device-id', '33-policy-log-key-was-witness', '34-params-staleness-zero', '35-params-checkpoint-interval-zero', '36-params-mmd-zero']
 CODES = ["", "", "", "threshold", "", "stale-state", "", "decode", "", "", "", "",
-         "decode", "dup-entry", "", "unknown-key", "root-invariant", "", "", "", "decode", "", "threshold", "", "decode", "", "", "threshold", "no-device-sig"]
+         "decode", "dup-entry", "", "unknown-key", "root-invariant", "", "", "", "decode", "", "threshold", "", "decode", "", "", "threshold", "no-device-sig", "decode", "decode", "decode", "decode", "", "", "", ""]
 
 
 class RuleVectors(unittest.TestCase):
@@ -145,6 +145,52 @@ class RuleVectors(unittest.TestCase):
                         env["sigs"] = []
                         fixture._signed(env, [("spare", "device"), ("signer1", "signer")])
                     check(raw[:i], entry.encode(env))
+                elif i == 29:
+                    self.assertEqual(set(env["body"]), {"request", "x"})
+                    self.assertTrue(enrollreq.verify(enrollreq.decode(env["body"]["request"])))
+                    del env["body"]["x"]
+                    env["sigs"] = []
+                    fixture._signed(env, [("signer1", "signer")])
+                    check(raw[:i], entry.encode(env))
+                elif i == 30:
+                    self.assertEqual(len(env["sigs"]), 2)
+                    self.assertEqual([s["kid"] for s in env["sigs"]], sorted({s["kid"] for s in env["sigs"]}))
+                    surplus = next(s for s in env["sigs"] if len(s["kid"]) == 17)
+                    self.assertTrue(set(surplus["kid"]) <= set("0123456789abcdef"))
+                    env["sigs"].remove(surplus)
+                    check(raw[:i], entry.encode(env))
+                elif i in (31, 32):
+                    self.assertEqual(env["body"]["device_id"], "NAS")
+                    env["body"]["device_id"] = "unknown-device"
+                    env["sigs"] = []
+                    fixture._signed(env, [("signer1", "signer")] if i == 31 else [("nas", "device")])
+                    check(raw[:i], entry.encode(env), "unknown-device")
+                    env["body"]["device_id"] = "laptop"
+                    env["prev"] = before.devices["laptop"]["version"]
+                    env["sigs"] = []
+                    fixture._signed(env, [("signer1", "signer")] if i == 31 else [("laptop", "device")])
+                    check(raw[:i], entry.encode(env))
                 else:
                     self.fail("refusal has no repair")
         self.assertEqual((final.to_json() + "\n").encode(), (ROOT / "state.json").read_bytes())
+
+        before = replay.replay(anchor, raw[:33])
+        self.assertTrue(replay._witness_holds(before.policy, fixture.KEYS["witness-pi"].public))
+        env = cbor.decode(raw[33])
+        text = env["body"]["text"]
+        policy.parse(text)
+        self.assertFalse(replay._witness_holds(text, fixture.KEYS["witness-pi"].public))
+        publics = [note.parse_vkey(parts[1] if parts[0] == "log" else parts[2]).public
+                   for line in text.split("\n") if (parts := line.split()) and parts[0] in ("log", "witness")]
+        self.assertEqual(len(publics), len(set(publics)))
+        self.assertIn(fixture.KEYS["witness-pi"].public, publics)
+        self.assertEqual(final.policy, text)
+        self.assertEqual(final.versions["policy"], 33)
+        for i, key in enumerate(("staleness", "checkpoint_interval", "mmd"), 34):
+            self.assertEqual(cbor.decode(raw[i])["body"], {key: 0})
+            state = replay.replay(anchor, raw[:i+1])
+            self.assertEqual(state.params[key], 0)
+            self.assertEqual(state.versions["params"], i)
+            self.assertEqual(state.policy, text)
+            self.assertEqual(cbor.decode(raw[i])["prev"], 0 if i == 34 else i-1)
+        self.assertTrue(all(final.params[key] == 0 for key in ("staleness", "checkpoint_interval", "mmd")))

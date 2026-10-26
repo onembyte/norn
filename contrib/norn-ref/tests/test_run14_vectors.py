@@ -19,7 +19,8 @@ def load_log(directory):
 def check_edge_log(self):
     directory = ROOT / 'log-edges'
     manifest, anchor, raw = load_log(directory)
-    self.assertEqual(len(raw), 14)
+    self.assertEqual(len(raw), 15)
+    self.assertEqual(manifest['entries'][14], {'index': 14, 'name': '14-enroll-c1-label', 'reason': ''})
     self.assertEqual({it['name']: it['reason'] for it in manifest['entries'] if it['reason']}, {
         name: 'decode' for name in ('01-enroll-device-id-newline', '07-rotate-unknown-open-body',
                                    '08-revoke-unknown-open-body', '10-enroll-request-identity',

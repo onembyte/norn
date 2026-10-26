@@ -70,7 +70,13 @@ log-rules/23-enroll-with-signer.cbor expected="accept" got="dup-entry"
 # signature and whose request's own does not verify, `no-device-sig`) are
 # answered as written, and so are `log-edges/13` and `log-order/16`-`23`;
 # only the state line moved, with the two entries.
-log-rules/state.json expected=sha256:da3e02ffbb2dc86e62a14720b0bb2eef760b11ab19b603bca8dc4e7a1955c912 got=sha256:8bb3830f3a13debc3245a0843244e1835e51f4c9d168ba6981c9d7366bdf7a1e
+# Row G14, build P2 (2026-10-26): entries 29-32 (`decode` each) and 33-36
+# (applied: a policy naming a dropped witness's key on its log line, three
+# zero params) are answered as written, and so are `log-edges/14` and
+# `log-order/24`-`41`. Only the state line moved, with the eight entries:
+# replayed directly, this build's state still differs from `state.json` in
+# `nas` (entry 4) and `probe` (entry 23) alone, as before them.
+log-rules/state.json expected=sha256:c8d47c90aeff73c27ab26a66940ed7deb09318dacfac2ca8672e7d3e74df99fb got=sha256:1c2aedb3cb827be81380fd422cb7424f13691d423e0d6600c553c8c3eb4debd4
 
 # Row 6.5l-xiv-d, Go half (2026-10-15): `heads-run16/`, heads with reader
 # histories and a request table with the consumer's network, a manifest shape

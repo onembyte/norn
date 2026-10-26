@@ -563,6 +563,7 @@ def write_edges_log(out: pathlib.Path) -> None:
         "10-enroll-request-identity": {"section": "3.1", "says": "MUST be a valid point wherever a key is admitted"},
         "11-policy-witness-note-key": {"section": "9.1", "says": "a `witness` vkey MUST use algorithm `0x04`"},
         "13-policy-log-cosignature-key": {"section": "9.1", "says": "A `log` vkey MUST use algorithm `0x01`"},
+        "14-enroll-c1-label": {"section": "14.2", "says": "Everything else is emitted verbatim as UTF-8."},
     }
     for it in items:
         write(out / "log-edges" / (it.name + ".cbor"), it.raw)
@@ -603,6 +604,22 @@ def write_order_log(out: pathlib.Path) -> None:
         "21-root-thr-body-before-prev": ("5.1", "body well-formed and closed (`decode`) · `prev`"),
         "22-log-key-fields-before-prev": ("5.1", "`pk` 32 bytes, `overlap` a uint (`decode`) · `prev`"),
         "23-root-remove-prev-before-unknown-key": ("5.1", "`prev` is `versions.roots` (`stale-state`) · `kid` is a root (`unknown-key`)"),
+        "24-enroll-body-before-request-signature": ("5.1", "body closed and `request` present"),
+        "25-enroll-body-before-threshold": ("5.1", "body closed and `request` present"),
+        "26-enroll-body-before-prev": ("5.1", "body closed and `request` present"),
+        "27-enroll-body-before-dup-id": ("5.1", "body closed and `request` present"),
+        "28-enroll-body-before-dup-wg": ("5.1", "body closed and `request` present"),
+        "29-log-key-body-before-prev": ("5.1", "body well-formed and closed (`decode`)"),
+        "30-log-key-body-before-witness-key": ("5.1", "body well-formed and closed (`decode`)"),
+        "31-log-key-body-before-active-log-key": ("5.1", "body well-formed and closed (`decode`)"),
+        "32-policy-body-before-prev": ("5.1", "body well-formed and closed (`decode`)"),
+        "33-policy-body-before-dup-key": ("5.1", "body well-formed and closed (`decode`)"),
+        "34-policy-cap-before-prev": ("5.1", "`text` ≤ 4096 bytes (`decode`)"),
+        "35-policy-cap-before-dup-key": ("5.1", "`text` ≤ 4096 bytes (`decode`)"),
+        "36-revoke-body-before-not-active": ("5.1", "body well-formed and closed (`decode`)"),
+        "37-rotate-body-before-not-active": ("5.1", "body well-formed and closed (`decode`)"),
+        "38-envelope-invalid-note": ("5.1", "`v` = 1,"),
+        "39-byte-copy-before-envelope": ("5.1", "so is a byte copy of any entry"),
     }
     items = fixture.order_log()
     raw = [it.raw for it in items]
@@ -660,6 +677,21 @@ def write_rules_log(out: pathlib.Path) -> None:
     request["sig"] = bytes(64)
     b.add("28-enroll-envelope-device-sig", b.build("enroll", {"request": cbor.encode(request)},
           signer + [("spare", "device")]), "no-device-sig")
+    request = fixture._request("closed-body", "spare", "spare", 20_000)
+    b.add("29-enroll-unknown-body-key", b.build("enroll", {"request": cbor.encode(request), "x": 1}, signer), "decode")
+    honest = b.build("note", {"text": "kid length is independent of its hex alphabet"}, signer)
+    surplus = {"kid": "fffffffffffffffff", "role": "signer", "sig": bytes(64)}
+    b.add("30-note-long-hex-kid", dict(honest, sigs=sorted(honest["sigs"] + [surplus], key=lambda sig: sig["kid"])), "decode")
+    b.add("31-revoke-uppercase-device-id", b.build("revoke", {"device_id": "NAS"}, signer), "decode")
+    b.add("32-rotate-uppercase-device-id", b.build("rotate", {"device_id": "NAS", "wg_pk": fixture.WG["spare"]}, [("nas", "device")]), "decode")
+    # A dropped witness's public key is allowed on a log line. The keys in
+    # the replacement text remain unique and its witnesses exclude pi.
+    text = ("log " + note.vkey(fixture.ORIGIN, fixture.KEYS["witness-pi"].public) + "\n" +
+            "witness vps " + fixture.witness_vkey("vps") + "\n" +
+            "witness friend " + fixture.witness_vkey("friend") + "\nquorum vps\n")
+    b.add("33-policy-log-key-was-witness", b.build("policy", {"text": text}, roots))
+    for index, key in enumerate(("staleness", "checkpoint_interval", "mmd"), 34):
+        b.add(f"{index}-params-{key.replace('_', '-')}-zero", b.build("params", {key: 0}, roots))
     items = b.items
     raw = [it.raw for it in items]
     anchor = fixture.anchor_for(raw)
@@ -693,7 +725,16 @@ def write_rules_log(out: pathlib.Path) -> None:
         (TRAILING_WHITESPACE["section"], TRAILING_WHITESPACE["says"]),
         ("5.1", "`root` signatures → reject (`threshold`)"),
         ("5.1", "the request's signature verifies under its **own** `device_pk` (`no-device-sig`)"),
+        ("4.0", "a body with an unknown key — or missing a"),
+        ("4.0", "exactly 16 characters matching `^[0-9a-f]{16}$`"),
+        ("4.0", "matches `^[a-z0-9][a-z0-9.-]{0,63}$` **as a whole**"),
+        ("4.0", "matches `^[a-z0-9][a-z0-9.-]{0,63}$` **as a whole**"),
+        ("5.1", "no witness the text names has the public key of an active log key"),
+        ("4.5", "| `staleness` | uint s | 600 |"),
+        ("4.5", "| `checkpoint_interval` | uint s | 60 |"),
+        ("4.5", "| `mmd` | uint s | 60 |"),
     ]
+    assert len(phrases) == len(items)
     for it in items:
         write(out / "log-rules" / (it.name + ".cbor"), it.raw)
         if it.reason:

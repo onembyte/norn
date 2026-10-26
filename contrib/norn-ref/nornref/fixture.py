@@ -2941,6 +2941,11 @@ def edges_log() -> list[LogItem]:
     text = f"log {wrong}\nwitness pi {witness_vkey('pi')}\nquorum pi\n"
     b.add("13-policy-log-cosignature-key", b.build("policy", {"text": text},
           [("root1", "root"), ("root2", "root")]), "decode")
+    from . import enrollreq
+    request = _request("c1-label", "sundial", "sundial", 0)
+    request["labels"] = {"note": "next\u0085line"}
+    enrollreq.sign(request, KEYS["sundial"])
+    b.add("14-enroll-c1-label", b.build("enroll", {"request": cbor.encode(request)}, signer))
     return b.items
 
 
@@ -3011,6 +3016,36 @@ def order_log() -> list[LogItem]:
         roots, "decode", prev=4)
     add("root-remove-prev-before-unknown-key", "root_remove", {"kid": KEYS["spare"].id},
         roots, "stale-state", prev=7)
+    # Closedness must decide before each of enrollment's later checks. The
+    # active nas record supplies dup-id and its live key supplies dup-wg.
+    request = _request("order-consent", "spare", "spare", 0)
+    request["sig"] = bytes(64)
+    add("enroll-body-before-request-signature", "enroll", {"request": cbor.encode(request), "x": 1}, signer, "decode")
+    add("enroll-body-before-threshold", "enroll", dict(_enroll_body("spare"), x=1), [], "decode")
+    add("enroll-body-before-prev", "enroll", dict(_enroll_body("spare"), x=1), signer, "decode", prev=5)
+    add("enroll-body-before-dup-id", "enroll", dict(_enroll_body("nas", wg="nas2"), x=1), signer, "decode")
+    add("enroll-body-before-dup-wg", "enroll", dict(_enroll_body("laptop", wg="nas"), x=1), signer, "decode")
+    add("log-key-body-before-prev", "log_key", {"pk": KEYS["logkey2"].public, "overlap": 60, "x": 1}, roots, "decode", prev=5)
+    add("log-key-body-before-witness-key", "log_key", {"pk": KEYS["witness-pi"].public, "overlap": 60, "x": 1}, roots, "decode")
+    add("log-key-body-before-active-log-key", "log_key", {"pk": KEYS["logkey"].public, "overlap": 60, "x": 1}, roots, "decode")
+    add("policy-body-before-prev", "policy", {"text": policy_text(), "x": 1}, roots, "decode", prev=5)
+    conflict = "witness w " + note.vkey("order-witness", KEYS["logkey"].public, note.ALG_COSIGNATURE) + "\nquorum w\n"
+    add("policy-body-before-dup-key", "policy", {"text": conflict, "x": 1}, roots, "decode")
+    def padded(text):
+        return text + "#" + "x" * (4097 - len(text.encode()) - 2) + "\n"
+    add("policy-cap-before-prev", "policy", {"text": padded(policy_text())}, roots, "decode", prev=5)
+    add("policy-cap-before-dup-key", "policy", {"text": padded(conflict)}, roots, "decode")
+    # These setup entries do apply. Names 36–39 label faults while manifest
+    # indices include the sound history required to reach not-active.
+    b.add("setup-enroll-laptop", b.build("enroll", _enroll_body("laptop"), signer))
+    b.add("setup-revoke-laptop", b.build("revoke", {"device_id": "laptop"}, signer))
+    b.add("36-revoke-body-before-not-active", b.build("revoke", {"device_id": "laptop", "x": 1}, signer), "decode")
+    b.add("37-rotate-body-before-not-active", b.build("rotate", {"device_id": "laptop", "wg_pk": WG["nas2"], "x": 1}, signer + device), "decode")
+    invalid = b.build("note", {"text": "a decodable envelope rejected before its byte copy"}, [])
+    invalid["v"] = 2
+    _signed(invalid, signer)
+    b.add("38-envelope-invalid-note", invalid, "decode")
+    b.add_raw("39-byte-copy-before-envelope", b.items[-1].raw, "dup-entry")
     return b.items
 
 

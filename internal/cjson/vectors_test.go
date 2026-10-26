@@ -1,6 +1,7 @@
 package cjson
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -39,5 +40,23 @@ func TestTheSuiteDistinguishesUTF8OrderFromUTF16(t *testing.T) {
 	if iPrivate > iAstral {
 		t.Error("the astral key is serialised first, which is UTF-16 code-unit order; " +
 			"§14.1 requires bytewise order over the UTF-8 encoding")
+	}
+}
+
+// C1 is outside the escape table even though some JSON encoders escape it.
+func TestTheEdgeStateEmitsC1Verbatim(t *testing.T) {
+	raw, err := os.ReadFile("../../testdata/vectors/log-edges/state.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(raw, []byte("next\xc2\x85line")) || bytes.Contains(raw, []byte(`\u0085`)) {
+		t.Fatal("edge state lacks verbatim C2 85 or escapes U+0085")
+	}
+	got, err := Marshal("next\u0085line")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, []byte{'"', 'n', 'e', 'x', 't', 0xc2, 0x85, 'l', 'i', 'n', 'e', '"'}) {
+		t.Fatalf("C1 encoding = %q", got)
 	}
 }
