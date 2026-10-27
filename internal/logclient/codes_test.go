@@ -433,6 +433,7 @@ func onlyFile(t *testing.T, root string) string {
 // `log-signature`.
 
 func TestEveryBadCheckpointIsRefusedWithItsCode(t *testing.T) {
+	t.Run("48-witness-payload-too-long repair", checkRunNineteenWitnessPayload)
 	t.Run("47-signed-text-not-utf8", checkSignedTextNotUTF8Checkpoint)
 	checkBlankFirstLineCheckpoint(t)
 	checkRunFourteenCheckpointPairs(t)
@@ -525,6 +526,7 @@ func (c servedNegative) apply(t *testing.T, serveOver string) string {
 }
 
 func TestEveryServedNegativeIsRefusedWithItsCode(t *testing.T) {
+	t.Run("partial-hash-tile-trailing-bytes repair", checkRunNineteenPartialTile)
 	checkRunFourteenServed(t)
 	cases, codes, serveOver := servedNegatives(t)
 	if len(codes) != len(cases) {

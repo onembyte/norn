@@ -1,6 +1,12 @@
 {
   "cases": [
     {
+      "file": "partial-hash-tile-trailing-bytes.bin",
+      "name": "partial-hash-tile-trailing-bytes",
+      "path": "tile/0/001.p/44",
+      "says": "partial hash tile has trailing bytes"
+    },
+    {
       "file": "tampered-entry-bundle.bin",
       "name": "tampered-entry-bundle",
       "path": "tile/entries/001.p/44",
@@ -57,6 +63,7 @@
     "missing-entry-bundle": "unserved",
     "missing-hash-tile": "unserved",
     "overfull-entry-bundle": "entries",
+    "partial-hash-tile-trailing-bytes": "tiles",
     "tampered-entry-bundle": "head",
     "tampered-hash-tile": "tiles"
   },
@@ -81,6 +88,10 @@
     "overfull-entry-bundle": {
       "says": "A partial bundle holds **exactly** the number of entries its path declares",
       "section": "6"
+    },
+    "partial-hash-tile-trailing-bytes": {
+      "says": "a tile of width `W` is exactly 32 × `W` bytes",
+      "section": "10.1"
     },
     "tampered-entry-bundle": {
       "says": "that comparison is what binds the entries to the head",

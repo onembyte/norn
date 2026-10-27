@@ -817,7 +817,11 @@ NOT change this checkpoint's `T`; it takes effect when the reader checks the
 next checkpoint. **This checkpoint** is its tree head — origin, size and root — whatever
 cosignature lines arrive with it: a reader that holds that tree head keeps the
 policy and the `T` it accepted it under, and reading it again, from the log or
-from a peer, changes neither (D-082 (1)).
+from a peer, changes neither (D-082 (1)). That is the verifier loop's held
+head (§10) and its restoration after a restart (§13.2); a checkpoint carried
+inside a bundle (§8.1) or fork evidence (§11.1) is checked under the policy the
+reader holds now — the trust file's, or the most recently replayed (§9.4) — even
+when it names the tree head the reader already holds.
 
 Three things that decision needs and the rest of this document does not supply:
 
@@ -1179,7 +1183,9 @@ ships that table beside these vectors. The ladder is here rather than in
 specification and the suite must be able to reproduce it.
 
 Let `elapsed` be condition 4's monotonic duration, `S` be `params.staleness`
-(§4.5), and `S_hard` be this node's own hard limit. Then the state is the
+in the state replayed through the checkpoint the node holds (§4.5) — not the
+anchor's default, a newer head it has not accepted, or the state at a bundle's
+entry — and `S_hard` be this node's own hard limit. Then the state is the
 **first row, read top to bottom, whose condition holds**:
 
 | state | when |
@@ -1624,7 +1630,9 @@ that are not consistent MUST:
    routes: a device that any entry revoked, re-enrolled or rotated after the
    split is removed, whatever key it ends with, since nothing written after
    the split is trusted and the old key may be the reason it rotated
-   (D-082 (3), D-083). The
+   (D-082 (3), D-083). Both proven-set tests judge expiry at the held head's
+   `T` (§5.3): the common prefix has no checkpoint time of its own, and the
+   conflicting head's `T` is not used. The
    **common prefix**: the largest size at which both branches have the same
    root — the last state both agree on, and therefore the last one a node can
    call authorized once it knows the log signs whatever suits it. Relative to
@@ -1828,7 +1836,7 @@ naming that rule is how the generators and the placement guards check it.
 | `requests-bad/<name>.txt` | 30 requests, including `small-order-device-pk`, `torsion-R-signature` and `S-plus-L-signature`, that MUST be refused — by the text layer, the CBOR profile, a field rule or signature verification. `cases.json` gives each case's reason |
 | `receipt.json` | `{comment, origin, leaf_hash, deadline, text_sha256}`, where `text_sha256` is `SHA-256` of the **signed text** — through the newline ending the last text line, excluding the blank separator and the signature lines |
 | `checkpoints-good/` | two accepted checkpoints with explicit layers in `cases.json`: `cosignature-time-at-the-cap.checkpoint` adds a pi cosignature at 9223372036854775807 to the served head, read over `../served`; `size-at-the-cap.checkpoint` has a size of 9223372036854775807, log-signed and cosigned, checked only at the checkpoint layer, never by fetching entries or tiles. Both have `accept` codes and §6 or §7 rules |
-| `checkpoints-bad/<NN-case>.checkpoint` | 47 checkpoints, including `31-cosignature-S-plus-L` (`cosignature`), that MUST be refused, each served in place of `served/checkpoint` over the honest tiles. `cases.json` lists them, and its `signature_blind_accepts` names the ones a verifier that never calls Ed25519 accepts — six of the forty-seven. That set is **computed** from the shipped files, not asserted |
+| `checkpoints-bad/<NN-case>.checkpoint` | 48 checkpoints, including `31-cosignature-S-plus-L` (`cosignature`), that MUST be refused, each served in place of `served/checkpoint` over the honest tiles. `cases.json` lists them, and its `signature_blind_accepts` names the ones a verifier that never calls Ed25519 accepts — six of the forty-eight. That set is **computed** from the shipped files, not asserted; `48-witness-payload-too-long.checkpoint` adds pi's genuine 76-byte payload with one byte appended beside the honest lines: `cosignature` |
 | `entries-hostile/<name>.cbor` | 17 inputs that are not entries and never could be, including bare profile bans and §4.0's three resource limits — the entry size, the nesting depth and the map-key cap. `cases.json` says what each refusal must be about, and marks the cases that sit exactly **at** a limit and MUST be accepted |
 | `entries-utf8/<name>.cbor` | `bare-surrogate.cbor` is exactly `63eda080`, invalid UTF-8; changing only its text to U+E000 (`63ee8080`) decodes; `cases.json` gives its §4.0 rule |
 | `proven/grant-labels.json` | a pure-function table with a `comment` and 47 `{label, grant, says}` cases: D-077 prefix grammar, U+0020-only trimming, canonical masked text, whole-label failure and IPv4-mapped refusals; run 19 adds `10.0.0.0/8,  fd00::/64`, `  10.0.0.0/8  ` and `::1.2.3.4/128`, pinning every surrounding space and the compatible address rendered as `::102:304/128` |
@@ -1843,7 +1851,7 @@ naming that rule is how the generators and the placement guards check it.
 | `receipt-rotated/` | `cases.json` naming `receipt-bad/untrusted-log-key.note` — the shipped receipt, signed by the published `log_key` — and the same two answers (§7, §8) |
 | `served-superseded/` | the served head cosigned by two of three witnesses, read fresh and by a reader holding `served/`'s head: both accept, and the held head keeps its `T` (§5.3, D-082 (1)). Serve it over `served/`'s tiles |
 | `unreached-witness/` | two heads over `served/`'s tiles under its own `trust.cbor`: the policy lists pi, vps and friend, while its quorum is pi and vps alone (2 of 2). `cases.json` codes `honest-head` as `accept` and `forged-friend` as `cosignature`, with a section and rule for each |
-| `served-bad/` | §6's refusals for a served log, which is a directory rather than a file: each case names the path to replace or delete over an honest copy of the log named by `serve_over` (`served-large/` here) |
+| `served-bad/` | §6's refusals for a served log, which is a directory rather than a file: each case names the path to replace or delete over an honest copy of the log named by `serve_over` (`served-large/` here); eight cases, including `partial-hash-tile-trailing-bytes.bin` at `tile/0/001.p/44`: all 44 honest hashes plus two bytes, refused as `tiles` |
 | `served-empty-entry/` | a four-entry log with one zero-length frame at index 2 among real entries: its checkpoint is accepted, replay rejects that entry as `decode`, and `state.json` is the expected replayed state; `cases.json` names both answers |
 | `served-large-bad/` | three refusals over `served-large/`: `full-entry-bundle-trailing-bytes` adds bytes after the 256 frames of `tile/entries/000` (`entries`); `full-hash-tile-trailing-bytes` adds bytes after the 256 hashes of `tile/0/000` (`tiles`); `level-one-byte-changed` changes one byte at `tile/1/000.p/1` (`tiles`) |
 | `served-rotated-wrong-name/` | the served head signed by `logkey2` as `elsewhere/log`; `cases.json` gives `fresh` and `informed` as `log-signature`, because the learned key is named the network origin (§9.4). Serve the checkpoint over `served/` |
@@ -1867,6 +1875,8 @@ this table drifted out of date the moment one was.
 
 | area | positive | negative |
 |---|---|---|
+| §7 a listed witness payload has exactly 76 bytes (run 19, L3) | removing only the appended byte accepts, retaining all honest lines and the repaired pi line | `checkpoints-bad/48-witness-payload-too-long.checkpoint`: pi's valid 76-byte payload plus one byte under its matching name and key id, beside the honest head: `cosignature` |
+| §10.1 a partial hash tile has exactly its width (run 19, L4) | dropping only the final two bytes accepts; all 44 hashes match `served-large/tile/0/001.p/44` | `served-bad/partial-hash-tile-trailing-bytes.bin` replaces `tile/0/001.p/44` over `served-large/`: `tiles` |
 | §4.0 enroll bodies are closed (run 19, L6) | deleting only `x` from `log-rules/29-enroll-unknown-body-key.cbor` and re-signing applies against its own prefix | the otherwise sound request and signer quorum sit in `{request, x}`: `decode` |
 | §4.0 kid length is independent of its alphabet (run 19, L7) | removing only the surplus signature from `log-rules/30-note-long-hex-kid.cbor` applies with the same signed content | a genuine signer remains beside a sorted, unique 17-character lowercase-hex kid: `decode` |
 | §4.0 lifecycle device IDs obey the field grammar (run 19, L8) | changing only the ID to a valid unknown ID, then re-signing, exposes `unknown-device`; a current active target with its own consent and prev applies | `log-rules/31-revoke-uppercase-device-id.cbor` and `32-rotate-uppercase-device-id.cbor` name NAS: each `decode` before lookup |

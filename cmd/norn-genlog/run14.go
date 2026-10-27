@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/onembyte/norn/internal/cbor"
@@ -54,6 +55,11 @@ func extendRunFourteenManifest(root, dir string, cases []map[string]string, code
 		} else {
 			listed = append(listed, c)
 		}
+	}
+	// A base writer may already emit a later-numbered checkpoint. Extensions
+	// still leave the distributed checkpoint inventory in number order.
+	if dir == "checkpoints-bad" {
+		sort.Slice(listed, func(i, j int) bool { return listed[i].(string) < listed[j].(string) })
 	}
 	manifest["cases"] = listed
 	if manifest["rules"] == nil {

@@ -90,6 +90,16 @@ func writeBadServed(root, served string, size int64) error {
 	if err != nil {
 		return err
 	}
+	// Run 19, L4: all final-partial hashes are sound; only its two trailing
+	// bytes distinguish an exact comparison from a prefix-only reader.
+	if lastBundleWidth == tlog.TileWidth || len(honestTile) != sha256.Size*lastBundleWidth {
+		return fmt.Errorf("the final hash tile must be a correctly sized partial")
+	}
+	trailing := append(append([]byte(nil), honestTile...), 0, 0)
+	if err := os.WriteFile(filepath.Join(dir, "partial-hash-tile-trailing-bytes.bin"), trailing, 0o644); err != nil {
+		return err
+	}
+
 	badTile := append([]byte(nil), honestTile...)
 	badTile[len(badTile)-1] ^= 0x01
 	if err := os.WriteFile(filepath.Join(dir, "tampered-hash-tile.bin"),
@@ -130,15 +140,17 @@ func writeBadServed(root, served string, size int64) error {
 	// the tiles, so the tampered bundle -- whose tiles disagree as well -- is
 	// `head`.
 	servedCodes := map[string]refusal.Code{
-		"tampered-entry-bundle":   refusal.Head,
-		"missing-entry-bundle":    refusal.Unserved,
-		"consistent-tampered-log": refusal.Head,
-		"tampered-hash-tile":      refusal.Tiles,
-		"overfull-entry-bundle":   refusal.Entries,
-		"missing-hash-tile":       refusal.Unserved,
-		"missing-checkpoint":      refusal.Unserved,
+		"partial-hash-tile-trailing-bytes": refusal.Tiles,
+		"tampered-entry-bundle":            refusal.Head,
+		"missing-entry-bundle":             refusal.Unserved,
+		"consistent-tampered-log":          refusal.Head,
+		"tampered-hash-tile":               refusal.Tiles,
+		"overfull-entry-bundle":            refusal.Entries,
+		"missing-hash-tile":                refusal.Unserved,
+		"missing-checkpoint":               refusal.Unserved,
 	}
 	servedCases := []map[string]any{
+		{"name": "partial-hash-tile-trailing-bytes", "path": tilePath, "file": "partial-hash-tile-trailing-bytes.bin", "says": "partial hash tile has trailing bytes"},
 		{"name": "tampered-entry-bundle", "path": bundlePath,
 			"file": "tampered-entry-bundle.bin",
 			"says": "one byte of one entry changed: the bundle still frames, and the " +
@@ -180,6 +192,7 @@ func writeBadServed(root, served string, size int64) error {
 
 	meta := map[string]any{
 		"rules": map[string]map[string]string{
+			"partial-hash-tile-trailing-bytes": {"section": "10.1", "says": "a tile of width `W` is exactly 32 × `W` bytes"},
 			// 6.5l-vi-b-ii-e: both cited §6's tile sentence. The tampered
 			// bundle is refused by the head comparison before any tile is
 			// opened, and a missing bundle by §10.1's `unserved`.

@@ -2927,7 +2927,7 @@ func TestEveryServedAndBundleNegativeCitesTheRuleOfItsCode(t *testing.T) {
 		"served-bad": {
 			"head":     {"that comparison is what binds the entries to the head"},
 			"entries":  {"A partial bundle holds **exactly** the number of entries its path declares"},
-			"tiles":    {"checking them is not optional"},
+			"tiles":    {"checking them is not optional", "a tile of width `W` is exactly 32 × `W` bytes"},
 			"unserved": {"any file a later step needs and cannot fetch"},
 		},
 		"proofs-bad": {
@@ -3009,6 +3009,12 @@ func TestEveryBadCheckpointCitesTheRuleOfItsCode(t *testing.T) {
 		if name == "38-cosignature-time-above-2-63" {
 			if code != "cosignature" || rule.Section != "10.1" || rule.Says != "whose timestamp is above 2⁶³−1 (§7, D-077)" {
 				t.Errorf("%s must cite the explicit timestamp bound in §10.1 as cosignature: %+v", name, rule)
+			}
+			continue
+		}
+		if name == "48-witness-payload-too-long" {
+			if code != "cosignature" || rule.Section != "7" || rule.Says != "The decoded payload is **exactly** that length for the matched key" {
+				t.Errorf("%s must cite §7's exact matched-key length as cosignature: %+v", name, rule)
 			}
 			continue
 		}

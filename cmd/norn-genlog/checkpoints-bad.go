@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	cosignpkg "github.com/onembyte/norn/internal/cosign"
 	"github.com/onembyte/norn/internal/note"
@@ -735,6 +736,35 @@ func writeBadCheckpoints(root, origin string, key ed25519.PrivateKey,
 	if err != nil {
 		return err
 	}
+	// Run 19, L3: the honest lines already satisfy the policy. Only the
+	// suffix on this additional, genuinely signed pi payload can refuse it.
+	body, err := noteBody(signed)
+	if err != nil {
+		return err
+	}
+	var extra string
+	for _, signer := range signers {
+		if signer.Name != "norn-witness/pi" {
+			continue
+		}
+		line, err := cosignpkg.Sign(body, signer.Name, signer.Key, time.Unix(CosignedAt, 0))
+		if err != nil {
+			return err
+		}
+		_, blob, ok := strings.Cut(strings.TrimPrefix(line, note.SigPrefix), " ")
+		payload, err := base64.StdEncoding.DecodeString(blob)
+		if !ok || err != nil || len(payload) != 76 {
+			return fmt.Errorf("pi did not produce a 76-byte cosignature")
+		}
+		extra = note.SignatureLine(signer.Name, append(payload, 0)) + "\n"
+		break
+	}
+	if extra == "" {
+		return fmt.Errorf("the fixture has no pi witness")
+	}
+	cases = append(cases, badCheckpoint{"48-witness-payload-too-long",
+		"pi's valid 76-byte cosignature plus one byte, beside the honest log and witness lines", signed + extra})
+
 	sort.Slice(cases, func(i, j int) bool { return cases[i].Name < cases[j].Name })
 	dir := filepath.Join(root, "checkpoints-bad")
 	if err := os.RemoveAll(dir); err != nil {
@@ -789,8 +819,9 @@ func writeBadCheckpoints(root, origin string, key ed25519.PrivateKey,
 	// which is how §7's terminating newline, §6's canonical size line and
 	// §10's every-line rule all reached a gate unstated.
 	rules := map[string]map[string]string{
-		"33-size-above-2-63":      {"section": "6", "says": "at most 2⁶³−1"},
-		"31-cosignature-S-plus-L": {"section": "10", "says": "must verify"},
+		"48-witness-payload-too-long": {"section": "7", "says": "The decoded payload is **exactly** that length for the matched key"},
+		"33-size-above-2-63":          {"section": "6", "says": "at most 2⁶³−1"},
+		"31-cosignature-S-plus-L":     {"section": "10", "says": "must verify"},
 		"32-signature-name-not-utf8": {"section": "7",
 			"says": "The signed text and every signature line MUST be valid UTF-8"},
 		// 6.5l-vi-b-ii-d: these two cited a rule a later step states. 01 has
@@ -840,6 +871,7 @@ func writeBadCheckpoints(root, origin string, key ed25519.PrivateKey,
 	// order refuses every file here too, and the suite cannot tell: 01 is
 	// `note` and not `log-signature`, 03 is `log-signature` and not `origin`.
 	codes := map[string]refusal.Code{
+		"48-witness-payload-too-long":                 refusal.Cosignature,
 		"33-size-above-2-63":                          refusal.Checkpoint,
 		"31-cosignature-S-plus-L":                     refusal.Cosignature,
 		"32-signature-name-not-utf8":                  refusal.Note,
