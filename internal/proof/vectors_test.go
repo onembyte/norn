@@ -193,6 +193,7 @@ func TestTheBundleClaimsNoDomainItDoesNotCarry(t *testing.T) {
 
 func TestEveryProofNegativeIsRefused(t *testing.T) {
 	t.Run("index-outside-tree", checkIndexOutsideTreeBundle)
+	t.Run("request-expires-at-ts repair", checkRequestExpiryBinding)
 	checkRunFourteenBundlePair(t)
 	dir := filepath.Join("..", "..", "testdata", "vectors", "proofs-bad")
 	raw, err := os.ReadFile(filepath.Join(dir, "cases.json"))

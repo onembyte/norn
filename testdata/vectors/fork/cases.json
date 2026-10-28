@@ -1,6 +1,10 @@
 {
   "cases": [
     {
+      "name": "bad-version-nonshortest",
+      "says": "not valid deterministic CBOR"
+    },
+    {
       "name": "bad-oversize",
       "says": "MAX_EVIDENCE_BYTES"
     },
@@ -210,6 +214,7 @@
     "bad-v1-split-keys": "schema",
     "bad-v2-without-split-keys": "schema",
     "bad-version-and-unknown-key": "version",
+    "bad-version-nonshortest": "cbor",
     "bad-version-three": "version",
     "bad-wrong-version": "version"
   },
@@ -380,6 +385,10 @@
     },
     "bad-version-and-unknown-key": {
       "says": "a key set is only closed relative to a version",
+      "section": "11.1"
+    },
+    "bad-version-nonshortest": {
+      "says": "the file is not valid deterministic CBOR",
       "section": "11.1"
     },
     "bad-version-three": {

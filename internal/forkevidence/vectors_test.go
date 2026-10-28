@@ -24,6 +24,7 @@ import (
 
 func TestEveryForkNegativeIsRefused(t *testing.T) {
 	checkRunFourteenEvidence(t)
+	t.Run("bad-version-nonshortest repair", checkNonshortestVersionPair)
 	root := filepath.Join("..", "..", "testdata", "vectors")
 	raw, err := os.ReadFile(filepath.Join(root, "fork", "cases.json"))
 	if err != nil {
@@ -40,6 +41,9 @@ func TestEveryForkNegativeIsRefused(t *testing.T) {
 	}
 	if err := json.Unmarshal(raw, &doc); err != nil {
 		t.Fatal(err)
+	}
+	if doc.Codes["bad-version-nonshortest"] != evrefusal.CBOR {
+		t.Error("missing bad-version-nonshortest cbor case")
 	}
 	if len(doc.Cases) < 2 {
 		t.Fatalf("%d fork negatives; §12.1 names two", len(doc.Cases))

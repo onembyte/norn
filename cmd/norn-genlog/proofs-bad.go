@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/onembyte/norn/internal/cbor"
 	cosignpkg "github.com/onembyte/norn/internal/cosign"
 	"github.com/onembyte/norn/internal/entry"
 	"github.com/onembyte/norn/internal/note"
@@ -222,6 +223,50 @@ func writeBadProofs(root, origin string, key ed25519.PrivateKey, entries [][]byt
 		}
 	}
 
+	// Run 20, L1.7: a real included entry whose request breaks only its
+	// expiry field rule must reach binding under its own id and path.
+	expiryAt := -1
+	for i, raw := range entries {
+		env, err := entry.Decode(raw)
+		if err != nil || env.T != "enroll" {
+			continue
+		}
+		request, ok := env.Body["request"].([]byte)
+		if !ok {
+			continue
+		}
+		value, err := cbor.Decode(request)
+		if err != nil {
+			continue
+		}
+		m, ok := value.(map[string]any)
+		if !ok {
+			continue
+		}
+		expires, present := m["expires"].(uint64)
+		ts, valid := m["ts"].(uint64)
+		id, _ := m["device_id"].(string)
+		if !present || !valid || expires != ts || id == "" {
+			continue
+		}
+		path, err := tree.InclusionProof(int64(i))
+		if err != nil {
+			return err
+		}
+		b, err := proof.Build(id, int64(i), raw, path, signed)
+		if err != nil {
+			return err
+		}
+		if err := write("request-expires-at-ts", b); err != nil {
+			return err
+		}
+		expiryAt = i
+		break
+	}
+	if expiryAt < 0 {
+		return fmt.Errorf("the fixture has no request with expires equal to ts")
+	}
+
 	// Cold gate run 13, D15. An unlisted witness's real cosignatures add
 	// bytes without changing any check. These twins isolate the size cap.
 	nasRaw, err := os.ReadFile(filepath.Join(root, "proofs", "nas.bundle"))
@@ -264,6 +309,7 @@ func writeBadProofs(root, origin string, key ed25519.PrivateKey, entries [][]byt
 
 	// Every negative names the section that states its rule (run 10).
 	bundleRules := map[string]map[string]string{
+		"request-expires-at-ts":     {"section": "8.1", "says": "Decoding here is the request's structure and field rules"},
 		"index-outside-tree":        {"section": "10.1", "says": "the index is outside the tree"},
 		"one-past-the-cap":          {"section": "8.1", "says": "larger than this MUST be refused on length"},
 		"open-schema":               {"section": "8.1", "says": "a closed map of exactly these six keys"},
@@ -287,6 +333,7 @@ func writeBadProofs(root, origin string, key ed25519.PrivateKey, entries [][]byt
 	// the binding -- the entry is another one's), and
 	// no-quorum-tampered-proof (the quorum, then the inclusion proof).
 	bundleCodes := map[string]refusal.Code{
+		"request-expires-at-ts":     refusal.Binding,
 		"index-outside-tree":        refusal.Inclusion,
 		"one-past-the-cap":          refusal.Bundle,
 		"open-schema":               refusal.Bundle,
@@ -303,6 +350,7 @@ func writeBadProofs(root, origin string, key ed25519.PrivateKey, entries [][]byt
 		"wrong-log-key":             refusal.LogSignature,
 	}
 	bundleCases := []map[string]string{
+		{"name": "request-expires-at-ts", "says": "expires must be after ts"},
 		{"name": "index-outside-tree", "says": "the index is outside the tree"},
 		{"name": "one-past-the-cap", "says": "input exceeds"},
 		{"name": "open-schema", "says": "unknown field"},

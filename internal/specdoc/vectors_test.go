@@ -2936,7 +2936,7 @@ func TestEveryServedAndBundleNegativeCitesTheRuleOfItsCode(t *testing.T) {
 			"origin":        {"this network's origin"},
 			"quorum":        {"a satisfied witness quorum"},
 			"inclusion":     {"the index is outside the tree", "reach that checkpoint's root at `index`", "the proof carries more or fewer hashes than RFC 9162 §2.1.3.2 consumes"},
-			"binding":       {"`device` is the `device_id` the `entry` names", "an `enroll` whose request does not decode", "set of members, each of its type: `v` 1,", "`ts`, a map `body`, well-formed `sigs` — or it names no device"},
+			"binding":       {"Decoding here is the request's structure and field rules", "`device` is the `device_id` the `entry` names", "an `enroll` whose request does not decode", "set of members, each of its type: `v` 1,", "`ts`, a map `body`, well-formed `sigs` — or it names no device"},
 		},
 		"receipt-bad": {
 			"note":          {"a second `0x0A` after the final signature creates a forbidden blank line", "or no signature line, is `note`", "The text is at least one"},

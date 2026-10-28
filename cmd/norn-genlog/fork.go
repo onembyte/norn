@@ -694,6 +694,19 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 	if err != nil {
 		return err
 	}
+	// Run 20, L1.5: canonical CBOR is judged before its version. Only
+	// widening version 3's integer head leaves every later check sound.
+	versionThree := withVersion(splitRaw, 3)
+	versionHead := []byte{0x67, 'v', 'e', 'r', 's', 'i', 'o', 'n', 0x03}
+	nonshortestHead := append(bytes.Clone(versionHead[:8]), 0x18, 0x03)
+	if bytes.Count(versionThree, versionHead) != 1 {
+		return fmt.Errorf("the sound evidence must encode version 3 exactly once")
+	}
+	if err := os.WriteFile(filepath.Join(dir, "bad-version-nonshortest.cbor"),
+		bytes.Replace(versionThree, versionHead, nonshortestHead, 1), 0o644); err != nil {
+		return err
+	}
+
 	splitCases := []struct {
 		name, hint, phrase string
 		code               evrefusal.Code
@@ -782,6 +795,7 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 	// check names MAX_EVIDENCE_BYTES, and an unsupported version says so.
 	// The codes live in `codes` (6.5l-vii-b-i).
 	forkCases := []map[string]string{
+		{"name": "bad-version-nonshortest", "says": "not valid deterministic CBOR"},
 		{"name": "bad-oversize", "says": "MAX_EVIDENCE_BYTES"},
 		{"name": "bad-open-schema", "says": "unknown field"},
 		{"name": "bad-wrong-version", "says": "unsupported version"},
@@ -811,6 +825,7 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 	// deciding. bad-policy-says-quorum-none is `held`: the carried policy
 	// parses, and the held checkpoint fails the reader's OWN quorum.
 	forkCodes := map[string]evrefusal.Code{
+		"bad-version-nonshortest":                 evrefusal.CBOR,
 		"bad-consistent-and-bad-split":            evrefusal.Proof,
 		"bad-oversize":                            evrefusal.Oversize,
 		"bad-open-schema":                         evrefusal.Schema,
@@ -846,6 +861,7 @@ func writeForkNegatives(root, origin string, key ed25519.PrivateKey,
 
 	manifest := map[string]any{
 		"rules": map[string]map[string]string{
+			"bad-version-nonshortest":                 {"section": "11.1", "says": "the file is not valid deterministic CBOR"},
 			"bad-consistent-and-bad-split":            {"section": "11.1", "says": "every proof a file carries is checked before the file is read as a fork"},
 			"bad-oversize":                            {"section": "11.1", "says": "MAX_EVIDENCE_BYTES"},
 			"bad-open-schema":                         {"section": "11.1", "says": "a closed map of exactly these seven keys at"},

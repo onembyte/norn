@@ -395,6 +395,20 @@ func TestTheEvidenceOrderHasItsVectors(t *testing.T) {
 			_, err := cbor.Decode(body)
 			return len(body) > MaxEvidenceBytes && err != nil
 		}},
+		{"cbor before version", evrefusal.CBOR, func(body []byte) bool {
+			head := []byte{0x67, 'v', 'e', 'r', 's', 'i', 'o', 'n', 0x18, 0x03}
+			if bytes.Count(body, head) != 1 {
+				return false
+			}
+			_, err := cbor.DecodeWithin(body, MaxEvidenceBytes)
+			if err == nil {
+				return false
+			}
+			canonical := bytes.Replace(body, head, append(bytes.Clone(head[:8]), 0x03), 1)
+			_, err = Parse(canonical)
+			code, _ := evrefusal.CodeOf(err)
+			return code == evrefusal.Version
+		}},
 		{"held before conflicting", evrefusal.Held, func(body []byte) bool {
 			ev, err := Parse(body)
 			return err == nil && fails(ev.Held) && fails(ev.Conflicting)
@@ -418,4 +432,45 @@ func TestTheEvidenceOrderHasItsVectors(t *testing.T) {
 			t.Errorf("no fork/ file is refused as %q", code)
 		}
 	}
+}
+
+// Changing only the integer head must expose the unsupported version; changing
+// that value back to 2 must recover the sound evidence, including both proofs.
+func checkNonshortestVersionPair(t *testing.T) {
+	t.Helper()
+	root := filepath.Join("..", "..", "testdata", "vectors")
+	raw, err := os.ReadFile(filepath.Join(root, "fork", "bad-version-nonshortest.cbor"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	head := []byte{0x67, 'v', 'e', 'r', 's', 'i', 'o', 'n', 0x18, 0x03}
+	if bytes.Count(raw, head) != 1 {
+		t.Fatal("must encode only version 3 with its nonshortest head")
+	}
+	canonical := bytes.Replace(raw, head, append(bytes.Clone(head[:8]), 0x03), 1)
+	if _, err := cbor.DecodeWithin(canonical, MaxEvidenceBytes); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Parse(canonical); err == nil {
+		t.Fatal("canonical version 3 accepted")
+	} else if code, _ := evrefusal.CodeOf(err); code != evrefusal.Version {
+		t.Fatalf("canonical version 3: %s, want version: %v", code, err)
+	}
+	repaired := bytes.Replace(raw, head, append(bytes.Clone(head[:8]), 0x02), 1)
+	sound, err := os.ReadFile(filepath.Join(root, "fork", "evidence.cbor"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(repaired, sound) {
+		t.Fatal("canonical version 2 must recover evidence.cbor byte for byte")
+	}
+	ev, err := Parse(repaired)
+	if err != nil {
+		t.Fatal(err)
+	}
+	anchor := shippedAnchor(t, root)
+	if _, err := Check(ev, anchor.Origin, []string{anchor.LogKey}, anchor.Policy); err != nil {
+		t.Fatal(err)
+	}
+	t.Log("canonical version 3: version; canonical version 2: sound evidence accepted")
 }

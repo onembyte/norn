@@ -1,6 +1,10 @@
 {
   "cases": [
     {
+      "name": "request-expires-at-ts",
+      "says": "expires must be after ts"
+    },
+    {
       "name": "index-outside-tree",
       "says": "the index is outside the tree"
     },
@@ -110,6 +114,7 @@
     "padded-proof": "inclusion",
     "pk-length-under-own-id": "binding",
     "request-device-pk-small-order": "binding",
+    "request-expires-at-ts": "binding",
     "request-undecodable": "binding",
     "revoke-entry-other-device": "binding",
     "rotate-entry-other-device": "binding",
@@ -174,6 +179,10 @@
     "request-device-pk-small-order": {
       "says": "an `enroll` whose request does not decode",
       "section": "10.1"
+    },
+    "request-expires-at-ts": {
+      "says": "Decoding here is the request's structure and field rules",
+      "section": "8.1"
     },
     "request-undecodable": {
       "says": "an `enroll` whose request does not decode",

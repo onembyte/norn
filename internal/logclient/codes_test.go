@@ -434,6 +434,7 @@ func onlyFile(t *testing.T, root string) string {
 
 func TestEveryBadCheckpointIsRefusedWithItsCode(t *testing.T) {
 	t.Run("48-witness-payload-too-long repair", checkRunNineteenWitnessPayload)
+	t.Run("49-empty-signed-text repair", checkEmptySignedTextCheckpoint)
 	t.Run("47-signed-text-not-utf8", checkSignedTextNotUTF8Checkpoint)
 	checkBlankFirstLineCheckpoint(t)
 	checkRunFourteenCheckpointPairs(t)
