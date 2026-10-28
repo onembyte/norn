@@ -215,6 +215,8 @@ def write_proven(out: pathlib.Path, final: Any, entries: list[bytes]) -> None:
         ("::/0", ["::/0"], "The grant is each masked prefix in"),
         ("::ffff:10.0.0.1/0", [], "An IPv4-mapped IPv6 prefix is no grant either"),
     ]
+    forms.extend((label, [], "An IPv4-mapped IPv6 prefix is no grant either")
+                 for label in ("::ffff:a00:1/128", "0:0:0:0:0:ffff:a00:1/128"))
     cases.extend({"label": label, "grant": grant, "says": says}
                  for label, grant, says in forms)
     write(out / "proven" / "grant-labels.json", canonjson.dumps({
@@ -429,6 +431,7 @@ def write_trust_rejections(out: pathlib.Path) -> None:
     mode = {"section": "9.1", "says": "`mode` MUST be"}
     size = {"section": "9.1", "says": "MAX_TRUST_BYTES"}
     trust_rules = {
+        "60-witness-short-name-mismatch": {"section": "9.1", "says": "The correspondence is on the **set** of names"},
         "56-policy-log-key-renamed": {"section": "9.1", "says": "as verifier-key text"},
         "57-log-url-bytes": {"section": "9.1", "says": "array of text"},
         "58-anchor-max-lag-text": {"section": "9.1", "says": "`max_lag` is **uint seconds**"},
@@ -620,6 +623,8 @@ def write_order_log(out: pathlib.Path) -> None:
         "37-rotate-body-before-not-active": ("5.1", "body well-formed and closed (`decode`)"),
         "38-envelope-invalid-note": ("5.1", "`v` = 1,"),
         "39-byte-copy-before-envelope": ("5.1", "so is a byte copy of any entry"),
+        "40-log-key-point-before-prev": ("3.1", "refused as `decode` at its entry type's body step"),
+        "41-log-key-point-repaired-stale-prev": ("5.1", "`prev` is `versions.log_key` (`stale-state`)"),
     }
     items = fixture.order_log()
     raw = [it.raw for it in items]
@@ -692,6 +697,30 @@ def write_rules_log(out: pathlib.Path) -> None:
     b.add("33-policy-log-key-was-witness", b.build("policy", {"text": text}, roots))
     for index, key in enumerate(("staleness", "checkpoint_interval", "mmd"), 34):
         b.add(f"{index}-params-{key.replace('_', '-')}-zero", b.build("params", {key: 0}, roots))
+    # These params bodies are unique so an applied-content duplicate cannot
+    # hide the version guard. The current version comes from the real prefix.
+    b.add("37-params-without-prev", b.build("params", {"mmd": 47}, roots, prev=None), "stale-state")
+    b.add("38-params-stale-prev", b.build("params", {"mmd": 48}, roots, prev=7), "stale-state")
+    b.add("39-params-current-prev", b.build("params", {"mmd": 49}, roots))
+    # The strict encoder cannot express 2^63. Sign the patched preimage,
+    # exactly as the earlier hostile-profile vectors do, then repair only ts.
+    index = b.index
+    def above_cap(raw):
+        needle = cbor.encode("ts") + cbor.encode(fixture.T0 + 9000)
+        assert raw.count(needle) == 1
+        return raw.replace(needle, cbor.encode("ts") + bytes.fromhex("1b8000000000000000"), 1)
+    hostile = fixture._patched_and_signed(index, above_cap, {"text": "one past the CBOR integer cap"})
+    b.add_raw("40-note-ts-two-to-63", hostile, "decode")
+    repaired = cbor.decode(hostile.replace(bytes.fromhex("6274731b8000000000000000"),
+                                          bytes.fromhex("6274731b7fffffffffffffff"), 1))
+    b.add("41-note-ts-at-the-cap", fixture._signed(dict(repaired, sigs=[]), signer))
+    invalid = b.build("note", {"text": "after is an unsigned integer"}, signer, after=True)
+    b.add("42-note-after-bool", invalid, "decode")
+    b.add("43-note-after-uint", fixture._signed(dict(invalid, after=1, sigs=[]), signer))
+    request = fixture._request("probe-exp", "spare", "spare", 0)
+    request.update(ts=100, expires=200)
+    enrollreq.sign(request, fixture.KEYS["spare"])
+    b.add("44-enroll-expired-before-entry-ts", b.build("enroll", {"request": cbor.encode(request)}, signer))
     items = b.items
     raw = [it.raw for it in items]
     anchor = fixture.anchor_for(raw)
@@ -733,6 +762,14 @@ def write_rules_log(out: pathlib.Path) -> None:
         ("4.5", "| `staleness` | uint s | 600 |"),
         ("4.5", "| `checkpoint_interval` | uint s | 60 |"),
         ("4.5", "| `mmd` | uint s | 60 |"),
+        ("5.1", "`prev` is `versions.params` (`stale-state`)"),
+        ("5.1", "`prev` is `versions.params` (`stale-state`)"),
+        ("5.1", "`prev` is `versions.params` (`stale-state`)"),
+        ("4.0", "≤ 2⁶³−1"),
+        ("4.0", "≤ 2⁶³−1"),
+        ("5.1", "`t` text, `ts`, `after` and `prev` uint"),
+        ("5.1", "`t` text, `ts`, `after` and `prev` uint"),
+        ("5.3", "`expires` is never applied during replay"),
     ]
     assert len(phrases) == len(items)
     for it in items:
@@ -814,8 +851,13 @@ def write_trust_acceptances(out: pathlib.Path) -> None:
     write(out / "trust-good" / "policy-over-4096.cbor", raw)
     cases.append("policy-over-4096")
     write(out / "trust-good" / "cases.json", canonjson.dumps({
-        "says": {"policy-over-4096": "accepted: one ignored comment line grows only the policy text to 4097 bytes; the whole trust file stays below MAX_TRUST_BYTES"},
-        "rules": {"policy-over-4096": {
+        "says": {"name-non-ascii": "accepted UTF-8 network label, with every other field unchanged",
+                 "policy-without-log": "accepted anchor omitting only the policy log line",
+                 "policy-over-4096": "accepted: one ignored comment line grows only the policy text to 4097 bytes; the whole trust file stays below MAX_TRUST_BYTES"},
+        "rules": {
+            "name-non-ascii": {"section": "9.1", "says": "human label for the network"},
+            "policy-without-log": {"section": "9.1", "says": "A `log` line, if the policy carries one"},
+            "policy-over-4096": {
             "section": "9.1", "says": "Its length is bounded only by `MAX_TRUST_BYTES`"}},
         "comment": "every file here MUST be accepted as a trust anchor. Each "
                    "exercises an optional member or an intentionally open URL "
@@ -1036,6 +1078,16 @@ def write_trust(out: pathlib.Path) -> None:
     add_case("origin-extended.note",
              good_text.replace(doc["origin"] + "\n", doc["origin"] + "x\n", 1),
              "origin", "The origin line MUST equal the anchored origin")
+
+    add_case("leaf-31-bytes.note", two_faults(l2=base64.b64encode(bytes(31)).decode()),
+             "leaf-hash", "The leaf hash MUST be standard base64 and decode to exactly 32 bytes")
+    # The normal note signer rightly refuses empty text. Construct framing
+    # directly, with the real log signature over the empty byte string.
+    key_id = note.key_id(doc["origin"], fixture.KEYS["logkey"].public)
+    payload = key_id + fixture.KEYS["logkey"].sign(b"")
+    empty = "\n" + note.SIG_PREFIX + doc["origin"] + " " + base64.b64encode(payload).decode() + "\n"
+    add_case("empty-signed-text.note", empty, "note", "The text is at least one",
+             malformed=True)
 
     write(out / "receipt-bad" / "cases.json", canonjson.dumps({
         "comment": "receipt refusal vectors in §7 check order. Body and signer "

@@ -93,11 +93,11 @@ class RunFourteen(unittest.TestCase):
         doc = json.loads((ROOT / 'proven/grant-labels.json').read_text())
         from nornref.state import grant_from_label
         self.assertTrue(doc['comment'])
-        self.assertGreaterEqual(len(doc['cases']), 47)
-        self.assertTrue({'10.0.0.0/8,  fd00::/64', '  10.0.0.0/8  ', '::1.2.3.4/128', '1:2:3:4:5:6:7::/128', '9.0.0.0/8, 1::/16', '1:2:3:4:5:6:7::8/128', '9.0.0.0/8, 10.0.0.0/8', '2001:db8:0:1:1:1:1:1/128',
+        self.assertGreaterEqual(len(doc['cases']), 49)
+        self.assertTrue({'::ffff:a00:1/128', '0:0:0:0:0:ffff:a00:1/128', '10.0.0.0/8,  fd00::/64', '  10.0.0.0/8  ', '::1.2.3.4/128', '1:2:3:4:5:6:7::/128', '9.0.0.0/8, 1::/16', '1:2:3:4:5:6:7::8/128', '9.0.0.0/8, 10.0.0.0/8', '2001:db8:0:1:1:1:1:1/128',
                          '2001:db8:0:0:1:1:1:1/128', '1:0:0:2:3:0:0:4/128',
                          '10.0.0.1/8, 10.0.0.2/8'} <= {c['label'] for c in doc['cases']})
-        expected = {'10.0.0.0/8,  fd00::/64': ['10.0.0.0/8', 'fd00::/64'],
+        expected = {'::ffff:a00:1/128': [], '0:0:0:0:0:ffff:a00:1/128': [], '10.0.0.0/8,  fd00::/64': ['10.0.0.0/8', 'fd00::/64'],
                     '  10.0.0.0/8  ': ['10.0.0.0/8'],
                     '::1.2.3.4/128': ['::102:304/128'],
                     '1:2:3:4:5:6:7::/128': ['1:2:3:4:5:6:7:0/128'],
@@ -112,6 +112,8 @@ class RunFourteen(unittest.TestCase):
         for case in doc['cases']:
             with self.subTest(label=case['label']):
                 self.assertEqual(grant_from_label(case['label']), case['grant'])
+                if case['label'] in ('::ffff:a00:1/128', '0:0:0:0:0:ffff:a00:1/128'):
+                    self.assertEqual(grant_from_label('::fffe:a00:1/128'), ['::fffe:a00:1/128'])
                 repairs = {'10.0.0.0/8,  fd00::/64': '10.0.0.0/8,fd00::/64',
                            '  10.0.0.0/8  ': '10.0.0.0/8',
                            '::1.2.3.4/128': '::102:304/128'}

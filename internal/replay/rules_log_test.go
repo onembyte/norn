@@ -18,8 +18,9 @@ import (
 // These outcomes are the rules in §4.0, §4.3, §4.4 and §5.1, independent of
 // the manifest. The repairs retain the original content wherever possible.
 func TestEveryRuleCaseMatchesAndEachRefusalRepairs(t *testing.T) {
-	names := []string{"00-genesis", "01-enroll-nas", "02-enroll-laptop", "03-revoke-nas-by-laptop", "04-revoke-nas-by-self", "05-signer-add-without-prev", "06-signer-add-prev-zero", "07-note-without-ts", "08-note-with-ts", "09-enroll-empty-label-value", "10-policy-preannounces-log-key", "11-log-key-preannounced", "12-copy-enroll-unsorted-sigs", "13-copy-enroll-sorted-sigs", "14-root-threshold-full", "15-root-remove-unknown-before-invariant", "16-root-remove-known-at-full-threshold", "17-root-threshold-repaired", "18-root-remove-known", "19-root-restore-known", "20-note-uppercase-kid", "21-note-without-surplus-kid", "22-enroll-by-roots", "23-enroll-with-signer", "24-enroll-expires-zero", "25-enroll-without-expires", "26-policy-trailing-space", "27-params-by-signers", "28-enroll-envelope-device-sig", "29-enroll-unknown-body-key", "30-note-long-hex-kid", "31-revoke-uppercase-device-id", "32-rotate-uppercase-device-id", "33-policy-log-key-was-witness", "34-params-staleness-zero", "35-params-checkpoint-interval-zero", "36-params-mmd-zero"}
+	names := []string{"00-genesis", "01-enroll-nas", "02-enroll-laptop", "03-revoke-nas-by-laptop", "04-revoke-nas-by-self", "05-signer-add-without-prev", "06-signer-add-prev-zero", "07-note-without-ts", "08-note-with-ts", "09-enroll-empty-label-value", "10-policy-preannounces-log-key", "11-log-key-preannounced", "12-copy-enroll-unsorted-sigs", "13-copy-enroll-sorted-sigs", "14-root-threshold-full", "15-root-remove-unknown-before-invariant", "16-root-remove-known-at-full-threshold", "17-root-threshold-repaired", "18-root-remove-known", "19-root-restore-known", "20-note-uppercase-kid", "21-note-without-surplus-kid", "22-enroll-by-roots", "23-enroll-with-signer", "24-enroll-expires-zero", "25-enroll-without-expires", "26-policy-trailing-space", "27-params-by-signers", "28-enroll-envelope-device-sig", "29-enroll-unknown-body-key", "30-note-long-hex-kid", "31-revoke-uppercase-device-id", "32-rotate-uppercase-device-id", "33-policy-log-key-was-witness", "34-params-staleness-zero", "35-params-checkpoint-interval-zero", "36-params-mmd-zero", "37-params-without-prev", "38-params-stale-prev", "39-params-current-prev", "40-note-ts-two-to-63", "41-note-ts-at-the-cap", "42-note-after-bool", "43-note-after-uint", "44-enroll-expired-before-entry-ts"}
 	codes := []string{"", "", "", ReasonThreshold, "", ReasonStaleState, "", ReasonDecode, "", "", "", "", ReasonDecode, ReasonDupEntry, "", ReasonUnknownKey, ReasonRootInvariant, "", "", "", ReasonDecode, "", ReasonThreshold, "", ReasonDecode, "", "", ReasonThreshold, ReasonNoDeviceSig, ReasonDecode, ReasonDecode, ReasonDecode, ReasonDecode, "", "", "", ""}
+	codes = append(codes, "stale-state", "stale-state", "", "decode", "", "decode", "", "")
 	dir := vectorRoot() + "/log-rules"
 	anchor, raw, m := loadCase(t, dir)
 	if len(raw) != len(names) {
@@ -70,6 +71,9 @@ func TestEveryRuleCaseMatchesAndEachRefusalRepairs(t *testing.T) {
 				t.Fatalf("Go = %q, want %q", got, codes[i])
 			}
 			t.Logf("Go = %q", codes[i])
+			if i >= 37 {
+				checkRunTwentyRule(t, anchor, raw, i)
+			}
 			if codes[i] == "" {
 				return
 			}
@@ -96,6 +100,9 @@ func TestEveryRuleCaseMatchesAndEachRefusalRepairs(t *testing.T) {
 				if got := lastOutcome(result, len(prefix)); got != want {
 					t.Fatalf("repair Go = %q, want %q", got, want)
 				}
+			}
+			if i >= 37 {
+				return
 			}
 			value, err := cbor.Decode(raw[i])
 			if err != nil {
@@ -430,7 +437,7 @@ func TestEveryRuleCaseMatchesAndEachRefusalRepairs(t *testing.T) {
 		if i == 34 {
 			prev = 0
 		}
-		if len(e.Body) != 1 || e.Body[key] != uint64(0) || e.Prev == nil || *e.Prev != prev || st.Params[key] != uint64(0) || st.Versions["params"] != uint64(i) || st.Policy != text || final.Params[key] != uint64(0) {
+		if len(e.Body) != 1 || e.Body[key] != uint64(0) || e.Prev == nil || *e.Prev != prev || st.Params[key] != uint64(0) || st.Versions["params"] != uint64(i) || st.Policy != text || Replay(anchor, raw[:37]).Params[key] != uint64(0) {
 			t.Fatalf("zero parameter %s or version not stored", key)
 		}
 	}

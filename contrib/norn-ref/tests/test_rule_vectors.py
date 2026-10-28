@@ -22,6 +22,8 @@ NAMES = ["00-genesis", "01-enroll-nas", "02-enroll-laptop",
 CODES = ["", "", "", "threshold", "", "stale-state", "", "decode", "", "", "", "",
          "decode", "dup-entry", "", "unknown-key", "root-invariant", "", "", "", "decode", "", "threshold", "", "decode", "", "", "threshold", "no-device-sig", "decode", "decode", "decode", "decode", "", "", "", ""]
 
+NAMES += ['37-params-without-prev', '38-params-stale-prev', '39-params-current-prev', '40-note-ts-two-to-63', '41-note-ts-at-the-cap', '42-note-after-bool', '43-note-after-uint', '44-enroll-expired-before-entry-ts']
+CODES += ['stale-state', 'stale-state', '', 'decode', '', 'decode', '', '']
 
 class RuleVectors(unittest.TestCase):
     def test_every_rule_case_matches_and_each_refusal_repairs(self):
@@ -53,12 +55,17 @@ class RuleVectors(unittest.TestCase):
                 self.assertTrue(any(rule["says"] in line for line in section.splitlines()))
                 got = next((r["reason"] for r in final.rejected if r["index"] == i), "")
                 self.assertEqual(got, CODES[i], f"reference {name}: {got!r}")
+                if i >= 37:
+                    from test_run20_vectors import check_rule
+                    check_rule(self, anchor, raw, i)
                 if not CODES[i]:
                     continue
                 self.assertEqual((ROOT / (name + ".reason")).read_text(), CODES[i] + "\n")
                 before, after = replay.replay(anchor, raw[:i]), replay.replay(anchor, raw[:i+1])
                 after.size, after.rejected = before.size, before.rejected
                 self.assertEqual(after.to_json(), before.to_json(), "refusal changed state")
+                if i >= 37:
+                    continue
                 env = cbor.decode(raw[i])
                 if i == 3:
                     env["sigs"] = []
@@ -193,4 +200,4 @@ class RuleVectors(unittest.TestCase):
             self.assertEqual(state.versions["params"], i)
             self.assertEqual(state.policy, text)
             self.assertEqual(cbor.decode(raw[i])["prev"], 0 if i == 34 else i-1)
-        self.assertTrue(all(final.params[key] == 0 for key in ("staleness", "checkpoint_interval", "mmd")))
+        self.assertTrue(all(replay.replay(anchor, raw[:37]).params[key] == 0 for key in ("staleness", "checkpoint_interval", "mmd")))

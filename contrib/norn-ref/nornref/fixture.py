@@ -1694,6 +1694,9 @@ def trust_rejections() -> list[tuple[str, dict[str, Any]]]:
     reused_log = dict(base, witnesses=[{"name":"w", "key":reuse}],
                       policy=f"witness w {reuse}\nquorum w\n")
     return [
+        ("60-witness-short-name-mismatch", damaged(
+            witnesses=[dict(base["witnesses"][0], name="pj")]
+            + [dict(w) for w in base["witnesses"][1:]])),
         # The policy log key keeps its public key and algorithm; only its
         # verifier name and the id derived from that name change (run 18, L7).
         ("56-policy-log-key-renamed", damaged(
@@ -2040,6 +2043,10 @@ def trust_acceptances() -> list[tuple[str, dict[str, Any]]]:
         return doc
 
     return [
+        ("name-non-ascii", dict(base, name="réseau-de-test")),
+        ("policy-without-log", dict(base, policy="".join(
+            line for line in base["policy"].splitlines(keepends=True)
+            if not line.startswith("log ")))),
         ("name-at-the-cap", dict(base, name="n" * 64)),
         ("name-one-byte", dict(base, name="n")),
         ("witness-name-at-the-cap", renamed_pi("p" * 64)),
@@ -3046,6 +3053,12 @@ def order_log() -> list[LogItem]:
     _signed(invalid, signer)
     b.add("38-envelope-invalid-note", invalid, "decode")
     b.add_raw("39-byte-copy-before-envelope", b.items[-1].raw, "dup-entry")
+    # Point admission precedes the version guard. Keeping the repaired
+    # point's sibling stale makes both answers visible in the shared log.
+    invalid = b.build("log_key", {"pk": ORDER_EIGHT, "overlap": 60}, roots, prev=7)
+    b.add("40-log-key-point-before-prev", invalid, "decode")
+    repaired = dict(invalid, body=dict(invalid["body"], pk=KEYS["logkey2"].public), sigs=[])
+    b.add("41-log-key-point-repaired-stale-prev", _signed(repaired, roots), "stale-state")
     return b.items
 
 

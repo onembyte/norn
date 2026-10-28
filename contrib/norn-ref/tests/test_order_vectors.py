@@ -45,6 +45,8 @@ CASES = {
     "36-revoke-body-before-not-active": ("decode", "not-active"),
     "37-rotate-body-before-not-active": ("decode", "not-active"),
     "38-envelope-invalid-note": ("decode", ""),
+    "40-log-key-point-before-prev": ("decode", "stale-state"),
+    "41-log-key-point-repaired-stale-prev": ("stale-state", ""),
     "39-byte-copy-before-envelope": ("dup-entry", ""),
 }
 
@@ -56,7 +58,7 @@ class ReplayOrderVectors(unittest.TestCase):
         anchor = replay.Anchor(bytes.fromhex(a["net"]), bytes.fromhex(a["genesis_hash"]),
                                a["log_key"], a["policy"])
         raw = [(ROOT / (e["name"] + ".cbor")).read_bytes() for e in manifest["entries"]]
-        self.assertEqual(len(raw), 42)
+        self.assertEqual(len(raw), 44)
         self.assertEqual(manifest["codes"], {name: codes[0] for name, codes in CASES.items()})
         self.assertEqual(set(manifest["rules"]), set(CASES))
         self.assertEqual({e["name"]: e["reason"] for e in manifest["entries"] if e["reason"]},
@@ -79,6 +81,10 @@ class ReplayOrderVectors(unittest.TestCase):
                 continue
             with self.subTest(case=name):
                 self.assertEqual(outcome, it["reason"], name)
+                if name >= "40-":
+                    from test_run20_vectors import check_order
+                    check_order(self, anchor, raw, i)
+                    continue
                 if name in NEW_CASES:
                     check_run19_case(self, anchor, raw, i, name)
                     continue

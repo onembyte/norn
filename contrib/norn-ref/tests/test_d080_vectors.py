@@ -45,7 +45,7 @@ class D080Vectors(unittest.TestCase):
         folder = ROOT / "log-rules"
         self.assertTrue((folder / f"{name}.cbor").is_file(), f"missing log-rules/{name}.cbor")
         manifest = json.loads((folder / "manifest.json").read_text())
-        self.assertEqual(len(manifest["entries"]), 37)
+        self.assertEqual(len(manifest["entries"]), 45)
         self.assertEqual(manifest["entries"][25]["name"], "25-enroll-without-expires")
         self.assertEqual(manifest["entries"][26], {"index": 26, "name": name, "reason": ""})
         self.rule(manifest["rules"][name], TRAILING)

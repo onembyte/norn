@@ -55,12 +55,14 @@ func TestEveryOrderCaseMatchesAndExposesOnlyItsNamedFaults(t *testing.T) {
 		"36-revoke-body-before-not-active":         {ReasonDecode, ReasonNotActive},
 		"37-rotate-body-before-not-active":         {ReasonDecode, ReasonNotActive},
 		"38-envelope-invalid-note":                 {ReasonDecode, ""},
+		"40-log-key-point-before-prev":             {ReasonDecode, ReasonStaleState},
+		"41-log-key-point-repaired-stale-prev":     {ReasonStaleState, ""},
 		"39-byte-copy-before-envelope":             {ReasonDupEntry, ""},
 	}
 	dir := vectorRoot() + "/log-order"
 	anchor, raw, m := loadCase(t, dir)
-	if len(raw) != 42 {
-		t.Fatalf("got %d entries, want 42", len(raw))
+	if len(raw) != 44 {
+		t.Fatalf("got %d entries, want 44", len(raw))
 	}
 	metadataBytes, err := os.ReadFile(dir + "/manifest.json")
 	if err != nil {
@@ -127,6 +129,10 @@ func TestEveryOrderCaseMatchesAndExposesOnlyItsNamedFaults(t *testing.T) {
 			reason, err := os.ReadFile(dir + "/" + it.Name + ".reason")
 			if err != nil || string(reason) != codes[0]+"\n" {
 				t.Fatal("reason file differs")
+			}
+			if it.Name >= "40-" {
+				checkRunTwentyOrder(t, anchor, raw, it.Index)
+				return
 			}
 			if it.Name >= "24-" {
 				checkRunNineteenOrder(t, anchor, raw, it.Index, it.Name, codes)
