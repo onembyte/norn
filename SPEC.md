@@ -323,7 +323,7 @@ every failure is `bad-genesis` and aborts replay, per §5.1's entry-0 list):
 | `name`, `reason` | UTF-8, 1–64 / 0–256 bytes |
 | `text` (`note`, `policy`) | UTF-8, ≤ 4096 bytes |
 | `labels` | map text→text; ≤ 32 entries; keys 1–23 bytes (the map-key cap above — a longer key is unencodable); values ≤ 256 bytes, the empty value included; a `labels` map, when present, MUST carry at least one pair; `labels: {}` is refused as a schema fault; absence is the one encoding of "no labels" |
-| `roots`, `signers` at genesis | arrays of 32-byte `pk`, no duplicates, no key in both; `len(roots) ≥ root_thr ≥ 1`; `len(signers) ≥ signer_thr ≥ 1` |
+| `roots`, `signers` at genesis | arrays of 32-byte `pk`, no duplicates, no key in both, and no two keys with the same `kid(pk)`, within an array or across the two (D-084 (4)); `len(roots) ≥ root_thr ≥ 1`; `len(signers) ≥ signer_thr ≥ 1` |
 | `kid` (in `sigs`, and in `signer_remove`/`root_remove` bodies) | exactly 16 characters matching `^[0-9a-f]{16}$`. A malformed `kid` is a schema violation (`decode`), **not** a `kid` that merely fails to resolve — that distinction matters because the two produce different reason codes. |
 | `sigs` array | sorted by `kid` and free of repeats (§4.0); an unsorted or repeating array is `decode` |
 
@@ -445,13 +445,13 @@ it currently holds; a device key counts only for its own `device_id` — for
 `enroll` that is the `device_pk` **inside the embedded request** (§4.3).
 
 **Grants are not compared across devices (D-081).** Replay does not compare
-one device's grant with another's: an `enroll` whose grant (§4.0) overlaps an
-active device's grant is accepted, no reason code refuses it, and both
+one device's grant with another's: an `enroll` whose grant (§4.0) overlaps
+an active device's grant is accepted, no reason code refuses it, and both
 records keep their labels and so their grants. A grant bounds what its own
 peer may claim (§13.1); it reserves nothing against other devices. What a
 node installs for two peers whose allowed-ips overlap is not a replay rule;
-`ENFORCEMENT.md` narrates how `nornd` gives neither peer the overlapping
-prefix and reports the pair.
+§13.1 states it: neither peer is given an overlapping prefix, and the pair
+is reported.
 
 #### Why `enroll` embeds a request instead of carrying a device signature
 
@@ -619,8 +619,9 @@ Replay of an **empty** list of entries yields the zero state of §5.3 with
 3. `t` MUST be `genesis`, and `net` MUST equal `anchor.net` → else **abort** (`bad-genesis`).
 4. `leaf_hash` MUST equal `anchor.genesis_hash` → else **abort** (`bad-genesis`).
 5. `after`, if present, MUST be 0, and `prev` MUST be absent → else **abort** (`bad-genesis`).
-6. Body checks: `roots` and `signers` are non-empty arrays of distinct 32-byte
-   keys, disjoint from each other; `1 ≤ root_thr ≤ len(roots)`;
+6. Body checks: `roots` and `signers` are non-empty arrays of distinct
+   32-byte keys, disjoint from each other, and no two keys within or across
+   them share a `kid(pk)` (D-084 (4)); `1 ≤ root_thr ≤ len(roots)`;
    `1 ≤ signer_thr ≤ len(signers)`; `params`, if present, is **non-empty**, has only §4.5
    keys, and each value has the §4.5 type. The same three rules a `params` **entry**
    gets in §5.1 — an empty map trivially "has only §4.5 keys", so saying only that
@@ -812,17 +813,23 @@ of its own — the `tlog-cosignature` lines are the only timestamps in the
 artifact, and `T` is the only value derived from them.
 
 The policy is the one under which this checkpoint was accepted: the trust
-policy for a first read, or the most recently replayed policy for a reader that
-already has one (§9.4). A `policy` entry in this checkpoint's replay range MUST
-NOT change this checkpoint's `T`; it takes effect when the reader checks the
-next checkpoint. **This checkpoint** is its tree head — origin, size and root — whatever
-cosignature lines arrive with it: a reader that holds that tree head keeps the
-policy and the `T` it accepted it under, and reading it again, from the log or
-from a peer, changes neither (D-082 (1)). That is the verifier loop's held
-head (§10) and its restoration after a restart (§13.2); a checkpoint carried
-inside a bundle (§8.1) or fork evidence (§11.1) is checked under the policy the
-reader holds now — the trust file's, or the most recently replayed (§9.4) — even
-when it names the tree head the reader already holds.
+policy for a first read, or the most recently replayed policy for a reader
+that already has one (§9.4). A `policy` entry in this checkpoint's replay
+range MUST NOT change this checkpoint's `T`; it takes effect when the reader
+checks the next checkpoint. **This checkpoint** is its tree head — origin,
+size and root — whatever cosignature lines arrive with it: a reader that
+holds that tree head keeps the policy and the `T` it accepted it under, and
+reading it again, from the log or from a peer, changes neither (D-082 (1)).
+The copy's own lines are still checked as §10 checks every checkpoint: a
+cosignature line that names a witness that policy lists, by name and key id,
+and does not verify refuses the read as `cosignature`. The copy's quorum is
+not judged again and nothing from the copy is stored, so a copy with fewer
+valid lines than the policy needs is still the held head (D-084 (1)). That
+is the verifier loop's held head (§10) and its restoration after a restart
+(§13.2); a checkpoint carried inside a bundle (§8.1) or fork evidence
+(§11.1) is checked under the policy the reader holds now — the trust file's,
+or the most recently replayed (§9.4) — even when it names the tree head the
+reader already holds.
 
 Three things that decision needs and the rest of this document does not supply:
 
@@ -1147,7 +1154,9 @@ A node MUST establish a peer's proven identity and current key from the first
 three checks below. It separately classifies the age of the verified view with
 condition 4:
 
-1. the bundle's checkpoint verifies under the node's trust policy (§9), and
+1. the bundle's checkpoint verifies under the policy in force — the trust
+   file's, or the most recently replayed (§9.4) — even when it names the
+   tree head the node already holds (§5.3), and
 2. the bundle's checkpoint is consistent with the node's stored checkpoint, and
 3. replay of the log up to that checkpoint yields the device as `active`, and
    the key the node installs for it is **the `wg_pk` replay gives**: the
@@ -1498,11 +1507,15 @@ loop every T_g or on demand:
       # line gets above. §7 makes the id bind the name, the algorithm and
       # the public key, so a line carrying a listed witness's name under some
       # other key names nobody: it is a stranger's line and is ignored, not a
-      # listed witness's line that fails to verify. The other reading hands
-      # anyone a veto -- cosign a head under a name you do not hold and every
-      # node that matches on the name alone refuses it, including nodes that
-      # have never heard of you. `served-name-collision/` is that checkpoint
-      # and it MUST be accepted.
+      # listed witness's line that fails to verify. A node matching on the
+      # name alone would refuse an honest stranger who reuses a listed name
+      # under another key; `served-name-collision/` is that checkpoint and it
+      # MUST be accepted. Matching both does not authenticate a line: anyone
+      # who can add bytes on the way can copy a listed witness's name and key
+      # id onto a forged line, which is then that witness's line, fails to
+      # verify, and is refused as `cosignature`, even beside a valid quorum
+      # (`checkpoints-bad/11`). Whoever can add that line can as well withhold
+      # the checkpoint, so it gives them nothing they did not have.
       # per line, not per witness: a witness that supplies one verifying line
       # and one that does not is refused, not counted. §5.3's "newest" rule
       # picks among lines that verify; it never excuses one that does not.
@@ -1514,6 +1527,10 @@ loop every T_g or on demand:
       # not name is normal in a shared log, and a reader that refuses over one
       # stops accepting checkpoints everybody else accepts. The log's own
       # signature line may appear anywhere in the block; order carries nothing.
+      # The tree head this node already holds (§5.3), read again: every line
+      # is checked as above, under the policy that accepted it, but the quorum
+      # is not judged again, and the stored note, cosignatures and `T` stand
+      # (D-082 (1), D-084 (1)).
   # The entries before any comparison: the branch comparison below is
   # recomputed from them, so they are fetched, framed and hashed first.
   entries := fetch the entry bundles cp.size implies    # TileFetcher / TileFS
@@ -1850,7 +1867,7 @@ naming that rule is how the generators and the placement guards check it.
 | `served-rotated/` | the served head signed by a published `log_key` (§9.4), with `cases.json` giving the key, its `since_index` and its `overlap`. Serve it over `served/`'s tiles |
 | `proofs-rotated/` | `nas.bundle`, `proofs/nas.bundle` with its checkpoint signed by the published `log_key`, and `cases.json` giving that key and both answers: `log-signature` to a reader holding only `trust.cbor`, accepted by one that trusts the published key (§8, §8.1) |
 | `receipt-rotated/` | `cases.json` naming `receipt-bad/untrusted-log-key.note` — the shipped receipt, signed by the published `log_key` — and the same two answers (§7, §8) |
-| `served-superseded/` | the served head cosigned by two of three witnesses, read fresh and by a reader holding `served/`'s head: both accept, and the held head keeps its `T` (§5.3, D-082 (1)). Serve it over `served/`'s tiles |
+| `served-superseded/` | the served head cosigned by two of three witnesses, read fresh and by a reader holding `served/`'s head: both accept, and the held head keeps its `T` (§5.3, D-082 (1)); and `forged-pi.checkpoint`, `served/`'s head with pi's cosignature altered: `cosignature` for both readers, and the reader holding the head keeps `served/`'s note, cosignatures and `T` (D-084 (1)). Serve each over `served/`'s tiles |
 | `unreached-witness/` | two heads over `served/`'s tiles under its own `trust.cbor`: the policy lists pi, vps and friend, while its quorum is pi and vps alone (2 of 2). `cases.json` codes `honest-head` as `accept` and `forged-friend` as `cosignature`, with a section and rule for each |
 | `served-bad/` | §6's refusals for a served log, which is a directory rather than a file: each case names the path to replace or delete over an honest copy of the log named by `serve_over` (`served-large/` here); eight cases, including `partial-hash-tile-trailing-bytes.bin` at `tile/0/001.p/44`: all 44 honest hashes plus two bytes, refused as `tiles` |
 | `served-empty-entry/` | a four-entry log with one zero-length frame at index 2 among real entries: its checkpoint is accepted, replay rejects that entry as `decode`, and `state.json` is the expected replayed state; `cases.json` names both answers |
@@ -1955,8 +1972,8 @@ this table drifted out of date the moment one was.
 | §4.3 `enroll` embeds the request | every `enroll` in the log; `enroll-unicode-labels`, `enroll-contractor` | **`bad-no-device-sig`** and **`bad-order-enroll`** (a request signed by a *signer*, not the device it names), **`bad-forged-device-sig`** (a request signature of the right shape and wrong), and `bad-device_id-uppercase`, `bad-device_id-leading-dot`, `bad-pk-length` — faults **inside** the request, inside an entry that is otherwise well formed and properly signed, so an implementation treating `request` as opaque bytes accepts all three |
 | §4.0/§4.3 schemas | `enroll-laptop`, `enroll-unicode-labels` | `bad-kid-format`, `bad-missing-sigs`, `bad-empty-sigs`, `bad-unknown-role`, `bad-unknown-envelope-key`, `bad-unknown-body-key` (a `note`), `bad-rotate-unknown-body-key` and `bad-revoke-unknown-body-key` (each otherwise valid, so the extra key is the only refusal), `bad-device_id-uppercase`, `bad-device_id-leading-dot`, `bad-pk-length`, `bad-sig-length`, `bad-text-too-long`, `bad-unsorted-sigs` |
 | §4.2 signatures, hashes, preimage | 16 entry mirrors | **`bad-forged-signer-sig`, `bad-forged-device-sig`** — syntactically perfect signatures that do not verify. Without these an implementation that never calls Ed25519 reproduces the whole manifest |
-| §4.0 the whole input is consumed | — | `bad-trailing-byte`: an accepted `log_key` entry with one byte after it. Its signatures still verify and its `entry_hash` differs, so a decoder that stops at the end of the item applies the same governance entry twice |
-| §5.3, §9.4 a held head keeps its acceptance (D-082 (1)) | `served-superseded/`: two of three cosignatures — enough for the trust file; the informed reader already holds the same tree from `served/` | `cases.json` states `accept` for both readers; the informed reader keeps `served/`'s `T = 1760003607`, not the two-line note's `1760003600`. A larger head still faces the latest replayed policy, covered by the agent tests |
+| §4.0 the whole input is consumed | — | `bad-trailing-byte`: an accepted `log_key` entry with one byte after it. Its signatures still verify and its `entry_hash` differs, so a decoder that stops at the end of the item answers `dup-entry`, not `decode`: its signed content is that of the entry already applied (cold gate run 20, L3) |
+| §5.3, §9.4 a held head keeps its acceptance, and its lines are checked (D-082 (1), D-084 (1)) | `served-superseded/`: two of three cosignatures — enough for the trust file; the informed reader already holds the same tree from `served/` | `cases.json` states `accept` for both readers; the informed reader keeps `served/`'s `T = 1760003607`, not the two-line note's `1760003600`. A larger head still faces the latest replayed policy, covered by the agent tests. `forged-pi.checkpoint` is the held head with pi's line altered: `cosignature` for the reader holding it, as for a fresh one, and that reader's stored note, cosignatures and `T` unchanged. Without it, a reader that skips the lines of a held head passed every check (cold gate run 20, L1.10) |
 | §10 the stored checkpoint, §11's duties | `detect/`: accepting a head that grows, refusing one that shrinks **without** accusing, and proving a fork at the same size, on a shorter branch, and on a **longer** one (`detect/fork-on-a-longer-branch`: a grown head whose history differs below the stored size — the most ordinary equivocation there is, which a reader that compares only same-size or shorter heads accepts). Every case that is not accepted names its §10.1 code | the shorter-branch case is what a forking log looks like when it hides behind "a log does not shrink". It also pins §10's **order**: under a size-rule-first reading it comes out `refuse` rather than `fork`, so no evidence is written and no alarm is raised |
 | §8.1 condition 4 | `detect/staleness.json`, including `elapsed` exactly on `staleness` | a node with no corroborated instant reports `unknown` rather than guessing |
 | §9.4 rotation | `served-rotated/`: the same head under a key the roots published — refused by a reader holding only `trust.cbor`, accepted by one that has replayed the rotation | a key that vouched for itself is what the ordering forbids |
@@ -2003,7 +2020,7 @@ this table drifted out of date the moment one was.
 | §11.1 size 0 with an empty held head (run 14, L4 c) | — | `fork/bad-size-zero-empty-held` carries two signed and cosigned size-0 heads with different roots and an empty held head: `proof`. The held root matches its head and the proof is empty, isolating the explicit size-0 rule |
 | §9.4 learned key name and absence of an activation index (run 14, L2) | `served-rotated-earlier/`: an informed reader accepts the 20-entry head signed by the key published at index 27 | `served-rotated-wrong-name/`: both fresh and informed readers refuse as `log-signature`, because a learned key is named the origin |
 | §4.0 two-byte booleans (run 16, M1) | `log-republish/14-params-canonical-true` accepts and sets `rotate_needs_signer` true in `log-republish/state.json`; replacing only the boolean encoding repairs its predecessor | `log-republish/13-params-two-byte-true` is the canonical entry with `true` written `f8 15`: `decode`, leaving the canonical content free to apply |
-| §5.1 entry 0 records both seen sets (run 16, L1) | `log-republish/00-genesis`; the copied envelope is valid as an anchored genesis on its own | `log-republish/15-copy-genesis-extra-sig` adds one sorted unresolvable signature to that genesis, changing its `entry_hash` while preserving its `content_hash`: `dup-entry`, before `dup-genesis` |
+| §5.1 entry 0 records its applied content (run 16, L1) | `log-republish/00-genesis`; the copied envelope is valid as an anchored genesis on its own | `log-republish/15-copy-genesis-extra-sig` adds one sorted unresolvable signature to that genesis, changing its `entry_hash` while preserving its `content_hash`: `dup-entry`, before `dup-genesis`. It isolates the content key, not entry 0's byte key (cold gate run 20, L2) |
 | §9.1 trust log-key point admission (run 16, L4) | `trust.cbor`; replacing only the damaged public key repairs the file; `trust-good/policy-without-log.cbor` accepts with the log line absent | `trust-bad/55-log-key-small-order` carries an order-8 `log_key` under the origin's name, with its id recomputed and no policy `log` line: invalid only by §3.1 item 2 |
 | §5.1 refused bytes and applied content stay separate (D-078 (1)) | `log-republish/00-genesis`, `log-republish/01-enroll-nas`, `log-republish/03-revoke-genuine` and `log-republish/05-note-genuine`: the genuine revoke applies after its stripped copy and leaves nas revoked; the signed note applies after its own preimage; removing either refused predecessor preserves acceptance | `log-republish/02-revoke-stripped` (`threshold`), `log-republish/04-note-preimage` (`decode`), `log-republish/06-copy-applied-extra-sig` and `log-republish/07-copy-refused-bytes` (`dup-entry`): applied content still counts under another signature list, and refused bytes still count |
 | §5.1 active log keys cannot be re-published (D-078 (3)) | `log-republish/09-log-key-new` learns a new public key | `log-republish/08-log-key-anchor` and `log-republish/10-log-key-learned` (`dup-key`): the anchor key and the learned key are already active; replacing only the public key and re-signing accepts |
@@ -2051,7 +2068,7 @@ this table drifted out of date the moment one was.
 | §4.2 signatures resolve against the state **before** this entry | the whole log, every governance entry | `log/133-bad-root_add-counts-its-own-key`: `root_thr` is 3, two valid root signatures, and a third by the key in its own body. Under §4.2 that is two of three and the entry is `threshold`; under the other reading it is a root quorum that **bootstraps itself**. No other entry is signed by a key it adds, so `ResolveKeysAfterEntry` passed all 622 checks. §9.4 makes the same ordering argument for log keys — a stolen log key cannot name its own successor — and the root-key version was stated once and exercised by nothing (cold gate run 11, D8) |
 | §5 `bad-genesis` | — | `genesis/`; it cannot appear in the log, since it aborts replay |
 | §5.1 genesis | the log's entry 0; `genesis-good/01-name-at-the-cap`, a 64-byte `name` | **27 abort paths** in `genesis/`, one single-entry log each, including the honestly root-signed `23-root-order-eight` and `24-root-noncanonical`, whose keys alone abort them as `bad-genesis`. §4.0's 1–64 byte `name` is pinned at both ends and beside the top one: `15-name-empty`, `20-name-one-past-the-cap` (65 bytes in 33 characters — 32 two-byte and one ASCII — so a reader counting characters accepts it) and `14-name-too-long` (cold gate run 13, D17). Two of them are step 7's two halves: `18-bootstrap-sigs-wrong-role` varies the **role string** a signature declares, `19-bootstrap-sigs-from-signers` varies the **key set** it resolves against — signed only by keys the body lists under `signers`, each line declaring `root`. Step 6 requires the two sets disjoint, so a reader that bootstrap-resolves against `signers` too admits a network this one aborts on (cold gate run 10, D15) |
-| §5.1 seen set, §4.3 roles | — | `bad-repeat-of-rejected`, `bad-one-of-two-signers`, `bad-role-mismatch`. Step 1's two stated properties are `bad-repeat-of-undecodable` (the key is recorded **before** the entry is decoded, so a copy of one that never decoded is `dup-entry` and not a second `decode`) and `bad-repeat-of-genesis` (entry 0's key is recorded too, so a byte copy of it is `dup-entry` and not `dup-genesis`). The key being the **signed content** of a decodable entry (D-070) is held by six entries: `bad-copy-enroll-spare-extra-sig`, `bad-copy-policy-extra-sig`, `bad-copy-rotate-nas-extra-sig` and `bad-copy-signer_add-signer3-extra-sig` (a past entry re-appended with one unresolvable signature), `bad-copy-enroll-spare-role-relabelled`, and `bad-copy-two-sig-base-surplus-dropped` — every one `dup-entry`, and under a byte key every one applied again (the first re-enrols a device revoked two entries later; the second rolls the quorum back). `two-sig-base` carries its own text so it stays the sigs-ordering control rather than becoming a duplicate of `profile-base` |
+| §5.1 seen set, §4.3 roles | — | `bad-repeat-of-rejected`, `bad-one-of-two-signers`, `bad-role-mismatch`. Step 1's first stated property is `bad-repeat-of-undecodable` (the key is recorded **before** the entry is decoded, so a copy of one that never decoded is `dup-entry` and not a second `decode`). `bad-repeat-of-genesis`, a byte copy of entry 0, is `dup-entry` and not `dup-genesis`; entry 0's content key already gives that answer, so it does not isolate entry 0's byte key (What is not vectored, below; cold gate run 20, L2). The key being the **signed content** of a decodable entry (D-070) is held by six entries: `bad-copy-enroll-spare-extra-sig`, `bad-copy-policy-extra-sig`, `bad-copy-rotate-nas-extra-sig` and `bad-copy-signer_add-signer3-extra-sig` (a past entry re-appended with one unresolvable signature), `bad-copy-enroll-spare-role-relabelled`, and `bad-copy-two-sig-base-surplus-dropped` — every one `dup-entry`, and under a byte key every one applied again (the first re-enrols a device revoked two entries later; the second rolls the quorum back). `two-sig-base` carries its own text so it stays the sigs-ordering control rather than becoming a duplicate of `profile-base` |
 | §5.2 `bad-thr` | `signer_thr-2-of-2`: the bound is inclusive, a threshold equal to the set's size | both halves: `bad-thr-zero` and `bad-thr` (value above the set size) |
 | §5.1 a `policy` entry is a policy | `policy-rotated`, which raises the quorum from 2 of 3 to 3 of 3; `policy-two-log-lines`, the same policy naming the log's original key and the first one its roots published | `bad-policy-unparseable`: text that is well-formed, under the size cap, and not a `tlog-policy`; `log-admission/07-policy-small-order` is otherwise valid policy text whose witness key is not a valid point (`decode`), followed by admitted `log-admission/08-policy-honest` |
 | §4.3 `revoke`'s three authorisations | `revoke-by-roots`, `revoke-self-laptop` (the device authorising its own revocation, and the only signature on it) | `bad-revoke-neither-quorum`: one signer of two and two roots of three — short on every rule independently, and a quorum only if the counts are pooled |
@@ -2107,7 +2124,7 @@ this table drifted out of date the moment one was.
 | §10 the signature decides before the origin | — | `proofs-bad/foreign-checkpoint` MUST be refused as `log-signature` and `proofs-bad/wrong-origin` as `origin`; `checkpoints-bad/03-wrong-origin`, signed under another origin's name, is `log-signature` too. A reader that checks the origin first answers `origin` for the first and the last |
 | §10.1 and §11.1 the order of the checks | — | every negative in `checkpoints-bad/`, `served-bad/`, `proofs-bad/`, `fork/` and `detect/` names its code, and these fail two steps so the order decides — the codes make an ordering observable, and a file with both faults is what observes it: `checkpoints-bad/01-unsigned` is `note`, not `log-signature` (framing before signature); `checkpoints-bad/03-wrong-origin` and `proofs-bad/foreign-checkpoint` are `log-signature`, not `origin` (the signature decides before the origin); `checkpoints-bad/30-noncanonical-size-under-untrusted-signer` is `log-signature`, not `checkpoint` (the signature before the body — every other body fault in the directory is signed by the log, cold gate run 13, D4); `served-bad/tampered-entry-bundle` is `head`, not `tiles` (head before tiles); `detect/tampered-bundle-under-a-stored-head` is `head`, not `fork` (head before the branch comparison — a reader that compares first accuses an honest log over one corrupt byte, permanently); `proofs-bad/no-quorum-tampered-proof` is `quorum`, not `inclusion`, and `proofs-bad/wrong-entry` is `inclusion`, not `binding` (a bundle's checkpoint, then its proof, then its binding); `fork/bad-oversize-and-not-cbor` is `oversize`, not `cbor`; `fork/bad-version-and-unknown-key` is `version`, not `schema`; `fork/bad-short-held-root-and-size-above-held` is `schema`, not `size`; `fork/bad-policy-unparseable-and-foreign-held` is `policy`, not `held` (the carried policy does not parse and held is a foreign head; closed-code step 4 precedes step 5, cold gate run 13, D4); and `fork/bad-other-origin` is `held`, not `conflicting` |
 | §10 verifier loop, steps 1–4 | `served/` verified end to end, **signature first** | `checkpoints-bad/01-unsigned`, `02-wrong-log-key`, `03-wrong-origin` and **`04-forged-log-signature`** — the last one being a signature of the right shape under the right key id that does not verify. Without it a verifier that never checks the log signature reproduces the whole suite |
-| §10 the origin comparison is **equality** | `served/checkpoint` | `checkpoints-bad/21-origin-with-a-suffix` (this network's origin plus one base32 character) and `22-origin-case-changed` (the same origin, one letter in the other case), each signed and cosigned exactly as correctly as the real head, plus `trust-bad/40-log-key-name-suffix` for §9.1's "the log key's note name MUST equal `origin`". Every earlier origin negative used an **unrelated** origin, so a prefix match and a case-folded match both passed all 622 checks. §10 argues the cosignature match must be name **and** key id because a name-only match hands anyone a veto; this is that argument from the other side, where a loose match hands an attacker an acceptance (cold gate run 11, D7) |
+| §10 the origin comparison is **equality** | `served/checkpoint` | `checkpoints-bad/21-origin-with-a-suffix` (this network's origin plus one base32 character) and `22-origin-case-changed` (the same origin, one letter in the other case), each signed and cosigned exactly as correctly as the real head, plus `trust-bad/40-log-key-name-suffix` for §9.1's "the log key's note name MUST equal `origin`". Every earlier origin negative used an **unrelated** origin, so a prefix match and a case-folded match both passed all 622 checks. §10 matches a cosignature line on name **and** key id so that an honest stranger reusing a listed name is ignored, not refused; that match does not authenticate a line, only its signature does. The origin comparison is the same care from the other side, where a loose match would hand an attacker an acceptance (cold gate run 11, D7; run 20, L5) |
 | §10.1 steps 6 and 7, the witnesses' lines and their quorum | `served/checkpoint`, cosigned by all three witnesses | `checkpoints-bad/05-one-cosignature-short`, `06-no-cosignatures`, `07-unnamed-witness-only` and **`08-forged-cosignature`**, which carries two lines naming witnesses the policy lists, one of which does not verify: the quorum is met by counting and refused by checking. `quorum-none/uncosigned.checkpoint` supplies that second anchor and accepts without cosignatures |
 | §10.1 step 6, **which** lines count as a listed witness's | `served-extra-witness/` (an unlisted **name**) and `served-name-collision/` (a listed name under an unlisted **key id**) — both MUST be accepted, and the second is the only file that separates matching on the name alone from matching on name and key id. Run 10's `V236_CosigNoKeyIDMatch` passed 236/236 without it | the negatives are `checkpoints-bad/08-forged-cosignature`, `11-forged-cosignature-with-quorum` and `12-second-line-from-one-witness`, where the line's name *and* id are the policy's and the signature is not |
 | §4.0 reserved label hints | `requests/req-reserved-hints` accepts a correctly signed request with `ip = "not-a-cidr"` and `endpoint = "not-an-endpoint"`; accepted log entry `enroll-unicode-labels` carries both values through replay into `state.json` | —; request checking and replay do not validate advisory hint syntax |
@@ -2141,8 +2158,8 @@ admits its holes, so:
   The Go agent and gossip tests exercise those node behaviours, including a
   healthy direct log that serves a branch different from a proven peer's.
 - §13's interface reconciliation and `proven.json` publication cannot be
-  demonstrated by the static protocol vectors, §13.1's intersection of a
-  peer's allowed-ips with its grant included. `detect/staleness.json` pins
+  demonstrated by the static protocol vectors, §13.1's grant bound and
+  overlap rule included. `detect/staleness.json` pins
   the §8.1 state labels and boundaries, while Go agent, reconciler and proven
   tests exercise owner, watchdog and observe behavior, failure semantics,
   and the published JSON shape.
@@ -2230,12 +2247,16 @@ admits its holes, so:
   tell the two readings apart. Recorded here because a reader will look.
 - **`entry_hash` being over the bytes *as received* rather than a
   re-canonicalised form**, the byte key every entry records (D-078), and the
-  only key of one that does not decode. §5.1 step 1's *ordering* is vectored — a copy
-  of an entry that never decoded is `dup-entry` — but the received-versus-recanonical
-  half cannot be: the only entry whose raw bytes differ from its canonical form
-  violates §4.0, and is `decode` at step 2 before any hash of a canonical form
-  could be taken. `60-bad-trailing-byte` is caught by the whole-input rule, not
-  by the hash.
+  only key of one that does not decode. §5.1 step 1's *ordering* is vectored
+  — a copy of an entry that never decoded is `dup-entry` — and so is the
+  lenient reading: a reader that decodes leniently and hashes a re-encoding
+  answers `dup-entry` on `log/60-bad-trailing-byte`,
+  `73-bad-indefinite-map`, `74-bad-duplicate-map-key` and
+  `75-bad-cbor-nonshortest-length`, which are `decode`, and refuses
+  `log-republish/14-params-canonical-true`, which applies after its refused
+  non-canonical twin `13-params-two-byte-true` (cold gate run 20, L4). What
+  no input can show is a reader that admits only deterministic CBOR and then
+  re-encodes: whatever it admitted re-encodes to the same bytes.
 - **`MAX_ENTRY_BYTES` applied to an embedded request, as distinct from the
   entry.** §4.0 requires both, and a request travels *inside* an entry — so a
   request over the cap implies an entry over the cap, and the entry rule
@@ -2252,6 +2273,17 @@ admits its holes, so:
   `active`, which makes `dup-id` fire one step earlier. No entry can reach the
   difference, so the rule is refused-but-not-pinned by construction. Confirmed
   by mutation: the narrower reading reproduces the whole manifest.
+- **Entry 0's byte key, as distinct from its content key (§5.1 step 1).** A
+  genesis that applies records its content key as well, and one that does
+  not apply aborts replay before another entry is judged, so no input tells
+  a reader that records entry 0's `entry_hash` from one that records only
+  its `content_hash` (cold gate run 20, L2).
+- **Two distinct keys with the same `kid`.** The suite holds no two valid
+  Ed25519 public keys whose `kid`s collide, so it cannot isolate genesis's
+  distinct-`kid` rule (§5.1 step 6) or a `signer_add` or `root_add` that
+  compares key bytes where §5.1 compares `kid`s (`dup-key`). Such a pair
+  takes a birthday search of the order of 2³² key generations (cold gate run
+  20, M3).
 - **Rules stated plainly that no vector holds yet (cold gate run 16, L8).**
   Each is a sentence above that a careful reader gets right, and each has an
   input a network can see on which a reader who got it wrong would differ;
@@ -2336,15 +2368,25 @@ verification. A backend used for `observe` needs only peer-table reads;
 `owner` and `watchdog` additionally need their respective write operations.
 
 **Routes (D-073).** Under `params.routes = "granted"`, the default, the
-desired allowed-ips of a peer are the endpoint provider's, each masked, kept
-only where it lies within a prefix of the peer's grant (§4.0); a provider's
-prefix outside the grant is withheld and reported as a provider claim, so a
-provider MAY narrow a grant and MUST NOT widen it. A peer with no grant is
-installed with its key and no allowed-ips, and the node reports that once per
-device. WireGuard's cryptokey routing makes a peer's allowed-ips its authority
-to source those addresses, so the log is the authority on the **bound** a peer
-may claim; it does not route. Under `"advisory"` the provider's prefixes are
-installed as given. The endpoint and keepalive are the provider's in both.
+desired allowed-ips of a peer are the endpoint provider's, each masked, a
+prefix kept only when one prefix of the peer's grant (§4.0) holds all of it;
+a provider's prefix wider than the grant, or outside every grant prefix, is
+withheld whole, never clipped, and reported as a provider claim, so a
+provider MAY narrow a grant and MUST NOT widen it (D-084 (2)). A peer with
+no grant is installed with its key and no allowed-ips, and the node reports
+that once per device. WireGuard's cryptokey routing makes a peer's
+allowed-ips its authority to source those addresses, so the log is the
+authority on the **bound** a peer may claim; it does not route. Under
+`"advisory"` the provider's prefixes are installed as given, apart from
+overlaps (below). The endpoint and keepalive are the provider's in both.
+
+**Overlaps (D-081, D-084 (3)).** Under either `routes` value, overlaps are
+judged on the allowed-ips a node would install, after the grant bound: when
+a prefix of one proven peer overlaps a prefix of another, neither prefix is
+installed, each peer keeps its other prefixes, and the pair is reported as a
+provider claim. WireGuard routes a packet to the peer with the most specific
+matching prefix, so an overlap would hand one peer's addresses to another,
+and nothing in the log decided that.
 
 ### 13.2 Failure semantics
 
@@ -2446,7 +2488,7 @@ library's defaults, because they differ.
 |---|---|
 | whitespace | none anywhere: `,` between members, `:` between key and value, nothing else |
 | object keys | sorted **ascending, bytewise over the UTF-8 encoding of the bare key string**, applied recursively to every object including `devices`, `labels`, `roots`, `signers`, `active_wg` |
-| byte strings | **lowercase hex**, as a JSON string, never base64 (base64 appears only inside notes, §7) |
+| byte strings | **lowercase hex**, as a JSON string, never base64 in this canonical JSON (notes, §7, and `proven.json`, §13.3, carry base64) |
 | integers | decimal, no sign, no leading zeroes, no exponent |
 | booleans | `true` / `false` |
 | absent members | a member the schema defines is always emitted (§5.3); see §4.0 for *entry* encoding, where the rule is the opposite |

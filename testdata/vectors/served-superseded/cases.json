@@ -1,9 +1,15 @@
 {
-  "comment": "the served head cosigned by two of the three witnesses. A reader holding only trust.cbor (`fresh`) requires two and MUST accept it; a reader that verified and replayed served/ and holds its head (`informed`) MUST accept the same tree and keep its stored policy and T=1760003607, not 1760003600 (SPEC 5.3, D-082 (1)). Serve it in place of served/checkpoint over the same tiles. The raised quorum binds a new head, not a re-read",
+  "comment": "the served head cosigned by two of the three witnesses. A reader holding only trust.cbor (`fresh`) requires two and MUST accept it; a reader that verified and replayed served/ and holds its head (`informed`) MUST accept the same tree and keep its stored policy and T=1760003607, not 1760003600 (SPEC 5.3, D-082 (1)). Serve it in place of served/checkpoint over the same tiles. The raised quorum binds a new head, not a re-read. forged-pi.checkpoint is served/checkpoint with the last byte of pi's cosignature signature XOR 0x01, keeping its name and key id: both readers refuse cosignature, and the informed reader retains served/checkpoint's note, cosignatures and T. A re-read checks its own lines without judging its quorum again or storing the copy (D-084 (1))",
   "cosigned_by": [
     "norn-witness/pi",
     "norn-witness/vps"
   ],
+  "forged_copy": {
+    "file": "forged-pi.checkpoint",
+    "fresh": "cosignature",
+    "informed": "cosignature",
+    "retains": "../served/checkpoint"
+  },
   "fresh": "accept",
   "informed": "accept",
   "informed_quorum_time": 1760003607,

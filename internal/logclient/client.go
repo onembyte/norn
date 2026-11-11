@@ -293,10 +293,23 @@ func verifyHead(f Fetcher, anchor Anchor) (string, tlog.Checkpoint, []cosign.Cos
 		return "", none, nil, nil, refuse(refusal.Origin, "the checkpoint is for origin %q, and this anchor is for %q",
 			cp.Origin, anchor.Origin)
 	}
-	// A tree head already accepted is still that head, however many witness
-	// lines arrived this time. Its log signature was checked above, but its
-	// acceptance and evidence belong to the first read (D-082 (1)).
+	// A held head keeps its stored acceptance and evidence (D-082 (1)). Check
+	// the fetched copy's lines under the policy that accepted it, without
+	// judging its quorum again or storing anything from it (D-084 (1)).
 	if stored := storedAcceptance(anchor, cp); stored != nil {
+		acceptancePolicy := stored.AcceptancePolicy
+		if acceptancePolicy == "" {
+			acceptancePolicy = anchor.Policy
+		}
+		if acceptancePolicy != "" {
+			rules, err := policy.Parse(acceptancePolicy)
+			if err != nil {
+				return "", none, nil, nil, logErrorf("the anchor's policy is unusable: %v", err)
+			}
+			if _, err := cosign.Verify(string(raw), rules.Keys()); err != nil {
+				return "", none, nil, nil, carry(err, "%v", err)
+			}
+		}
 		if stored.SignedCheckpoint != "" {
 			raw = []byte(stored.SignedCheckpoint)
 		}

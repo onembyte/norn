@@ -3,8 +3,10 @@ package logclient
 import (
 	"encoding/json"
 	"path/filepath"
+	"reflect"
 	"testing"
 
+	"github.com/onembyte/norn/internal/cosign"
 	"github.com/onembyte/norn/internal/refusal"
 )
 
@@ -80,11 +82,74 @@ func TestTheRotationManifestsStateEveryAnswer(t *testing.T) {
 					t.Errorf("informed reader must keep served's T=1760003607: manifest=%d result=%v",
 						answers.InformedQuorumTime, result.QuorumTime)
 				}
+				if result.SignedCheckpoint != held.SignedCheckpoint || !reflect.DeepEqual(result.Cosignatures, held.Cosignatures) {
+					t.Error("thin copy replaced the held note or cosignatures")
+				}
 			}
 			if c.readsServed != "" {
 				if got := answer(honest, informed); got != c.readsServed {
 					t.Errorf("an informed reader answers %q on served/checkpoint; cases.json "+
 						"says %q -- the anchor key is kept alongside (§9.4)", got, c.readsServed)
+				}
+			}
+		})
+	}
+}
+
+// The forged copy is a refusal for either history; refusing it must leave
+// the held evidence available for the next read (D-084 (1)).
+func TestTheSupersededManifestChecksTheForgedCopyAndRetainsTheHeldEvidence(t *testing.T) {
+	dir := filepath.Join(vectorRoot(), "served-superseded")
+	var meta struct {
+		ForgedCopy struct{ File, Fresh, Informed, Retains string } `json:"forged_copy"`
+	}
+	if err := json.Unmarshal([]byte(readFile(t, filepath.Join(dir, "cases.json"))), &meta); err != nil {
+		t.Fatal(err)
+	}
+	c := meta.ForgedCopy
+	if c.File == "" || c.Fresh == "" || c.Informed == "" || c.Retains == "" {
+		t.Fatal("cases.json is missing forged_copy")
+	}
+	raw := readFile(t, filepath.Join(dir, c.File))
+	retained := readFile(t, filepath.Join(dir, c.Retains))
+	if raw != forgeWitnessLine(t, retained, "pi") {
+		t.Fatal("forged_copy changes more than pi's last signature byte")
+	}
+	honest := filepath.Join(vectorRoot(), "served")
+	fresh := shippedLogAnchor(t)
+	held, err := Verify(Dir(honest), fresh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = Verify(Dir(servedWith(t, honest, raw)), fresh)
+	if code, _ := refusal.CodeOf(err); string(code) != c.Fresh {
+		t.Errorf("fresh forged copy = %q, want %q", code, c.Fresh)
+	}
+	originalCosignatures := append([]cosign.Cosignature(nil), held.Cosignatures...)
+	informed := fresh
+	informed.Stored, informed.Held, informed.StoredResult = &held.Checkpoint, held.Tree, held
+	informed.Policy = PolicyFrom(held.State)
+	for _, incremental := range []bool{false, true} {
+		t.Run(map[bool]string{false: "Verify", true: "VerifyFrom"}[incremental], func(t *testing.T) {
+			read := func(signed string) (*Result, error) {
+				f := Dir(servedWith(t, honest, signed))
+				if incremental {
+					return VerifyFrom(held, f, informed)
+				}
+				return Verify(f, informed)
+			}
+			_, err := read(raw)
+			if code, _ := refusal.CodeOf(err); string(code) != c.Informed {
+				t.Errorf("held forged copy = %q, want %q", code, c.Informed)
+			}
+			// A thin honest copy still succeeds without replacing the evidence.
+			result, err := read(readFile(t, filepath.Join(dir, "checkpoint")))
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, got := range []*Result{held, result} {
+				if got.SignedCheckpoint != retained || !reflect.DeepEqual(got.Cosignatures, originalCosignatures) || got.QuorumTime == nil || got.QuorumTime.Unix() != 1760003607 {
+					t.Error("re-read changed the retained note, cosignatures or T")
 				}
 			}
 		})

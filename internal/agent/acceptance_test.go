@@ -3,6 +3,7 @@ package agent
 import (
 	"crypto/ed25519"
 	"encoding/hex"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -20,6 +21,81 @@ import (
 	"github.com/onembyte/norn/internal/refusal"
 	"github.com/onembyte/norn/internal/tlog"
 )
+
+func TestTheAgentRefusesTheForgedHeldCopyAndKeepsServingItsEvidence(t *testing.T) {
+	dir := filepath.Join(vectors(), "served-superseded")
+	var meta struct {
+		ForgedCopy struct{ File, Fresh, Informed, Retains string } `json:"forged_copy"`
+	}
+	manifest, err := os.ReadFile(filepath.Join(dir, "cases.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(manifest, &meta); err != nil {
+		t.Fatal(err)
+	}
+	c := meta.ForgedCopy
+	if c.File == "" || c.Fresh == "" || c.Informed == "" || c.Retains == "" {
+		t.Fatal("cases.json is missing forged_copy")
+	}
+	forged, err := os.ReadFile(filepath.Join(dir, c.File))
+	if err != nil {
+		t.Fatal(err)
+	}
+	retained, err := os.ReadFile(filepath.Join(dir, c.Retains))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, full := range []bool{false, true} {
+		t.Run(map[bool]string{false: "incremental", true: "full"}[full], func(t *testing.T) {
+			mirrorDir := t.TempDir()
+			a := restartable(t, filepath.Join(vectors(), "served"), mirrorDir, peertable.NewFake(), &recorder{})
+			if err := a.Once(); err != nil {
+				t.Fatal(err)
+			}
+			first := *a.last
+			first.Cosignatures = append([]cosign.Cosignature(nil), a.last.Cosignatures...)
+			overlay := acceptanceLog(t, first.Served, 3)
+			if err := os.WriteFile(filepath.Join(overlay, "checkpoint"), forged, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			fresh := restartable(t, overlay, t.TempDir(), peertable.NewFake(), &recorder{})
+			if code, _ := refusal.CodeOf(fresh.Once()); string(code) != c.Fresh {
+				t.Errorf("fresh forged copy = %q, want %q", code, c.Fresh)
+			}
+			a.cfg.Fetcher = logclient.Dir(overlay)
+			if full {
+				a.fullVerifiedSet = false
+			}
+			if code, _ := refusal.CodeOf(a.Once()); string(code) != c.Informed {
+				t.Errorf("held forged copy = %q, want %q", code, c.Informed)
+			}
+			if a.last.SignedCheckpoint != string(retained) || !reflect.DeepEqual(a.last.Cosignatures, first.Cosignatures) || a.last.QuorumTime == nil || a.last.QuorumTime.Unix() != 1760003607 {
+				t.Error("refused copy changed the held note, cosignatures or T")
+			}
+			checkMirror := func() {
+				t.Helper()
+				published, err := os.ReadFile(filepath.Join(mirrorDir, proven.MirrorDir, "checkpoint"))
+				if err != nil || string(published) != string(retained) || string(published) == string(forged) {
+					t.Errorf("mirror did not retain served/checkpoint: %v", err)
+				}
+			}
+			checkMirror()
+			// The honest thin copy also preserves the bytes served by the mirror.
+			a.cfg.Fetcher = logclient.Dir(acceptanceLog(t, first.Served, 2))
+			if full {
+				a.fullVerifiedSet = false
+			}
+			if err := a.Once(); err != nil {
+				t.Fatal(err)
+			}
+			if a.last.SignedCheckpoint != string(retained) || !reflect.DeepEqual(a.last.Cosignatures, first.Cosignatures) || a.last.QuorumTime == nil || a.last.QuorumTime.Unix() != 1760003607 {
+				t.Error("thin copy changed the held note, cosignatures or T")
+			}
+			checkMirror()
+		})
+	}
+}
 
 // acceptanceLog builds the reader's P24 from served's 162 entries, rather
 // than depending on a probe directory outside the repository. Its witnesses

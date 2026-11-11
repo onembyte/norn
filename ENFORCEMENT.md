@@ -85,7 +85,7 @@ connected it yet). Never writes. Mandatory first mode everywhere (D-005).
 - Two proven devices whose provider-supplied allowed-ips overlap get neither
   overlapping prefix, and the pair is reported (`PROVIDER_CLAIM`): WireGuard routes
   to the most specific prefix, so an overlap would hand one device's addresses to
-  another, and nothing in the log decided that. Each device keeps its other routes.
+  another, and nothing in the log decided that. Each device keeps its other routes. SPEC §13.1 states the rule (D-084 (3)).
 - Norn never deliberately writes a rogue key. An external writer's change is
   corrected on the next cycle; the window depends on polling and reconfiguration.
 

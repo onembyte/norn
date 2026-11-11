@@ -1028,11 +1028,11 @@ func witnessKeyID(t *testing.T, name string) string {
 // origin` name another network, `trust-bad/11` uses `someone/else`, `13` uses
 // `norn/aaaa…` — so none is a prefix or a case variant of this one.
 //
-// §10 spends a paragraph arguing the cosignature match must be on name **and**
-// key id, because a name-only match hands anyone a veto, and ships
-// `served-name-collision/` to pin it. The origin comparison is the same
-// argument from the other side: a prefix match hands an attacker an
-// *acceptance*. It was not pinned.
+// §10 matches a cosignature on name and key id so an honest stranger reusing
+// a listed name is ignored; only its signature authenticates the line, and
+// `served-name-collision/` pins that distinction. The origin comparison is
+// the same care from the other side: a prefix match hands an attacker an
+// acceptance. It was not pinned.
 
 func TestTheOriginComparisonIsEquality(t *testing.T) {
 	dir := filepath.Join(vectors(), "checkpoints-bad")
