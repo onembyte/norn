@@ -185,6 +185,12 @@ incident that produced it. Read that section before the first firing.
   `MAX_TRUST_BYTES`; a bundle's request decodes by structure, field rules and
   point admission, not its signature or network, and an entry over
   `MAX_ENTRY_BYTES` is `bundle`.** Rows 6.5l-xv-e to -i; `DECISIONS.md` D-080.
+- **D-084 (taken 2026-11-11, the owner's answers to G19): a re-read of a
+  held head keeps its stored acceptance and still checks the copy's own
+  witness lines, refusing a forged one as `cosignature`; a provider prefix
+  wider than the grant is withheld whole; overlapping allowed-ips go to
+  neither peer; genesis keys have distinct `kid`s.** Rows G16 to G19;
+  `DECISIONS.md` D-084.
 - **D-083 (taken 2026-10-25, the loop's decision on the owner's instruction):
   the frozen set keeps a device only when its record is the same at the
   common prefix and at the held head — the same `version` at both ends —

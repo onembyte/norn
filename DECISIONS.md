@@ -1541,3 +1541,40 @@ Rejected: B, keep the key test and rewrite the prose to match it (a leaked
 key comes back); C, the key test plus a check for a revocation after the
 split (narrower than A, one more rule, and still keeps rotate-and-back).
 Row: G15; the changes are G15's second half.
+
+## D-084 · A re-read of a held head still checks its own witness lines; a provider prefix wider than the grant is withheld whole (row G19, 2026-11-11)
+The owner's answers of 2026-11-11 to the block "DECISION TAKEN — G19"
+(`BUILD-LOG.md`): **1-B, 2-A**. Cold gate run 20 (G16), its findings
+checked on the code in G17 and G18.
+**(1) §5.3 and D-082 (1): a node that holds a tree head keeps the policy and
+the `T` it accepted it under when it reads that head again, and still checks
+the copy's own signature lines as §10 checks every checkpoint: a cosignature
+line that names a witness the stored policy lists, by name and key id, and
+does not verify makes the read `cosignature`. The copy's quorum is not judged
+again, so a copy carrying fewer valid lines than the policy needs is still
+the held head, and nothing from the copy is stored.** **Why.** A forged line
+under a listed witness is never innocent: someone forging a witness's
+signature, or corruption on the way, and the node shown it is best placed to
+say so. Refusing a re-read of a head the node already holds changes nothing
+it enforces, and §10's rule that every matched line verifies then holds for
+every read, with no exception for held heads. Go checked only the log
+signature on a re-read (run 20's L1.10, probe P12); the fourth cold build
+refused it as `cosignature`. Rejected: A, ignore the copy's lines (a forged
+witness signature goes unnoticed); C, verify the copy in full, quorum
+included (a thin but honest copy of a held head is not a fault).
+**(2) §13.1: a provider prefix is kept only when one prefix of the peer's
+grant holds all of it; a prefix wider than the grant, or outside every grant
+prefix, is withheld whole and reported, never clipped.** **Why.** The grant
+is what the signers approved and the provider may only narrow it; a provider
+that claims more is misconfigured or hostile, and withholding its claim
+while reporting it makes that visible. Go already does this
+(`endpoint.withinGrant`, `internal/endpoint/grant_test.go`); §12.1's word
+"intersection" goes. Rejected: B, clip to the grant (installs part of a claim
+already known to be wrong, and changes Go).
+**With no choice in them (G17), the text also says what Go and the reference
+already do: (3) when the allowed-ips of two proven peers overlap, each
+overlapping prefix is installed for neither peer and the pair is reported —
+the rule moves from `ENFORCEMENT.md` into §13.1 (run 20's M2); (4) the
+genesis `roots` and `signers` have pairwise distinct `kid`s, within and
+across the two arrays, or entry 0 aborts as `bad-genesis` (run 20's M3).**
+Row: G19; G18's last sentences (run 20's L2 to L7) ride in the same lane.

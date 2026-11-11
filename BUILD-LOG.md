@@ -4173,7 +4173,9 @@ code does not have.
 
 ---
 
-## DECISION NEEDED — G19: run 20's two readings that change what a node accepts or installs (written 2026-10-28)
+## DECISION TAKEN — G19: run 20's two readings that change what a node accepts or installs (written 2026-10-28, answered 2026-11-11, recorded as D-084)
+
+**Answered 2026-11-11 by the owner, in the session, when the two questions were put to him again: 1-B, 2-A**, the recommendations below. `DECISIONS.md` D-084 says what they mean; the fixes are G19's.
 
 **Why these two.** Cold gate run 20 rated three findings medium and seven low. G17 checked the mediums on the code and G18 sorted the lows with the reader's own probes (journal G17, G18). Two of them are places where SPEC.md allows two answers and choosing one changes what a conforming node does. The rest (M2, M3, L1–L7) are sentences that say what Go already does, and need no decision. Both questions are written for the owner; each has a recommendation.
 
