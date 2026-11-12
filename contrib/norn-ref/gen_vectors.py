@@ -16,7 +16,7 @@ import sys
 import base64
 import hashlib
 
-from nornref import canonjson, cbor, enrollreq, entry, fixture, note, replay, trust
+from nornref import canonjson, cbor, enrollreq, entry, fixture, note, replay, run21, trust
 
 
 #: Every path this run has written, so stale files can be pruned afterwards.
@@ -431,6 +431,7 @@ def write_trust_rejections(out: pathlib.Path) -> None:
     mode = {"section": "9.1", "says": "`mode` MUST be"}
     size = {"section": "9.1", "says": "MAX_TRUST_BYTES"}
     trust_rules = {
+        "61-witness-names-swapped": {"section": "9.1", "says": "The `witness` directive is matched on **its own `<name>`**"},
         "60-witness-short-name-mismatch": {"section": "9.1", "says": "The correspondence is on the **set** of names"},
         "56-policy-log-key-renamed": {"section": "9.1", "says": "as verifier-key text"},
         "57-log-url-bytes": {"section": "9.1", "says": "array of text"},
@@ -721,6 +722,7 @@ def write_rules_log(out: pathlib.Path) -> None:
     request.update(ts=100, expires=200)
     enrollreq.sign(request, fixture.KEYS["spare"])
     b.add("44-enroll-expired-before-entry-ts", b.build("enroll", {"request": cbor.encode(request)}, signer))
+    run21_phrases = run21.append_rules(b)
     items = b.items
     raw = [it.raw for it in items]
     anchor = fixture.anchor_for(raw)
@@ -771,6 +773,7 @@ def write_rules_log(out: pathlib.Path) -> None:
         ("5.1", "`t` text, `ts`, `after` and `prev` uint"),
         ("5.3", "`expires` is never applied during replay"),
     ]
+    phrases += run21_phrases
     assert len(phrases) == len(items)
     for it in items:
         write(out / "log-rules" / (it.name + ".cbor"), it.raw)
@@ -1080,6 +1083,9 @@ def write_trust(out: pathlib.Path) -> None:
              "origin", "The origin line MUST equal the anchored origin")
 
     add_case("leaf-31-bytes.note", two_faults(l2=base64.b64encode(bytes(31)).decode()),
+             "leaf-hash", "The leaf hash MUST be standard base64 and decode to exactly 32 bytes")
+    add_case("leaf-33-bytes.note",
+             two_faults(l2=base64.b64encode(genesis_leaf + b"\0").decode()),
              "leaf-hash", "The leaf hash MUST be standard base64 and decode to exactly 32 bytes")
     # The normal note signer rightly refuses empty text. Construct framing
     # directly, with the real log signature over the empty byte string.

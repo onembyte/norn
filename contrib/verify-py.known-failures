@@ -82,7 +82,12 @@ log-rules/23-enroll-with-signer.cbor expected="accept" got="dup-entry"
 # and so are `log-order/40`-`41`, the trust files and receipts of run 20.
 # Only the state line moved, with the eight entries; replayed directly, the
 # difference is still `nas` and `probe` alone.
-log-rules/state.json expected=sha256:20fbea56653875648509eb82d701a8ca4f4e749681f0a89f53aa6479d648c0c8 got=sha256:3fd3bf0bdf8c77c3f1f9ec186aad204b60496f4c94add3c82ad77481b0830f06
+# Row G25, build P (2026-11-11): entries 45-56 (booleans in a note's ts and v and
+# in a request's v and ts, a request without ts, a note without text, each
+# beside its repair) are answered as written, and so are `trust-bad/61` and
+# `receipt-bad/leaf-33-bytes`. Only the state line moved, with the twelve
+# entries; replayed directly, the difference is still `nas` and `probe` alone.
+log-rules/state.json expected=sha256:4938c132a5f4fc65f97ed1a4bd87fa739baab204c276571fcd4a451bde275bc6 got=sha256:782ed3e19e7ec8fccf4e29840969874613b1a160719e06a13f29c7cecf0e1148
 
 # Row 6.5l-xiv-d, Go half (2026-10-15): `heads-run16/`, heads with reader
 # histories and a request table with the consumer's network, a manifest shape

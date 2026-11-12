@@ -25,6 +25,9 @@ CODES = ["", "", "", "threshold", "", "stale-state", "", "decode", "", "", "", "
 NAMES += ['37-params-without-prev', '38-params-stale-prev', '39-params-current-prev', '40-note-ts-two-to-63', '41-note-ts-at-the-cap', '42-note-after-bool', '43-note-after-uint', '44-enroll-expired-before-entry-ts']
 CODES += ['stale-state', 'stale-state', '', 'decode', '', 'decode', '', '']
 
+NAMES += ['45-note-ts-bool', '46-note-ts-uint', '47-note-v-bool', '48-note-v-uint', '49-enroll-request-v-bool', '50-enroll-request-v-uint', '51-enroll-request-ts-bool', '52-enroll-request-ts-uint', '53-enroll-request-without-ts', '54-enroll-request-with-ts', '55-note-without-text', '56-note-empty-text']
+CODES += ['decode', '', 'decode', '', 'decode', '', 'decode', '', 'decode', '', 'decode', '']
+
 class RuleVectors(unittest.TestCase):
     def test_every_rule_case_matches_and_each_refusal_repairs(self):
         manifest = json.loads((ROOT / "manifest.json").read_text())
@@ -55,8 +58,11 @@ class RuleVectors(unittest.TestCase):
                 self.assertTrue(any(rule["says"] in line for line in section.splitlines()))
                 got = next((r["reason"] for r in final.rejected if r["index"] == i), "")
                 self.assertEqual(got, CODES[i], f"reference {name}: {got!r}")
-                if i >= 37:
+                if 37 <= i < 45:
                     from test_run20_vectors import check_rule
+                    check_rule(self, anchor, raw, i)
+                if i >= 45:
+                    from test_run21_vectors import check_rule
                     check_rule(self, anchor, raw, i)
                 if not CODES[i]:
                     continue

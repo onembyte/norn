@@ -84,7 +84,7 @@ def _check_envelope(env: Any, net: bytes) -> None:
         raise Reject("decode")
     if set(env) - _ENVELOPE_KEYS or not _REQUIRED_KEYS <= set(env):
         raise Reject("decode")
-    if env["v"] != entry.VERSION or env["net"] != net:
+    if type(env["v"]) is not int or env["v"] != entry.VERSION or env["net"] != net:
         raise Reject("decode")
     # Every member has the type §4.1 gives it, and that is step 3's check
     # (`decode`). `t` was never type-checked here -- a number went straight to

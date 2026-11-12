@@ -1694,6 +1694,10 @@ def trust_rejections() -> list[tuple[str, dict[str, Any]]]:
     reused_log = dict(base, witnesses=[{"name":"w", "key":reuse}],
                       policy=f"witness w {reuse}\nquorum w\n")
     return [
+        ("61-witness-names-swapped", damaged(policy=base["policy"]
+            .replace("witness pi ", "witness TEMP ", 1)
+            .replace("witness vps ", "witness pi ", 1)
+            .replace("witness TEMP ", "witness vps ", 1))),
         ("60-witness-short-name-mismatch", damaged(
             witnesses=[dict(base["witnesses"][0], name="pj")]
             + [dict(w) for w in base["witnesses"][1:]])),
