@@ -3,7 +3,11 @@
 Written **2026-09-18** (plan part 8). Where the security properties get proven,
 recorded, and paged to a phone.
 
-## 1. Lab topology (TrueNAS .155, Docker, `lab/compose.yaml`)
+## 1. Lab topology (the NAS, Docker, `lab/compose.yaml`)
+
+**2026-11-12:** the lab is being built as full VMs on the NAS instead (BUILD-LOG rows
+G21–G23: their own kernels and clocks, so skew and reboots are real); the topology below
+is the September plan it replaces.
 
 Containers run with `NET_ADMIN` and get their **own network namespace**, so each
 node has a private kernel WireGuard interface (the host's `wg0` is reserved by
@@ -15,7 +19,7 @@ bridge  norn-lab 10.99.0.0/24            ("the internet")
 ------------------------------------------------------------
 log          norn-log (Tessera POSIX) + nginx static tiles      10.99.0.10
 w-lab        witness, *configurable malicious*                  10.99.0.11
-w-pi         real Pi .153 (LAN)      — independent location    via LAN
+w-pi         the real Pi (LAN)       — independent location    via LAN
 w-vps        real VPS                — independent provider    via internet
 monitor      norn monitor + ntfy + status page + OTS job        10.99.0.12  (also an enrolled peer)
 node1..3     kernel WG + nornd  (overlay 10.9.0.0/24)           10.99.0.21-23
