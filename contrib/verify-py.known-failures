@@ -48,6 +48,13 @@ log-republish/16-policy-text-at-the-cap.cbor expected="accept" got="stale-state"
 # (as `unreached-witness/` above). Named outside `served-*` for the same reason.
 # The padded proofs are refused by this build as written.
 dropped-witness/cases.json#unhandled expected="handled" got="UNKNOWN CASE FORMAT"
+# Row G25, build G (2026-11-11): `held-policy/`, run 21's M1, a held head re-read
+# with a forged line from a witness the replayed policy dropped: two reader
+# histories, a manifest shape this build never saw. Named outside `served-*` for
+# the same reason. This build keeps no accepting policy for a held head, so it
+# would also answer the held reader the other way (lane CW). The new bundle and
+# evidence negatives it refuses as written.
+held-policy/cases.json#unhandled expected="handled" got="UNKNOWN CASE FORMAT"
 
 # Row 6.5l-xiv-d, reference half (2026-10-15): `log-rules/`. The build answers
 # every rule as written but one, and that one is D-078 again: it records the

@@ -171,10 +171,23 @@
     {
       "name": "bad-empty-map-key",
       "says": "map key must be 1-23 bytes"
+    },
+    {
+      "name": "bad-bool-version",
+      "says": "version true is not a uint version"
+    },
+    {
+      "name": "bad-split-held-root-at-own-size",
+      "says": "split_root differs from held's signed root at held's own size, with no split proofs"
+    },
+    {
+      "name": "bad-split-conflicting-root-at-own-size",
+      "says": "split_root differs from conflicting's signed root at conflicting's own size, with no split proofs"
     }
   ],
   "codes": {
     "bad-bool-size": "schema",
+    "bad-bool-version": "version",
     "bad-consistent": "consistent",
     "bad-consistent-and-bad-split": "proof",
     "bad-declared-length-past-the-file": "cbor",
@@ -203,6 +216,8 @@
     "bad-size-zero": "proof",
     "bad-size-zero-empty-held": "proof",
     "bad-split-above-size": "proof",
+    "bad-split-conflicting-root-at-own-size": "proof",
+    "bad-split-held-root-at-own-size": "proof",
     "bad-split-proof-conflicting": "proof",
     "bad-split-proof-held": "proof",
     "bad-split-root-length": "schema",
@@ -229,6 +244,10 @@
   "rules": {
     "bad-bool-size": {
       "says": "the `size` field is a boolean rather than a uint",
+      "section": "11.1"
+    },
+    "bad-bool-version": {
+      "says": "absent, not a uint, or another number",
       "section": "11.1"
     },
     "bad-consistent": {
@@ -341,6 +360,14 @@
     },
     "bad-split-above-size": {
       "says": "check `split` is not above `size`",
+      "section": "11.1"
+    },
+    "bad-split-conflicting-root-at-own-size": {
+      "says": "each as step 3 does, with the same empty-proof rule at a head's own size.",
+      "section": "11.1"
+    },
+    "bad-split-held-root-at-own-size": {
+      "says": "each as step 3 does, with the same empty-proof rule at a head's own size.",
       "section": "11.1"
     },
     "bad-split-proof-conflicting": {

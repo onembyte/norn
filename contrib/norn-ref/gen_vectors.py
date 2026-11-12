@@ -52,7 +52,7 @@ FOREIGN = frozenset({"served-empty-entry", "served-large-bad", "served-rotated-w
                     "proofs-bad", "served-bad", "served-superseded",
                     "served-twice-cosigned", "served-extra-witness",
                     "served-name-collision", "served-unknown-algorithm", "served-stranger-name", "detect",
-                    "served-genesis", "proofs-rotated", "unreached-witness", "dropped-witness",
+                    "served-genesis", "proofs-rotated", "unreached-witness", "dropped-witness", "held-policy",
                     "heads-run16", "grown-log", "replayed-policy", "quorum-none",
                     "genesis-unapplied", "checkpoints-good"})
 

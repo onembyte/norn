@@ -23,6 +23,7 @@ import (
 // the format it uses is not defined in SPEC.md.
 
 func TestEveryForkNegativeIsRefused(t *testing.T) {
+	t.Run("run21 pairs", checkRunTwentyOneEvidencePairs)
 	checkRunFourteenEvidence(t)
 	t.Run("bad-version-nonshortest repair", checkNonshortestVersionPair)
 	root := filepath.Join("..", "..", "testdata", "vectors")
@@ -79,7 +80,7 @@ func TestEveryForkNegativeIsRefused(t *testing.T) {
 			if got, _ := evrefusal.CodeOf(err); got != want {
 				t.Errorf("refused as %q, and cases.json says %q: %v", got, want, err)
 			}
-			if !strings.Contains(err.Error(), c.Says) {
+			if !runTwentyOneEvidenceName(c.Name) && !strings.Contains(err.Error(), c.Says) {
 				t.Errorf("refused for the wrong reason.\n  got:  %v\n  want: %s", err, c.Says)
 			}
 		})

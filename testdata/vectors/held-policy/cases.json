@@ -1,0 +1,55 @@
+{
+  "cases": [
+    {
+      "file": "copy.checkpoint",
+      "name": "held-forged-friend",
+      "reader": "held",
+      "says": "friend was listed by the policy that accepted the held head"
+    },
+    {
+      "file": "copy.checkpoint",
+      "name": "replayed-forged-friend",
+      "reader": "replayed",
+      "says": "friend is unlisted under the replayed policy and no head is held"
+    }
+  ],
+  "codes": {
+    "held-forged-friend": "cosignature",
+    "replayed-forged-friend": "accept"
+  },
+  "copy": "copy.checkpoint",
+  "initial": "log",
+  "readers": {
+    "held": {
+      "accept": "log",
+      "acceptance_policy": "trust.policy",
+      "held_checkpoint": "log/checkpoint",
+      "replay": "accepted entries"
+    },
+    "replayed": {
+      "held_checkpoint": "none",
+      "policy": "replayed",
+      "replay": "replay"
+    }
+  },
+  "replay": [
+    "../dropped-witness/00-genesis.cbor",
+    "../dropped-witness/01-policy-drops-friend.cbor"
+  ],
+  "retains": {
+    "checkpoint": "log/checkpoint",
+    "policy": "trust.policy",
+    "quorum_time": "initial acceptance"
+  },
+  "rules": {
+    "held-forged-friend": {
+      "says": "names a witness that policy lists, by name and key id",
+      "section": "5.3"
+    },
+    "replayed-forged-friend": {
+      "says": "A `policy` entry supersedes `norn.trust.policy` for every checkpoint",
+      "section": "9.4"
+    }
+  },
+  "trust": "../dropped-witness/trust.cbor"
+}

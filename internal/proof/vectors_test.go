@@ -192,6 +192,7 @@ func TestTheBundleClaimsNoDomainItDoesNotCarry(t *testing.T) {
 // itself to check its work, which is the reader doing the suite's job.
 
 func TestEveryProofNegativeIsRefused(t *testing.T) {
+	checkRunTwentyOneBundlePairs(t)
 	t.Run("index-outside-tree", checkIndexOutsideTreeBundle)
 	t.Run("request-expires-at-ts repair", checkRequestExpiryBinding)
 	checkRunFourteenBundlePair(t)
@@ -241,7 +242,7 @@ func TestEveryProofNegativeIsRefused(t *testing.T) {
 			}
 			// The index case's hint quotes SPEC; its dedicated guard above
 			// checks the code and index-only repair, independently of prose.
-			if c.Name != "index-outside-tree" && !strings.Contains(err.Error(), c.Says) {
+			if c.Name != "index-outside-tree" && !runTwentyOneBundleName(c.Name) && !strings.Contains(err.Error(), c.Says) {
 				t.Errorf("refused for the wrong reason.\n  got:  %v\n  want: %s", err, c.Says)
 			}
 		})

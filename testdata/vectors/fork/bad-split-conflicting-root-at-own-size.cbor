@@ -1,0 +1,23 @@
+´dheldyOnorn/nzxxe3rnorsxg5domv2c2mbqge
+162
+MXxSLtxRhw7H8z22pP/TmqUSjXZ8Ukwul54td9pJsF4=
+
+‚Äî norn/nzxxe3rnorsxg5domv2c2mbqge vqSmZrkGJ064rpDSltnOEg90locJLQo14+lVksX+s0qZBk2JkzhURj8ztVd/0RG2/qz6v21kZ2K0awHpW9S2W3cLqg4=
+‚Äî norn-witness/pi BR0cUQAAAABo54YQNFL0ykCF8L0vw/GL1NONCQJSYxZRocG7Mi0wdMUIv7LXxFm9efcSzGDkQ9vNW7g5q0a+pXGnKny2YZkUKcLkAw==
+‚Äî norn-witness/vps Rqb9OAAAAABo54YXkuz9HGDFRdEYi/a5wYFUzx6DiNpzQtGSclEqBms4ZMF84pHGgcqnaW1CUne9S0paoGniQVW3ZPi2UCqbO/apAA==
+‚Äî norn-witness/friend FAT3QgAAAABo54YeQekH9qc/sLCtWQOhuMteHifAdUoHZ1khXqQylKj6/0w4028VMmucbBcyIJhSz01PnYb+2vJfOZg83eaPIkNUDg==
+dsize¢eproofÄesplit¢fpolicyylog norn/nzxxe3rnorsxg5domv2c2mbqge+bea4a666+AV6v97lmGyW99eHglI8syFAU2uY+/HuHHq0VYz9Rmio1 https://log.norn.example/testnet
+witness pi norn-witness/pi+051d1c51+BHeagefoK0s3F5shdMl1Ahsd1ZCE9MC5F5gvM3cLTnZa http://10.0.0.153:8100
+witness vps norn-witness/vps+46a6fd38+BIXCilOrHi0kMxynG/s1EyJ2aWFC1jZc4UlZRza6g8ou https://witness.example.net
+witness friend norn-witness/friend+1404f742+BJjvlkRbihDdM/4Lb/YPiP+eoqk3VgrncrTgSXQNXr6B https://bastion.example.org/w
+group home 2 pi vps friend
+quorum home
+gversioniheld_rootX 1|R.‹Qá«Û=∂§ˇ”ö•çv|RL.óû-w⁄I∞^jsplit_rootX 1|R.‹Qá«Û=∂§ˇ”ö•çv|RL.óû-w⁄I∞^kconflictingyOnorn/nzxxe3rnorsxg5domv2c2mbqge
+162
+Qv0thc3FC+beB04w/i2Ns9IT5i+b+sG5qGA5oU1nNio=
+
+‚Äî norn/nzxxe3rnorsxg5domv2c2mbqge vqSmZmU31hszCidX3pVhqMxV1f3sDqa3tdRoLJjSFH9mzDNBB2CKenFMjxQx839x9PebcDeXbqeO0+0QotA9zwYu2AY=
+‚Äî norn-witness/pi BR0cUQAAAABo54YQnIhN4Q5op1+r/OqY9tJUTSzNHIN5bHbgDmWfDLIVe4vd755qbtwbRxLksBjyPQmFD0haZYGMdWs3tcCEYCQ5Bg==
+‚Äî norn-witness/vps Rqb9OAAAAABo54YXhzdvXPeSQLuedCJ7syZwLnxoLDZngTtDxR8R0pqA5faI412dACLTtlGRQgEaap3UKNtXi+125fzgNvk3vnSRCw==
+‚Äî norn-witness/friend FAT3QgAAAABo54YeNpFNimhkBozlBWDVWCvi4ygh9LGupgd4JbkjtVyu3McvSYQgFfhhTs1GCP0VtsGwX+lt1I18UnNQxlG0aPs6CA==
+psplit_proof_heldÄwsplit_proof_conflictingÄ

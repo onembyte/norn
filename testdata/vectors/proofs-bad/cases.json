@@ -99,11 +99,41 @@
     {
       "name": "rotate-no-ts",
       "says": "missing envelope key \"ts\""
+    },
+    {
+      "name": "bool-v",
+      "says": "bundle v is true rather than uint 1"
+    },
+    {
+      "name": "bool-index",
+      "says": "bundle index is true rather than uint 1"
+    },
+    {
+      "name": "entry-prev-bool",
+      "says": "optional envelope prev is a boolean"
+    },
+    {
+      "name": "entry-after-bool",
+      "says": "optional envelope after is a boolean"
+    },
+    {
+      "name": "entry-sigs-malformed-kid",
+      "says": "bundled entry sigs has a malformed kid"
+    },
+    {
+      "name": "entry-net-15-bytes",
+      "says": "envelope net is 15 bytes"
     }
   ],
   "codes": {
+    "bool-index": "bundle",
+    "bool-v": "bundle",
     "device-not-a-device-id": "bundle",
     "device-not-in-entry": "binding",
+    "entry-after-bool": "binding",
+    "entry-net-15-bytes": "binding",
+    "entry-prev-bool": "binding",
+    "entry-sigs-malformed-kid": "binding",
     "foreign-checkpoint": "log-signature",
     "index-outside-tree": "inclusion",
     "no-quorum": "quorum",
@@ -131,13 +161,45 @@
   "comment": "bundles that MUST be refused under the log key above, with the SPEC §10.1 code `codes` names for each. Each differs from a valid bundle in exactly one thing, so a verifier that skips one check accepts exactly one of them -- except wrong-version-and-untrusted-checkpoint and no-quorum-tampered-proof, which differs in two so that §10.1's order decides: it is `quorum`, and a reader that checks the inclusion proof first says `inclusion`",
   "log_key": "norn/nzxxe3rnorsxg5domv2c2mbqge+bea4a666+AV6v97lmGyW99eHglI8syFAU2uY+/HuHHq0VYz9Rmio1",
   "origin": "norn/nzxxe3rnorsxg5domv2c2mbqge",
+  "repairs": {
+    "bool-index": "../proofs/nas.bundle",
+    "bool-v": "../proofs/nas.bundle",
+    "entry-after-bool": "../proofs/entry-after-bool-repaired.bundle",
+    "entry-net-15-bytes": "../proofs/entry-net-15-bytes-repaired.bundle",
+    "entry-prev-bool": "../proofs/entry-prev-bool-repaired.bundle",
+    "entry-sigs-malformed-kid": "../proofs/entry-sigs-malformed-kid-repaired.bundle"
+  },
   "rules": {
+    "bool-index": {
+      "says": "schemas MUST reject them outside `params.rotate_needs_signer`",
+      "section": "4.0"
+    },
+    "bool-v": {
+      "says": "schemas MUST reject them outside `params.rotate_needs_signer`",
+      "section": "4.0"
+    },
     "device-not-a-device-id": {
       "says": "or a `device` outside §2's grammar",
       "section": "10.1"
     },
     "device-not-in-entry": {
       "says": "`device` is the `device_id` the `entry` names",
+      "section": "8.1"
+    },
+    "entry-after-bool": {
+      "says": "set of members, each of its type: `v` 1,",
+      "section": "8.1"
+    },
+    "entry-net-15-bytes": {
+      "says": "a 16-byte `net`",
+      "section": "8.1"
+    },
+    "entry-prev-bool": {
+      "says": "set of members, each of its type: `v` 1,",
+      "section": "8.1"
+    },
+    "entry-sigs-malformed-kid": {
+      "says": "well-formed `sigs`",
       "section": "8.1"
     },
     "foreign-checkpoint": {

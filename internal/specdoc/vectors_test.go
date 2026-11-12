@@ -1363,6 +1363,11 @@ func shippedTrust(t *testing.T, root string) *trust.Trust {
 // carrying `rules` fails too, which stops the mechanism being quietly dropped.
 
 func TestEveryNegativeDeclaresTheSectionThatStatesItsRule(t *testing.T) {
+	runTwentyOne := map[string]bool{
+		"bool-v": true, "bool-index": true, "entry-prev-bool": true, "entry-after-bool": true,
+		"entry-sigs-malformed-kid": true, "entry-net-15-bytes": true, "bad-bool-version": true,
+		"bad-split-held-root-at-own-size": true, "bad-split-conflicting-root-at-own-size": true,
+	}
 	doc := load(t)
 	root := vectorRoot(t)
 	// The directories whose rules run 10 found missing. The rest are named in
@@ -1372,7 +1377,7 @@ func TestEveryNegativeDeclaresTheSectionThatStatesItsRule(t *testing.T) {
 		"checkpoints-bad", "proofs-bad", "served-bad", "fork",
 		"entries-hostile", "policies", "genesis", "trust-bad", "receipt-bad", "receipt-good", "checkpoints-good", "requests-bad",
 		"served-genesis", "log-cas", "log-edges", "log-order", "log-republish", "served-large-bad", "served-empty-entry",
-		"served-rotated-wrong-name", "served-rotated-earlier", "unreached-witness", "dropped-witness", "grown-log",
+		"served-rotated-wrong-name", "served-rotated-earlier", "unreached-witness", "dropped-witness", "held-policy", "grown-log",
 	} {
 		t.Run(dir, func(t *testing.T) {
 			var manifest struct {
@@ -1409,7 +1414,7 @@ func TestEveryNegativeDeclaresTheSectionThatStatesItsRule(t *testing.T) {
 				}
 				// Run 16's new cases cite one raw normative line, so a
 				// paragraph assembled across line breaks cannot stand in.
-				if dir == "grown-log" || name == "bad-policy-small-order-key" || name == "device-not-a-device-id" || name == "request-undecodable" || dir == "dropped-witness" || strings.Contains(name, "padded-proof") || name == "bad-padded-split-proof" {
+				if runTwentyOne[name] || dir == "held-policy" || dir == "grown-log" || name == "bad-policy-small-order-key" || name == "device-not-a-device-id" || name == "request-undecodable" || dir == "dropped-witness" || strings.Contains(name, "padded-proof") || name == "bad-padded-split-proof" {
 					onLine := false
 					for _, line := range strings.Split(section.Body, "\n") {
 						onLine = onLine || strings.Contains(line, rule.Says)
@@ -2322,7 +2327,7 @@ func TestTheVectorsREADMEStatesTheRightCounts(t *testing.T) {
 		16: "sixteen", 17: "seventeen", 18: "eighteen", 19: "nineteen",
 		20: "twenty", 21: "twenty-one", 22: "twenty-two", 23: "twenty-three",
 		24: "twenty-four", 25: "twenty-five", 26: "twenty-six", 27: "twenty-seven",
-		28: "twenty-eight", 29: "twenty-nine", 30: "thirty",
+		28: "twenty-eight", 29: "twenty-nine", 30: "thirty", 31: "thirty-one",
 	}
 	for _, c := range []struct{ dir, noun string }{
 		{"checkpoints-bad", "checkpoints that MUST be refused"},
@@ -2931,12 +2936,12 @@ func TestEveryServedAndBundleNegativeCitesTheRuleOfItsCode(t *testing.T) {
 			"unserved": {"any file a later step needs and cannot fetch"},
 		},
 		"proofs-bad": {
-			"bundle":        {"a closed map of exactly these six keys", "`v` | uint | `1`", "larger than this MUST be refused on length", "or a `device` outside §2's grammar", "or a `proof` element that is not exactly 32 bytes, as §8.1 types it", "or an `entry` longer than `MAX_ENTRY_BYTES` (D-080)"},
+			"bundle":        {"a closed map of exactly these six keys", "`v` | uint | `1`", "schemas MUST reject them outside `params.rotate_needs_signer`", "larger than this MUST be refused on length", "or a `device` outside §2's grammar", "or a `proof` element that is not exactly 32 bytes, as §8.1 types it", "or an `entry` longer than `MAX_ENTRY_BYTES` (D-080)"},
 			"log-signature": {"under the log keys the verifier trusts"},
 			"origin":        {"this network's origin"},
 			"quorum":        {"a satisfied witness quorum"},
 			"inclusion":     {"the index is outside the tree", "reach that checkpoint's root at `index`", "the proof carries more or fewer hashes than RFC 9162 §2.1.3.2 consumes"},
-			"binding":       {"Decoding here is the request's structure and field rules", "`device` is the `device_id` the `entry` names", "an `enroll` whose request does not decode", "set of members, each of its type: `v` 1,", "`ts`, a map `body`, well-formed `sigs` — or it names no device"},
+			"binding":       {"well-formed `sigs`", "a 16-byte `net`", "Decoding here is the request's structure and field rules", "`device` is the `device_id` the `entry` names", "an `enroll` whose request does not decode", "set of members, each of its type: `v` 1,", "`ts`, a map `body`, well-formed `sigs` — or it names no device"},
 		},
 		"receipt-bad": {
 			"note":          {"a second `0x0A` after the final signature creates a forbidden blank line", "or no signature line, is `note`", "The text is at least one"},

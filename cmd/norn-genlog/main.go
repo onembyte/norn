@@ -271,6 +271,16 @@ func run(root string) error {
 		return err
 	}
 
+	if err := writeRunTwentyOneBundles(root, origin, key, entries, signers); err != nil {
+		return err
+	}
+	if err := writeRunTwentyOneEvidence(root); err != nil {
+		return err
+	}
+	if err := writeHeldPolicyHead(root); err != nil {
+		return err
+	}
+
 	fmt.Printf("served %d entries to %s, %d proof bundles\n", store.Size(), served, len(ids))
 	return nil
 }

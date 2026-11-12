@@ -8,6 +8,10 @@
   "codes": {
     "enroll-open-body": "accept",
     "enroll-other-net": "accept",
+    "entry-after-bool-repaired": "accept",
+    "entry-net-15-bytes-repaired": "accept",
+    "entry-prev-bool-repaired": "accept",
+    "entry-sigs-malformed-kid-repaired": "accept",
     "forged": "accept",
     "halfsigned": "accept",
     "laptop-revoke": "accept",
@@ -52,6 +56,22 @@
     },
     "enroll-other-net": {
       "says": "Binding is structural: what replay judges against the anchor",
+      "section": "8.1"
+    },
+    "entry-after-bool-repaired": {
+      "says": "set of members, each of its type: `v` 1,",
+      "section": "8.1"
+    },
+    "entry-net-15-bytes-repaired": {
+      "says": "a 16-byte `net`",
+      "section": "8.1"
+    },
+    "entry-prev-bool-repaired": {
+      "says": "set of members, each of its type: `v` 1,",
+      "section": "8.1"
+    },
+    "entry-sigs-malformed-kid-repaired": {
+      "says": "well-formed `sigs`",
       "section": "8.1"
     },
     "forged": {
@@ -147,6 +167,34 @@
       "index": 1,
       "name": "enroll-open-body",
       "says": "enroll body is {request, x}; inclusion accepts, replay refuses"
+    },
+    {
+      "device": "nas",
+      "file": "entry-prev-bool-repaired.bundle",
+      "index": 1,
+      "name": "entry-prev-bool-repaired",
+      "says": "only the binding field repaired, with renewed authentication"
+    },
+    {
+      "device": "nas",
+      "file": "entry-after-bool-repaired.bundle",
+      "index": 1,
+      "name": "entry-after-bool-repaired",
+      "says": "only the binding field repaired, with renewed authentication"
+    },
+    {
+      "device": "nas",
+      "file": "entry-sigs-malformed-kid-repaired.bundle",
+      "index": 1,
+      "name": "entry-sigs-malformed-kid-repaired",
+      "says": "only the binding field repaired, with renewed authentication"
+    },
+    {
+      "device": "nas",
+      "file": "entry-net-15-bytes-repaired.bundle",
+      "index": 1,
+      "name": "entry-net-15-bytes-repaired",
+      "says": "only the binding field repaired, with renewed authentication"
     }
   ]
 }
