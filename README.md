@@ -10,10 +10,11 @@
 > and Headscale get observe mode only, not yet run against a real tailscaled.
 > Changes nothing in WireGuard.
 
-*Status (2026-10-17, preview): 56 Go packages, 1417 tests, a frozen `SPEC.md`, and a
-vector suite a second implementer can use without this repository. **14 of 38
-gate lines** in `PLAN.md` are ticked — every gate that needs a running lab, a
-measurement or a second pair of eyes is still open. No Norn has ever guarded a
+*Status (2026-11-12, preview): 56 Go packages, 1417 tests, a frozen `SPEC.md`, and a
+vector suite a second implementer can use without this repository. **17 of 38
+gate lines** in `PLAN.md` are ticked — the lab on the NAS closed its first three on
+2026-11-12; most gates that need a lab soak, a measurement or a second pair of eyes
+are still open. No Norn has ever guarded a
 network anyone depends on.*
 
 <!-- demo GIFs: D1a owner · D1b watchdog · D1c observe (see LAB.md §2) -->
