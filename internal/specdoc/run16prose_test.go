@@ -55,7 +55,7 @@ func TestRunSixteensProseFindingsAreFixed(t *testing.T) {
 			"1. Its `entry_hash` joins §5.1 step 1's first seen set, and when step 8 applies it, its `content_hash` joins the second (D-078).",
 			"1. The duplicate key of §5.1 step 1 is recorded as seen."},
 		{"L2 listed means named by the policy in force", "10.1",
-			"listed meaning named by the policy in force (§9.4), not a witness a `policy` entry has dropped that the trust file still lists",
+			"listed meaning named by the policy that applies — the policy in force (§9.4), or, for a re-read of the tree head the reader already holds, the policy that accepted it (§5.3, D-084 (1)) — not a witness that policy has dropped and the trust file still lists",
 			""},
 		{"L7 A is a valid point", "3.1",
 			"verifies under a key `A` — itself a valid point, since item 2 admits no other — over a message",

@@ -52,6 +52,8 @@ class RuleVectors(unittest.TestCase):
             with self.subTest(case=name):
                 self.assertEqual(manifest["entries"][i]["index"], i)
                 rule = manifest["rules"][name]
+                if i in (55, 56):
+                    self.assertEqual(rule, {"section": "4.3", "says": "an absent `text` is `decode`"})
                 heading = ("### " if "." in rule["section"] else "## ") + rule["section"] + " "
                 section = spec.split(heading, 1)[1].split("\n##", 1)[0]
                 self.assertTrue(rule["says"])

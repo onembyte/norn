@@ -152,7 +152,7 @@ func writeDroppedWitness(root, signed string, entries [][]byte) error {
 		},
 		"codes": map[string]string{"friend-after-drop": "accept", "friend-before-replay": "cosignature"},
 		"rules": map[string]map[string]string{
-			"friend-after-drop":    {"section": "10.1", "says": "listed meaning named by the policy in force (§9.4), not a witness a `policy` entry has dropped that the trust file still lists"},
+			"friend-after-drop":    {"section": "10.1", "says": "not a witness that policy has dropped and the trust file still lists"},
 			"friend-before-replay": {"section": "9.4", "says": "A node holding only the trust file uses its policy."},
 		},
 		"comment": "The trust file still lists pi, vps and friend. Replay the fixture genesis and root-signed policy entry in the stated order on that anchor; both apply, and the replacement policy names only pi and vps, requiring both. Serve the same forged head over served's honest tiles to both readers. Only the policy in force differs; the head is not checked retroactively under the policy its own entries publish (SPEC 9.4).",

@@ -259,7 +259,7 @@
       "section": "8.1"
     },
     "rotate-no-ts": {
-      "says": "`ts`, a map `body`, well-formed `sigs` — or it names no device",
+      "says": "`ts`, a map `body`, well-formed `sigs`",
       "section": "8.1"
     },
     "rotate-v2": {

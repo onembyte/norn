@@ -64,7 +64,7 @@ func checkRunTwentyOneEvidencePair(t *testing.T, name string) {
 			count++
 		}
 	}
-	code, phrase := "proof", "each as step 3 does, with the same empty-proof rule at a head's own size."
+	code, phrase := "proof", "each as step 3 does, with the same rule at a head's own size: no proof,"
 	if name == "bad-bool-version" {
 		code, phrase = "version", "absent, not a uint, or another number"
 	}

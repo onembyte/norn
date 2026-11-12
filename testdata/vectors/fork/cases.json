@@ -363,11 +363,11 @@
       "section": "11.1"
     },
     "bad-split-conflicting-root-at-own-size": {
-      "says": "each as step 3 does, with the same empty-proof rule at a head's own size.",
+      "says": "each as step 3 does, with the same rule at a head's own size: no proof,",
       "section": "11.1"
     },
     "bad-split-held-root-at-own-size": {
-      "says": "each as step 3 does, with the same empty-proof rule at a head's own size.",
+      "says": "each as step 3 does, with the same rule at a head's own size: no proof,",
       "section": "11.1"
     },
     "bad-split-proof-conflicting": {

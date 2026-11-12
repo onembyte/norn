@@ -47,5 +47,5 @@ def append_rules(b):
 
     env = b.build('note', {}, signer)
     pair('55-note-without-text', '56-note-empty-text', env, dict(env, body={'text': ''}),
-         ('4.0', 'or missing a'))
+         ('4.3', 'an absent `text` is `decode`'))
     return phrases

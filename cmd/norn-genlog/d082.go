@@ -128,7 +128,7 @@ func writeD082Bundles(root, origin string, key ed25519.PrivateKey, entries [][]b
 		m["codes"].(map[string]any)[c.name] = c.code
 		phrase := says
 		if c.code == "binding" {
-			phrase = "`ts`, a map `body`, well-formed `sigs` — or it names no device"
+			phrase = "`ts`, a map `body`, well-formed `sigs`"
 		}
 		m["rules"].(map[string]any)[c.name] = map[string]string{"section": "8.1", "says": phrase}
 		if err := writeRunFourteenJSON(filepath.Join(root, c.dir, "cases.json"), m); err != nil {

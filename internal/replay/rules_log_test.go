@@ -56,6 +56,9 @@ func TestEveryRuleCaseMatchesAndEachRefusalRepairs(t *testing.T) {
 				t.Fatal("manifest differs from stated answer")
 			}
 			rule, ok := metadata.Rules[name]
+			if (i == 55 || i == 56) && (rule.Section != "4.3" || rule.Says != "an absent `text` is `decode`") {
+				t.Fatal("the note text pair must cite its requiredness sentence in §4.3")
+			}
 			heading := "## "
 			if strings.Contains(rule.Section, ".") {
 				heading = "### "

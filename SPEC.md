@@ -434,6 +434,9 @@ verified against the key the `kid` resolves to in the state *before* this entry.
 | `log_key` | `pk` (bytes32), `overlap` (uint s) | ≥ `root_thr` roots — log-key rotation; `overlap` obliges the log to keep signing with the old key (§9.4) |
 | `policy` | `text` (verbatim tlog-policy) | ≥ `root_thr` roots — replaces witness policy in state |
 
+`text` is required in a `note` body. An empty string is valid;
+an absent `text` is `decode` (§4.0).
+
 `thr` is a plain uint **here**, deliberately. Its range — `1 … len(set)` — is a
 **replay** decision, not a schema one (§5.2's `bad-thr`): the value is a
 well-formed uint either way, so an implementation that enforced `≥ 1` as a
@@ -1118,7 +1121,8 @@ label says (D-079). Decoding here is the request's structure and field rules,
 it — replay judges those, and a bundle proves inclusion, not acceptance. The
 entry itself must decode under §4.0's profile and §4.1's envelope — its closed
 set of members, each of its type: `v` 1, a text `t`, a 16-byte `net`, a uint
-`ts`, a map `body`, well-formed `sigs` — or it names no device, and the bundle is
+`ts`, a map `body`, well-formed `sigs`, and a uint `after` and `prev` where
+present — or it names no device, and the bundle is
 `binding` (D-080). Binding is structural: what replay judges against the anchor
 or the state, such as `net` against `anchor.net`, and a type's body rules beyond
 the field that names the device, are not part of it (D-082 (4)).
@@ -1586,7 +1590,7 @@ these codes and no other, and the first step whose check fails decides which.
 | 3 | `log-signature` | no line whose name and key id match a trusted log key (§9.4) verifies, or any line that matches does not. The matching key's algorithm fixes the signature length too: a 76-byte payload under the log's `0x01` key fails here, even beside a valid line from that key (`checkpoints-bad/24-log-key-other-algorithm-length`, D14c), and so does any other length but 68 (`checkpoints-bad/20-signature-payload-too-long`). **The signature decides before the origin**: a checkpoint signed by a key this anchor does not trust is refused as `log-signature`, whatever origin it names |
 | 4 | `checkpoint` | the signed text is not a `tlog-checkpoint` body (§6): not exactly three lines, a size that is not canonical decimal or is above 2⁶³−1 (§6), a root that is not 32 bytes of standard padded base64 |
 | 5 | `origin` | the body's origin line is not **equal** to `norn.trust.origin` — not a prefix of it, not a case variant of it |
-| 6 | `cosignature` | a cosignature line whose name **and** key id match a listed witness does not verify — listed meaning named by the policy in force (§9.4), not a witness a `policy` entry has dropped that the trust file still lists — including one whose payload is not a cosignature's 76 bytes (`checkpoints-bad/28-witness-key-other-algorithm-length`) or whose timestamp is above 2⁶³−1 (§7, D-077) |
+| 6 | `cosignature` | a cosignature line whose name **and** key id match a listed witness does not verify — listed meaning named by the policy that applies — the policy in force (§9.4), or, for a re-read of the tree head the reader already holds, the policy that accepted it (§5.3, D-084 (1)) — not a witness that policy has dropped and the trust file still lists — including one whose payload is not a cosignature's 76 bytes (`checkpoints-bad/28-witness-key-other-algorithm-length`) or whose timestamp is above 2⁶³−1 (§7, D-077) |
 | 7 | `quorum` | the verifying lines from listed witnesses do not satisfy the policy |
 | 8 | `entries` | the entry bundles the checkpoint's size implies do not frame (§6's big-endian uint16 length prefixes), or do not add up to that size. A zero-length frame **frames** — a uint16 length of 0 is a frame — and the empty entry it carries is §5.1's `decode`: a rejected entry in an accepted log, not this code. Bytes after the last frame a full bundle needs are either further frames, which do not add up, or a truncated one, which does not frame: this code either way (run 14, M2 and M3) |
 | 9 | `head` | the tree rebuilt from the served entries does not hash to the signed root |
@@ -1731,7 +1735,8 @@ A reader MUST, in this order:
 4. **version 2 only:** check `split` is not above `size`, and when `split` is
    not 0, that `split_proof_held` chains (`split`, `split_root`) to `held`'s
    signed head and `split_proof_conflicting` chains it to `conflicting`'s —
-   each as step 3 does, with the same empty-proof rule at a head's own size.
+   each as step 3 does, with the same rule at a head's own size: no proof, and
+   `split_root` equal to the root that head is signed over.
    A `split` that is 0 carries an all-zero `split_root` and two empty proofs.
    A file that fails here is refused as `proof`, before the roots are compared:
    every proof a file carries is checked before the file is read as a fork
@@ -1765,7 +1770,7 @@ checks:
 | 5 | `held` | the held checkpoint fails any §10 check: note framing, log signature, checkpoint body, origin, cosignature, or quorum |
 | 6 | `conflicting` | the conflicting checkpoint fails any §10 check. The held checkpoint is checked first, so a file wrong in both is refused as `held` |
 | 7 | `size` | `size` is above the held checkpoint's own size, or the conflicting checkpoint's size does not equal `size` |
-| 8 | `proof` | `size` is 0 — no consistency proof starts at an empty tree (RFC 6962 §2.1.2 defines one only for 0 < m < n) and every log has the same root there, so no file can show a disagreement at size 0; or the consistency proof does not chain `held_root` at `size` to the held checkpoint's signed head; or, where `size` equals the held size, `held_root` is not the root the held checkpoint is signed over — there is no proof to check, and this comparison is the only thing binding `held_root` to anything, so a reader that skips it proves a fork from one honest checkpoint and any 32 bytes; or a proof is carried where `size` equals the held size and §11.1 requires none; or, at version 2, `split` is above `size`, `split` is 0 with a `split_root` that is not all zero (step 4), a split proof does not chain `split_root` at `split` to its head, or a split proof is carried where none is required (step 4) — all of it before `consistent` below: every proof a file carries is checked before the file is read as a fork (D-076, `fork/bad-consistent-and-bad-split`) |
+| 8 | `proof` | `size` is 0 — no consistency proof starts at an empty tree (RFC 6962 §2.1.2 defines one only for 0 < m < n) and every log has the same root there, so no file can show a disagreement at size 0; or the consistency proof does not chain `held_root` at `size` to the held checkpoint's signed head; or, where `size` equals the held size, `held_root` is not the root the held checkpoint is signed over — there is no proof to check, and this comparison is the only thing binding `held_root` to anything, so a reader that skips it proves a fork from one honest checkpoint and any 32 bytes; or a proof is carried where `size` equals the held size and §11.1 requires none; or, at version 2, `split` is above `size`, `split` is 0 with a `split_root` that is not all zero (step 4), a split proof does not chain `split_root` at `split` to its head, `split_root` is not the root a head is signed over where `split` equals that head's size, or a split proof is carried where none is required (step 4) — all of it before `consistent` below: every proof a file carries is checked before the file is read as a fork (D-076, `fork/bad-consistent-and-bad-split`) |
 | 9 | `consistent` | `held_root` equals `conflicting`'s root at `size`; the file proves nothing, and a node MUST NOT publish it as an accusation |
 
 **`MAX_EVIDENCE_BYTES` is 65536**. Two signed checkpoints, a root and a
@@ -1809,6 +1814,14 @@ reverse-engineered its whole error vocabulary out of these files).
 What `says` *is* for is the discipline it enforces on the suite itself: a
 negative must be refused **for its own rule and nothing else**, and a phrase
 naming that rule is how the generators and the placement guards check it.
+
+An informed reader has learned the keys and the policy a case names by
+replaying the entries the case gives; that alone does not make it hold a
+checkpoint. In `served-rotated-earlier/` and `dropped-witness/` the informed
+reader holds none, so those cases isolate the use of a learned key or policy
+from §10's comparison with a stored head: a reader that holds `served/`'s head
+refuses the shorter `served-rotated-earlier/` log as `rollback`.
+`held-policy/` states its two readers' histories in its `cases.json`.
 
 | file | contents |
 |---|---|
@@ -1874,7 +1887,7 @@ naming that rule is how the generators and the placement guards check it.
 | `served-empty-entry/` | a four-entry log with one zero-length frame at index 2 among real entries: its checkpoint is accepted, replay rejects that entry as `decode`, and `state.json` is the expected replayed state; `cases.json` names both answers |
 | `served-large-bad/` | three refusals over `served-large/`: `full-entry-bundle-trailing-bytes` adds bytes after the 256 frames of `tile/entries/000` (`entries`); `full-hash-tile-trailing-bytes` adds bytes after the 256 hashes of `tile/0/000` (`tiles`); `level-one-byte-changed` changes one byte at `tile/1/000.p/1` (`tiles`) |
 | `served-rotated-wrong-name/` | the served head signed by `logkey2` as `elsewhere/log`; `cases.json` gives `fresh` and `informed` as `log-signature`, because the learned key is named the network origin (§9.4). Serve the checkpoint over `served/` |
-| `served-rotated-earlier/` | a complete 20-entry log signed by `logkey2`, whose publication was at index 27 in `served/`; `cases.json` gives `fresh` as `log-signature` and `informed` as `accept`, with no activation index on the verifier's side (§9.4) |
+| `served-rotated-earlier/` | a complete 20-entry log signed by `logkey2`, whose publication was at index 27 in `served/`; `cases.json` gives `fresh` as `log-signature` and `informed`, a reader holding no checkpoint, as `accept`, with no activation index on the verifier's side (§9.4) |
 | `held-policy/` | a Go-generated two-entry tiled `log/` of the dropped-witness entries, with a log-signed head cosigned by pi, vps and friend, and `copy.checkpoint` changing only friend's last signature byte. `cases.json` defines two readers: `held-forged-friend` accepts the head under `../dropped-witness/trust.cbor` then replays, and refuses the copy as `cosignature`; `replayed-forged-friend` replays those entries while holding no head and accepts the copy. The held reader retains the original note, cosignatures, accepting policy and quorum time, including after restart |
 | `dropped-witness/` | its `trust.cbor` still lists pi, vps and friend; replay `00-genesis.cbor` then root-signed `01-policy-drops-friend.cbor` on that anchor to replace the policy with pi and vps alone. `cases.json` checks the same `forged-friend.checkpoint` over `served/`: `friend-after-drop` is `accept` under the replayed policy and `friend-before-replay` is `cosignature` under the trust policy |
 | `heads-run16/` | six Go-generated heads over `served/`'s honest tiles, with their own `trust.cbor`, `codes` and one-raw-line `rules` in `cases.json`: three accepted strangers, a three-byte payload (`note`), a policy-only log signer (`log-signature`) after replaying `00-genesis.cbor` and root-signed `01-policy-logkey3.cbor` (prev 0), and a forged pi line beside a short quorum (`cosignature`). The separate `requests` table carries `consumer_net` and two Go-generated signed requests, one accepted and one refused for another network; these semantic results have no closed refusal code (§16.1) |
@@ -2001,7 +2014,7 @@ this table drifted out of date the moment one was.
 | §4.0 the profile's banned items, at the decoder | the three `at-the-…-limit` cases | `bare-null`, `bare-undefined`, `bare-float`, `bare-simple`, `bare-negative-integer`, `bare-tag`, `bare-indefinite-text`, `bare-nontext-map-key` and `bare-invalid-utf8` — each a whole input with no schema above it, so the profile is the only thing that can refuse, and each refused for **its own** rule. The in-entry negatives cannot pin these: a lenient decoder hands the envelope check a malformed field and the reason is `decode` either way |
 | §4.0 booleans are profile items; field types are schema | `fork/bad-bool-size.cbor` decodes as valid CBOR with `size: true` | `schema`: §11.1 requires `size` to be uint, so the decoded boolean is refused by the evidence schema |
 | §4.0 simple values outside the allow-list | `fork/bad-bool-size.cbor` has `size: true`, a valid profile item refused as `schema` | `entries-hostile/bare-simple` is simple value 16 alone, refused only by the decoder; `fork/bad-simple-size.cbor` changes only `size` from `true` to simple value 16 and is refused as `cbor`, before the schema |
-| §4.0 free text has no lower bound | `note-empty-text`, `revoke-empty-reason` and `revoke-no-reason` — all **accepted**. `text` is bounded above only, `reason` is 0–256, and §4.3 marks it OPTIONAL | a reader that requires one byte rejects entries this document accepts, which only a positive can show |
+| §4.0 free text has no lower bound | `note-empty-text`, `revoke-empty-reason` and `revoke-no-reason` — all **accepted**. `text` is required and bounded above only; `reason` is 0–256 bytes and OPTIONAL (§4.3). An empty value and an absent member are different questions: `log-rules/55-note-without-text` is `decode` | a reader that requires one byte rejects entries this document accepts, which only a positive can show |
 | §4.0 label-value byte cap | `req-label-at-cap`: one signed label value of exactly 256 UTF-8 bytes (128 `é`) | `oversize-label`: a validly signed 257-byte value (128 `é` plus `x`, 129 code points), refused by the byte cap; a character-counting reader accepts it |
 | §4.0 resource limits | — | `entries-hostile/oversize-entry` (a header promising 65536 bytes, refused on length before anything is allocated) and `entries-hostile/deep-nesting` (200 nested arrays, deterministic throughout, so only the depth rule can refuse it) |
 | §4.0 the map-key cap, at the decoder | `entries-hostile/at-the-key-limit` (23 bytes, MUST be accepted) | `past-the-key-limit`: a one-pair map with a 24-byte key and a uint value, so nothing but the cap can refuse it. `requests-bad/oversize-label-key` has a 24-byte label key and is refused by the decoder before the `labels` field rule |
@@ -2030,7 +2043,7 @@ this table drifted out of date the moment one was.
 | §10.1 bundle version precedes its checkpoint (run 14, L2) | `proofs/nas.bundle` | `proofs-bad/wrong-version-and-untrusted-checkpoint` carries `v: 2` and a checkpoint signed by an untrusted key: `bundle` before `log-signature` |
 | §11.1 adjacent evidence checks (run 14, L2) | `fork/evidence-v1.cbor` | `fork/bad-policy-unparseable-and-unknown-key` is `schema` before `policy`; `fork/bad-unverifiable-conflicting-and-size-mismatch` is `conflicting` before `size` |
 | §11.1 size 0 with an empty held head (run 14, L4 c) | — | `fork/bad-size-zero-empty-held` carries two signed and cosigned size-0 heads with different roots and an empty held head: `proof`. The held root matches its head and the proof is empty, isolating the explicit size-0 rule |
-| §9.4 learned key name and absence of an activation index (run 14, L2) | `served-rotated-earlier/`: an informed reader accepts the 20-entry head signed by the key published at index 27 | `served-rotated-wrong-name/`: both fresh and informed readers refuse as `log-signature`, because a learned key is named the origin |
+| §9.4 learned key name and absence of an activation index (run 14, L2) | `served-rotated-earlier/`: an informed reader holding no checkpoint accepts the 20-entry head signed by the key published at index 27 | `served-rotated-wrong-name/`: both fresh and informed readers refuse as `log-signature`, because a learned key is named the origin |
 | §4.0 two-byte booleans (run 16, M1) | `log-republish/14-params-canonical-true` accepts and sets `rotate_needs_signer` true in `log-republish/state.json`; replacing only the boolean encoding repairs its predecessor | `log-republish/13-params-two-byte-true` is the canonical entry with `true` written `f8 15`: `decode`, leaving the canonical content free to apply |
 | §5.1 entry 0 records its applied content (run 16, L1) | `log-republish/00-genesis`; the copied envelope is valid as an anchored genesis on its own | `log-republish/15-copy-genesis-extra-sig` adds one sorted unresolvable signature to that genesis, changing its `entry_hash` while preserving its `content_hash`: `dup-entry`, before `dup-genesis`. It isolates the content key, not entry 0's byte key (cold gate run 20, L2) |
 | §9.1 trust log-key point admission (run 16, L4) | `trust.cbor`; replacing only the damaged public key repairs the file; `trust-good/policy-without-log.cbor` accepts with the log line absent | `trust-bad/55-log-key-small-order` carries an order-8 `log_key` under the origin's name, with its id recomputed and no policy `log` line: invalid only by §3.1 item 2 |
@@ -2170,8 +2183,11 @@ admits its holes, so:
   The Go agent and gossip tests exercise those node behaviours, including a
   healthy direct log that serves a branch different from a proven peer's.
 - §13's interface reconciliation and `proven.json` publication cannot be
-  demonstrated by the static protocol vectors, §13.1's grant bound and
-  overlap rule included. `detect/staleness.json` pins
+  demonstrated by the static protocol vectors. §13.1's grant bound and overlap
+  rule are pure functions a table could pin, as `proven/grant-labels.json`
+  pins a grant's spelling; none ships yet, and the Go endpoint tests hold both
+  (cold gate run 21, L7).
+  `detect/staleness.json` pins
   the §8.1 state labels and boundaries, while Go agent, reconciler and proven
   tests exercise owner, watchdog and observe behavior, failure semantics,
   and the published JSON shape.
@@ -2296,6 +2312,21 @@ admits its holes, so:
   compares key bytes where §5.1 compares `kid`s (`dup-key`). Such a pair
   takes a birthday search of the order of 2³² key generations (cold gate run
   20, M3).
+- **The separate `split` ≤ `size` check (§11.1).** The conflicting head's
+  size must equal `size`, and a split proof cannot chain from a size above its
+  head, so `fork/bad-split-above-size` holds the `proof` outcome without
+  isolating a bound check of its own (cold gate run 21, L7).
+- **The trust file's own witness algorithm and name rules (§9.1).**
+  Correspondence puts each witness's key and short name into the policy, whose
+  grammar checks them again: `trust-bad/15-witness-key-is-a-note-key`,
+  `32-witness-name-too-long` and `54-witness-name-not-ascii` hold the
+  refusals, not the trust-level checks alone (cold gate run 21, L7).
+- **The subgroup check on `R` under the cofactorless equation (§3.1).** With
+  a valid `A`, that equation already puts `R` in the subgroup of order `L`, so
+  a reader that keeps every other check on `R` and drops only that one cannot
+  be told apart. The rest of the rule on `R` is not implied: the equation
+  admits an identity `R`, and `ed25519-cctv/` vector 304 (`low_order_R`) is
+  refused (cold gate run 21, L7).
 - **Rules stated plainly that no vector holds yet (cold gate run 16, L8).**
   Each is a sentence above that a careful reader gets right, and each has an
   input a network can see on which a reader who got it wrong would differ;

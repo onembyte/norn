@@ -24,7 +24,7 @@
   ],
   "rules": {
     "friend-after-drop": {
-      "says": "listed meaning named by the policy in force (§9.4), not a witness a `policy` entry has dropped that the trust file still lists",
+      "says": "not a witness that policy has dropped and the trust file still lists",
       "section": "10.1"
     },
     "friend-before-replay": {
