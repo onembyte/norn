@@ -286,7 +286,7 @@ func writeRunSixteenDeviceBundles(root, signed string, entries [][]byte) error {
 		codes[c.name] = "accept"
 		phrase := "types, the `device_id` in the body — and apply the rules below."
 		if c.kind == "enroll" {
-			phrase = "replay of the log up to that checkpoint yields the device as `active`, and"
+			phrase = "replay of the log up to **the node's stored checkpoint**"
 		}
 		rules[c.name] = map[string]string{"section": "8.1", "says": phrase}
 	}

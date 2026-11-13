@@ -27,7 +27,7 @@ func TestRunFifteensProseFindingsAreFixed(t *testing.T) {
 			"Counting is not checking: a cosignature line whose name **and** key id match a witness the policy lists must verify whether or not its quorum reaches that witness (§10.1 step 6)",
 			""},
 		{"L1 the library ends the text at the last blank line", "7",
-			"They differ in one place, where the text ends: that library ends it at the *last* blank line, this document at the first",
+			"They differ in two places. One is where the text ends: that library ends it at the *last* blank line, this document at the first",
 			"there is no second one to choose between"},
 		{"L1 the two readings differ by code", "7",
 			"here it carries an empty signature line and is `note`; there the lines before it join the text, no trusted line verifies, and it is `log-signature`",

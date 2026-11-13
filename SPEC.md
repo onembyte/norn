@@ -903,9 +903,12 @@ The note framing is `c2sp.org/signed-note`, restated here so an implementer need
 nothing else (D22). These rules are **verified against `golang.org/x/mod/sumdb/note`**,
 the canonical implementation the transparency ecosystem uses: it accepts the
 verifier keys and the receipt this suite ships, unchanged, and opens notes this
-spec's rules produce. They differ in one place, where the text ends: that library
-ends it at the *last* blank line, this document at the first (the first bullet
-below), and the two answer differently only for a note with a second blank line.
+spec's rules produce. They differ in two places. One is where the text ends:
+that library ends it at the *last* blank line, this document at the first (the
+first bullet below), and the two answer differently only for a note with a
+second blank line. The other is §10's rule that every signature line matching
+a trusted key must verify, which Norn imposes and that library does not
+(`checkpoints-bad/16-two-log-signatures`).
 
 - The **signed text** is everything up to **and including** the newline that ends
   the last text line. It does **not** include the blank separator line. A note's
@@ -952,7 +955,12 @@ below), and the two answer differently only for a note with a second blank line.
   asks of every signature line only what needs no key: the prefix, a name,
   and canonical padded base64 that decodes to at least the 4-byte `key_id`.
   What follows the key id is judged by the trusted key whose name and key id
-  the line matches. A line that matches no trusted key is ignored whatever its length:
+  the line matches.
+  Names and key ids are compared byte for byte: a line whose name differs from
+  a trusted key's only in case, such as `NORN-WITNESS/PI`, matches no trusted
+  key and is ignored like any stranger's (`served-upper-witness-name/`,
+  `served-upper-log-name/`, cold gate run 22, D8).
+  A line that matches no trusted key is ignored whatever its length:
   it may be a cosignature on an algorithm this document does not use, and
   refusing it would stop a Norn reader accepting the checkpoints every other
   reader of a shared log accepts (§10, D-074 c).
@@ -1010,6 +1018,10 @@ below), and the two answer differently only for a note with a second blank line.
   and 33 bytes encode to 44 base64 characters without padding or unused pad
   bits. Decoding and re-encoding MUST reproduce the exact data text; a carriage
   return or line feed inside it is invalid even if a decoder ignores it.
+  A key name has no length limit of its own: the byte cap of the artifact that
+  carries it still applies, and the 64-byte limit is §9.1's, on a policy's
+  witness and group names, not on the key names inside their verifier keys
+  (`trust-good/long-witness-key-name`, cold gate run 22, D12).
 
 ### Checking a receipt
 
@@ -1162,7 +1174,9 @@ condition 4:
    file's, or the most recently replayed (§9.4) — even when it names the
    tree head the node already holds (§5.3), and
 2. the bundle's checkpoint is consistent with the node's stored checkpoint, and
-3. replay of the log up to that checkpoint yields the device as `active`, and
+3. replay of the log up to **the node's stored checkpoint** — not the
+   bundle's, which condition 2 has shown to be consistent with it, older or
+   newer — yields the device as `active`, and
    the key the node installs for it is **the `wg_pk` replay gives**: the
    device's current key in the §5.3 state, never the key written in the
    bundle's entry, and
@@ -1252,6 +1266,15 @@ Because the node replays the whole log, condition 3 is what actually decides;
 the bundle is the portable, offline-checkable evidence that goes in alerts and
 audit output.
 
+Condition 3 never replays past the stored checkpoint. A bundle is usually
+older than the node's head, and replay to the stored checkpoint is what keeps
+a device revoked, or a key rotated, since the bundle's head out of the
+interface: `proofs-older-head/` ships two bundles at a size-10 head of
+`served/` with the keys each reading would install (cold gate run 22, D1). A
+bundle may also be newer than the node's head and prove an entry the node has
+not replayed; the node installs nothing on that entry's account until it has
+accepted such a checkpoint itself (§10).
+
 ## 9. Trust file — `norn.trust`
 
 The only thing a verifier trusts a priori (guarantee G6, no TOFU). Delivered out
@@ -1326,7 +1349,7 @@ places the two implementations in this repository already disagreed.
 | field count | each directive takes **exactly the fields its production above allows** — `quorum` one, `witness` two or three, `log` one or two, `group` a name, a threshold and one or more members — and a line with more is an **error**. Stated because it was doing the work of the rule above it: with the stray whitespace in an optional URL, a reader that treats `\v` as a separator sees a four-field `witness` and refuses it *here*, so the separator rule could be deleted and every vector stayed green (cold gate run 10, D9) |
 | leading whitespace | spaces and tabs before the keyword are not part of it |
 | trailing whitespace | spaces and tabs after the last field are not part of it and add no field (D-080) |
-| names | A witness or group name follows §7's key-name grammar — one or more bytes `0x21`–`0x7E`, `+` excluded — and is at most 64 bytes, in every policy: a trust file's and a `policy` entry's alike (D-078). Stated because the grammar never said which bytes a name may hold: both implementations took `zürich`, a reader applying the key-name sentence above refused it, and a refused `policy` entry leaves two readers with different quorums (cold gate run 15, M1). Witness and group names share one namespace; each name is defined **once**, and a repeat is an error. `none` is predefined, cannot be defined, and is invalid as a group member. `all` and `any` are ordinary names outside the threshold position |
+| names | A witness or group name follows §7's key-name grammar — one or more bytes `0x21`–`0x7E`, `+` excluded — and is at most 64 bytes, in every policy: a trust file's and a `policy` entry's alike (D-078). Stated because the grammar never said which bytes a name may hold: both implementations took `zürich`, a reader applying the key-name sentence above refused it, and a refused `policy` entry leaves two readers with different quorums (cold gate run 15, M1). Witness and group names share one namespace; each name is defined **once**, and a repeat is an error. Names compare byte for byte and nothing is case-folded: `pi` and `PI` are two names (`policies/names-differ-in-case.txt`, cold gate run 22, D9). `none` is predefined, cannot be defined, and is invalid as a group member. `all` and `any` are ordinary names outside the threshold position |
 | order | lines may appear in **any order**: the `quorum` line may come before or after `witness`, `group` and `log` lines, and nothing else constrains where a directive sits. The one ordering rule is that names resolve **in order** — a `group` or `quorum` line names only what an **earlier** line defined (`policies/bad-forward-reference`, `policies/bad-quorum-forward-reference`) — and nothing defined later changes an earlier line: a name is defined once, so a later line that redefines a name an earlier line used is an error (`policies/bad-redefinition-after-use`), never a new meaning for the earlier line. `policies/directive-after-quorum` puts a `witness` line and a `group` line after the `quorum` line and MUST be accepted (D-074 e) |
 | keys | a verifier key appears **once** in a policy, on whatever line. Keys are compared by their parsed underlying public key, not by vkey text, name or key ID; the same public key with another spelling is still a duplicate. This applies across `log` and `witness` lines. Under two witness names, one key could otherwise count twice toward a quorum. Two *different* keys held by one operator cannot be detected here or anywhere else, and are two witnesses as far as any policy can tell |
 | `group` members | each **previously defined**, and **no member twice** — `group home 2 pi pi` would otherwise be met by one witness. The predefined `none` MUST NOT appear as a group member. `group` requires one or more members; its empty-member vector is refused by the field-count row. |
@@ -1590,7 +1613,7 @@ these codes and no other, and the first step whose check fails decides which.
 | 3 | `log-signature` | no line whose name and key id match a trusted log key (§9.4) verifies, or any line that matches does not. The matching key's algorithm fixes the signature length too: a 76-byte payload under the log's `0x01` key fails here, even beside a valid line from that key (`checkpoints-bad/24-log-key-other-algorithm-length`, D14c), and so does any other length but 68 (`checkpoints-bad/20-signature-payload-too-long`). **The signature decides before the origin**: a checkpoint signed by a key this anchor does not trust is refused as `log-signature`, whatever origin it names |
 | 4 | `checkpoint` | the signed text is not a `tlog-checkpoint` body (§6): not exactly three lines, a size that is not canonical decimal or is above 2⁶³−1 (§6), a root that is not 32 bytes of standard padded base64 |
 | 5 | `origin` | the body's origin line is not **equal** to `norn.trust.origin` — not a prefix of it, not a case variant of it |
-| 6 | `cosignature` | a cosignature line whose name **and** key id match a listed witness does not verify — listed meaning named by the policy that applies — the policy in force (§9.4), or, for a re-read of the tree head the reader already holds, the policy that accepted it (§5.3, D-084 (1)) — not a witness that policy has dropped and the trust file still lists — including one whose payload is not a cosignature's 76 bytes (`checkpoints-bad/28-witness-key-other-algorithm-length`) or whose timestamp is above 2⁶³−1 (§7, D-077) |
+| 6 | `cosignature` | a cosignature line whose name **and** key id match a listed witness does not verify, whatever the quorum requires, `none` included (§9.1, `quorum-none/forged-pi.checkpoint`) — listed meaning named by the policy that applies — the policy in force (§9.4), or, for a re-read of the tree head the reader already holds, the policy that accepted it (§5.3, D-084 (1)) — not a witness that policy has dropped and the trust file still lists — including one whose payload is not a cosignature's 76 bytes (`checkpoints-bad/28-witness-key-other-algorithm-length`) or whose timestamp is above 2⁶³−1 (§7, D-077) |
 | 7 | `quorum` | the verifying lines from listed witnesses do not satisfy the policy |
 | 8 | `entries` | the entry bundles the checkpoint's size implies do not frame (§6's big-endian uint16 length prefixes), or do not add up to that size. A zero-length frame **frames** — a uint16 length of 0 is a frame — and the empty entry it carries is §5.1's `decode`: a rejected entry in an accepted log, not this code. Bytes after the last frame a full bundle needs are either further frames, which do not add up, or a truncated one, which does not frame: this code either way (run 14, M2 and M3) |
 | 9 | `head` | the tree rebuilt from the served entries does not hash to the signed root |
@@ -1789,15 +1812,27 @@ ships the same bytes under stable names so they can be referred to.
 Paths below are relative to the vector root, which ships as `testdata/vectors/`
 in this repository and may be rooted anywhere when the suite is distributed.
 
-**Three provenances, stated plainly.** The entry, state, trust and enrollment-request
-vectors come from the Python reference implementation, and the Go code must match them. The
-`served/`, `served-large/`, `proofs/`, `fork/`, `checkpoints-good/` and `checkpoints-bad/` vectors come from the **Go**
-implementation instead, because producing a tiled log requires one. `anchors/`
-comes from `python-opentimestamps`, the reference implementation of a format
-neither of Norn's owns — and they are validated against
-libraries neither implementation wrote: `transparency-dev/formats` parses the
-checkpoint, and `x/mod/sumdb/tlog` checks every inclusion proof. Nothing in the
-suite is checked only against its own author.
+**Four provenances, stated plainly.** The entry, state, trust,
+enrollment-request and receipt vectors, `receipt-bad/` among them, come from
+the Python reference implementation (`contrib/norn-ref`), and the Go code must
+match them. The **Go** implementation (`cmd/norn-genlog`) writes
+`proofs-older-head/`, `served-upper-witness-name/`, `served-upper-log-name/`,
+`held-policy/`, `checkpoints-good/`, `replayed-policy/`, `quorum-none/`,
+`genesis-unapplied/`, `grown-log/`, `heads-run16/`, `dropped-witness/`,
+`unreached-witness/`, `served-empty-entry/`, `served-large-bad/`,
+`served-rotated-wrong-name/`, `served-rotated-earlier/`, `served/`,
+`served-large/`, `proofs/`, `fork/`, `checkpoints-bad/`, `proofs-bad/`,
+`served-bad/`, `served-rotated/`, `served-superseded/`,
+`served-twice-cosigned/`, `served-extra-witness/`, `served-name-collision/`,
+`served-unknown-algorithm/`, `served-stranger-name/`, `detect/`,
+`served-genesis/` and `proofs-rotated/`, because producing a tiled log
+requires one; nothing in it writes a receipt. `anchors/` comes from
+`python-opentimestamps`, the reference implementation of a format neither of
+Norn's owns. `ed25519-cctv/` keeps C2SP's CCTV Ed25519 vectors. The Go vectors
+are validated against libraries neither implementation wrote:
+`transparency-dev/formats` parses the checkpoint, and `x/mod/sumdb/tlog`
+checks every inclusion proof. Nothing in the suite is checked only against its
+own author.
 
 **What `cases.json`'s `says` field is.** Every negative in this suite carries a
 `says` string, and **`says` is a **semantic hint** — the rule the case is about,
@@ -1838,7 +1873,7 @@ refuses the shorter `served-rotated-earlier/` log as `rollback`.
 | `log-cas/` | a separate 33-entry replay fixture for D-077, with the fixture genesis, its own four-member anchor in `manifest.json`, `state.json`, per-rejection `.reason` files and `rules`/`codes` maps. It holds five withheld-authorisation stories, presence rules, the log/witness key invariant, five precedence cases and an accepted one-signature rotation under the current device key |
 | `log-run22/` | three separate replay stories with the fixture genesis and their own four-member anchor, `entries`, `codes`, `rules`, `state.json` and per-refusal `.reason` files: `policy-names-differ-in-case/` applies root-signed `01-policy-pi-PI`; `signer-add-prev-bool/` pairs `01-signer-add-prev-false` (`decode`) with `02-signer-add-prev-zero`; `enroll-empty-device-id/` pairs signed `01-enroll-empty-device-id` (`decode`) with `02-enroll-sundial`. Each repair changes only its named field and renews signatures; the main log remains 162 entries |
 | `state.json` | canonical replay output for `log/` (§5.3) |
-| `genesis/<NN-case>/` | 32 single-entry logs, including `23-root-order-eight` and `24-root-noncanonical`, each refused `bad-genesis`, one per way entry 0 can abort, each with its own `manifest.json` and `state.json`; an abort stops replay, so the cases cannot share a log. `cases.json` lists them; `27-type-with-genesis-body` carries a genuine genesis body under t = note, with a valid root quorum and its own leaf pin, so only the type rule aborts it. Run 22 adds `28-signer-order-eight` in `signers` alone, `29-root-thr-zero`, `30-signer-thr-zero`, `31-params-flag-uint` and `32-params-routes-open`, each with a genuine root quorum and its own leaf pin; field-only repairs accept, and case 30 aborts before an unsigned enrollment that becomes `threshold` after the genesis repair. |
+| `genesis/<NN-case>/` | 32 single-entry logs, including `23-root-order-eight` and `24-root-noncanonical`, each refused `bad-genesis` and each isolating one stated entry-0 refusal, each with its own `manifest.json` and `state.json`; an abort stops replay, so the cases cannot share a log. `cases.json` lists them; `27-type-with-genesis-body` carries a genuine genesis body under t = note, with a valid root quorum and its own leaf pin, so only the type rule aborts it. Run 22 adds `28-signer-order-eight` in `signers` alone, `29-root-thr-zero`, `30-signer-thr-zero`, `31-params-flag-uint` and `32-params-routes-open`, each with a genuine root quorum and its own leaf pin; field-only repairs accept, and case 30 aborts before an unsigned enrollment that becomes `threshold` after the genesis repair. |
 | `genesis-good/<NN-case>/` | the other side: one single-entry log per genesis a reader **MUST accept**, each replaying to size 1 with nothing rejected and to its `state.json`. `cases.json` lists them |
 | `trust-bad/<NN-case>.cbor` | 60 trust files, including `47-witness-noncanonical-point`, that decode cleanly but MUST be rejected as anchors; the file name says why, `cases.json` lists them. `55-log-key-small-order` isolates the trust log-key point check. Run 20 adds `60-witness-short-name-mismatch`, changing only array pi to pj under the unchanged policy and verifier key. Run 21 adds `61-witness-names-swapped`, swapping only pi and vps directive short names while preserving both name and key sets; undoing the swap recovers `trust.cbor` byte for byte. Run 22 adds `62-anchor-type-uint`, changing only anchor type to uint 7; restoring its text recovers accepted `trust.cbor` byte for byte. |
 | `served/` | the fixture's 162 entries as a real **tlog-tiles directory**, with partial tile and bundle width 162: `tile/entries/…` bundles, `tile/<L>/…` hashes, and `checkpoint` — which **is** the signed note (§6), not an unsigned file with a signed sibling |
@@ -2122,7 +2157,7 @@ this table drifted out of date the moment one was.
 | §5.3 state, incl. D-028 and `expires` | `state.json`, `enroll-contractor` | `signer_remove-below-threshold` accepted, then `signer_add-recover` |
 | §5.3 a witness counts at its **newest** verifying line | `served-twice-cosigned/`: one witness answers twice and both lines verify, so the head is valid and only the tie-break decides. `cases.json` records the instant it must come out at, and the one an oldest-line reader would get instead | `checkpoints-bad/12-second-line-from-one-witness` cannot pin this — its second line does not verify, so §10's per-line rule refuses the checkpoint first |
 | §5.3 the derivation of `T` | `served/checkpoint`, whose three witnesses cosign seven seconds apart, so the **newest** and the **oldest** are both separated from the answer; `proofs/cases.json` records the value `T` must come out as | — |
-| §5.3 policy for the checkpoint's `T` | `served/checkpoint` is accepted under `trust.cbor`'s 2-of-3 policy, so `proofs/cases.json` records `checkpoint_quorum_time` 1760003607. The same checkpoint replays a 3-of-3 policy; `replayed_policy_quorum_time` 1760003600 pins the different, retroactive reading. It also separates the median from the k-th newest: `replayed_policy_quorum_time` is computed under a three-of-three policy, where the k-th newest is the oldest cosignature and the median is not, so a median reader gets 1760003607 and fails (cold gate run 13, D19) | — |
+| §5.3 policy for the checkpoint's `T` | `served/checkpoint` is accepted under `trust.cbor`'s 2-of-3 policy, so `proofs/cases.json` records `checkpoint_quorum_time` 1760003607. The same checkpoint replays a 3-of-3 policy; `replayed_policy_quorum_time` 1760003600 is the `T` a reader computes for that checkpoint once it has replayed that policy and holds no checkpoint (§9.4): the time of a later read, never a substitute for the first acceptance's (cold gate run 22, D5). It also separates the median from the k-th newest: `replayed_policy_quorum_time` is computed under a three-of-three policy, where the k-th newest is the oldest cosignature and the median is not, so a median reader gets 1760003607 and fails (cold gate run 13, D19) | — |
 | §4.0 the grant, §4.5 `routes` | `proven/cases.json`'s `grants`: `router`'s label `10.9.1.5/24, fd00::5/64` becomes `10.9.1.0/24, fd00::/64` (masked, sorted as text), `nas` has none, and `badgrant`'s `10.9.2.0/24, nope` is no grant at all — a reader that keeps the part that parsed differs by a prefix a node would install. `log/156-params-routes-granted` names the default | `log/157-bad-params-routes-unknown-value` (`"open"`) and `log/158-bad-params-routes-wrong-type` (`1`): the value set is closed and the type is text, each `decode` |
 | §5.3 evaluation time | `proven/cases.json`: the admitted set at four values of `T` — no clock, before, **exactly at**, and after the one deadline the fixture carries. `state.json` is clock-independent by design, and `quorum-none/` covers expiry with no quorum time | the `at-the-deadline` case, where `expires == T` and the device is **out** |
 | §7 receipt, codes and check order | `receipt.note` | **26 `receipt-bad/` cases** cover all eight closed codes: `note` (extra final newline), `log-signature` (untrusted signer), `receipt` (wrong header), `origin`, `leaf-hash` (invalid data and non-zero pad bits), `deadline` (`leading-zero.note`), `entry`, and `expired` (checked at the deadline). Body and signer negatives are re-signed; the framing case cannot be, and expiry is a time-dependent check over the otherwise valid receipt. The leading-zero case closes cold gate run 11, D4: §6 fixed a checkpoint's size spelling while §7 left this deadline implicit, so `ReceiptDeadlineLax` passed all 622 checks. **The order** is held pair by pair (cold gate run 13, D4): until then every case failed one step, so a reader that swapped two adjacent steps passed. Each `order-` case fails steps *n* and *n*+1 and is refused for *n* — `order-log-signature-before-receipt` (signed by another key, wrong header), `order-receipt-before-origin`, `order-origin-before-leaf-hash`, `order-leaf-hash-before-deadline`, `order-deadline-before-entry` and `order-entry-before-expired` (another entry's hash, checked at the deadline) |
@@ -2191,8 +2226,12 @@ admits its holes, so:
 
 - §3.1's NORN-ED25519-v1 is vectored at every admission point item 2 names
   and executed by both implementations (the CCTV table and Norn's own
-  edges, in the rows above), including a `rotate`'s incoming `device_pk` and a
-  `policy` entry's witness key (D-075). A policy's optional `log` line carries
+  edges, in the rows above),
+  including both key arrays of a genesis — `genesis/23-root-order-eight` holds
+  `roots` and `genesis/28-signer-order-eight` holds `signers` (cold gate run
+  22, D2) — a `rotate`'s incoming `device_pk` and a `policy` entry's witness
+  key (D-075).
+  A policy's optional `log` line carries
   the same point check, and `log-order/15-policy-log-identity` holds it (cold
   gate run 15, D1).
 - Source-neutral checkpoint acquisition cannot be demonstrated by static vectors alone:

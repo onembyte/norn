@@ -10,7 +10,7 @@
 > and Headscale get observe mode only, not yet run against a real tailscaled.
 > Changes nothing in WireGuard.
 
-*Status (2026-11-12, preview): 56 Go packages, 1429 tests, a frozen `SPEC.md`, and a
+*Status (2026-11-12, preview): 56 Go packages, 1431 tests, a frozen `SPEC.md`, and a
 vector suite a second implementer can use without this repository. **17 of 38
 gate lines** in `PLAN.md` are ticked — the lab on the NAS closed its first three on
 2026-11-12; most gates that need a lab soak, a measurement or a second pair of eyes

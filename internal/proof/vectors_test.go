@@ -429,11 +429,11 @@ func TestEveryBundleSchemaRuleHasItsCase(t *testing.T) {
 
 // --- Cold-model gate run 11, defect D14 ---------------------------------
 //
-// §8.1's condition 3 — "replay of the log up to that checkpoint yields the
-// device as `active` with that `wg_pk`" — never says whose `wg_pk`. The
-// nearest antecedent is the bundle's, because the whole list is about a
-// bundle; the other reading is that replay simply supplies the key and
-// condition 3 only asserts `active`.
+// §8.1 now says "replay of the log up to **the node's stored checkpoint**".
+// Run 11's condition 3 left whose `wg_pk` unstated. Its nearest antecedent
+// was the bundle's, because the whole list is about a bundle; the other
+// reading was that replay simply supplies the key and condition 3 only
+// asserts `active`.
 //
 // The fixture separates them and nothing joined the two halves. `proofs/` is
 // one bundle per active device, each proving **the entry that made that

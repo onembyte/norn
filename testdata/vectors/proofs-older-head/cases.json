@@ -37,7 +37,7 @@
   },
   "rules": {
     "laptop-older-head": {
-      "says": "replay of the log up to that checkpoint yields the device as `active`",
+      "says": "replay of the log up to **the node's stored checkpoint**",
       "section": "8.1"
     },
     "nas-older-head": {

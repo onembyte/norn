@@ -88,7 +88,7 @@ func writeOlderHeadBundles(root, origin string, key ed25519.PrivateKey, entries 
 		"cases":  cases, "codes": map[string]string{"laptop-older-head": "accept", "nas-older-head": "accept"},
 		"installs": installs, "bundle_head_installs": olderInstalls,
 		"rules": map[string]any{
-			"laptop-older-head": map[string]string{"section": "8.1", "says": "replay of the log up to that checkpoint yields the device as `active`"},
+			"laptop-older-head": map[string]string{"section": "8.1", "says": "replay of the log up to **the node's stored checkpoint**"},
 			"nas-older-head":    map[string]string{"section": "8.1", "says": "the key the node installs for it is **the `wg_pk` replay gives**"},
 		},
 	})
