@@ -2933,7 +2933,7 @@ func TestEveryServedAndBundleNegativeCitesTheRuleOfItsCode(t *testing.T) {
 			"head":     {"that comparison is what binds the entries to the head"},
 			"entries":  {"A partial bundle holds **exactly** the number of entries its path declares"},
 			"tiles":    {"checking them is not optional", "a tile of width `W` is exactly 32 × `W` bytes"},
-			"unserved": {"any file a later step needs and cannot fetch"},
+			"unserved": {"any file a later step needs and cannot fetch", "a hash tile (step 12)"},
 		},
 		"proofs-bad": {
 			"bundle":        {"a closed map of exactly these six keys", "`v` | uint | `1`", "schemas MUST reject them outside `params.rotate_needs_signer`", "larger than this MUST be refused on length", "or a `device` outside §2's grammar", "or a `proof` element that is not exactly 32 bytes, as §8.1 types it", "or an `entry` longer than `MAX_ENTRY_BYTES` (D-080)"},

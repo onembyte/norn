@@ -1,0 +1,12 @@
+{
+  "comment": "The served checkpoint plus one stranger line named NORN-WITNESS/PI under norn-witness/pi's key id. Removing that line recovers served/checkpoint byte for byte.",
+  "fresh": "accept",
+  "informed": "accept",
+  "rules": {
+    "name-case": {
+      "says": "What follows the key id is judged by the trusted key whose name and key id",
+      "section": "7"
+    }
+  },
+  "serve_over": "served"
+}

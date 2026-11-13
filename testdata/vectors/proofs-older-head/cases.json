@@ -1,0 +1,51 @@
+{
+  "bundle_head_installs": {
+    "laptop": "bd4637856399f9ce5cd8044ad1f684c6486d3983f5b58171267113d743838f46",
+    "nas": "116f00fac8f42a3061d84684e114f7bebb590c54d0b33feb2a6ad68f02883961"
+  },
+  "cases": [
+    {
+      "consistent": true,
+      "device": "laptop",
+      "file": "laptop-older-head.bundle",
+      "head_size": 10,
+      "index": 2,
+      "name": "laptop-older-head",
+      "says": "laptop was active at the bundle head but is revoked at the stored head; installs omits it"
+    },
+    {
+      "consistent": true,
+      "device": "nas",
+      "file": "nas-older-head.bundle",
+      "head_size": 10,
+      "index": 1,
+      "name": "nas-older-head",
+      "says": "nas installs the key replay gives at the stored head, not its key at the older bundle head"
+    }
+  ],
+  "codes": {
+    "laptop-older-head": "accept",
+    "nas-older-head": "accept"
+  },
+  "comment": "The reader holds served's verified size-162 checkpoint and replayed state. Both bundles have a quorum-cosigned size-10 head consistent with it. Bundle acceptance proves inclusion, not the current key.",
+  "installs": {
+    "nas": "2a955fd268cf9d55ba383ba35237a3f626b5141ac92089ccb915e17b86bde82f"
+  },
+  "reader": {
+    "held_checkpoint": "../served/checkpoint",
+    "policy": "replayed"
+  },
+  "rules": {
+    "laptop-older-head": {
+      "says": "replay of the log up to that checkpoint yields the device as `active`",
+      "section": "8.1"
+    },
+    "nas-older-head": {
+      "says": "the key the node installs for it is **the `wg_pk` replay gives**",
+      "section": "8.1"
+    }
+  },
+  "stored_checkpoint": "../served/checkpoint",
+  "stored_log": "../served",
+  "trust": "../trust.cbor"
+}

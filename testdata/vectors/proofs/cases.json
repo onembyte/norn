@@ -9,6 +9,7 @@
     "enroll-open-body": "accept",
     "enroll-other-net": "accept",
     "entry-after-bool-repaired": "accept",
+    "entry-at-the-cap": "accept",
     "entry-net-15-bytes-repaired": "accept",
     "entry-prev-bool-repaired": "accept",
     "entry-sigs-malformed-kid-repaired": "accept",
@@ -60,6 +61,10 @@
     },
     "entry-after-bool-repaired": {
       "says": "set of members, each of its type: `v` 1,",
+      "section": "8.1"
+    },
+    "entry-at-the-cap": {
+      "says": "at most `MAX_ENTRY_BYTES`",
       "section": "8.1"
     },
     "entry-net-15-bytes-repaired": {
@@ -195,6 +200,13 @@
       "index": 1,
       "name": "entry-net-15-bytes-repaired",
       "says": "only the binding field repaired, with renewed authentication"
+    },
+    {
+      "device": "nas",
+      "file": "entry-at-the-cap.bundle",
+      "index": 1,
+      "name": "entry-at-the-cap",
+      "says": "a 65535-byte entry reaches the inclusive entry cap inside a valid bundle"
     }
   ]
 }

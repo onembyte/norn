@@ -55,12 +55,19 @@
       "path": "checkpoint",
       "remove": true,
       "says": "no checkpoint is served, so there is nothing to verify: `unserved`, not a framing error over an empty note"
+    },
+    {
+      "name": "missing-full-hash-tile",
+      "path": "tile/0/000",
+      "remove": true,
+      "says": "the first level-zero tile is full at size 300 and is not served"
     }
   ],
   "codes": {
     "consistent-tampered-log": "head",
     "missing-checkpoint": "unserved",
     "missing-entry-bundle": "unserved",
+    "missing-full-hash-tile": "unserved",
     "missing-hash-tile": "unserved",
     "overfull-entry-bundle": "entries",
     "partial-hash-tile-trailing-bytes": "tiles",
@@ -79,6 +86,10 @@
     },
     "missing-entry-bundle": {
       "says": "any file a later step needs and cannot fetch",
+      "section": "10.1"
+    },
+    "missing-full-hash-tile": {
+      "says": "a hash tile (step 12)",
       "section": "10.1"
     },
     "missing-hash-tile": {

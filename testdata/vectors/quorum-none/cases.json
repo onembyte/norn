@@ -29,10 +29,16 @@
         "router"
       ],
       "says": "quorum none supplies no clock even when witnesses signed; contractor remains proven"
+    },
+    {
+      "file": "forged-pi.checkpoint",
+      "name": "forged-pi",
+      "says": "a listed witness's forged line refuses even under quorum none"
     }
   ],
   "codes": {
     "cosigned-no-clock": "accept",
+    "forged-pi": "cosignature",
     "uncosigned": "accept"
   },
   "comment": "The trust file differs only in its quorum directive and retains all witnesses. Serve each head over served's unchanged tiles. Both have no quorum time; expected proven is the active set including contractor. Substituting a wall clock past contractor's expires drops it.",
@@ -40,6 +46,10 @@
     "cosigned-no-clock": {
       "says": "With no quorum time, expiry cannot be judged and active claims retain their",
       "section": "13"
+    },
+    "forged-pi": {
+      "says": "must verify whether or not its quorum reaches that witness",
+      "section": "9.1"
     },
     "uncosigned": {
       "says": "it names a witness, a group, or the reserved name `none`.",

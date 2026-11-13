@@ -281,6 +281,16 @@ func run(root string) error {
 		return err
 	}
 
+	if err := writeRunTwentyTwoHeads(root, signed); err != nil {
+		return err
+	}
+	if err := writeOlderHeadBundles(root, origin, key, entries, signers); err != nil {
+		return err
+	}
+	if err := writeRunTwentyTwoEntryCap(root, origin, key, entries, signers); err != nil {
+		return err
+	}
+
 	fmt.Printf("served %d entries to %s, %d proof bundles\n", store.Size(), served, len(ids))
 	return nil
 }

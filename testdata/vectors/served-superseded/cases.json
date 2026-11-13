@@ -13,5 +13,18 @@
   "fresh": "accept",
   "informed": "accept",
   "informed_quorum_time": 1760003607,
-  "serve_over": "served"
+  "rules": {
+    "one-cosignature": {
+      "says": "not judged again and nothing from the copy is stored",
+      "section": "5.3"
+    }
+  },
+  "serve_over": "served",
+  "thin_copy": {
+    "file": "one-cosignature.checkpoint",
+    "fresh": "quorum",
+    "informed": "accept",
+    "informed_quorum_time": 1760003607,
+    "retains": "../served/checkpoint"
+  }
 }

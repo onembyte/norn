@@ -39,11 +39,23 @@ func TestRunSeventeenQuorumNoneRetainsExpiryWithoutAClock(t *testing.T) {
 		t.Fatal(err)
 	}
 	anchor := logclient.Anchor{Anchor: replay.FromTrust(doc), Origin: doc.Origin, LogKeys: []string{doc.LogKey}, Policy: doc.Policy}
-	if len(manifest.Cases) != 2 {
+	// Only an accepted head has a proven set. Run 22's `forged-pi` (D7) is a
+	// refusal in the same directory, and a refused head proves nobody.
+	accepted := manifest.Cases[:0:0]
+	for _, c := range manifest.Cases {
+		if manifest.Codes[c.Name] != "accept" {
+			if c.Proven != nil {
+				t.Fatalf("%s is refused and cannot carry a proven set", c.Name)
+			}
+			continue
+		}
+		accepted = append(accepted, c)
+	}
+	if len(accepted) != 2 {
 		t.Fatal("both heads need proven sets")
 	}
 	expected := []string{"astral", "badgrant", "contractor", "labelcap", "nas", "pi-cam", "printer", "router"}
-	for _, c := range manifest.Cases {
+	for _, c := range accepted {
 		if !reflect.DeepEqual(c.Proven, expected) {
 			t.Fatalf("manifest must retain the fixed no-clock set: %v", c.Proven)
 		}

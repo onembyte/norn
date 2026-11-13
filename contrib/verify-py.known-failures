@@ -167,3 +167,14 @@ served-superseded#informed expected="accept" got="quorum"
 # the three grant labels and `genesis/27`; `receipt-good/` stays unhandled
 # above, so its deadline-zero positive is unread.
 entries-utf8/cases.json#unhandled expected="handled" got="UNKNOWN CASE FORMAT"
+
+# Row G29, build G (2026-11-13): run 22's D1, two bundles at a size-10 head
+# consistent with `served/`'s 162, and `installs` taken from replay to the
+# stored head (laptop absent, nas `2a955fd2…`) beside `bundle_head_installs`,
+# the other reading. A directory this build never saw, so one unhandled line,
+# as `held-policy/` above. Its D4 answer is the debt already recorded at
+# `served-superseded#informed`: its served check judges a held head's quorum
+# again, so `one-cosignature.checkpoint` (a thin copy of the held head) gets
+# `quorum` where Go and D-084 (1) say `accept`; the harness does not read the
+# new `thin_copy` metadata, so that answer prints no line of its own.
+proofs-older-head/cases.json#unhandled expected="handled" got="UNKNOWN CASE FORMAT"

@@ -15,12 +15,12 @@ func TestRunSeventeenGoCasesAreIndexedAndCiteRawRules(t *testing.T) {
 		"fork":              {"bad-split-zero-with-a-root.cbor", "bad-declared-length-past-the-file.cbor", "bad-empty-map-key.cbor"},
 		"proofs-bad":        {"short-proof-hash.bundle", "request-device-pk-small-order.bundle", "pk-length-under-own-id.bundle"},
 		"replayed-policy":   {"evidence.cbor", "nas.bundle"},
-		"quorum-none":       {"uncosigned.checkpoint", "../served/checkpoint"},
+		"quorum-none":       {"uncosigned.checkpoint", "../served/checkpoint", "forged-pi.checkpoint"},
 		"genesis-unapplied": {"checkpoint", "sound/checkpoint"},
 	}
 	expected := map[string]map[string]string{
 		"replayed-policy":   {"evidence-fresh": "accept", "evidence-informed": "held", "bundle-fresh": "accept", "bundle-informed": "quorum"},
-		"quorum-none":       {"uncosigned": "accept", "cosigned-no-clock": "accept"},
+		"quorum-none":       {"uncosigned": "accept", "cosigned-no-clock": "accept", "forged-pi": "cosignature"},
 		"genesis-unapplied": {"unapplied": "genesis", "sound": "accept"},
 	}
 	for dir, files := range paths {
