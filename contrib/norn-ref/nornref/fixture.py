@@ -1292,6 +1292,8 @@ def genesis_aborts() -> list[tuple[str, bytes, "replay.Anchor"]]:
     raw = entry.encode(wrong_type)
     cases.append(("27-type-with-genesis-body", raw, anchor_for([raw])))
 
+    from . import run22_genesis
+    cases.extend(run22_genesis.cases())
     assert good_anchor  # the good anchor is exercised by the log fixture
     return cases
 
@@ -1394,7 +1396,8 @@ def policy_grammar() -> list[tuple[str, str, bool, str]]:
     bad_log_id = _vkey_with_wrong_id()
     bad_witness_id = _witness_vkey_with_wrong_id("pi")
 
-    return [
+    from . import run22_policy
+    return run22_policy.cases() + [
         ("bad-witness-extra-field", f"{log}\n{pi} extra\nquorum pi\n", False,
          "directive has more fields than its production permits"),
         ("bad-log-extra-field", f"{log} extra\n{pi}\nquorum pi\n", False,
@@ -1636,7 +1639,8 @@ def policy_evaluations() -> dict[str, list[dict[str, Any]]]:
     so three readings that change the *arithmetic* all passed. Nothing in the
     suite took a policy and a set of cosigners and asked for a verdict.
     """
-    return {
+    from . import run22_policy
+    return {**run22_policy.evaluations(),
         "all-members": [
             {"cosigners": ["pi"], "satisfied": False, "why": "all requires vps as well as pi"},
             {"cosigners": ["vps"], "satisfied": False, "why": "all requires pi as well as vps"},
@@ -1693,7 +1697,8 @@ def trust_rejections() -> list[tuple[str, dict[str, Any]]]:
     reuse = note.vkey("different-name", KEYS["logkey"].public, note.ALG_COSIGNATURE)
     reused_log = dict(base, witnesses=[{"name":"w", "key":reuse}],
                       policy=f"witness w {reuse}\nquorum w\n")
-    return [
+    from . import run22_trust
+    return run22_trust.bad_cases() + [
         ("61-witness-names-swapped", damaged(policy=base["policy"]
             .replace("witness pi ", "witness TEMP ", 1)
             .replace("witness vps ", "witness pi ", 1)
@@ -2046,7 +2051,8 @@ def trust_acceptances() -> list[tuple[str, dict[str, Any]]]:
         doc["policy"] = base["policy"].replace("witness pi ", "witness " + name + " ").replace(" pi ", " " + name + " ")
         return doc
 
-    return [
+    from . import run22_trust
+    return run22_trust.good_cases() + [
         ("name-non-ascii", dict(base, name="réseau-de-test")),
         ("policy-without-log", dict(base, policy="".join(
             line for line in base["policy"].splitlines(keepends=True)

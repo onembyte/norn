@@ -16,7 +16,7 @@ import sys
 import base64
 import hashlib
 
-from nornref import canonjson, cbor, enrollreq, entry, fixture, note, replay, run21, trust
+from nornref import canonjson, cbor, enrollreq, entry, fixture, note, replay, run21, run22_genesis, run22_policy, run22_replay, run22_trust, trust
 
 
 #: Every path this run has written, so stale files can be pruned afterwards.
@@ -41,7 +41,7 @@ OWNED = frozenset({
     "keys.json", "entries", "log", "genesis", "state.json",
     "trust.cbor", "trust.toml", "trust.fingerprint", "trust-bad", "trust-good",
     "receipt.note", "receipt.json", "receipt-bad", "receipt-good", "requests", "requests-bad", "policies",
-    "entries-hostile", "entries-utf8", "proven", "log-empty", "log-admission", "log-cas", "log-edges", "log-order", "log-republish", "log-rules", "genesis-good",
+    "entries-hostile", "entries-utf8", "proven", "log-empty", "log-admission", "log-cas", "log-edges", "log-order", "log-republish", "log-rules", "log-run22", "genesis-good",
     "receipt-rotated",
 })
 
@@ -359,6 +359,7 @@ def write_genesis_aborts(out: pathlib.Path) -> None:
         "19-bootstrap-sigs-from-signers": {
             "section": "5.1", "says": "*in its own body*"},
     }
+    genesis_rules.update(run22_genesis.RULES)
     for name, _, _ in fixture.genesis_aborts():
         if name not in genesis_rules:
             raise SystemExit(f"genesis case {name} names no entry-0 step")
@@ -478,6 +479,7 @@ def write_trust_rejections(out: pathlib.Path) -> None:
         "49-witness-key-id-uppercase": {"section": "9.1", "says": "the key ID is lowercase hex"},
         "50-witness-key-name-not-ascii": {"section": "9.1", "says": "Key names follow §7's ASCII grammar"},
     }
+    trust_rules.update(run22_trust.BAD_RULES)
     for name_, _ in fixture.trust_rejections():
         if name_ not in trust_rules:
             raise SystemExit(f"trust case {name_} names no §9.1 rule")
@@ -832,6 +834,32 @@ def write_republish_log(out: pathlib.Path) -> None:
     write(out / "log-republish" / "state.json", replay.replay(anchor, raw).to_json() + "\n")
 
 
+def write_run22_logs(out: pathlib.Path) -> None:
+    """Real replay manifests let every consumer discover the three stories."""
+    for story, rows in run22_replay.stories():
+        folder = out / "log-run22" / story
+        raw = [row[1] for row in rows]
+        anchor = fixture.anchor_for(raw)
+        expected = [{"index": i, "reason": reason}
+                    for i, (_, _, reason, _) in enumerate(rows) if reason]
+        state = replay.replay(anchor, raw)
+        if state.size != len(raw) or state.rejected != expected:
+            raise SystemExit(f"STOP: run 22 story {story} disagrees with its base answer")
+        for name, data, reason, _ in rows:
+            write(folder / (name + ".cbor"), data)
+            if reason:
+                write(folder / (name + ".reason"), reason + "\n")
+        write(folder / "manifest.json", canonjson.dumps({
+            "anchor": {"net": anchor.net, "genesis_hash": anchor.genesis_hash,
+                       "log_key": anchor.log_key, "policy": anchor.policy},
+            "entries": [{"index": i, "name": name, "reason": reason}
+                        for i, (name, _, reason, _) in enumerate(rows)],
+            "codes": {name: reason or "accept" for name, _, reason, _ in rows[1:]},
+            "rules": {name: rule for name, _, _, rule in rows},
+        }) + "\n")
+        write(folder / "state.json", state.to_json() + "\n")
+
+
 def write_trust_acceptances(out: pathlib.Path) -> None:
     """Trust files §9.1 permits (cold gate run 8, D22).
 
@@ -854,10 +882,11 @@ def write_trust_acceptances(out: pathlib.Path) -> None:
     write(out / "trust-good" / "policy-over-4096.cbor", raw)
     cases.append("policy-over-4096")
     write(out / "trust-good" / "cases.json", canonjson.dumps({
-        "says": {"name-non-ascii": "accepted UTF-8 network label, with every other field unchanged",
+        "says": {**run22_trust.SAYS, "name-non-ascii": "accepted UTF-8 network label, with every other field unchanged",
                  "policy-without-log": "accepted anchor omitting only the policy log line",
                  "policy-over-4096": "accepted: one ignored comment line grows only the policy text to 4097 bytes; the whole trust file stays below MAX_TRUST_BYTES"},
         "rules": {
+            **run22_trust.GOOD_RULES,
             "name-non-ascii": {"section": "9.1", "says": "human label for the network"},
             "policy-without-log": {"section": "9.1", "says": "A `log` line, if the policy carries one"},
             "policy-over-4096": {
@@ -1158,6 +1187,7 @@ def write_policies(out: pathlib.Path) -> None:
         cases.append(case)
     grammar = {"section": "9.1", "says": "The rest of the grammar, stated because"}
     policy_rules = {name: dict(grammar) for name, _, _, _ in inputs}
+    policy_rules[run22_policy.NAME] = run22_policy.NAME_RULE
     policy_rules["all-members"] = {"section": "9.1", "says": "`all` is `n`"}
     for name in ("bad-witness-extra-field", "bad-log-extra-field"):
         policy_rules[name] = {"section": "9.1", "says": "and a line with more is an **error**"}
@@ -1491,6 +1521,7 @@ def main(argv: list[str]) -> int:
     write_order_log(out)
     write_rules_log(out)
     write_republish_log(out)
+    write_run22_logs(out)
     write_trust(out)
     write_receipt_rotated(out)
     write_policies(out)
