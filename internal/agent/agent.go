@@ -38,6 +38,7 @@ import (
 	"github.com/onembyte/norn/internal/reconcile"
 	"github.com/onembyte/norn/internal/replay"
 	"github.com/onembyte/norn/internal/state"
+	"github.com/onembyte/norn/internal/tlog"
 	"github.com/onembyte/norn/internal/trust"
 )
 
@@ -347,6 +348,15 @@ type Agent struct {
 	// once on entering the condition, again every DegradedAlarmEvery.
 	noQuorumSaid  bool
 	noQuorumSince time.Duration
+	// adoptedSaid, adoptedSince and adoptedHead are that cadence for
+	// ADOPTED_FROM_PEER: said on taking a head from a peer, again when the head
+	// taken changes, otherwise every DegradedAlarmEvery. A cycle in which the
+	// log itself answers ends the condition. Without it a node whose log is
+	// down said it on every poll, five times a second, about the same head
+	// (U1 and the NAS lab, G1 and G22).
+	adoptedSaid  bool
+	adoptedSince time.Duration
+	adoptedHead  tlog.Checkpoint
 }
 
 // New checks what must be true before a node starts at all.
@@ -693,9 +703,9 @@ func (a *Agent) Once() error {
 		if fromPeer, peer := a.askPeers(a.anchorFor(result), result); fromPeer != nil {
 			a.uncorroborated = false
 			if fromPeer.Checkpoint.Size > result.Checkpoint.Size {
-				a.emit(Event{Kind: AdoptedFromPeer, Message: fmt.Sprintf(
+				a.sayAdopted(fromPeer.Checkpoint, fmt.Sprintf(
 					"took size %d from peer %s, which corroborates this node's first "+
-						"head and extends it", fromPeer.Checkpoint.Size, peer)})
+						"head and extends it", fromPeer.Checkpoint.Size, peer))
 				result = fromPeer
 				source = "peer"
 			}
@@ -707,12 +717,15 @@ func (a *Agent) Once() error {
 		a.checkpointAsked, a.checkpointAskedSet = mono, true
 		if fromPeer, peer := a.askPeers(anchor, a.held()); fromPeer != nil &&
 			(verifyErr != nil || fromPeer.Checkpoint.Size > result.Checkpoint.Size) {
-			a.emit(Event{Kind: AdoptedFromPeer, Message: fmt.Sprintf(
+			a.sayAdopted(fromPeer.Checkpoint, fmt.Sprintf(
 				"took size %d from peer %s, which is signed by the same keys: %s",
-				fromPeer.Checkpoint.Size, peer, whyPeer(verifyErr))})
+				fromPeer.Checkpoint.Size, peer, whyPeer(verifyErr)))
 			result, verifyErr = fromPeer, nil
 			source = "peer"
 		}
+	}
+	if direct != nil && source == "log" {
+		a.adoptedSaid = false // the log answered: the condition is over
 	}
 	if a.frozen {
 		// enforceFrozen empties the set for a head this node enforced without
@@ -1086,6 +1099,18 @@ func (a *Agent) applyFightPolicy(key peertable.Key) {
 func (a *Agent) Quarantined() bool { return a.quarantined }
 
 func (a *Agent) emit(event Event) { a.cfg.Emit(event) }
+
+// sayAdopted reports a head taken from a peer at the alarm cadence: at once
+// for a head not yet reported in this condition, otherwise every
+// DegradedAlarmEvery.
+func (a *Agent) sayAdopted(head tlog.Checkpoint, message string) {
+	mono := a.cfg.Mono()
+	if a.adoptedSaid && head == a.adoptedHead && mono-a.adoptedSince < a.cfg.DegradedAlarmEvery {
+		return
+	}
+	a.adoptedSaid, a.adoptedSince, a.adoptedHead = true, mono, head
+	a.emit(Event{Kind: AdoptedFromPeer, Message: message})
+}
 
 // keyOf converts the hex key §5.3 stores into the one the peer table uses.
 func keyOf(hexKey string) (peertable.Key, error) {
